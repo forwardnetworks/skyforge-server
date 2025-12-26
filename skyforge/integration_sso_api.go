@@ -265,7 +265,7 @@ func (s *Service) NetboxSSO(w http.ResponseWriter, r *http.Request) {
 		w,
 		r,
 		ssoBaseURLOrDefault(s.cfg.NetboxBaseURL, ""),
-		"/netbox/login/",
+		"/login/",
 		"/netbox/",
 		"username",
 		"password",

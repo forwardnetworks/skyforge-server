@@ -1,6 +1,7 @@
-h1:edAj9s8L3w5ESMTqCya0mXDYhE130aoaOD+lTyndmew=
+h1:OnXVw/di5iYncZ6mVsrJ7O3/vBOmnGSZCoDL2mpOzIw=
 20251220000100_init.up.sql h1:YCWvMBPS4NllVUMuxfGa/GI6PNNfPI4aiCQzxCuHoYY=
 20251221000100_cloud_credentials.up.sql h1:eV5g4ndFX+Vv/jGTQoj4rgLgXJemBeS9u0XyKVlEnwQ=
 20251222000100_project_visibility.up.sql h1:8N5AoNS1iVXnMARyCmsiffW4n6CrAq/nmxailQPZ3cw=
 20251223000100_governance_tables.up.sql h1:sIMnWWu3E0dBV0dipOpHRXZ9H8tplAlmQ+tM2mC/NhE=
 20251223000200_deployments.up.sql h1:xU/2T1MUJ041Dx1qsrwhh1jN8f2iqg91U2hwHlf8oZQ=
+20251224000100_labpp_templates.up.sql h1:XTIsI51TmHS7I9H90bNXc28h15jyulXClDR4g1pJD3A=
