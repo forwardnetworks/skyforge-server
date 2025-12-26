@@ -768,11 +768,11 @@ func loadConfig() Config {
 	}
 
 	labsCfg := LabsConfig{
-		PublicURL:        strings.TrimRight(getenv("SKYFORGE_LABS_URL", ""), "/"),
-		EveAPIURL:        strings.TrimRight(getenv("SKYFORGE_LABS_EVE_API_URL", ""), "/"),
-		EveUsername:      getenv("SKYFORGE_LABS_EVE_USERNAME", ""),
-		EvePassword:      getOptionalSecret("SKYFORGE_LABS_EVE_PASSWORD"),
-		EveSkipTLSVerify: getenv("SKYFORGE_LABS_EVE_SKIP_TLS_VERIFY", "false") == "true",
+		PublicURL:        strings.TrimRight(getenv("SKYFORGE_EVE_URL", ""), "/"),
+		EveAPIURL:        strings.TrimRight(getenv("SKYFORGE_EVE_API_URL", ""), "/"),
+		EveUsername:      getenv("SKYFORGE_EVE_USERNAME", ""),
+		EvePassword:      getOptionalSecret("SKYFORGE_EVE_PASSWORD"),
+		EveSkipTLSVerify: getenv("SKYFORGE_EVE_SKIP_TLS_VERIFY", "false") == "true",
 		EveSSHKeyFile:    getenv("SKYFORGE_EVE_SSH_KEY_FILE", ""),
 		EveSSHUser:       getenv("SKYFORGE_EVE_SSH_USER", ""),
 		EveLabsPath:      getenv("SKYFORGE_EVE_LABS_PATH", "/opt/unetlab/labs"),
@@ -5132,7 +5132,7 @@ func listEveLabs(ctx context.Context, cfg Config, query EveLabQuery) ([]LabSumma
 
 func listEveLabsViaNativeAPI(ctx context.Context, cfg LabsConfig, query EveLabQuery) ([]LabSummary, map[string]any, error) {
 	if cfg.EveUsername == "" || cfg.EvePassword == "" {
-		return nil, nil, fmt.Errorf("native eve-ng api requires SKYFORGE_LABS_EVE_USERNAME and SKYFORGE_LABS_EVE_PASSWORD")
+		return nil, nil, fmt.Errorf("native eve-ng api requires SKYFORGE_EVE_USERNAME and SKYFORGE_EVE_PASSWORD")
 	}
 
 	jar, _ := cookiejar.New(nil)
