@@ -1,43 +1,31 @@
 package skyforge
 
 import (
-	"context"
-	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
-
-	"encore.dev/beta/errs"
 )
-
-type RawJSONResponse struct {
-	CacheControl string `header:"Cache-Control" json:"-"`
-	ContentType  string `header:"Content-Type" json:"-"`
-	data         json.RawMessage
-}
-
-func (r *RawJSONResponse) MarshalJSON() ([]byte, error) {
-	return r.data, nil
-}
 
 // PlatformHealth serves the platform health payload.
 //
-//encore:api public method=GET path=/data/platform-health.json
-func (s *Service) PlatformHealth(ctx context.Context) (*RawJSONResponse, error) {
+//encore:api public raw method=GET path=/data/platform-health.json
+func (s *Service) PlatformHealth(w http.ResponseWriter, req *http.Request) {
 	if s.cfg.PlatformDataDir == "" {
-		return nil, errs.B().Code(errs.NotFound).Msg("platform health data not available").Err()
+		http.Error(w, "platform health data not available", http.StatusNotFound)
+		return
 	}
 	path := filepath.Join(s.cfg.PlatformDataDir, "platform-health.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, errs.B().Code(errs.NotFound).Msg("platform health data not found").Err()
+			http.Error(w, "platform health data not found", http.StatusNotFound)
+			return
 		}
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load platform health data").Err()
+		http.Error(w, "failed to load platform health data", http.StatusServiceUnavailable)
+		return
 	}
-	resp := &RawJSONResponse{
-		CacheControl: "no-store",
-		ContentType:  "application/json",
-		data:         json.RawMessage(data),
-	}
-	return resp, nil
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }

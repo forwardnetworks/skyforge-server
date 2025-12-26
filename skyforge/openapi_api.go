@@ -1,9 +1,8 @@
 package skyforge
 
 import (
-	"context"
-	"encoding/json"
 	_ "embed"
+	"net/http"
 )
 
 //go:embed openapi.json
@@ -11,11 +10,14 @@ var openapiSpec []byte
 
 // SwaggerOpenAPI serves the OpenAPI schema.
 //
-//encore:api public method=GET path=/swagger/openapi.json
-func (s *Service) SwaggerOpenAPI(ctx context.Context) (*RawJSONResponse, error) {
-	return &RawJSONResponse{
-		CacheControl: "no-store",
-		ContentType:  "application/json",
-		data:         json.RawMessage(openapiSpec),
-	}, nil
+//encore:api public raw method=GET path=/swagger/openapi.json
+func (s *Service) SwaggerOpenAPI(w http.ResponseWriter, req *http.Request) {
+	if len(openapiSpec) == 0 {
+		http.Error(w, "OpenAPI schema is empty", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(openapiSpec)
 }
