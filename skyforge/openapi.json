@@ -7047,7 +7047,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "SessionTraefik is a Traefik forward-auth compatible endpoint.\n"
+        "summary": "SessionTraefik is a Skyforge SSO gate compatible endpoint.\n"
       },
       "head": {
         "operationId": "HEAD:skyforge.SessionTraefikHead",
@@ -7059,7 +7059,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "SessionTraefikHead is a Traefik forward-auth compatible endpoint (HEAD).\n"
+        "summary": "SessionTraefikHead is a Skyforge SSO gate compatible endpoint (HEAD).\n"
       }
     },
     "/api/templates": {
@@ -11239,7 +11239,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "SessionTraefikV1 is a v1 alias for the Traefik forward-auth endpoint.\n"
+        "summary": "SessionTraefikV1 is a v1 alias for the Skyforge SSO gate endpoint.\n"
       },
       "head": {
         "operationId": "HEAD:skyforge.SessionTraefikHeadV1",
@@ -11251,7 +11251,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "SessionTraefikHeadV1 is a v1 alias for the Traefik forward-auth endpoint (HEAD).\n"
+        "summary": "SessionTraefikHeadV1 is a v1 alias for the Skyforge SSO gate endpoint (HEAD).\n"
       }
     },
     "/api/v1/templates": {

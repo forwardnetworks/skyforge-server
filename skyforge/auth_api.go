@@ -358,7 +358,7 @@ type traefikSessionPayload struct {
 	Status string `json:"status,omitempty"`
 }
 
-// SessionTraefik is a Traefik forward-auth compatible endpoint.
+// SessionTraefik is a Skyforge SSO gate compatible endpoint.
 //
 //encore:api public raw method=GET path=/api/session/traefik
 func (s *Service) SessionTraefik(w http.ResponseWriter, req *http.Request) {
@@ -379,7 +379,7 @@ func (s *Service) SessionTraefik(w http.ResponseWriter, req *http.Request) {
 	_ = json.NewEncoder(w).Encode(&traefikSessionPayload{Status: "ok"})
 }
 
-// SessionTraefikHead is a Traefik forward-auth compatible endpoint (HEAD).
+// SessionTraefikHead is a Skyforge SSO gate compatible endpoint (HEAD).
 //
 //encore:api public raw method=HEAD path=/api/session/traefik
 func (s *Service) SessionTraefikHead(w http.ResponseWriter, req *http.Request) {
@@ -396,14 +396,14 @@ func (s *Service) SessionTraefikHead(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// SessionTraefikV1 is a v1 alias for the Traefik forward-auth endpoint.
+// SessionTraefikV1 is a v1 alias for the Skyforge SSO gate endpoint.
 //
 //encore:api public raw method=GET path=/api/v1/session/traefik
 func (s *Service) SessionTraefikV1(w http.ResponseWriter, req *http.Request) {
 	s.SessionTraefik(w, req)
 }
 
-// SessionTraefikHeadV1 is a v1 alias for the Traefik forward-auth endpoint (HEAD).
+// SessionTraefikHeadV1 is a v1 alias for the Skyforge SSO gate endpoint (HEAD).
 //
 //encore:api public raw method=HEAD path=/api/v1/session/traefik
 func (s *Service) SessionTraefikHeadV1(w http.ResponseWriter, req *http.Request) {
