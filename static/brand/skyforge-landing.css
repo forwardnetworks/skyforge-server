@@ -1,0 +1,335 @@
+:root {
+  --skyforge-navy: #010a1f;
+  --skyforge-navy-light: #071a3d;
+  --skyforge-orange: #ff7a2b;
+  --skyforge-iris: #6f7cff;
+  --skyforge-lilac: #a3b8ff;
+  --skyforge-text: #102241;
+  --skyforge-light: #f4f6fb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Inter", system-ui, sans-serif;
+  color: var(--skyforge-text);
+  background: var(--skyforge-light);
+  line-height: 1.6;
+  min-height: 100vh;
+  position: relative;
+}
+
+.grid-background {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(
+        circle at 15% 40%,
+        rgba(111, 124, 255, 0.15),
+        transparent 45%
+      ),
+      radial-gradient(
+        circle at 80% 25%,
+        rgba(255, 122, 43, 0.2),
+        transparent 45%
+      ),
+      var(--skyforge-navy);
+  z-index: 0;
+}
+
+.grid-background__overlay {
+  width: 100%;
+  height: 100%;
+  opacity: 0.3;
+  background-image: linear-gradient(
+      rgba(255, 255, 255, 0.04) 1px,
+      transparent 1px
+    ),
+    linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 140px 140px;
+}
+
+header,
+main,
+footer {
+  position: relative;
+  z-index: 1;
+}
+
+.hero {
+  padding: clamp(2rem, 6vw, 4rem);
+  display: flex;
+  justify-content: center;
+}
+
+.hero__content {
+  width: min(1200px, 100%);
+  background: rgba(1, 10, 31, 0.92);
+  border-radius: 32px;
+  padding: clamp(2rem, 6vw, 4rem);
+  color: #fff;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 30px 70px rgba(1, 10, 31, 0.65);
+}
+
+.hero__orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(40px);
+  opacity: 0.8;
+}
+
+.orb-one {
+  width: 200px;
+  height: 200px;
+  right: -30px;
+  top: -30px;
+  background: rgba(255, 122, 43, 0.4);
+}
+
+.orb-two {
+  width: 180px;
+  height: 180px;
+  left: -60px;
+  bottom: -40px;
+  background: rgba(111, 124, 255, 0.35);
+}
+
+.hero__logo img {
+  width: 140px;
+}
+
+.hero__text h1 {
+  font-size: clamp(2.5rem, 4.5vw, 4rem);
+  margin: 0.5rem 0;
+}
+
+.subtitle {
+  max-width: 620px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 1.1rem;
+}
+
+.eyebrow {
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  opacity: 0.7;
+  margin: 0;
+}
+
+.cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.cta {
+  border-radius: 999px;
+  padding: 0.85rem 1.5rem;
+  text-decoration: none;
+  font-weight: 600;
+  border: 2px solid transparent;
+  transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+}
+
+.cta.primary {
+  background: linear-gradient(120deg, #ff7a2b, #ff9b4f);
+  color: #fff;
+  box-shadow: 0 15px 35px rgba(255, 122, 43, 0.35);
+}
+
+.cta.secondary {
+  border-color: rgba(255, 255, 255, 0.6);
+  color: #fff;
+}
+
+.cta.ghost {
+  border-color: var(--skyforge-iris);
+  color: var(--skyforge-iris);
+  background: rgba(111, 124, 255, 0.1);
+}
+
+.cta:hover {
+  transform: translateY(-2px);
+  opacity: 0.95;
+}
+
+.author {
+  margin-top: 1.5rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.hero__stats {
+  margin-top: 2rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+}
+
+.hero__stats div {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 18px;
+  padding: 1rem;
+  text-align: center;
+}
+
+.hero__stats span {
+  display: block;
+  font-size: 1.8rem;
+  color: var(--skyforge-lilac);
+  font-weight: 600;
+}
+
+main {
+  padding: clamp(1.5rem, 5vw, 4rem);
+  margin-top: -2rem;
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.25rem;
+  margin-bottom: 2.5rem;
+}
+
+.tiles article {
+  background: #fff;
+  border-radius: 1rem;
+  padding: 1.25rem;
+  box-shadow: 0 20px 60px rgba(16, 34, 65, 0.12);
+  border: 1px solid rgba(16, 34, 65, 0.08);
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.tiles article:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 24px 70px rgba(16, 34, 65, 0.16);
+}
+
+.tiles a {
+  color: var(--skyforge-iris);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.section-header .link {
+  text-decoration: none;
+  font-weight: 600;
+  color: var(--skyforge-iris);
+}
+
+.capabilities,
+.toolchain,
+.overview,
+.timeline,
+.callout {
+  margin-bottom: 3rem;
+}
+
+.capabilities .grid {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.three-col {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.capabilities article {
+  background: #fff;
+  border-radius: 18px;
+  padding: 1.5rem;
+  border: 1px solid rgba(16, 34, 65, 0.05);
+  box-shadow: 0 25px 60px rgba(16, 34, 65, 0.08);
+}
+
+.toolchain .service-grid {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.service-grid article {
+  background: #fff;
+  border-radius: 16px;
+  padding: 1.25rem;
+  border: 1px solid rgba(16, 34, 65, 0.05);
+}
+
+.service-grid .icon {
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.overview .lead {
+  font-size: 1.1rem;
+}
+
+.overview .grid {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.timeline {
+  background: #fff;
+  border-radius: 24px;
+  padding: 2rem;
+  border: 1px solid rgba(16, 34, 65, 0.08);
+  box-shadow: 0 25px 60px rgba(16, 34, 65, 0.1);
+}
+
+.timeline__items {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+}
+
+.timeline__items span {
+  display: inline-flex;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+  background: rgba(111, 124, 255, 0.15);
+  color: var(--skyforge-iris);
+  font-weight: 600;
+}
+
+.callout {
+  background: #fff;
+  border-radius: 24px;
+  padding: clamp(1.5rem, 4vw, 2.25rem);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  border: 1px solid rgba(16, 34, 65, 0.05);
+  box-shadow: 0 25px 60px rgba(16, 34, 65, 0.1);
+}
+
+footer {
+  text-align: center;
+  padding: 2rem 1rem 3rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+footer p {
+  margin: 0;
+}

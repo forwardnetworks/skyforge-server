@@ -1,0 +1,581 @@
+package skyforge
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+
+	"encore.dev"
+	"encore.dev/beta/auth"
+	"encore.dev/beta/errs"
+	"encore.dev/rlog"
+)
+
+type LoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+type SessionHeaders struct {
+	XSkyforgeUsername      string `header:"X-Skyforge-Username" json:"-"`
+	XSkyforgeDisplayName   string `header:"X-Skyforge-DisplayName" json:"-"`
+	RemoteUser             string `header:"Remote-User" json:"-"`
+	XSkyforgeActor         string `header:"X-Skyforge-Actor" json:"-"`
+	XSkyforgeImpersonating string `header:"X-Skyforge-Impersonating" json:"-"`
+	XSkyforgeEmail         string `header:"X-Skyforge-Email" json:"-"`
+	RemoteUserEmail        string `header:"Remote-User-Email" json:"-"`
+	XSkyforgeGroups        string `header:"X-Skyforge-Groups" json:"-"`
+	XSkyforgeFirstName     string `header:"X-Skyforge-First-Name" json:"-"`
+	RemoteUserFirstName    string `header:"Remote-User-First-Name" json:"-"`
+	XSkyforgeLastName      string `header:"X-Skyforge-Last-Name" json:"-"`
+	RemoteUserLastName     string `header:"Remote-User-Last-Name" json:"-"`
+}
+
+func fillSessionHeaders(out *SessionHeaders, claims *SessionClaims) {
+	if out == nil || claims == nil {
+		return
+	}
+	out.XSkyforgeUsername = claims.Username
+	out.XSkyforgeDisplayName = claims.DisplayName
+	out.RemoteUser = claims.Username
+	if strings.TrimSpace(claims.ActorUsername) != "" {
+		out.XSkyforgeActor = strings.TrimSpace(claims.ActorUsername)
+		out.XSkyforgeImpersonating = boolString(isImpersonating(claims))
+	}
+	if claims.Email != "" {
+		out.XSkyforgeEmail = claims.Email
+		out.RemoteUserEmail = claims.Email
+	}
+	if len(claims.Groups) > 0 {
+		out.XSkyforgeGroups = strings.Join(claims.Groups, ",")
+	}
+
+	firstName := ""
+	lastName := ""
+	if parts := strings.Fields(strings.TrimSpace(claims.DisplayName)); len(parts) > 0 {
+		firstName = parts[0]
+		if len(parts) > 1 {
+			lastName = strings.Join(parts[1:], " ")
+		}
+	}
+	if firstName != "" {
+		out.XSkyforgeFirstName = firstName
+		out.RemoteUserFirstName = firstName
+	}
+	if lastName != "" {
+		out.XSkyforgeLastName = lastName
+		out.RemoteUserLastName = lastName
+	}
+}
+
+type LoginResponse struct {
+	SetCookie string `header:"Set-Cookie" json:"-"`
+	UserProfile
+}
+
+type LogoutResponse struct {
+	SetCookie string `header:"Set-Cookie" json:"-"`
+	Status    string `json:"status"`
+}
+
+type AuthUserResponse struct {
+	UserProfile
+}
+
+type SessionResponseEnvelope struct {
+	Authenticated bool     `json:"authenticated"`
+	Username      string   `json:"username,omitempty"`
+	DisplayName   string   `json:"displayName,omitempty"`
+	Email         string   `json:"email,omitempty"`
+	Groups        []string `json:"groups,omitempty"`
+	IsAdmin       bool     `json:"isAdmin,omitempty"`
+	ActorUsername string   `json:"actorUsername,omitempty"`
+	Impersonating bool     `json:"impersonating,omitempty"`
+
+	XSkyforgeUsername      string `header:"X-Skyforge-Username" json:"-"`
+	XSkyforgeDisplayName   string `header:"X-Skyforge-DisplayName" json:"-"`
+	RemoteUser             string `header:"Remote-User" json:"-"`
+	XSkyforgeActor         string `header:"X-Skyforge-Actor" json:"-"`
+	XSkyforgeImpersonating string `header:"X-Skyforge-Impersonating" json:"-"`
+	XSkyforgeEmail         string `header:"X-Skyforge-Email" json:"-"`
+	RemoteUserEmail        string `header:"Remote-User-Email" json:"-"`
+	XSkyforgeGroups        string `header:"X-Skyforge-Groups" json:"-"`
+	XSkyforgeFirstName     string `header:"X-Skyforge-First-Name" json:"-"`
+	RemoteUserFirstName    string `header:"Remote-User-First-Name" json:"-"`
+	XSkyforgeLastName      string `header:"X-Skyforge-Last-Name" json:"-"`
+	RemoteUserLastName     string `header:"Remote-User-Last-Name" json:"-"`
+}
+
+type SessionHeadResponse struct {
+	SessionHeaders
+}
+
+type ImpersonateStartRequest struct {
+	Username string `json:"username"`
+}
+
+type ImpersonateStartResponse struct {
+	SetCookie         string `header:"Set-Cookie" json:"-"`
+	Status            string `json:"status"`
+	EffectiveUsername string `json:"effectiveUsername"`
+	ActorUsername     string `json:"actorUsername"`
+	Impersonating     bool   `json:"impersonating"`
+}
+
+type ImpersonateStopResponse struct {
+	SetCookie         string `header:"Set-Cookie" json:"-"`
+	Status            string `json:"status"`
+	EffectiveUsername string `json:"effectiveUsername"`
+	Impersonating     bool   `json:"impersonating"`
+}
+
+//encore:api public method=POST path=/api/login
+func (s *Service) Login(ctx context.Context, req *LoginRequest) (*LoginResponse, error) {
+	loginAttempts.Add(1)
+	if req == nil {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid payload").Err()
+	}
+	if strings.EqualFold(req.Username, "skyforge") && s.cfg.AdminPassword != "" && req.Password == s.cfg.AdminPassword {
+		email := "skyforge"
+		if domain := strings.TrimSpace(s.cfg.CorpEmailDomain); domain != "" {
+			email = "skyforge@" + domain
+		}
+		profile := &UserProfile{
+			Authenticated: true,
+			Username:      "skyforge",
+			DisplayName:   "Skyforge",
+			Email:         email,
+			Groups:        nil,
+			IsAdmin:       true,
+		}
+		cookie, err := s.sessionManager.IssueCookieForHeaders(currentHeaders(), profile)
+		if err != nil {
+			return nil, errs.B().Code(errs.Internal).Msg("failed to create session").Err()
+		}
+		cacheLDAPPassword(profile.Username, req.Password, s.cfg.SessionTTL)
+		go s.bootstrapUserLabs(profile.Username)
+
+		if err := s.userStore.upsert(profile.Username); err != nil {
+			rlog.Warn("user store upsert failed", "error", err)
+		}
+		if s.db != nil {
+			writeAuditEvent(ctx, s.db, profile.Username, true, "", "auth.login", "", auditDetailsFromEncore(encore.CurrentRequest()))
+		}
+
+		resp := &LoginResponse{UserProfile: *profile}
+		resp.SetCookie = cookie.String()
+		return resp, nil
+	}
+	if s.auth == nil {
+		loginFailures.Add(1)
+		return nil, errs.B().Code(errs.Unauthenticated).Msg("LDAP authentication is disabled").Err()
+	}
+	profile, err := s.auth.Authenticate(ctx, req.Username, req.Password)
+	if err != nil {
+		loginFailures.Add(1)
+		rlog.Info("login failed", "username", req.Username, "error", err)
+		var authErr *AuthFailure
+		if errors.As(err, &authErr) {
+			return nil, authFailureToError(authErr)
+		}
+		return nil, errs.B().Code(errs.Unauthenticated).Msg("authentication failed").Err()
+	}
+	profile.IsAdmin = isAdminUser(s.cfg, profile.Username)
+
+	cookie, err := s.sessionManager.IssueCookieForHeaders(currentHeaders(), profile)
+	if err != nil {
+		return nil, errs.B().Code(errs.Internal).Msg("failed to create session").Err()
+	}
+	cacheLDAPPassword(profile.Username, req.Password, s.cfg.SessionTTL)
+	go s.bootstrapUserLabs(profile.Username)
+
+	if err := s.userStore.upsert(profile.Username); err != nil {
+		rlog.Warn("user store upsert failed", "error", err)
+	}
+	if s.db != nil {
+		writeAuditEvent(ctx, s.db, profile.Username, isAdminUser(s.cfg, profile.Username), "", "auth.login", "", auditDetailsFromEncore(encore.CurrentRequest()))
+	}
+
+	resp := &LoginResponse{UserProfile: *profile}
+	resp.SetCookie = cookie.String()
+	return resp, nil
+}
+
+//encore:api public method=POST path=/auth/login
+func (s *Service) AuthLogin(ctx context.Context, req *LoginRequest) (*LoginResponse, error) {
+	return s.Login(ctx, req)
+}
+
+//encore:api public method=POST path=/api/v1/login
+func (s *Service) LoginV1(ctx context.Context, req *LoginRequest) (*LoginResponse, error) {
+	return s.Login(ctx, req)
+}
+
+//encore:api public method=POST path=/api/logout
+func (s *Service) Logout(ctx context.Context) (*LogoutResponse, error) {
+	if s.db != nil {
+		if claims := claimsFromCookie(s.sessionManager, currentHeaders().Get("Cookie")); claims != nil {
+			writeAuditEvent(ctx, s.db, claims.Username, isAdminUser(s.cfg, claims.Username), "", "auth.logout", "", auditDetailsFromEncore(encore.CurrentRequest()))
+			clearCachedLDAPPassword(claims.Username)
+		}
+	}
+	resp := &LogoutResponse{Status: "logged out"}
+	resp.SetCookie = s.sessionManager.ClearCookie().String()
+	return resp, nil
+}
+
+//encore:api public method=POST path=/auth/logout
+func (s *Service) AuthLogout(ctx context.Context) (*LogoutResponse, error) {
+	return s.Logout(ctx)
+}
+
+//encore:api public method=POST path=/api/v1/logout
+func (s *Service) LogoutV1(ctx context.Context) (*LogoutResponse, error) {
+	return s.Logout(ctx)
+}
+
+//encore:api auth method=POST path=/auth/logout-all
+func (s *Service) AuthLogoutAll(ctx context.Context) (*LogoutResponse, error) {
+	return s.Logout(ctx)
+}
+
+//encore:api public method=GET path=/api/session
+func (s *Service) Session(ctx context.Context) (*SessionResponseEnvelope, error) {
+	claims := claimsFromCookie(s.sessionManager, currentHeaders().Get("Cookie"))
+	if claims == nil {
+		return &SessionResponseEnvelope{Authenticated: false}, nil
+	}
+	resp := &SessionResponseEnvelope{
+		Authenticated: true,
+		Username:      claims.Username,
+		DisplayName:   claims.DisplayName,
+		Email:         claims.Email,
+		Groups:        claims.Groups,
+		IsAdmin:       isAdminForClaims(s.cfg, claims),
+		ActorUsername: claims.ActorUsername,
+		Impersonating: isImpersonating(claims),
+	}
+	fillSessionHeadersEnvelope(resp, claims)
+	return resp, nil
+}
+
+//encore:api public method=GET path=/api/v1/session
+func (s *Service) SessionV1(ctx context.Context) (*SessionResponseEnvelope, error) {
+	return s.Session(ctx)
+}
+
+//encore:api auth method=POST path=/auth/refresh
+func (s *Service) AuthRefresh(ctx context.Context) (*SessionResponseEnvelope, error) {
+	return s.Session(ctx)
+}
+
+//encore:api auth method=POST path=/auth/validate-token
+func (s *Service) AuthValidateToken(ctx context.Context) (*AuthUserResponse, error) {
+	user, ok := auth.Data().(*AuthUser)
+	if !ok || user == nil {
+		return nil, errs.B().Code(errs.Unauthenticated).Msg("authentication required").Err()
+	}
+	resp := &AuthUserResponse{UserProfile: *authUserToProfile(user)}
+	return resp, nil
+}
+
+//encore:api public method=HEAD path=/api/session
+func (s *Service) SessionHead(ctx context.Context) (*SessionHeadResponse, error) {
+	resp := &SessionHeadResponse{}
+	if claims := claimsFromCookie(s.sessionManager, currentHeaders().Get("Cookie")); claims != nil {
+		fillSessionHeaders(&resp.SessionHeaders, claims)
+	}
+	return resp, nil
+}
+
+func fillSessionHeadersEnvelope(out *SessionResponseEnvelope, claims *SessionClaims) {
+	if out == nil || claims == nil {
+		return
+	}
+	out.XSkyforgeUsername = claims.Username
+	out.XSkyforgeDisplayName = claims.DisplayName
+	out.RemoteUser = claims.Username
+	if strings.TrimSpace(claims.ActorUsername) != "" {
+		out.XSkyforgeActor = strings.TrimSpace(claims.ActorUsername)
+		out.XSkyforgeImpersonating = boolString(isImpersonating(claims))
+	}
+	if claims.Email != "" {
+		out.XSkyforgeEmail = claims.Email
+		out.RemoteUserEmail = claims.Email
+	}
+	if len(claims.Groups) > 0 {
+		out.XSkyforgeGroups = strings.Join(claims.Groups, ",")
+	}
+
+	firstName := ""
+	lastName := ""
+	if parts := strings.Fields(strings.TrimSpace(claims.DisplayName)); len(parts) > 0 {
+		firstName = parts[0]
+		if len(parts) > 1 {
+			lastName = strings.Join(parts[1:], " ")
+		}
+	}
+	if firstName != "" {
+		out.XSkyforgeFirstName = firstName
+		out.RemoteUserFirstName = firstName
+	}
+	if lastName != "" {
+		out.XSkyforgeLastName = lastName
+		out.RemoteUserLastName = lastName
+	}
+}
+
+func authUserToProfile(user *AuthUser) *UserProfile {
+	if user == nil {
+		return &UserProfile{Authenticated: false}
+	}
+	displayName := user.DisplayName
+	if strings.TrimSpace(displayName) == "" {
+		displayName = user.Username
+	}
+	return &UserProfile{
+		Authenticated: true,
+		Username:      user.Username,
+		DisplayName:   displayName,
+		Email:         user.Email,
+		Groups:        user.Groups,
+		IsAdmin:       user.IsAdmin,
+		ActorUsername: user.ActorUsername,
+		Impersonating: user.Impersonating,
+	}
+}
+
+//encore:api public method=HEAD path=/api/v1/session
+func (s *Service) SessionHeadV1(ctx context.Context) (*SessionHeadResponse, error) {
+	return s.SessionHead(ctx)
+}
+
+type traefikSessionPayload struct {
+	Status string `json:"status,omitempty"`
+}
+
+// SessionTraefik is a Traefik forward-auth compatible endpoint.
+//
+//encore:api public raw method=GET path=/api/session/traefik
+func (s *Service) SessionTraefik(w http.ResponseWriter, req *http.Request) {
+	claims := claimsFromCookie(s.sessionManager, req.Header.Get("Cookie"))
+	if claims == nil {
+		location := buildTraefikRedirect(req.Header)
+		if location != "" {
+			w.Header().Set("Location", location)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusFound)
+		_ = json.NewEncoder(w).Encode(&traefikSessionPayload{Status: "redirect"})
+		return
+	}
+	addSessionHeaders(w.Header(), claims)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(&traefikSessionPayload{Status: "ok"})
+}
+
+// SessionTraefikHead is a Traefik forward-auth compatible endpoint (HEAD).
+//
+//encore:api public raw method=HEAD path=/api/session/traefik
+func (s *Service) SessionTraefikHead(w http.ResponseWriter, req *http.Request) {
+	claims := claimsFromCookie(s.sessionManager, req.Header.Get("Cookie"))
+	if claims == nil {
+		location := buildTraefikRedirect(req.Header)
+		if location != "" {
+			w.Header().Set("Location", location)
+		}
+		w.WriteHeader(http.StatusFound)
+		return
+	}
+	addSessionHeaders(w.Header(), claims)
+	w.WriteHeader(http.StatusOK)
+}
+
+// SessionTraefikV1 is a v1 alias for the Traefik forward-auth endpoint.
+//
+//encore:api public raw method=GET path=/api/v1/session/traefik
+func (s *Service) SessionTraefikV1(w http.ResponseWriter, req *http.Request) {
+	s.SessionTraefik(w, req)
+}
+
+// SessionTraefikHeadV1 is a v1 alias for the Traefik forward-auth endpoint (HEAD).
+//
+//encore:api public raw method=HEAD path=/api/v1/session/traefik
+func (s *Service) SessionTraefikHeadV1(w http.ResponseWriter, req *http.Request) {
+	s.SessionTraefikHead(w, req)
+}
+
+//encore:api auth method=POST path=/api/admin/impersonate/start tag:admin
+func (s *Service) AdminImpersonateStart(ctx context.Context, req *ImpersonateStartRequest) (*ImpersonateStartResponse, error) {
+	if req == nil {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid payload").Err()
+	}
+	actor := auth.Data()
+	authUser, ok := actor.(*AuthUser)
+	if !ok || authUser == nil {
+		return nil, errs.B().Code(errs.Unauthenticated).Msg("authentication required").Err()
+	}
+	claims := claimsFromCookie(s.sessionManager, currentHeaders().Get("Cookie"))
+	if claims == nil {
+		return nil, errs.B().Code(errs.Unauthenticated).Msg("authentication required").Err()
+	}
+	if strings.TrimSpace(claims.ActorUsername) != "" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("already impersonating").Err()
+	}
+
+	target := strings.TrimSpace(req.Username)
+	if !isValidUsername(target) {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid username").Err()
+	}
+	if strings.EqualFold(target, claims.Username) {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("cannot impersonate yourself").Err()
+	}
+
+	targetProfile := &UserProfile{
+		Authenticated: true,
+		Username:      target,
+		DisplayName:   target,
+		Groups:        []string{},
+	}
+	ctxLookup, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if lookedUp, err := lookupLDAPUserProfile(ctxLookup, s.cfg.LDAP, target, s.cfg.MaxGroups, s.cfg.LDAPLookupBindDN, s.cfg.LDAPLookupBindPassword); err == nil && lookedUp != nil {
+		targetProfile = lookedUp
+	}
+	targetProfile.IsAdmin = isAdminUser(s.cfg, targetProfile.Username)
+
+	cookie, err := s.sessionManager.IssueImpersonatedCookieForHeaders(currentHeaders(), claims, targetProfile)
+	if err != nil {
+		return nil, errs.B().Code(errs.Internal).Msg("failed to create impersonated session").Err()
+	}
+	if err := s.userStore.upsert(targetProfile.Username); err != nil {
+		rlog.Warn("user store upsert failed", "error", err)
+	}
+	if s.db != nil {
+		writeAuditEvent(ctx, s.db, authUser.Username, true, targetProfile.Username, "admin.impersonate.start", "", "")
+	}
+
+	resp := &ImpersonateStartResponse{
+		Status:            "ok",
+		EffectiveUsername: targetProfile.Username,
+		ActorUsername:     authUser.Username,
+		Impersonating:     true,
+	}
+	resp.SetCookie = cookie.String()
+	return resp, nil
+}
+
+//encore:api auth method=POST path=/api/v1/admin/impersonate/start tag:admin
+func (s *Service) AdminImpersonateStartV1(ctx context.Context, req *ImpersonateStartRequest) (*ImpersonateStartResponse, error) {
+	return s.AdminImpersonateStart(ctx, req)
+}
+
+//encore:api auth method=POST path=/api/admin/impersonate/stop tag:admin
+func (s *Service) AdminImpersonateStop(ctx context.Context) (*ImpersonateStopResponse, error) {
+	claims := claimsFromCookie(s.sessionManager, currentHeaders().Get("Cookie"))
+	if claims == nil {
+		return nil, errs.B().Code(errs.Unauthenticated).Msg("authentication required").Err()
+	}
+	if strings.TrimSpace(claims.ActorUsername) == "" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("not impersonating").Err()
+	}
+	if !isAdminUser(s.cfg, claims.ActorUsername) {
+		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
+	}
+
+	adminProfile := &UserProfile{
+		Authenticated: true,
+		Username:      claims.ActorUsername,
+		DisplayName:   claims.ActorDisplayName,
+		Email:         claims.ActorEmail,
+		Groups:        claims.ActorGroups,
+		IsAdmin:       true,
+	}
+	if strings.TrimSpace(adminProfile.DisplayName) == "" {
+		adminProfile.DisplayName = adminProfile.Username
+	}
+
+	cookie, err := s.sessionManager.IssueCookieForHeaders(currentHeaders(), adminProfile)
+	if err != nil {
+		return nil, errs.B().Code(errs.Internal).Msg("failed to restore session").Err()
+	}
+	if s.db != nil {
+		writeAuditEvent(ctx, s.db, adminProfile.Username, true, claims.Username, "admin.impersonate.stop", "", "")
+	}
+
+	resp := &ImpersonateStopResponse{
+		Status:            "ok",
+		EffectiveUsername: adminProfile.Username,
+		Impersonating:     false,
+	}
+	resp.SetCookie = cookie.String()
+	return resp, nil
+}
+
+//encore:api auth method=POST path=/api/v1/admin/impersonate/stop tag:admin
+func (s *Service) AdminImpersonateStopV1(ctx context.Context) (*ImpersonateStopResponse, error) {
+	return s.AdminImpersonateStop(ctx)
+}
+
+func authFailureToError(authErr *AuthFailure) error {
+	if authErr == nil {
+		return errs.B().Code(errs.Unauthenticated).Msg("authentication failed").Err()
+	}
+	switch authErr.Status {
+	case http.StatusUnauthorized:
+		return errs.B().Code(errs.Unauthenticated).Msg(authErr.PublicMessage).Err()
+	case http.StatusBadRequest:
+		return errs.B().Code(errs.InvalidArgument).Msg(authErr.PublicMessage).Err()
+	default:
+		return errs.B().Code(errs.Unavailable).Msg(authErr.PublicMessage).Err()
+	}
+}
+
+func currentHeaders() http.Header {
+	return encore.CurrentRequest().Headers
+}
+
+func buildTraefikRedirect(headers http.Header) string {
+	host := strings.TrimSpace(headers.Get("X-Forwarded-Host"))
+	if host == "" {
+		host = strings.TrimSpace(headers.Get("Host"))
+	}
+	if host == "" {
+		return "/"
+	}
+	scheme := strings.TrimSpace(headers.Get("X-Forwarded-Proto"))
+	if scheme == "" {
+		scheme = "https"
+	}
+	next := strings.TrimSpace(headers.Get("X-Forwarded-Uri"))
+	if next == "" {
+		next = "/"
+	}
+	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.Contains(next, "://") {
+		next = "/"
+	}
+	return scheme + "://" + host + "/?next=" + url.QueryEscape(next)
+}
+
+func auditDetailsFromEncore(req *encore.Request) string {
+	if req == nil {
+		return ""
+	}
+	host := strings.TrimSpace(req.Headers.Get("Host"))
+	if host == "" {
+		host = strings.TrimSpace(req.Headers.Get("X-Forwarded-Host"))
+	}
+	httpReq := &http.Request{
+		Method: "",
+		Header: req.Headers,
+		URL:    &url.URL{Path: req.Path},
+		Host:   host,
+		Proto:  req.Headers.Get("X-Forwarded-Proto"),
+	}
+	return auditRequestDetails(httpReq)
+}

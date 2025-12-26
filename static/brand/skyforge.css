@@ -1,0 +1,32 @@
+:root {
+  --skyforge-navy: #012952;
+  --skyforge-orange: #f26b21;
+  --skyforge-slate: #0b1f33;
+}
+
+body.skyforge-branding::before {
+  content: "Skyforge Automation Hub";
+  display: block;
+  background: var(--skyforge-navy);
+  color: #fff;
+  text-align: center;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 0.55rem;
+}
+
+body.skyforge-branding .ui.primary.button,
+body.skyforge-branding .button.primary {
+  background: var(--skyforge-orange) !important;
+  border-color: var(--skyforge-orange) !important;
+}
+
+body.skyforge-branding .navbar {
+  background: var(--skyforge-slate) !important;
+}
+
+body.skyforge-branding .navbar .item,
+body.skyforge-branding .navbar .item > svg {
+  color: #fff !important;
+  fill: #fff !important;
+}

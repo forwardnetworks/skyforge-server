@@ -1,0 +1,76 @@
+{
+  "$schema": "https://encore.dev/schemas/infra.schema.json",
+  "metadata": {
+    "app_id": "skyforge",
+    "env_name": "production",
+    "env_type": "production",
+    "cloud": "local",
+    "base_url": "http://skyforge-server:8085"
+  },
+  "sql_servers": [
+    {
+      "host": "db:5432",
+      "databases": {
+        "skyforge_server": {
+          "username": "skyforge_server",
+          "password": {
+            "$env": "SKYFORGE_DB_PASSWORD"
+          },
+          "max_connections": 50,
+          "min_connections": 5
+        }
+      }
+    }
+  ],
+  "object_storage": [
+    {
+      "type": "s3",
+      "region": "us-east-1",
+      "endpoint": "http://minio:9000",
+      "access_key_id": "minioadmin",
+      "secret_access_key": "minioadmin",
+      "buckets": {
+        "skyforge": {
+          "name": "skyforge",
+          "public_base_url": "http://minio:9000/skyforge"
+        }
+      }
+    }
+  ],
+  "graceful_shutdown": {
+    "total": 30,
+    "shutdown_hooks": 10,
+    "handlers": 20
+  },
+  "secrets": {
+    "SKYFORGE_SESSION_SECRET": {},
+    "SKYFORGE_LDAP_URL": {},
+    "SKYFORGE_LDAP_BIND_TEMPLATE": {},
+    "SKYFORGE_LDAP_LOOKUP_BINDDN": {},
+    "SKYFORGE_LDAP_LOOKUP_BINDPASSWORD": {},
+    "SKYFORGE_DB_PASSWORD": {},
+    "SKYFORGE_REDIS_PASSWORD": {},
+    "SKYFORGE_GITEA_PASSWORD": {},
+    "SKYFORGE_OBJECT_STORAGE_ROOT_USER": {},
+    "SKYFORGE_OBJECT_STORAGE_ROOT_PASSWORD": {},
+    "SKYFORGE_OBJECT_STORAGE_TERRAFORM_ACCESS_KEY": {},
+    "SKYFORGE_OBJECT_STORAGE_TERRAFORM_SECRET_KEY": {},
+    "SKYFORGE_SEMAPHORE_TOKEN": {},
+    "SKYFORGE_SEMAPHORE_PASSWORD": {},
+    "SKYFORGE_INTERNAL_TOKEN": {},
+    "SKYFORGE_SEMAPHORE_URL": {}
+  },
+  "env": {
+    "SKYFORGE_DB_HOST": "db",
+    "SKYFORGE_DB_PORT": "5432",
+    "SKYFORGE_DB_NAME": "skyforge_server",
+    "SKYFORGE_DB_USER": "skyforge_server",
+    "SKYFORGE_DB_SSLMODE": "disable",
+    "SKYFORGE_REDIS_ADDR": "redis:6379",
+    "SKYFORGE_OBJECT_STORAGE_ENDPOINT": "minio:9000",
+    "SKYFORGE_OBJECT_STORAGE_USE_SSL": "false",
+    "APP_VERSION": "${APP_VERSION}",
+    "BUILD_TIME": "${BUILD_TIME}",
+    "UI_VERSION": "${UI_VERSION}"
+  }
+}

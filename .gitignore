@@ -1,0 +1,7 @@
+skyforge-api/skyforge-api
+encore.gen.go
+encore.gen.cue
+/.encore
+/encore.gen
+.env.local
+.env.*.local
