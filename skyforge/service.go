@@ -4681,6 +4681,9 @@ func fetchSemaphoreTasks(cfg Config, projectID, limit int) ([]map[string]any, er
 	if err := json.Unmarshal(body, &tasks); err != nil {
 		return nil, err
 	}
+	for _, task := range tasks {
+		annotateSemaphoreTask(task)
+	}
 	return tasks, nil
 }
 
@@ -4699,6 +4702,7 @@ func fetchSemaphoreTask(cfg Config, projectID, taskID int) (map[string]any, erro
 	if err := json.Unmarshal(body, &task); err != nil {
 		return nil, err
 	}
+	annotateSemaphoreTask(task)
 	return task, nil
 }
 
@@ -6128,6 +6132,46 @@ func firstString(obj map[string]any, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func parseActorFromMessage(message string) string {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return ""
+	}
+	lastOpen := strings.LastIndex(message, "(")
+	lastClose := strings.LastIndex(message, ")")
+	if lastOpen == -1 || lastClose == -1 || lastClose < lastOpen {
+		return ""
+	}
+	if strings.TrimSpace(message[lastClose+1:]) != "" {
+		return ""
+	}
+	candidate := strings.TrimSpace(message[lastOpen+1 : lastClose])
+	if candidate == "" {
+		return ""
+	}
+	for _, r := range candidate {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+			continue
+		}
+		return ""
+	}
+	return candidate
+}
+
+func annotateSemaphoreTask(task map[string]any) {
+	actor := strings.TrimSpace(firstString(task, "user_name", "username", "user", "owner", "created_by"))
+	if actor == "" || strings.EqualFold(actor, "skyforge") || strings.EqualFold(actor, "system") {
+		if msg, ok := task["message"].(string); ok {
+			actor = parseActorFromMessage(msg)
+		}
+	}
+	if actor != "" {
+		task["user_name"] = actor
+		task["username"] = actor
+		task["user"] = actor
+	}
 }
 
 type ProviderQuery struct {
