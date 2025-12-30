@@ -175,6 +175,10 @@ func ensureUserHomeWorkspace(cfg Config, username string) error {
 			"  curl -T ./myfile.bin \"%s/files/users/%s/myfile.bin\"\n"+
 			"- Download (example):\n"+
 			"  curl -o ./myfile.bin \"%s/files/users/%s/myfile.bin\"\n\n"+
+			"- Example (mc):\n"+
+			"  mc alias set skyforge https://<skyforge-host> <ACCESS_KEY> <SECRET_KEY>\n"+
+			"  mc ls skyforge/skyforge-files/files/users/%s/\n"+
+			"  mc cp skyforge/skyforge-files/files/users/%s/file.txt ./s3/\n\n"+
 			"Notes:\n"+
 			"- Files from S3 are mirrored into /workspace/users/%s/s3 (download-only).\n"+
 			"- Do not edit files inside the mirror; upload to S3 instead.\n"+
@@ -183,6 +187,8 @@ func ensureUserHomeWorkspace(cfg Config, username string) error {
 		baseURL,
 		username,
 		baseURL,
+		username,
+		username,
 		username,
 		username,
 	)
