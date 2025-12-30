@@ -765,6 +765,9 @@ func (s *Service) RunProjectLabpp(ctx context.Context, id string, req *ProjectLa
 			labppLabFilename(template),
 		)
 	}
+	if labPath != "" {
+		labPath = "/" + strings.TrimPrefix(labPath, "/")
+	}
 
 	setEnvIfMissing("LABPP_API_URL", apiURL)
 	setEnvIfMissing("LABPP_API_INSECURE", fmt.Sprintf("%v", apiInsecure))
@@ -774,6 +777,7 @@ func (s *Service) RunProjectLabpp(ctx context.Context, id string, req *ProjectLa
 	setEnvIfMissing("LABPP_TEMPLATES_ROOT", templatesRoot)
 	setEnvIfMissing("LABPP_TEMPLATE", template)
 	setEnvIfMissing("LABPP_LAB_PATH", labPath)
+	setEnvIfMissing("LABPP_API_MAX_SECONDS", "1200")
 	if threadCount > 0 {
 		setEnvIfMissing("LABPP_THREAD_COUNT", strconv.Itoa(threadCount))
 	}

@@ -257,6 +257,9 @@ def request_json(url, payload=None, insecure=False):
 def build_payload():
   action = (getenv("LABPP_ACTION", "E2E") or "E2E").strip()
   action = action.upper()
+  lab_path = (getenv("LABPP_LAB_PATH", "") or "").strip()
+  if lab_path and not lab_path.startswith("/"):
+    lab_path = "/" + lab_path
   payload = {
     "action": action,
     "project": getenv("LABPP_PROJECT", "").strip(),
@@ -264,8 +267,8 @@ def build_payload():
     "templatesRoot": getenv("LABPP_TEMPLATES_ROOT", "").strip(),
     "template": getenv("LABPP_TEMPLATE", "").strip(),
   }
-  if getenv("LABPP_LAB_PATH", "").strip():
-    payload["labPath"] = getenv("LABPP_LAB_PATH", "").strip()
+  if lab_path:
+    payload["labPath"] = lab_path
   if getenv("LABPP_THREAD_COUNT", "").strip():
     try:
       payload["threadCount"] = int(getenv("LABPP_THREAD_COUNT", "").strip())
@@ -289,6 +292,7 @@ def normalize_log(raw):
         return parsed.get("log", "")
     except Exception:
       pass
+  raw = raw.replace("Lab path: Users/", "Lab path: /Users/")
   return raw + ("\n" if raw and not raw.endswith("\n") else "")
 
 
