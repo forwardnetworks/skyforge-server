@@ -7,6 +7,7 @@ import (
 
 	"encore.dev/beta/errs"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/sso"
 )
 
 type AwsSSOConfigResponse struct {
@@ -49,6 +50,61 @@ type AwsSSOPollResponse struct {
 
 type AwsSSOLogoutResponse struct {
 	Status string `json:"status"`
+}
+
+type AwsSSOAccount struct {
+	AccountID string `json:"accountId"`
+	Name      string `json:"name,omitempty"`
+	Email     string `json:"email,omitempty"`
+}
+
+type AwsSSOAccountsResponse struct {
+	Accounts []AwsSSOAccount `json:"accounts"`
+}
+
+type AwsSSORole struct {
+	RoleName string `json:"roleName"`
+}
+
+type AwsSSORolesResponse struct {
+	Roles []AwsSSORole `json:"roles"`
+}
+
+func awsSSOAccessToken(ctx context.Context, cfg Config, store awsSSOTokenStore, username string) (string, error) {
+	if cfg.AwsSSOStartURL == "" || cfg.AwsSSORegion == "" {
+		return "", errs.B().Code(errs.FailedPrecondition).Msg("AWS SSO is not configured").Err()
+	}
+	record, err := store.get(username)
+	if err != nil {
+		return "", errs.B().Code(errs.Unavailable).Msg("failed to load aws sso token").Err()
+	}
+	if record == nil || strings.TrimSpace(record.RefreshToken) == "" {
+		return "", errs.B().Code(errs.FailedPrecondition).Msg("AWS SSO is not connected").Err()
+	}
+	if record.AccessToken == "" || time.Now().Add(2*time.Minute).After(record.AccessTokenExpiresAt) {
+		clientID, clientSecret, _, err := ensureAWSOIDCClient(ctx, cfg, store)
+		if err != nil {
+			return "", errs.B().Code(errs.Unavailable).Msg("failed to refresh aws sso token").Err()
+		}
+		refreshed, err := refreshAWSAccessToken(ctx, cfg.AwsSSORegion, clientID, clientSecret, record.RefreshToken)
+		if err != nil {
+			return "", errs.B().Code(errs.Unavailable).Msg("failed to refresh aws sso token").Err()
+		}
+		record.AccessToken = aws.ToString(refreshed.AccessToken)
+		record.AccessTokenExpiresAt = time.Now().Add(time.Duration(refreshed.ExpiresIn) * time.Second).UTC()
+		if aws.ToString(refreshed.RefreshToken) != "" {
+			record.RefreshToken = aws.ToString(refreshed.RefreshToken)
+		}
+		record.StartURL = strings.TrimSpace(cfg.AwsSSOStartURL)
+		record.Region = strings.TrimSpace(cfg.AwsSSORegion)
+		record.ClientID = clientID
+		record.ClientSecret = clientSecret
+		record.LastAuthenticatedAtUTC = time.Now().UTC()
+		if err := store.put(username, *record); err != nil {
+			return "", errs.B().Code(errs.Unavailable).Msg("failed to persist aws sso token").Err()
+		}
+	}
+	return record.AccessToken, nil
 }
 
 // GetAwsSSOConfig returns the configured AWS SSO start URL and region.
@@ -182,4 +238,91 @@ func (s *Service) LogoutAwsSSO(ctx context.Context) (*AwsSSOLogoutResponse, erro
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to clear aws sso token").Err()
 	}
 	return &AwsSSOLogoutResponse{Status: "logged out"}, nil
+}
+
+// ListAwsSSOAccounts returns accounts available for the current SSO session.
+//
+//encore:api auth method=GET path=/api/aws/sso/accounts
+func (s *Service) ListAwsSSOAccounts(ctx context.Context) (*AwsSSOAccountsResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	accessToken, err := awsSSOAccessToken(ctx, s.cfg, s.awsStore, user.Username)
+	if err != nil {
+		return nil, err
+	}
+	awsCfg, err := awsAnonymousConfig(ctx, s.cfg.AwsSSORegion)
+	if err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to configure aws sso client").Err()
+	}
+	client := sso.NewFromConfig(awsCfg)
+	pager := sso.NewListAccountsPaginator(client, &sso.ListAccountsInput{
+		AccessToken: aws.String(accessToken),
+	})
+	accounts := []AwsSSOAccount{}
+	for pager.HasMorePages() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to list aws accounts").Err()
+		}
+		for _, acct := range page.AccountList {
+			accountID := aws.ToString(acct.AccountId)
+			if accountID == "" {
+				continue
+			}
+			accounts = append(accounts, AwsSSOAccount{
+				AccountID: accountID,
+				Name:      aws.ToString(acct.AccountName),
+				Email:     aws.ToString(acct.EmailAddress),
+			})
+		}
+	}
+	return &AwsSSOAccountsResponse{Accounts: accounts}, nil
+}
+
+// ListAwsSSORoles returns roles for a selected AWS account.
+//
+//encore:api auth method=GET path=/api/aws/sso/accounts/:accountID/roles
+func (s *Service) ListAwsSSORoles(ctx context.Context, accountID string) (*AwsSSORolesResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("accountID is required").Err()
+	}
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	accessToken, err := awsSSOAccessToken(ctx, s.cfg, s.awsStore, user.Username)
+	if err != nil {
+		return nil, err
+	}
+	awsCfg, err := awsAnonymousConfig(ctx, s.cfg.AwsSSORegion)
+	if err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to configure aws sso client").Err()
+	}
+	client := sso.NewFromConfig(awsCfg)
+	pager := sso.NewListAccountRolesPaginator(client, &sso.ListAccountRolesInput{
+		AccessToken: aws.String(accessToken),
+		AccountId:   aws.String(accountID),
+	})
+	roles := []AwsSSORole{}
+	for pager.HasMorePages() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to list aws roles").Err()
+		}
+		for _, role := range page.RoleList {
+			roleName := aws.ToString(role.RoleName)
+			if roleName == "" {
+				continue
+			}
+			roles = append(roles, AwsSSORole{RoleName: roleName})
+		}
+	}
+	return &AwsSSORolesResponse{Roles: roles}, nil
 }

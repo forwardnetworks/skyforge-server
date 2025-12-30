@@ -371,6 +371,72 @@ type ProjectAWSStaticStatusResponse struct {
 	Status string `json:"status"`
 }
 
+type ProjectAWSSSOUpdateRequest struct {
+	AccountID string `json:"accountId"`
+	RoleName  string `json:"roleName"`
+	Region    string `json:"region,omitempty"`
+}
+
+type ProjectAWSSSOUpdateResponse struct {
+	Status    string `json:"status"`
+	AccountID string `json:"accountId"`
+	RoleName  string `json:"roleName"`
+	Region    string `json:"region,omitempty"`
+}
+
+// PutProjectAWSSSOConfig stores the AWS SSO account/role for the project.
+//
+//encore:api auth method=PUT path=/api/projects/:id/cloud/aws-sso
+func (s *Service) PutProjectAWSSSOConfig(ctx context.Context, id string, req *ProjectAWSSSOUpdateRequest) (*ProjectAWSSSOUpdateResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	pc, err := s.projectContextForUser(user, id)
+	if err != nil {
+		return nil, err
+	}
+	if pc.access != "admin" && pc.access != "owner" {
+		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
+	}
+	if req == nil {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid payload").Err()
+	}
+	accountID := strings.TrimSpace(req.AccountID)
+	roleName := strings.TrimSpace(req.RoleName)
+	if accountID == "" || roleName == "" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("accountId and roleName are required").Err()
+	}
+	region := strings.TrimSpace(req.Region)
+	if region == "" && pc.project.AWSRegion == "" && s.cfg.AwsSSORegion != "" {
+		region = strings.TrimSpace(s.cfg.AwsSSORegion)
+	}
+	if region != "" {
+		pc.project.AWSRegion = region
+	}
+	pc.project.AWSAccountID = accountID
+	pc.project.AWSRoleName = roleName
+	pc.project.AWSAuthMethod = "sso"
+	pc.projects[pc.idx] = pc.project
+	if err := s.projectStore.save(pc.projects); err != nil {
+		log.Printf("projects save: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist aws sso config").Err()
+	}
+	{
+		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+		defer cancel()
+		actor, actorIsAdmin, impersonated := auditActor(s.cfg, pc.claims)
+		details := fmt.Sprintf("accountId=%s roleName=%s", accountID, roleName)
+		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "project.cloud.aws-sso.set", pc.project.ID, details)
+	}
+	return &ProjectAWSSSOUpdateResponse{
+		Status:    "ok",
+		AccountID: accountID,
+		RoleName:  roleName,
+		Region:    pc.project.AWSRegion,
+	}, nil
+}
+
 // GetProjectAWSStatic returns AWS static credential status.
 //
 //encore:api auth method=GET path=/api/projects/:id/cloud/aws-static
