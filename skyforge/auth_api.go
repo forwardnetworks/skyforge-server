@@ -210,11 +210,6 @@ func (s *Service) AuthLogin(ctx context.Context, req *LoginRequest) (*LoginRespo
 	return s.Login(ctx, req)
 }
 
-//encore:api public method=POST path=/api/v1/login
-func (s *Service) LoginV1(ctx context.Context, req *LoginRequest) (*LoginResponse, error) {
-	return s.Login(ctx, req)
-}
-
 //encore:api public method=POST path=/api/logout
 func (s *Service) Logout(ctx context.Context) (*LogoutResponse, error) {
 	if s.db != nil {
@@ -228,13 +223,28 @@ func (s *Service) Logout(ctx context.Context) (*LogoutResponse, error) {
 	return resp, nil
 }
 
-//encore:api public method=POST path=/auth/logout
-func (s *Service) AuthLogout(ctx context.Context) (*LogoutResponse, error) {
-	return s.Logout(ctx)
+// Reauth clears the current session cookie (and any cached LDAP password) and redirects
+// back to the Skyforge login page, preserving the requested next hop.
+//
+//encore:api public raw method=GET path=/api/reauth
+func (s *Service) Reauth(w http.ResponseWriter, r *http.Request) {
+	next := strings.TrimSpace(r.URL.Query().Get("next"))
+	if next == "" {
+		next = "/"
+	}
+	if !strings.HasPrefix(next, "/") {
+		next = "/"
+	}
+
+	if claims := claimsFromCookie(s.sessionManager, r.Header.Get("Cookie")); claims != nil {
+		clearCachedLDAPPassword(claims.Username)
+	}
+	http.SetCookie(w, s.sessionManager.ClearCookie())
+	http.Redirect(w, r, "/?next="+url.QueryEscape(next), http.StatusFound)
 }
 
-//encore:api public method=POST path=/api/v1/logout
-func (s *Service) LogoutV1(ctx context.Context) (*LogoutResponse, error) {
+//encore:api public method=POST path=/auth/logout
+func (s *Service) AuthLogout(ctx context.Context) (*LogoutResponse, error) {
 	return s.Logout(ctx)
 }
 
@@ -261,11 +271,6 @@ func (s *Service) Session(ctx context.Context) (*SessionResponseEnvelope, error)
 	}
 	fillSessionHeadersEnvelope(resp, claims)
 	return resp, nil
-}
-
-//encore:api public method=GET path=/api/v1/session
-func (s *Service) SessionV1(ctx context.Context) (*SessionResponseEnvelope, error) {
-	return s.Session(ctx)
 }
 
 //encore:api auth method=POST path=/auth/refresh
@@ -349,11 +354,6 @@ func authUserToProfile(user *AuthUser) *UserProfile {
 	}
 }
 
-//encore:api public method=HEAD path=/api/v1/session
-func (s *Service) SessionHeadV1(ctx context.Context) (*SessionHeadResponse, error) {
-	return s.SessionHead(ctx)
-}
-
 type traefikSessionPayload struct {
 	Status string `json:"status,omitempty"`
 }
@@ -394,20 +394,6 @@ func (s *Service) SessionTraefikHead(w http.ResponseWriter, req *http.Request) {
 	}
 	addSessionHeaders(w.Header(), claims)
 	w.WriteHeader(http.StatusOK)
-}
-
-// SessionTraefikV1 is a v1 alias for the Skyforge SSO gate endpoint.
-//
-//encore:api public raw method=GET path=/api/v1/session/traefik
-func (s *Service) SessionTraefikV1(w http.ResponseWriter, req *http.Request) {
-	s.SessionTraefik(w, req)
-}
-
-// SessionTraefikHeadV1 is a v1 alias for the Skyforge SSO gate endpoint (HEAD).
-//
-//encore:api public raw method=HEAD path=/api/v1/session/traefik
-func (s *Service) SessionTraefikHeadV1(w http.ResponseWriter, req *http.Request) {
-	s.SessionTraefikHead(w, req)
 }
 
 //encore:api auth method=POST path=/api/admin/impersonate/start tag:admin
@@ -470,11 +456,6 @@ func (s *Service) AdminImpersonateStart(ctx context.Context, req *ImpersonateSta
 	return resp, nil
 }
 
-//encore:api auth method=POST path=/api/v1/admin/impersonate/start tag:admin
-func (s *Service) AdminImpersonateStartV1(ctx context.Context, req *ImpersonateStartRequest) (*ImpersonateStartResponse, error) {
-	return s.AdminImpersonateStart(ctx, req)
-}
-
 //encore:api auth method=POST path=/api/admin/impersonate/stop tag:admin
 func (s *Service) AdminImpersonateStop(ctx context.Context) (*ImpersonateStopResponse, error) {
 	claims := claimsFromCookie(s.sessionManager, currentHeaders().Get("Cookie"))
@@ -515,11 +496,6 @@ func (s *Service) AdminImpersonateStop(ctx context.Context) (*ImpersonateStopRes
 	}
 	resp.SetCookie = cookie.String()
 	return resp, nil
-}
-
-//encore:api auth method=POST path=/api/v1/admin/impersonate/stop tag:admin
-func (s *Service) AdminImpersonateStopV1(ctx context.Context) (*ImpersonateStopResponse, error) {
-	return s.AdminImpersonateStop(ctx)
 }
 
 func authFailureToError(authErr *AuthFailure) error {

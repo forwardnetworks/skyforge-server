@@ -70,13 +70,6 @@ func (s *Service) GetAwsSSOConfig(ctx context.Context) (*AwsSSOConfigResponse, e
 	}, nil
 }
 
-// GetAwsSSOConfigV1 returns the configured AWS SSO start URL and region (v1 alias).
-//
-//encore:api auth method=GET path=/api/v1/aws/sso/config
-func (s *Service) GetAwsSSOConfigV1(ctx context.Context) (*AwsSSOConfigResponse, error) {
-	return s.GetAwsSSOConfig(ctx)
-}
-
 // GetAwsSSOStatus returns connection status for the authenticated user.
 //
 //encore:api auth method=GET path=/api/aws/sso/status
@@ -104,13 +97,6 @@ func (s *Service) GetAwsSSOStatus(ctx context.Context) (*AwsSSOStatusResponse, e
 	return resp, nil
 }
 
-// GetAwsSSOStatusV1 returns connection status for the authenticated user (v1 alias).
-//
-//encore:api auth method=GET path=/api/v1/aws/sso/status
-func (s *Service) GetAwsSSOStatusV1(ctx context.Context) (*AwsSSOStatusResponse, error) {
-	return s.GetAwsSSOStatus(ctx)
-}
-
 // StartAwsSSO begins the AWS device authorization flow.
 //
 //encore:api auth method=POST path=/api/aws/sso/start
@@ -132,13 +118,6 @@ func (s *Service) StartAwsSSO(ctx context.Context) (*AwsSSOStartResponse, error)
 		ExpiresAt:               session.ExpiresAt.UTC().Format(time.RFC3339),
 		IntervalSeconds:         session.IntervalSeconds,
 	}, nil
-}
-
-// StartAwsSSOV1 begins the AWS device authorization flow (v1 alias).
-//
-//encore:api auth method=POST path=/api/v1/aws/sso/start
-func (s *Service) StartAwsSSOV1(ctx context.Context) (*AwsSSOStartResponse, error) {
-	return s.StartAwsSSO(ctx)
 }
 
 // PollAwsSSO polls for device authorization completion.
@@ -191,13 +170,6 @@ func (s *Service) PollAwsSSO(ctx context.Context, params *AwsSSOPollParams) (*Aw
 	}, nil
 }
 
-// PollAwsSSOV1 polls for device authorization completion (v1 alias).
-//
-//encore:api auth method=POST path=/api/v1/aws/sso/poll
-func (s *Service) PollAwsSSOV1(ctx context.Context, params *AwsSSOPollParams) (*AwsSSOPollResponse, error) {
-	return s.PollAwsSSO(ctx, params)
-}
-
 // LogoutAwsSSO clears any stored AWS SSO tokens.
 //
 //encore:api auth method=POST path=/api/aws/sso/logout
@@ -210,11 +182,4 @@ func (s *Service) LogoutAwsSSO(ctx context.Context) (*AwsSSOLogoutResponse, erro
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to clear aws sso token").Err()
 	}
 	return &AwsSSOLogoutResponse{Status: "logged out"}, nil
-}
-
-// LogoutAwsSSOV1 clears any stored AWS SSO tokens (v1 alias).
-//
-//encore:api auth method=POST path=/api/v1/aws/sso/logout
-func (s *Service) LogoutAwsSSOV1(ctx context.Context) (*AwsSSOLogoutResponse, error) {
-	return s.LogoutAwsSSO(ctx)
 }

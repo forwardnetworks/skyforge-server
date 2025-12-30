@@ -145,10 +145,3 @@ func (s *Service) DeleteProject(ctx context.Context, id string, params *ProjectD
 		},
 	}, nil
 }
-
-// DeleteProjectV1 deletes a project and its backing resources (v1 alias).
-//
-//encore:api auth method=DELETE path=/api/v1/projects/:id
-func (s *Service) DeleteProjectV1(ctx context.Context, id string, params *ProjectDeleteParams) (*ProjectDeleteResponse, error) {
-	return s.DeleteProject(ctx, id, params)
-}

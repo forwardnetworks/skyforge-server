@@ -152,6 +152,37 @@ func readGiteaFile(cfg Config, owner, repo, filePath, ref string) (string, error
 	return content, nil
 }
 
+func readGiteaFileBytes(cfg Config, owner, repo, filePath, ref string) ([]byte, error) {
+	filePath = strings.TrimPrefix(strings.TrimSpace(filePath), "/")
+	refSuffix := ""
+	if strings.TrimSpace(ref) != "" {
+		refSuffix = "?ref=" + url.QueryEscape(ref)
+	}
+	resp, body, err := giteaDo(cfg, http.MethodGet, fmt.Sprintf("/repos/%s/%s/contents/%s%s", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(filePath), refSuffix), nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("gitea read file failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var parsed giteaContentResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, err
+	}
+	if parsed.Type != "file" {
+		return nil, fmt.Errorf("gitea content is not a file: %s", filePath)
+	}
+	content := parsed.Content
+	if strings.EqualFold(parsed.Encoding, "base64") {
+		decoded, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(content, "\n", ""))
+		if err != nil {
+			return nil, err
+		}
+		return decoded, nil
+	}
+	return []byte(content), nil
+}
+
 func parseGiteaBlueprintSlug(blueprint string) (string, string, bool) {
 	blueprint = strings.TrimSpace(blueprint)
 	if blueprint == "" {

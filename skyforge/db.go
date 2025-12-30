@@ -27,4 +27,3 @@ func openSkyforgeEncoreDB(ctx context.Context) (*sql.DB, error) {
 	stdlib.SetConnMaxLifetime(30 * time.Minute)
 	return stdlib, nil
 }
-

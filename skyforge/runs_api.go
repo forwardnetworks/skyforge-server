@@ -90,13 +90,6 @@ func (s *Service) GetRuns(ctx context.Context, params *RunsListParams) (*RunsLis
 	}, nil
 }
 
-// GetRunsV1 returns recent runs from Semaphore (v1 alias).
-//
-//encore:api auth method=GET path=/api/v1/runs tag:list-runs
-func (s *Service) GetRunsV1(ctx context.Context, params *RunsListParams) (*RunsListResponse, error) {
-	return s.GetRuns(ctx, params)
-}
-
 type RunsCreateResponse struct {
 	ProjectID int     `json:"project_id"`
 	Task      JSONMap `json:"task"`
@@ -223,13 +216,6 @@ func (s *Service) CreateRun(ctx context.Context, req *RunRequest) (*RunsCreateRe
 	}, nil
 }
 
-// CreateRunV1 launches a task in Semaphore (v1 alias).
-//
-//encore:api auth method=POST path=/api/v1/runs
-func (s *Service) CreateRunV1(ctx context.Context, req *RunRequest) (*RunsCreateResponse, error) {
-	return s.CreateRun(ctx, req)
-}
-
 type RunsOutputParams struct {
 	ProjectID string `query:"project_id" encore:"optional"`
 }
@@ -290,11 +276,4 @@ func (s *Service) GetRunOutput(ctx context.Context, id int, params *RunsOutputPa
 		Output:    outputJSON,
 		User:      user.Username,
 	}, nil
-}
-
-// GetRunOutputV1 returns output for a specific Semaphore task (v1 alias).
-//
-//encore:api auth method=GET path=/api/v1/runs/:id/output
-func (s *Service) GetRunOutputV1(ctx context.Context, id int, params *RunsOutputParams) (*RunsOutputResponse, error) {
-	return s.GetRunOutput(ctx, id, params)
 }

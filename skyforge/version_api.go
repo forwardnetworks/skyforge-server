@@ -27,4 +27,3 @@ func (s *Service) Version(ctx context.Context) (*VersionResponse, error) {
 		BuildTime: buildTime,
 	}, nil
 }
-

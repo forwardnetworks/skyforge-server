@@ -25,6 +25,13 @@ func semaphoreClientFor(cfg Config) *semaphore.Client {
 		Password:     cfg.SemaphorePassword,
 		PasswordFile: cfg.SemaphorePasswordFile,
 	}
+	// Prefer token auth when available; it avoids cookie session bootstrapping and is
+	// more resilient to base-path proxying.
+	if strings.TrimSpace(next.Token) != "" {
+		next.Username = ""
+		next.Password = ""
+		next.PasswordFile = ""
+	}
 
 	if semaphoreClient == nil || semaphoreClientCfg != next {
 		semaphoreClientCfg = next
@@ -76,5 +83,10 @@ func alternateSemaphoreConfig(cfg Config) (Config, bool) {
 
 func looksLikeHTML(body []byte) bool {
 	trimmed := strings.TrimSpace(string(body))
-	return strings.HasPrefix(trimmed, "<!DOCTYPE html>") || strings.HasPrefix(trimmed, "<html")
+	if trimmed == "" {
+		return false
+	}
+	trimmed = strings.TrimPrefix(trimmed, "\ufeff")
+	lower := strings.ToLower(strings.TrimSpace(trimmed))
+	return strings.HasPrefix(lower, "<")
 }

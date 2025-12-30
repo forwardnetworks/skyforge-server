@@ -62,4 +62,3 @@ func (c *Client) DeletePrefix(ctx context.Context, bucket, prefix string) error 
 	}
 	return nil
 }
-

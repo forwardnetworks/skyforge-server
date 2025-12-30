@@ -62,13 +62,6 @@ func (s *Service) GetAPIHealth(ctx context.Context) (*APIHealthResponse, error) 
 	}, nil
 }
 
-// GetAPIHealthV1 returns health status (v1 alias).
-//
-//encore:api public method=GET path=/api/v1/health
-func (s *Service) GetAPIHealthV1(ctx context.Context) (*APIHealthResponse, error) {
-	return s.GetAPIHealth(ctx)
-}
-
 type LDAPHealthResponse struct {
 	Status   string `json:"status"`
 	URL      string `json:"url"`
@@ -103,13 +96,6 @@ func (s *Service) GetLDAPHealth(ctx context.Context) (*LDAPHealthResponse, error
 		StartTLS: s.cfg.LDAP.UseStartTLS,
 		Time:     time.Now().UTC().Format(time.RFC3339),
 	}, nil
-}
-
-// GetLDAPHealthV1 checks LDAP connectivity (v1 alias).
-//
-//encore:api public method=GET path=/api/v1/health/ldap
-func (s *Service) GetLDAPHealthV1(ctx context.Context) (*LDAPHealthResponse, error) {
-	return s.GetLDAPHealth(ctx)
 }
 
 type EveHealthParams struct {
@@ -188,6 +174,7 @@ func (s *Service) GetEveHealth(ctx context.Context, params *EveHealthParams) (*E
 		ctx, cancel := context.WithTimeout(parent, timeout)
 		defer cancel()
 
+		sshErr := error(nil)
 		if strings.TrimSpace(s.cfg.Labs.EveSSHKeyFile) != "" && sshHost != "" {
 			sshCfg := NetlabConfig{
 				SSHHost:    sshHost,
@@ -197,32 +184,39 @@ func (s *Service) GetEveHealth(ctx context.Context, params *EveHealthParams) (*E
 			}
 			client, err := dialSSH(sshCfg)
 			if err != nil {
-				return EveHealthServerResult{Name: name, Status: "error", Transport: "ssh", Endpoint: "ssh:" + sshHost, Error: sanitizeError(err)}
-			}
-			defer client.Close()
+				sshErr = err
+			} else {
+				defer client.Close()
 
-			labsPath := strings.TrimSpace(server.LabsPath)
-			if labsPath == "" {
-				labsPath = strings.TrimSpace(s.cfg.Labs.EveLabsPath)
+				labsPath := strings.TrimSpace(server.LabsPath)
+				if labsPath == "" {
+					labsPath = strings.TrimSpace(s.cfg.Labs.EveLabsPath)
+				}
+				cmd := fmt.Sprintf("test -d %q && test -r %q", labsPath, labsPath)
+				if _, err := runSSHCommand(client, cmd, timeout); err != nil {
+					sshErr = err
+				} else {
+					endpoint := "ssh:" + sshHost
+					if webRaw != "" {
+						endpoint = webRaw
+					} else if baseRaw != "" {
+						endpoint = baseRaw
+					}
+					return EveHealthServerResult{Name: name, Status: "ok", Transport: "ssh", Endpoint: endpoint}
+				}
 			}
-			cmd := fmt.Sprintf("test -d %q && test -r %q", labsPath, labsPath)
-			if _, err := runSSHCommand(client, cmd, timeout); err != nil {
-				return EveHealthServerResult{Name: name, Status: "error", Transport: "ssh", Endpoint: "ssh:" + sshHost, Error: sanitizeError(err)}
-			}
-
-			endpoint := "ssh:" + sshHost
-			if webRaw != "" {
-				endpoint = webRaw
-			} else if baseRaw != "" {
-				endpoint = baseRaw
-			}
-			return EveHealthServerResult{Name: name, Status: "ok", Transport: "ssh", Endpoint: endpoint}
 		}
 
 		if baseRaw == "" {
+			if sshErr != nil {
+				return EveHealthServerResult{Name: name, Status: "error", Transport: "ssh", Endpoint: "ssh:" + sshHost, Error: sanitizeError(sshErr)}
+			}
 			return EveHealthServerResult{Name: name, Status: "error", Error: "missing apiUrl/webUrl (or configure SSH)"}
 		}
 		if strings.TrimSpace(server.Username) == "" || strings.TrimSpace(server.Password) == "" {
+			if sshErr != nil {
+				return EveHealthServerResult{Name: name, Status: "error", Transport: "ssh", Endpoint: "ssh:" + sshHost, Error: sanitizeError(sshErr)}
+			}
 			return EveHealthServerResult{Name: name, Status: "error", Transport: "eve-native", Endpoint: baseRaw, Error: "missing credentials (or configure SSH)"}
 		}
 
@@ -269,6 +263,15 @@ func (s *Service) GetEveHealth(ctx context.Context, params *EveHealthParams) (*E
 
 		if lastErr == nil {
 			lastErr = fmt.Errorf("unable to reach eve-ng")
+		}
+		if sshErr != nil {
+			return EveHealthServerResult{
+				Name:      name,
+				Status:    "error",
+				Transport: "ssh",
+				Endpoint:  "ssh:" + sshHost,
+				Error:     sanitizeError(fmt.Errorf("eve-ng ssh failed (%v); native api failed (%v)", sshErr, lastErr)),
+			}
 		}
 		return EveHealthServerResult{Name: name, Status: "error", Transport: "eve-native", Endpoint: lastEndpoint, Error: sanitizeError(lastErr)}
 	}
@@ -326,11 +329,4 @@ func (s *Service) GetEveHealth(ctx context.Context, params *EveHealthParams) (*E
 		Meta("servers", results).
 		Meta("selected", selectedName).
 		Err()
-}
-
-// GetEveHealthV1 checks configured EVE-NG endpoints (v1 alias).
-//
-//encore:api public method=GET path=/api/v1/health/eve
-func (s *Service) GetEveHealthV1(ctx context.Context, params *EveHealthParams) (*EveHealthResponse, error) {
-	return s.GetEveHealth(ctx, params)
 }

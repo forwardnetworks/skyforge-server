@@ -53,13 +53,6 @@ func (s *Service) SyncProject(ctx context.Context, id string) (*projectSyncRepor
 	return &report, nil
 }
 
-// SyncProjectV1 syncs resources for a single project (v1 alias).
-//
-//encore:api auth method=POST path=/api/v1/projects/:id/sync
-func (s *Service) SyncProjectV1(ctx context.Context, id string) (*projectSyncReport, error) {
-	return s.SyncProject(ctx, id)
-}
-
 type ProjectMembersRequest struct {
 	IsPublic     *bool    `json:"isPublic,omitempty"`
 	Owners       []string `json:"owners"`
@@ -131,13 +124,6 @@ func (s *Service) UpdateProjectMembers(ctx context.Context, id string, req *Proj
 	}
 	syncGiteaCollaboratorsForProject(s.cfg, pc.project)
 	return &pc.project, nil
-}
-
-// UpdateProjectMembersV1 updates project membership (v1 alias).
-//
-//encore:api auth method=PUT path=/api/v1/projects/:id/members
-func (s *Service) UpdateProjectMembersV1(ctx context.Context, id string, req *ProjectMembersRequest) (*SkyforgeProject, error) {
-	return s.UpdateProjectMembers(ctx, id, req)
 }
 
 type ProjectEveConfigResponse struct {
@@ -212,20 +198,6 @@ func (s *Service) UpdateProjectEve(ctx context.Context, id string, req *ProjectE
 	return &pc.project, nil
 }
 
-// GetProjectEveV1 returns the project's EVE server selection (v1 alias).
-//
-//encore:api auth method=GET path=/api/v1/projects/:id/eve
-func (s *Service) GetProjectEveV1(ctx context.Context, id string) (*ProjectEveConfigResponse, error) {
-	return s.GetProjectEve(ctx, id)
-}
-
-// UpdateProjectEveV1 updates the project's EVE server selection (v1 alias).
-//
-//encore:api auth method=PUT path=/api/v1/projects/:id/eve
-func (s *Service) UpdateProjectEveV1(ctx context.Context, id string, req *ProjectEveConfigRequest) (*SkyforgeProject, error) {
-	return s.UpdateProjectEve(ctx, id, req)
-}
-
 type ProjectNetlabConfigResponse struct {
 	ProjectID     string   `json:"projectId"`
 	NetlabServer  string   `json:"netlabServer"`
@@ -298,20 +270,6 @@ func (s *Service) UpdateProjectNetlab(ctx context.Context, id string, req *Proje
 	return &pc.project, nil
 }
 
-// GetProjectNetlabV1 returns the project's netlab server selection (v1 alias).
-//
-//encore:api auth method=GET path=/api/v1/projects/:id/netlab
-func (s *Service) GetProjectNetlabV1(ctx context.Context, id string) (*ProjectNetlabConfigResponse, error) {
-	return s.GetProjectNetlab(ctx, id)
-}
-
-// UpdateProjectNetlabV1 updates the project's netlab server selection (v1 alias).
-//
-//encore:api auth method=PUT path=/api/v1/projects/:id/netlab
-func (s *Service) UpdateProjectNetlabV1(ctx context.Context, id string, req *ProjectNetlabConfigRequest) (*SkyforgeProject, error) {
-	return s.UpdateProjectNetlab(ctx, id, req)
-}
-
 type ProjectEveLabResponse struct {
 	ProjectID   string `json:"projectId"`
 	ProjectSlug string `json:"projectSlug"`
@@ -334,20 +292,6 @@ func (s *Service) GetProjectEveLab(ctx context.Context, id string) (*ProjectEveL
 //encore:api auth method=POST path=/api/projects/:id/eve/lab
 func (s *Service) CreateProjectEveLab(ctx context.Context, id string) (*ProjectEveLabResponse, error) {
 	return s.handleProjectEveLab(ctx, id, true)
-}
-
-// GetProjectEveLabV1 returns EVE lab state for the project (v1 alias).
-//
-//encore:api auth method=GET path=/api/v1/projects/:id/eve/lab
-func (s *Service) GetProjectEveLabV1(ctx context.Context, id string) (*ProjectEveLabResponse, error) {
-	return s.GetProjectEveLab(ctx, id)
-}
-
-// CreateProjectEveLabV1 creates an EVE lab for the project (v1 alias).
-//
-//encore:api auth method=POST path=/api/v1/projects/:id/eve/lab
-func (s *Service) CreateProjectEveLabV1(ctx context.Context, id string) (*ProjectEveLabResponse, error) {
-	return s.CreateProjectEveLab(ctx, id)
 }
 
 func (s *Service) handleProjectEveLab(ctx context.Context, id string, create bool) (*ProjectEveLabResponse, error) {
@@ -539,27 +483,6 @@ func (s *Service) DeleteProjectAWSStatic(ctx context.Context, id string) (*Proje
 	return &ProjectAWSStaticStatusResponse{Status: "ok"}, nil
 }
 
-// GetProjectAWSStaticV1 returns AWS static credential status (v1 alias).
-//
-//encore:api auth method=GET path=/api/v1/projects/:id/cloud/aws-static
-func (s *Service) GetProjectAWSStaticV1(ctx context.Context, id string) (*ProjectAWSStaticGetResponse, error) {
-	return s.GetProjectAWSStatic(ctx, id)
-}
-
-// PutProjectAWSStaticV1 stores AWS static credentials (v1 alias).
-//
-//encore:api auth method=PUT path=/api/v1/projects/:id/cloud/aws-static
-func (s *Service) PutProjectAWSStaticV1(ctx context.Context, id string, req *ProjectAWSStaticPutRequest) (*ProjectAWSStaticStatusResponse, error) {
-	return s.PutProjectAWSStatic(ctx, id, req)
-}
-
-// DeleteProjectAWSStaticV1 clears AWS static credentials (v1 alias).
-//
-//encore:api auth method=DELETE path=/api/v1/projects/:id/cloud/aws-static
-func (s *Service) DeleteProjectAWSStaticV1(ctx context.Context, id string) (*ProjectAWSStaticStatusResponse, error) {
-	return s.DeleteProjectAWSStatic(ctx, id)
-}
-
 type ProjectAzureCredentialGetResponse struct {
 	Configured     bool   `json:"configured"`
 	TenantID       string `json:"tenantId,omitempty"`
@@ -701,27 +624,6 @@ func (s *Service) DeleteProjectAzureCredentials(ctx context.Context, id string) 
 	return &ProjectAzureCredentialStatusResponse{Status: "ok"}, nil
 }
 
-// GetProjectAzureCredentialsV1 returns Azure credential status (v1 alias).
-//
-//encore:api auth method=GET path=/api/v1/projects/:id/cloud/azure
-func (s *Service) GetProjectAzureCredentialsV1(ctx context.Context, id string) (*ProjectAzureCredentialGetResponse, error) {
-	return s.GetProjectAzureCredentials(ctx, id)
-}
-
-// PutProjectAzureCredentialsV1 stores Azure credentials (v1 alias).
-//
-//encore:api auth method=PUT path=/api/v1/projects/:id/cloud/azure
-func (s *Service) PutProjectAzureCredentialsV1(ctx context.Context, id string, req *ProjectAzureCredentialPutRequest) (*ProjectAzureCredentialStatusResponse, error) {
-	return s.PutProjectAzureCredentials(ctx, id, req)
-}
-
-// DeleteProjectAzureCredentialsV1 clears Azure credentials (v1 alias).
-//
-//encore:api auth method=DELETE path=/api/v1/projects/:id/cloud/azure
-func (s *Service) DeleteProjectAzureCredentialsV1(ctx context.Context, id string) (*ProjectAzureCredentialStatusResponse, error) {
-	return s.DeleteProjectAzureCredentials(ctx, id)
-}
-
 type ProjectGCPCredentialGetResponse struct {
 	Configured        bool   `json:"configured"`
 	ClientEmail       string `json:"clientEmail,omitempty"`
@@ -855,25 +757,4 @@ func (s *Service) DeleteProjectGCPCredentials(ctx context.Context, id string) (*
 		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "project.cloud.gcp.clear", pc.project.ID, "")
 	}
 	return &ProjectGCPCredentialStatusResponse{Status: "ok"}, nil
-}
-
-// GetProjectGCPCredentialsV1 returns GCP credential status (v1 alias).
-//
-//encore:api auth method=GET path=/api/v1/projects/:id/cloud/gcp
-func (s *Service) GetProjectGCPCredentialsV1(ctx context.Context, id string) (*ProjectGCPCredentialGetResponse, error) {
-	return s.GetProjectGCPCredentials(ctx, id)
-}
-
-// PutProjectGCPCredentialsV1 stores GCP credentials (v1 alias).
-//
-//encore:api auth method=PUT path=/api/v1/projects/:id/cloud/gcp
-func (s *Service) PutProjectGCPCredentialsV1(ctx context.Context, id string, req *ProjectGCPCredentialPutRequest) (*ProjectGCPCredentialStatusResponse, error) {
-	return s.PutProjectGCPCredentials(ctx, id, req)
-}
-
-// DeleteProjectGCPCredentialsV1 clears GCP credentials (v1 alias).
-//
-//encore:api auth method=DELETE path=/api/v1/projects/:id/cloud/gcp
-func (s *Service) DeleteProjectGCPCredentialsV1(ctx context.Context, id string) (*ProjectGCPCredentialStatusResponse, error) {
-	return s.DeleteProjectGCPCredentials(ctx, id)
 }

@@ -20,7 +20,7 @@ type ProjectVariableGroup struct {
 }
 
 type ProjectVariableGroupListResponse struct {
-	ProjectID string               `json:"projectId"`
+	ProjectID string                  `json:"projectId"`
 	Groups    []*ProjectVariableGroup `json:"groups"`
 }
 
@@ -213,4 +213,3 @@ func (s *Service) DeleteProjectVariableGroup(ctx context.Context, id string, gro
 	}
 	return s.ListProjectVariableGroups(ctx, id)
 }
-

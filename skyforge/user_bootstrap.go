@@ -25,12 +25,17 @@ var (
 	labCatalogChecked bool
 )
 
+var ldapPasswordBox *secretBox
+
+func ldapPasswordRedisKey(username string) string {
+	return "skyforge:ldap-password:" + strings.ToLower(strings.TrimSpace(username))
+}
+
 func cacheLDAPPassword(username, password string, ttl time.Duration) {
 	if strings.TrimSpace(username) == "" || strings.TrimSpace(password) == "" {
 		return
 	}
 	ldapPasswordCache.mu.Lock()
-	defer ldapPasswordCache.mu.Unlock()
 	if ldapPasswordCache.items == nil {
 		ldapPasswordCache.items = map[string]passwordCacheEntry{}
 	}
@@ -38,17 +43,49 @@ func cacheLDAPPassword(username, password string, ttl time.Duration) {
 		password:  password,
 		expiresAt: time.Now().Add(ttl),
 	}
+	ldapPasswordCache.mu.Unlock()
+
+	if redisClient == nil || ldapPasswordBox == nil {
+		return
+	}
+	enc, err := ldapPasswordBox.encrypt(password)
+	if err != nil || strings.TrimSpace(enc) == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	_ = redisClient.Set(ctx, ldapPasswordRedisKey(username), enc, ttl).Err()
+	cancel()
 }
 
 func getCachedLDAPPassword(username string) (string, bool) {
 	ldapPasswordCache.mu.Lock()
 	defer ldapPasswordCache.mu.Unlock()
 	if ldapPasswordCache.items == nil {
-		return "", false
+		ldapPasswordCache.items = map[string]passwordCacheEntry{}
 	}
 	entry, ok := ldapPasswordCache.items[strings.ToLower(username)]
 	if !ok {
-		return "", false
+		if redisClient == nil || ldapPasswordBox == nil {
+			return "", false
+		}
+		ldapPasswordCache.mu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		raw, err := redisClient.Get(ctx, ldapPasswordRedisKey(username)).Result()
+		cancel()
+		ldapPasswordCache.mu.Lock()
+		if err != nil || strings.TrimSpace(raw) == "" {
+			return "", false
+		}
+		plaintext, err := ldapPasswordBox.decrypt(raw)
+		if err != nil || strings.TrimSpace(plaintext) == "" {
+			return "", false
+		}
+		// Cache in-memory briefly to reduce Redis churn; the Redis entry remains the source of truth.
+		ldapPasswordCache.items[strings.ToLower(username)] = passwordCacheEntry{
+			password:  plaintext,
+			expiresAt: time.Now().Add(5 * time.Minute),
+		}
+		return plaintext, true
 	}
 	if time.Now().After(entry.expiresAt) {
 		delete(ldapPasswordCache.items, strings.ToLower(username))
@@ -59,11 +96,17 @@ func getCachedLDAPPassword(username string) (string, bool) {
 
 func clearCachedLDAPPassword(username string) {
 	ldapPasswordCache.mu.Lock()
-	defer ldapPasswordCache.mu.Unlock()
 	if ldapPasswordCache.items == nil {
+		ldapPasswordCache.mu.Unlock()
 		return
 	}
 	delete(ldapPasswordCache.items, strings.ToLower(username))
+	ldapPasswordCache.mu.Unlock()
+	if redisClient != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		_ = redisClient.Del(ctx, ldapPasswordRedisKey(username)).Err()
+		cancel()
+	}
 }
 
 func (s *Service) bootstrapUserLabs(username string) {
@@ -82,12 +125,68 @@ func (s *Service) bootstrapUserLabs(username string) {
 	labUserBootstrap[username] = time.Now()
 	labBootstrapMu.Unlock()
 
+	if err := ensureUserHomeWorkspace(s.cfg, username); err != nil {
+		log.Printf("user bootstrap: home workspace failed: %v", err)
+	}
 	if err := ensureLabCatalogRepos(s.cfg); err != nil {
 		log.Printf("labs bootstrap: catalog ensure failed: %v", err)
 	}
 	if err := ensureUserLabWorkspace(ctx, s.cfg, username); err != nil {
 		log.Printf("labs bootstrap: user workspace failed: %v", err)
 	}
+}
+
+func ensureUserHomeWorkspace(cfg Config, username string) error {
+	username = strings.TrimSpace(username)
+	if !isValidUsername(username) {
+		return fmt.Errorf("invalid username")
+	}
+	base := filepath.Join("/home/openvscode-server/project/users", username)
+	home := filepath.Join(base, "home")
+	filesDir := filepath.Join(home, "files")
+	anonymousDir := filepath.Join(home, "anonymous")
+	if err := os.MkdirAll(filesDir, 0o755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(anonymousDir, 0o755); err != nil {
+		return err
+	}
+	readme := filepath.Join(home, "README.md")
+	if _, err := os.Stat(readme); err == nil {
+		return nil
+	}
+	hostHint := strings.TrimSpace(cfg.GiteaBaseURL)
+	if hostHint == "" {
+		hostHint = "/"
+	}
+	baseURL := strings.TrimRight(hostHint, "/")
+	if baseURL == "" {
+		baseURL = "/"
+	}
+	content := fmt.Sprintf(
+		"# Skyforge Workspace (user: %s)\n\n"+
+			"This folder is your personal \"home\" inside Skyforge's VS Code.\n\n"+
+			"## Git\n"+
+			"- Use this directory for your own clones and branches.\n"+
+			"- Skyforge may also sync project repos elsewhere in the workspace as a read-only mirror.\n\n"+
+			"## Files (S3 / MinIO)\n"+
+			"Skyforge exposes an S3-compatible bucket via the same hostname at /files/.\n\n"+
+			"- Upload (example):\n"+
+			"  curl -T ./myfile.bin \"%s/files/users/%s/myfile.bin\"\n"+
+			"- Download (example):\n"+
+			"  curl -o ./myfile.bin \"%s/files/users/%s/myfile.bin\"\n\n"+
+			"Notes:\n"+
+			"- Files from S3 are mirrored into /workspace/users/%s/s3 (download-only).\n"+
+			"- Do not edit files inside the mirror; upload to S3 instead.\n"+
+			"- Anonymous file drop lands in the same bucket; place shared artifacts under \"anonymous/\" or \"files/\" as needed.\n",
+		username,
+		baseURL,
+		username,
+		baseURL,
+		username,
+		username,
+	)
+	return os.WriteFile(readme, []byte(content), 0o644)
 }
 
 func ensureLabCatalogRepos(cfg Config) error {
@@ -125,7 +224,7 @@ func ensureUserLabWorkspace(ctx context.Context, cfg Config, username string) er
 
 	netlabDest := filepath.Join(base, netlabCatalogRepo)
 	cloudDest := filepath.Join(base, cloudCatalogRepo)
-	giteaBase := normalizeGiteaBaseURL(cfg.GiteaBaseURL)
+	giteaBase := giteaInternalBaseURL(cfg)
 	if giteaBase == "" {
 		return fmt.Errorf("gitea base URL not configured")
 	}

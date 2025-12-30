@@ -1,7 +1,11 @@
-h1:OnXVw/di5iYncZ6mVsrJ7O3/vBOmnGSZCoDL2mpOzIw=
+h1:P3hwb2FDk+tNEOL5x61XFnLPzCTlZHFbbAOur+R3R4A=
 20251220000100_init.up.sql h1:YCWvMBPS4NllVUMuxfGa/GI6PNNfPI4aiCQzxCuHoYY=
 20251221000100_cloud_credentials.up.sql h1:eV5g4ndFX+Vv/jGTQoj4rgLgXJemBeS9u0XyKVlEnwQ=
 20251222000100_project_visibility.up.sql h1:8N5AoNS1iVXnMARyCmsiffW4n6CrAq/nmxailQPZ3cw=
 20251223000100_governance_tables.up.sql h1:sIMnWWu3E0dBV0dipOpHRXZ9H8tplAlmQ+tM2mC/NhE=
 20251223000200_deployments.up.sql h1:xU/2T1MUJ041Dx1qsrwhh1jN8f2iqg91U2hwHlf8oZQ=
 20251224000100_labpp_templates.up.sql h1:XTIsI51TmHS7I9H90bNXc28h15jyulXClDR4g1pJD3A=
+20251227000100_deployments_labpp.up.sql h1:r1L884LxJizsj9X/1o/p8TjTdV0GMJIt1izVsHtZCxs=
+20251229000100_dns_tokens.up.sql h1:1EpaT4MtQ28NABDN6BBAy9zWHR5BdK5/m77IlYK78rg=
+20251230000100_syslog_events.up.sql h1:KLPMXav6/9SGauXAqNWTKW+9NHXxfKAn4jHElAyV2Qo=
+20251230000200_webhooks_snmp.up.sql h1:9Oceq9kh9MTsoDlTfFH9BLlDofttD3AIOszWbYbLduM=

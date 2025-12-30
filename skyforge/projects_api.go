@@ -77,13 +77,6 @@ func (s *Service) GetProjects(ctx context.Context, params *ProjectsListParams) (
 	}, nil
 }
 
-// GetProjectsV1 returns projects visible to the authenticated user (v1 alias).
-//
-//encore:api auth method=GET path=/api/v1/projects tag:list-projects
-func (s *Service) GetProjectsV1(ctx context.Context, params *ProjectsListParams) (*ProjectsListResponse, error) {
-	return s.GetProjects(ctx, params)
-}
-
 type ProjectCreateRequest struct {
 	Name          string   `json:"name"`
 	Slug          string   `json:"slug,omitempty"`
@@ -135,13 +128,11 @@ func (s *Service) CreateProject(ctx context.Context, req *ProjectCreateRequest) 
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown netlabServer").Err()
 	}
 
-	password, ok := getCachedLDAPPassword(user.Username)
+	ldapPassword, ok := getCachedLDAPPassword(user.Username)
 	if !ok {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("LDAP password unavailable; reauthenticate").Err()
 	}
 	giteaCfg := s.cfg
-	giteaCfg.Projects.GiteaUsername = user.Username
-	giteaCfg.Projects.GiteaPassword = password
 
 	owner := user.Username
 	repo := slug
@@ -158,7 +149,7 @@ func (s *Service) CreateProject(ctx context.Context, req *ProjectCreateRequest) 
 		}
 	}
 
-	if err := ensureGiteaUser(s.cfg, user.Username, password); err != nil {
+	if err := ensureGiteaUser(s.cfg, user.Username, ldapPassword); err != nil {
 		log.Printf("ensureGiteaUser: %v", err)
 	}
 
@@ -342,11 +333,10 @@ variable "TF_VAR_gcp_region" {
 		log.Printf("ensureGiteaFile playbook.yml: %v", err)
 	}
 
-
 	semaphoreCfg := s.cfg
 	semaphoreCfg.SemaphoreToken = ""
 	semaphoreCfg.SemaphoreUsername = user.Username
-	semaphoreCfg.SemaphorePassword = password
+	semaphoreCfg.SemaphorePassword = ldapPassword
 	semaphoreCfg.SemaphorePasswordFile = ""
 
 	semaphoreProjectID, err := ensureSemaphoreProject(semaphoreCfg, name)
@@ -397,7 +387,7 @@ variable "TF_VAR_gcp_region" {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to provision semaphore key").Err()
 	}
 
-	giteaBase := normalizeGiteaBaseURL(s.cfg.GiteaBaseURL)
+	giteaBase := giteaInternalBaseURL(s.cfg)
 	if giteaBase == "" {
 		log.Printf("ensureSemaphoreRepo: missing gitea base URL")
 		return nil, errs.B().Code(errs.Unavailable).Msg("gitea base URL not configured").Err()
@@ -410,11 +400,11 @@ variable "TF_VAR_gcp_region" {
 	}
 
 	projectEnv := map[string]string{
-		"TF_IN_AUTOMATION":                "true",
-		"TF_VAR_scenario":                 "regular_cluster",
-		"AWS_EC2_METADATA_DISABLED":       "true",
-		"TF_VAR_ssh_key_name":             "REPLACE_ME",
-		"TF_VAR_artifacts_bucket": "REPLACE_ME",
+		"TF_IN_AUTOMATION":          "true",
+		"TF_VAR_scenario":           "regular_cluster",
+		"AWS_EC2_METADATA_DISABLED": "true",
+		"TF_VAR_ssh_key_name":       "REPLACE_ME",
+		"TF_VAR_artifacts_bucket":   "REPLACE_ME",
 	}
 	if strings.TrimSpace(s.cfg.AwsSSORegion) != "" {
 		projectEnv["AWS_REGION"] = strings.TrimSpace(s.cfg.AwsSSORegion)
@@ -546,6 +536,30 @@ variable "TF_VAR_gcp_region" {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to provision semaphore templates").Err()
 	}
 
+	labppScript := labppAPIRunnerScript()
+	if err := ensureGiteaFile(giteaCfg, owner, repo, "labpp/job/run_labpp_api.py", labppScript, "chore: add labpp api runner", defaultBranch, claims); err != nil {
+		log.Printf("ensureGiteaFile labpp/job/run_labpp_api.py: %v", err)
+	}
+
+	labppRunID, err := ensureSemaphoreTemplate(semaphoreCfg, semaphoreProjectID, map[string]any{
+		"project_id":                    semaphoreProjectID,
+		"repository_id":                 repoID,
+		"environment_id":                envID,
+		"inventory_id":                  localInventoryID,
+		"name":                          "LabPP: Run",
+		"description":                   "Runs the LabPP API runner.",
+		"app":                           "python",
+		"playbook":                      "labpp/job/run_labpp_api.py",
+		"git_branch":                    defaultBranch,
+		"arguments":                     string(mustJSON([]string{})),
+		"allow_override_args_in_task":   true,
+		"allow_override_branch_in_task": true,
+	})
+	if err != nil {
+		log.Printf("ensureSemaphoreTemplate labpp run: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to provision semaphore templates").Err()
+	}
+
 	created := SkyforgeProject{
 		ID:                   fmt.Sprintf("%d-%s", time.Now().Unix(), slug),
 		Slug:                 slug,
@@ -565,6 +579,7 @@ variable "TF_VAR_gcp_region" {
 		TofuApplyTemplateID:  tofuApplyID,
 		AnsibleRunTemplateID: ansibleRunID,
 		NetlabRunTemplateID:  netlabRunID,
+		LabppRunTemplateID:   labppRunID,
 		AWSAccountID:         strings.TrimSpace(req.AWSAccountID),
 		AWSRoleName:          strings.TrimSpace(req.AWSRoleName),
 		AWSRegion:            strings.TrimSpace(req.AWSRegion),
@@ -620,13 +635,6 @@ variable "TF_VAR_gcp_region" {
 	return &created, nil
 }
 
-// CreateProjectV1 provisions a new Skyforge project (v1 alias).
-//
-//encore:api auth method=POST path=/api/v1/projects
-func (s *Service) CreateProjectV1(ctx context.Context, req *ProjectCreateRequest) (*SkyforgeProject, error) {
-	return s.CreateProject(ctx, req)
-}
-
 // SyncProjectBlueprint syncs a project's blueprint catalog into the repo.
 //
 //encore:api auth method=POST path=/api/projects/:projectID/blueprint/sync
@@ -647,7 +655,7 @@ func (s *Service) SyncProjectBlueprint(ctx context.Context, projectID string) (*
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("no blueprint configured").Err()
 	}
 
-	password, ok := getCachedLDAPPassword(user.Username)
+	ldapPassword, ok := getCachedLDAPPassword(user.Username)
 	if !ok {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("LDAP password unavailable; reauthenticate").Err()
 	}
@@ -656,12 +664,10 @@ func (s *Service) SyncProjectBlueprint(ctx context.Context, projectID string) (*
 			log.Printf("ensureBlueprintCatalogRepo: %v", err)
 		}
 	}
-	if err := ensureGiteaUser(s.cfg, user.Username, password); err != nil {
+	if err := ensureGiteaUser(s.cfg, user.Username, ldapPassword); err != nil {
 		log.Printf("ensureGiteaUser: %v", err)
 	}
 	giteaCfg := s.cfg
-	giteaCfg.Projects.GiteaUsername = user.Username
-	giteaCfg.Projects.GiteaPassword = password
 	targetBranch := strings.TrimSpace(pc.project.DefaultBranch)
 	if targetBranch == "" {
 		targetBranch = "main"

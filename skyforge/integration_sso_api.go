@@ -13,6 +13,7 @@ import (
 )
 
 var csrfInputRE = regexp.MustCompile(`name=["']([^"']+)["']\s+value=["']([^"']+)["']`)
+var formActionRE = regexp.MustCompile(`(?is)<form[^>]*\saction=["']([^"']+)["']`)
 
 func extractFormValue(html, field string) string {
 	matches := csrfInputRE.FindAllStringSubmatch(html, -1)
@@ -43,12 +44,40 @@ func cookiePathForRedirect(redirectPath string) string {
 	return "/" + parts[0]
 }
 
+func extractFormAction(html string) string {
+	m := formActionRE.FindStringSubmatch(html)
+	if len(m) < 2 {
+		return ""
+	}
+	return strings.TrimSpace(m[1])
+}
+
+func buildActionURL(base *url.URL, action string, fallback string) string {
+	action = strings.TrimSpace(action)
+	if action == "" {
+		return fallback
+	}
+	parsed, err := url.Parse(action)
+	if err != nil {
+		return fallback
+	}
+	if parsed.IsAbs() {
+		return parsed.String()
+	}
+	if base == nil {
+		return fallback
+	}
+	return base.ResolveReference(parsed).String()
+}
+
 func performFormSSO(w http.ResponseWriter, r *http.Request, targetBase, loginPath, redirectPath, userField, passField, csrfField, forwardedProto string, username, password string) {
 	base := strings.TrimRight(strings.TrimSpace(targetBase), "/")
 	if base == "" {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "integration not configured"})
 		return
 	}
+
+	cookiePath := cookiePathForRedirect(redirectPath)
 
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Timeout: 15 * time.Second, Jar: jar}
@@ -89,6 +118,15 @@ func performFormSSO(w http.ResponseWriter, r *http.Request, targetBase, loginPat
 	if getResp.Request != nil && getResp.Request.URL != nil && strings.TrimSpace(getResp.Request.URL.String()) != "" {
 		finalLoginURL = getResp.Request.URL.String()
 	}
+	baseURL := getResp.Request.URL
+	action := extractFormAction(string(bodyBytes))
+	if cookiePath != "/" && strings.HasPrefix(action, cookiePath+"/") && baseURL != nil && !strings.HasPrefix(baseURL.Path, cookiePath) {
+		action = strings.TrimPrefix(action, cookiePath)
+		if !strings.HasPrefix(action, "/") {
+			action = "/" + action
+		}
+	}
+	postURL := buildActionURL(baseURL, action, finalLoginURL)
 
 	form := url.Values{}
 	form.Set(userField, username)
@@ -99,17 +137,17 @@ func performFormSSO(w http.ResponseWriter, r *http.Request, targetBase, loginPat
 		}
 	}
 
-	postReq, err := http.NewRequest(http.MethodPost, finalLoginURL, bytes.NewBufferString(form.Encode()))
+	postReq, err := http.NewRequest(http.MethodPost, postURL, bytes.NewBufferString(form.Encode()))
 	if err != nil {
-		log.Printf("sso: failed to build login POST url=%q err=%v", finalLoginURL, err)
+		log.Printf("sso: failed to build login POST url=%q err=%v", postURL, err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to build integration login"})
 		return
 	}
 	postReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	referer := finalLoginURL
+	referer := postURL
 	origin := ""
 	if forwardedProto != "" {
-		if parsed, err := url.Parse(finalLoginURL); err == nil {
+		if parsed, err := url.Parse(postURL); err == nil {
 			parsed.Scheme = forwardedProto
 			referer = parsed.String()
 			if parsed.Host != "" {
@@ -132,11 +170,17 @@ func performFormSSO(w http.ResponseWriter, r *http.Request, targetBase, loginPat
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "integration login failed"})
 		return
 	}
+	postCookies := postResp.Cookies()
 	if postResp.StatusCode >= 400 {
-		log.Printf("sso: login POST rejected url=%q status=%d location=%q", finalLoginURL, postResp.StatusCode, postResp.Header.Get("Location"))
+		log.Printf("sso: login POST rejected url=%q status=%d location=%q", postURL, postResp.StatusCode, postResp.Header.Get("Location"))
 	}
 	_ = postResp.Body.Close()
 	if postResp.StatusCode >= 400 {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "integration login rejected"})
+		return
+	}
+	if postResp.StatusCode >= 200 && postResp.StatusCode < 300 {
+		log.Printf("sso: login POST did not redirect url=%q status=%d", postURL, postResp.StatusCode)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "integration login rejected"})
 		return
 	}
@@ -146,11 +190,14 @@ func performFormSSO(w http.ResponseWriter, r *http.Request, targetBase, loginPat
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "invalid integration url"})
 		return
 	}
-	cookiePath := cookiePathForRedirect(redirectPath)
 	// cookiejar only returns cookies matching the request path. Consider both "/" and the target path.
 	cookieURL := *parsed
 	cookieURL.Path = cookiePath
-	candidates := append(jar.Cookies(&cookieURL), jar.Cookies(parsed)...)
+	candidates := make([]*http.Cookie, 0, len(respCookies)+len(postCookies)+8)
+	candidates = append(candidates, respCookies...)
+	candidates = append(candidates, postCookies...)
+	candidates = append(candidates, jar.Cookies(&cookieURL)...)
+	candidates = append(candidates, jar.Cookies(parsed)...)
 	seen := map[string]bool{}
 	for _, c := range candidates {
 		if c == nil || c.Name == "" {
@@ -191,6 +238,21 @@ func joinCookieHeader(cookies []*http.Cookie) string {
 	return strings.Join(parts, "; ")
 }
 
+func redirectToReauth(w http.ResponseWriter, r *http.Request) {
+	const publicAPIPrefix = "/api/skyforge"
+	requestURI := strings.TrimSpace(r.URL.RequestURI())
+	if requestURI == "" {
+		requestURI = "/"
+	}
+	externalNext := publicAPIPrefix + requestURI
+	http.Redirect(
+		w,
+		r,
+		publicAPIPrefix+"/api/reauth?next="+url.QueryEscape(externalNext),
+		http.StatusFound,
+	)
+}
+
 func normalizeGiteaBaseURL(raw string) string {
 	base := strings.TrimRight(strings.TrimSpace(raw), "/")
 	if base == "" {
@@ -215,12 +277,12 @@ func normalizeGiteaBaseURL(raw string) string {
 func (s *Service) GiteaSSO(w http.ResponseWriter, r *http.Request) {
 	user, err := requireAuthUser()
 	if err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+		redirectToReauth(w, r)
 		return
 	}
 	password, ok := getCachedLDAPPassword(user.Username)
 	if !ok {
-		writeJSON(w, http.StatusPreconditionFailed, map[string]string{"error": "LDAP password unavailable; reauthenticate"})
+		redirectToReauth(w, r)
 		return
 	}
 
@@ -235,7 +297,7 @@ func (s *Service) GiteaSSO(w http.ResponseWriter, r *http.Request) {
 	performFormSSO(
 		w,
 		r,
-		normalizeGiteaBaseURL(ssoBaseURLOrDefault(s.cfg.GiteaBaseURL, "")),
+		giteaInternalBaseURL(s.cfg),
 		"/user/login",
 		next,
 		"user_name",
@@ -253,18 +315,18 @@ func (s *Service) GiteaSSO(w http.ResponseWriter, r *http.Request) {
 func (s *Service) NetboxSSO(w http.ResponseWriter, r *http.Request) {
 	user, err := requireAuthUser()
 	if err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+		redirectToReauth(w, r)
 		return
 	}
 	password, ok := getCachedLDAPPassword(user.Username)
 	if !ok {
-		writeJSON(w, http.StatusPreconditionFailed, map[string]string{"error": "LDAP password unavailable; reauthenticate"})
+		redirectToReauth(w, r)
 		return
 	}
 	performFormSSO(
 		w,
 		r,
-		ssoBaseURLOrDefault(s.cfg.NetboxBaseURL, ""),
+		netboxInternalBaseURL(s.cfg),
 		"/login/",
 		"/netbox/",
 		"username",
@@ -282,18 +344,18 @@ func (s *Service) NetboxSSO(w http.ResponseWriter, r *http.Request) {
 func (s *Service) NautobotSSO(w http.ResponseWriter, r *http.Request) {
 	user, err := requireAuthUser()
 	if err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+		redirectToReauth(w, r)
 		return
 	}
 	password, ok := getCachedLDAPPassword(user.Username)
 	if !ok {
-		writeJSON(w, http.StatusPreconditionFailed, map[string]string{"error": "LDAP password unavailable; reauthenticate"})
+		redirectToReauth(w, r)
 		return
 	}
 	performFormSSO(
 		w,
 		r,
-		ssoBaseURLOrDefault(s.cfg.NautobotBaseURL, ""),
+		nautobotInternalBaseURL(s.cfg),
 		"/login/",
 		"/nautobot/",
 		"username",

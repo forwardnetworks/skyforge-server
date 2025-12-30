@@ -23,17 +23,17 @@ type SemaphoreSSOResponse struct {
 func (s *Service) SemaphoreSSO(w http.ResponseWriter, r *http.Request) {
 	user, err := requireAuthUser()
 	if err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+		redirectToReauth(w, r)
 		return
 	}
 	password, ok := getCachedLDAPPassword(user.Username)
 	if !ok {
-		writeJSON(w, http.StatusPreconditionFailed, map[string]string{"error": "LDAP password unavailable; reauthenticate"})
+		redirectToReauth(w, r)
 		return
 	}
 
 	semURL := strings.TrimRight(strings.TrimSpace(s.cfg.SemaphoreURL), "/")
-	// Config is typically http://semaphore:3000/api, but the UI/API are served under /semaphore/.
+	// Config is typically http://semaphore:3000/semaphore/api (UI/API are served under /semaphore/).
 	// Prefer the /semaphore/api path and fall back to /api for older configs.
 	semBase := semURL
 	if strings.HasSuffix(semBase, "/api") {

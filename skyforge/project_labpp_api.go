@@ -11,7 +11,7 @@ import (
 	"encore.dev/beta/errs"
 )
 
-type ProjectNetlabTemplatesResponse struct {
+type ProjectLabppTemplatesResponse struct {
 	ProjectID string   `json:"projectId"`
 	Repo      string   `json:"repo"`
 	Branch    string   `json:"branch"`
@@ -19,16 +19,19 @@ type ProjectNetlabTemplatesResponse struct {
 	Templates []string `json:"templates"`
 }
 
-type ProjectNetlabTemplatesRequest struct {
+type ProjectLabppTemplatesRequest struct {
 	Dir    string `query:"dir" encore:"optional"`
 	Source string `query:"source" encore:"optional"` // "project" (default), "blueprints", or "custom"
 	Repo   string `query:"repo" encore:"optional"`   // owner/repo or URL (custom only)
 }
 
-// GetProjectNetlabTemplates lists Netlab templates for a project.
+// GetProjectLabppTemplates lists LabPP templates for a project.
 //
-//encore:api auth method=GET path=/api/projects/:id/netlab/templates
-func (s *Service) GetProjectNetlabTemplates(ctx context.Context, id string, req *ProjectNetlabTemplatesRequest) (*ProjectNetlabTemplatesResponse, error) {
+// Templates are expected to live under a repo directory (default: blueprints/labpp)
+// where each template is a subdirectory (e.g. blueprints/labpp/junos-example/...).
+//
+//encore:api auth method=GET path=/api/projects/:id/labpp/templates
+func (s *Service) GetProjectLabppTemplates(ctx context.Context, id string, req *ProjectLabppTemplatesRequest) (*ProjectLabppTemplatesResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -37,6 +40,7 @@ func (s *Service) GetProjectNetlabTemplates(ctx context.Context, id string, req 
 	if err != nil {
 		return nil, err
 	}
+
 	source := "project"
 	if req != nil {
 		if v := strings.ToLower(strings.TrimSpace(req.Source)); v != "" {
@@ -92,7 +96,7 @@ func (s *Service) GetProjectNetlabTemplates(ctx context.Context, id string, req 
 		}
 	}
 
-	dir := "blueprints/netlab"
+	dir := "blueprints/labpp"
 	if req != nil {
 		if next := strings.Trim(strings.TrimSpace(req.Dir), "/"); next != "" {
 			if !isSafeRelativePath(next) {
@@ -104,49 +108,27 @@ func (s *Service) GetProjectNetlabTemplates(ctx context.Context, id string, req 
 
 	entries, err := listGiteaDirectory(s.cfg, owner, repo, dir, branch)
 	if err != nil {
-		log.Printf("netlab templates list: %v", err)
+		log.Printf("labpp templates list: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to query templates").Err()
 	}
 	templates := make([]string, 0, len(entries))
 	for _, e := range entries {
-		if e.Type != "file" {
+		if e.Type != "dir" {
 			continue
 		}
 		name := strings.TrimSpace(e.Name)
 		if name == "" || strings.HasPrefix(name, ".") {
 			continue
 		}
-		if !strings.HasSuffix(name, ".yml") && !strings.HasSuffix(name, ".yaml") {
-			continue
-		}
 		templates = append(templates, name)
 	}
 	sort.Strings(templates)
 	_ = ctx
-	return &ProjectNetlabTemplatesResponse{
+	return &ProjectLabppTemplatesResponse{
 		ProjectID: pc.project.ID,
 		Repo:      fmt.Sprintf("%s/%s", owner, repo),
 		Branch:    branch,
 		Dir:       dir,
 		Templates: templates,
 	}, nil
-}
-
-func parseGiteaRepoRef(input string) (string, string, error) {
-	ref := strings.TrimSpace(input)
-	if ref == "" {
-		return "", "", errs.B().Code(errs.InvalidArgument).Msg("repo is required").Err()
-	}
-	if strings.Contains(ref, "://") {
-		u, err := url.Parse(ref)
-		if err != nil {
-			return "", "", errs.B().Code(errs.InvalidArgument).Msg("invalid repo url").Err()
-		}
-		ref = strings.Trim(strings.TrimPrefix(u.Path, "/"), "/")
-	}
-	parts := strings.Split(strings.Trim(ref, "/"), "/")
-	if len(parts) < 2 {
-		return "", "", errs.B().Code(errs.InvalidArgument).Msg("repo must be of form owner/repo").Err()
-	}
-	return parts[0], parts[1], nil
 }

@@ -67,13 +67,6 @@ FROM sf_audit_log ORDER BY created_at DESC LIMIT $1`, limit)
 	}, nil
 }
 
-// GetAdminAuditV1 returns audit events (v1 alias).
-//
-//encore:api auth method=GET path=/api/v1/admin/audit tag:admin
-func (s *Service) GetAdminAuditV1(ctx context.Context, params *AdminAuditParams) (*AdminAuditResponse, error) {
-	return s.GetAdminAudit(ctx, params)
-}
-
 // GetAdminImpersonateStatus returns current impersonation status (admin only).
 //
 //encore:api auth method=GET path=/api/admin/impersonate/status tag:admin
@@ -89,11 +82,4 @@ func (s *Service) GetAdminImpersonateStatus(ctx context.Context) (*AdminImperson
 		Impersonating:     user.Impersonating,
 		Time:              time.Now().UTC().Format(time.RFC3339),
 	}, nil
-}
-
-// GetAdminImpersonateStatusV1 returns current impersonation status (v1 alias).
-//
-//encore:api auth method=GET path=/api/v1/admin/impersonate/status tag:admin
-func (s *Service) GetAdminImpersonateStatusV1(ctx context.Context) (*AdminImpersonateStatusResponse, error) {
-	return s.GetAdminImpersonateStatus(ctx)
 }

@@ -29,4 +29,3 @@ func (s *Service) authorizeSemaphoreProjectID(claims *SessionClaims, projectID i
 	}
 	return nil
 }
-

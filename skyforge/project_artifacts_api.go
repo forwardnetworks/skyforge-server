@@ -63,13 +63,6 @@ func (s *Service) ListProjectArtifacts(ctx context.Context, id string, params *P
 	}, nil
 }
 
-// ListProjectArtifactsV1 lists artifact objects for a project (v1 alias).
-//
-//encore:api auth method=GET path=/api/v1/projects/:id/artifacts
-func (s *Service) ListProjectArtifactsV1(ctx context.Context, id string, params *ProjectArtifactsListParams) (*ProjectArtifactsListResponse, error) {
-	return s.ListProjectArtifacts(ctx, id, params)
-}
-
 func listStorageArtifacts(ctx context.Context, projectID, prefix string, limit int) ([]storageObjectSummary, error) {
 	return listArtifactEntries(ctx, projectID, prefix, limit)
 }

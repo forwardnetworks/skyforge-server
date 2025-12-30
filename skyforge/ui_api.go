@@ -28,10 +28,3 @@ func (s *Service) GetUIConfig(_ context.Context) (*UIConfigResponse, error) {
 		ThemeDefault:     s.cfg.UI.ThemeDefault,
 	}, nil
 }
-
-// GetUIConfigV1 returns UI configuration values (v1 alias).
-//
-//encore:api public method=GET path=/api/v1/ui/config
-func (s *Service) GetUIConfigV1(ctx context.Context) (*UIConfigResponse, error) {
-	return s.GetUIConfig(ctx)
-}

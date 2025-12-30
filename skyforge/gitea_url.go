@@ -25,3 +25,20 @@ func giteaRawFileURL(cfg Config, owner, repo, branch, filePath string) string {
 	trimmed := strings.TrimPrefix(strings.TrimPrefix(filePath, "/"), "./")
 	return fmt.Sprintf("%s/%s/%s/raw/branch/%s/%s", base, owner, repo, branch, trimmed)
 }
+
+func giteaInternalBaseURL(cfg Config) string {
+	apiURL := strings.TrimRight(strings.TrimSpace(cfg.Projects.GiteaAPIURL), "/")
+	base := ""
+	if apiURL != "" {
+		lower := strings.ToLower(apiURL)
+		if strings.HasSuffix(lower, "/api/v1") {
+			base = strings.TrimSuffix(apiURL, "/api/v1")
+		} else {
+			base = apiURL
+		}
+	}
+	if base == "" {
+		base = cfg.GiteaBaseURL
+	}
+	return normalizeGiteaBaseURL(base)
+}

@@ -45,13 +45,6 @@ func (s *Service) UploadProjectArtifact(ctx context.Context, id string, req *Pro
 	return s.handleProjectArtifactUpload(ctx, id, req)
 }
 
-// UploadProjectArtifactV1 uploads or presigns an artifact (v1 alias).
-//
-//encore:api auth method=POST path=/api/v1/projects/:id/artifacts/upload
-func (s *Service) UploadProjectArtifactV1(ctx context.Context, id string, req *ProjectArtifactUploadRequest) (*ProjectArtifactUploadResponse, error) {
-	return s.handleProjectArtifactUpload(ctx, id, req)
-}
-
 func (s *Service) handleProjectArtifactUpload(ctx context.Context, id string, req *ProjectArtifactUploadRequest) (*ProjectArtifactUploadResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -114,13 +107,6 @@ func (s *Service) handleProjectArtifactUpload(ctx context.Context, id string, re
 //
 //encore:api auth method=GET path=/api/projects/:id/artifacts/download
 func (s *Service) DownloadProjectArtifact(ctx context.Context, id string, params *ProjectArtifactDownloadParams) (*ProjectArtifactDownloadResponse, error) {
-	return s.handleProjectArtifactDownload(ctx, id, params)
-}
-
-// DownloadProjectArtifactV1 returns a presigned download redirect (v1 alias).
-//
-//encore:api auth method=GET path=/api/v1/projects/:id/artifacts/download
-func (s *Service) DownloadProjectArtifactV1(ctx context.Context, id string, params *ProjectArtifactDownloadParams) (*ProjectArtifactDownloadResponse, error) {
 	return s.handleProjectArtifactDownload(ctx, id, params)
 }
 

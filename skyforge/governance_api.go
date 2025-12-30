@@ -370,6 +370,24 @@ func (s *Service) SyncGovernanceSources(ctx context.Context) (*GovernanceSyncRes
 	if err != nil {
 		resp.Warnings = append(resp.Warnings, "eve stats unavailable")
 	} else {
+		fmtFloat := func(v *float64) string {
+			if v == nil {
+				return ""
+			}
+			return fmt.Sprintf("%.2f", *v)
+		}
+		fmtInt := func(v *int) string {
+			if v == nil {
+				return ""
+			}
+			return fmt.Sprintf("%d", *v)
+		}
+		fmtInt64 := func(v *int64) string {
+			if v == nil {
+				return ""
+			}
+			return fmt.Sprintf("%d", *v)
+		}
 		for _, server := range stats.Servers {
 			input := GovernanceResourceInput{
 				Provider:     "eve",
@@ -379,18 +397,18 @@ func (s *Service) SyncGovernanceSources(ctx context.Context) (*GovernanceSyncRes
 				Status:       strings.ToLower(strings.TrimSpace(server.Status)),
 				Metadata: map[string]string{
 					"version":       server.Version,
-					"cpu_percent":   fmt.Sprintf("%.2f", server.CpuPercent),
-					"mem_percent":   fmt.Sprintf("%.2f", server.MemPercent),
-					"disk_percent":  fmt.Sprintf("%.2f", server.DiskPercent),
-					"vcpu":          fmt.Sprintf("%d", server.VCPU),
-					"mem_total":     fmt.Sprintf("%d", server.MemTotal),
-					"disk_free":     fmt.Sprintf("%.2f", server.DiskAvailable),
-					"qemu_nodes":    fmt.Sprintf("%d", server.QemuNodes),
-					"dynamips":      fmt.Sprintf("%d", server.DynamipsNodes),
-					"vpcs":          fmt.Sprintf("%d", server.VpcsNodes),
-					"docker_nodes":  fmt.Sprintf("%d", server.DockerNodes),
-					"cluster_nodes": fmt.Sprintf("%d", server.ClusterNodes),
-					"cluster_up":    fmt.Sprintf("%d", server.ClusterOnline),
+					"cpu_percent":   fmtFloat(server.CpuPercent),
+					"mem_percent":   fmtFloat(server.MemPercent),
+					"disk_percent":  fmtFloat(server.DiskPercent),
+					"vcpu":          fmtInt(server.VCPU),
+					"mem_total":     fmtInt64(server.MemTotal),
+					"disk_free":     fmtFloat(server.DiskAvailable),
+					"qemu_nodes":    fmtInt(server.QemuNodes),
+					"dynamips":      fmtInt(server.DynamipsNodes),
+					"vpcs":          fmtInt(server.VpcsNodes),
+					"docker_nodes":  fmtInt(server.DockerNodes),
+					"cluster_nodes": fmtInt(server.ClusterNodes),
+					"cluster_up":    fmtInt(server.ClusterOnline),
 					"error":         server.Error,
 				},
 			}
@@ -399,12 +417,21 @@ func (s *Service) SyncGovernanceSources(ctx context.Context) (*GovernanceSyncRes
 				continue
 			}
 			resp.ResourceCount++
-			metrics := []GovernanceUsageInput{
-				{Provider: "eve", ScopeType: "server", ScopeID: server.Name, Metric: "cpu_percent", Value: server.CpuPercent, Unit: "%"},
-				{Provider: "eve", ScopeType: "server", ScopeID: server.Name, Metric: "mem_percent", Value: server.MemPercent, Unit: "%"},
-				{Provider: "eve", ScopeType: "server", ScopeID: server.Name, Metric: "disk_percent", Value: server.DiskPercent, Unit: "%"},
-				{Provider: "eve", ScopeType: "server", ScopeID: server.Name, Metric: "qemu_nodes", Value: float64(server.QemuNodes), Unit: "count"},
-				{Provider: "eve", ScopeType: "server", ScopeID: server.Name, Metric: "docker_nodes", Value: float64(server.DockerNodes), Unit: "count"},
+			metrics := make([]GovernanceUsageInput, 0, 5)
+			if server.CpuPercent != nil {
+				metrics = append(metrics, GovernanceUsageInput{Provider: "eve", ScopeType: "server", ScopeID: server.Name, Metric: "cpu_percent", Value: *server.CpuPercent, Unit: "%"})
+			}
+			if server.MemPercent != nil {
+				metrics = append(metrics, GovernanceUsageInput{Provider: "eve", ScopeType: "server", ScopeID: server.Name, Metric: "mem_percent", Value: *server.MemPercent, Unit: "%"})
+			}
+			if server.DiskPercent != nil {
+				metrics = append(metrics, GovernanceUsageInput{Provider: "eve", ScopeType: "server", ScopeID: server.Name, Metric: "disk_percent", Value: *server.DiskPercent, Unit: "%"})
+			}
+			if server.QemuNodes != nil {
+				metrics = append(metrics, GovernanceUsageInput{Provider: "eve", ScopeType: "server", ScopeID: server.Name, Metric: "qemu_nodes", Value: float64(*server.QemuNodes), Unit: "count"})
+			}
+			if server.DockerNodes != nil {
+				metrics = append(metrics, GovernanceUsageInput{Provider: "eve", ScopeType: "server", ScopeID: server.Name, Metric: "docker_nodes", Value: float64(*server.DockerNodes), Unit: "count"})
 			}
 			for _, metric := range metrics {
 				if _, err := insertGovernanceUsage(ctx, s.db, metric); err == nil {

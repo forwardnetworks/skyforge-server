@@ -74,10 +74,3 @@ func (s *Service) GetTemplates(ctx context.Context, params *TemplatesParams) (*T
 		Templates: templates,
 	}, nil
 }
-
-// GetTemplatesV1 returns available templates for a project (v1 alias).
-//
-//encore:api public method=GET path=/api/v1/templates
-func (s *Service) GetTemplatesV1(ctx context.Context, params *TemplatesParams) (*TemplatesResponse, error) {
-	return s.GetTemplates(ctx, params)
-}

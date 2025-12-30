@@ -55,10 +55,3 @@ func (s *Service) SyncProjects(ctx context.Context) (*ProjectsSyncResponse, erro
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	}, nil
 }
-
-// SyncProjectsV1 syncs all projects from external systems (v1 alias).
-//
-//encore:api auth method=POST path=/api/v1/admin/projects/sync tag:admin
-func (s *Service) SyncProjectsV1(ctx context.Context) (*ProjectsSyncResponse, error) {
-	return s.SyncProjects(ctx)
-}

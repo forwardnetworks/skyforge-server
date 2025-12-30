@@ -7,20 +7,20 @@ import (
 
 // Encore-managed secrets fallback (matches encore.app).
 var secrets struct {
-	SKYFORGE_SESSION_SECRET             string
-	SKYFORGE_LDAP_URL                   string
-	SKYFORGE_LDAP_BIND_TEMPLATE         string
-	SKYFORGE_LDAP_LOOKUP_BINDDN         string
-	SKYFORGE_LDAP_LOOKUP_BINDPASSWORD   string
-	SKYFORGE_DB_PASSWORD                string
-	SKYFORGE_REDIS_PASSWORD             string
-	SKYFORGE_GITEA_PASSWORD             string
+	SKYFORGE_SESSION_SECRET                      string
+	SKYFORGE_LDAP_URL                            string
+	SKYFORGE_LDAP_BIND_TEMPLATE                  string
+	SKYFORGE_LDAP_LOOKUP_BINDDN                  string
+	SKYFORGE_LDAP_LOOKUP_BINDPASSWORD            string
+	SKYFORGE_DB_PASSWORD                         string
+	SKYFORGE_REDIS_PASSWORD                      string
+	SKYFORGE_GITEA_PASSWORD                      string
 	SKYFORGE_OBJECT_STORAGE_TERRAFORM_ACCESS_KEY string
 	SKYFORGE_OBJECT_STORAGE_TERRAFORM_SECRET_KEY string
-	SKYFORGE_SEMAPHORE_TOKEN            string
-	SKYFORGE_SEMAPHORE_PASSWORD         string
-	SKYFORGE_INTERNAL_TOKEN             string
-	SKYFORGE_SEMAPHORE_URL              string
+	SKYFORGE_SEMAPHORE_TOKEN                     string
+	SKYFORGE_SEMAPHORE_PASSWORD                  string
+	SKYFORGE_INTERNAL_TOKEN                      string
+	SKYFORGE_SEMAPHORE_URL                       string
 }
 
 func getEncoreSecret(key string) string {

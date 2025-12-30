@@ -19,11 +19,11 @@ import (
 )
 
 type ToolServiceStatus struct {
-	ID               string `json:"id"`
-	Label            string `json:"label"`
-	Mode             string `json:"mode"` // "shared" or "personal"
-	DesiredReplicas  int32  `json:"desiredReplicas"`
-	AvailableReplicas int32 `json:"availableReplicas"`
+	ID                string `json:"id"`
+	Label             string `json:"label"`
+	Mode              string `json:"mode"` // "shared" or "personal"
+	DesiredReplicas   int32  `json:"desiredReplicas"`
+	AvailableReplicas int32  `json:"availableReplicas"`
 }
 
 type ToolServicesStatusResponse struct {

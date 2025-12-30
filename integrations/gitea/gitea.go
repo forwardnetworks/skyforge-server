@@ -243,12 +243,17 @@ func (c *Client) EnsureRepo(owner, repo string) error {
 		"private":   c.cfg.RepoPrivate,
 		"auto_init": false,
 	}
-	resp, body, err := c.Do(http.MethodPost, "/user/repos", createPayload)
+	createPath := "/user/repos"
+	if strings.TrimSpace(owner) != "" && !strings.EqualFold(strings.TrimSpace(owner), strings.TrimSpace(c.cfg.Username)) {
+		createPath = fmt.Sprintf("/admin/users/%s/repos", url.PathEscape(owner))
+	}
+	resp, body, err := c.Do(http.MethodPost, createPath, createPayload)
 	if err != nil {
 		return err
 	}
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("gitea create repo failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		fullURL := strings.TrimRight(c.cfg.APIURL, "/") + createPath
+		return fmt.Errorf("gitea create repo failed (%d) via %s: %s", resp.StatusCode, fullURL, strings.TrimSpace(string(body)))
 	}
 	return nil
 }
@@ -295,7 +300,8 @@ func (c *Client) EnsureRepoFromBlueprint(owner, repo, blueprint string) error {
 
 func (c *Client) EnsureCollaborator(owner, repo, username, permission string) error {
 	path := fmt.Sprintf("/repos/%s/%s/collaborators/%s?permission=%s", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(username), url.QueryEscape(permission))
-	resp, body, err := c.Do(http.MethodPut, path, nil)
+	// Gitea's API expects a Content-Type even when the request has no meaningful body.
+	resp, body, err := c.Do(http.MethodPut, path, map[string]any{})
 	if err != nil {
 		return err
 	}

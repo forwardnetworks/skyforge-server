@@ -139,13 +139,6 @@ func (s *Service) GetLabsRunning(ctx context.Context, params *LabsRunningParams)
 	}, nil
 }
 
-// GetLabsRunningV1 returns running labs across providers (v1 alias).
-//
-//encore:api public method=GET path=/api/v1/labs/running
-func (s *Service) GetLabsRunningV1(ctx context.Context, params *LabsRunningParams) (*LabsRunningResponse, error) {
-	return s.GetLabsRunning(ctx, params)
-}
-
 // GetLabsForUser returns labs scoped to the authenticated user.
 //
 //encore:api auth method=GET path=/api/labs/user
@@ -214,13 +207,6 @@ func (s *Service) GetLabsForUser(ctx context.Context, params *LabsRunningParams)
 	}, nil
 }
 
-// GetLabsForUserV1 returns labs scoped to the authenticated user (v1 alias).
-//
-//encore:api auth method=GET path=/api/v1/labs/user
-func (s *Service) GetLabsForUserV1(ctx context.Context, params *LabsRunningParams) (*LabsUserResponse, error) {
-	return s.GetLabsForUser(ctx, params)
-}
-
 // ListEveServers returns configured EVE-NG servers.
 //
 //encore:api auth method=GET path=/api/eve/servers
@@ -265,13 +251,6 @@ func (s *Service) ListEveServers(ctx context.Context) (*EveServersResponse, erro
 	}, nil
 }
 
-// ListEveServersV1 returns configured EVE-NG servers (v1 alias).
-//
-//encore:api auth method=GET path=/api/v1/eve/servers
-func (s *Service) ListEveServersV1(ctx context.Context) (*EveServersResponse, error) {
-	return s.ListEveServers(ctx)
-}
-
 // ListNetlabServers returns configured Netlab runners.
 //
 //encore:api auth method=GET path=/api/netlab/servers
@@ -301,13 +280,6 @@ func (s *Service) ListNetlabServers(ctx context.Context) (*NetlabServersResponse
 		Servers: out,
 		User:    user.Username,
 	}, nil
-}
-
-// ListNetlabServersV1 returns configured Netlab runners (v1 alias).
-//
-//encore:api auth method=GET path=/api/v1/netlab/servers
-func (s *Service) ListNetlabServersV1(ctx context.Context) (*NetlabServersResponse, error) {
-	return s.ListNetlabServers(ctx)
 }
 
 // ListNetlabLabs returns Netlab labs metadata.
@@ -400,13 +372,6 @@ func (s *Service) ListNetlabLabs(ctx context.Context, params *NetlabLabsParams) 
 	}, nil
 }
 
-// ListNetlabLabsV1 returns Netlab labs metadata (v1 alias).
-//
-//encore:api auth method=GET path=/api/v1/netlab/labs
-func (s *Service) ListNetlabLabsV1(ctx context.Context, params *NetlabLabsParams) (*NetlabLabsResponse, error) {
-	return s.ListNetlabLabs(ctx, params)
-}
-
 // GetNetlabLab returns metadata for a specific Netlab lab.
 //
 //encore:api auth method=GET path=/api/netlab/labs/:id
@@ -479,11 +444,4 @@ func (s *Service) GetNetlabLab(ctx context.Context, id string, params *NetlabLab
 		Runner: resolvedName,
 		Lab:    labJSON,
 	}, nil
-}
-
-// GetNetlabLabV1 returns metadata for a specific Netlab lab (v1 alias).
-//
-//encore:api auth method=GET path=/api/v1/netlab/labs/:id
-func (s *Service) GetNetlabLabV1(ctx context.Context, id string, params *NetlabLabParams) (*NetlabLabResponse, error) {
-	return s.GetNetlabLab(ctx, id, params)
 }

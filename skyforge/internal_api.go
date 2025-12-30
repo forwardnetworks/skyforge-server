@@ -50,10 +50,3 @@ func (s *Service) ExportProjects(ctx context.Context, params *InternalProjectsEx
 		StateStore: s.cfg.StateBackend,
 	}, nil
 }
-
-// ExportProjectsV1 returns project and user state for internal tooling (v1 alias).
-//
-//encore:api public method=GET path=/api/v1/internal/projects-export
-func (s *Service) ExportProjectsV1(ctx context.Context, params *InternalProjectsExportParams) (*InternalProjectsExportResponse, error) {
-	return s.ExportProjects(ctx, params)
-}

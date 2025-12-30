@@ -71,30 +71,61 @@ func (c *Client) ensureSession() (*http.Client, error) {
 		return nil, fmt.Errorf("missing semaphore username/password")
 	}
 
-	jar, _ := cookiejar.New(nil)
-	client := &http.Client{Timeout: c.cfg.Timeout, Jar: jar}
+	tryLogin := func(baseURL string) (*http.Client, int, error) {
+		jar, _ := cookiejar.New(nil)
+		client := &http.Client{Timeout: c.cfg.Timeout, Jar: jar}
 
-	loginURL := strings.TrimRight(c.cfg.BaseURL, "/") + "/auth/login"
-	payload := map[string]any{
-		"auth":     c.cfg.Username,
-		"password": password,
+		loginURL := strings.TrimRight(baseURL, "/") + "/auth/login"
+		payload := map[string]any{
+			"auth":     c.cfg.Username,
+			"password": password,
+		}
+		body, _ := json.Marshal(payload)
+		req, err := http.NewRequest(http.MethodPost, loginURL, strings.NewReader(string(body)))
+		if err != nil {
+			return nil, 0, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, 0, err
+		}
+		data, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		ct := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Type")))
+		bodyTrim := strings.TrimPrefix(strings.TrimSpace(string(data)), "\ufeff")
+		if strings.HasPrefix(ct, "text/html") || strings.HasPrefix(strings.ToLower(bodyTrim), "<") {
+			// Some base-paths can route to the UI index.html while still returning 200.
+			// Treat that as a failed login attempt so we can try alternate base URLs.
+			return client, http.StatusBadRequest, nil
+		}
+		return client, resp.StatusCode, nil
 	}
-	body, _ := json.Marshal(payload)
-	req, err := http.NewRequest(http.MethodPost, loginURL, strings.NewReader(string(body)))
+
+	base := strings.TrimSpace(c.cfg.BaseURL)
+	client, status, err := tryLogin(base)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	_, _ = io.Copy(io.Discard, resp.Body)
-	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("semaphore login failed (%d)", resp.StatusCode)
+	if status != http.StatusNoContent && status != http.StatusOK {
+		alt := ""
+		if strings.Contains(base, "/semaphore/api") {
+			alt = strings.Replace(base, "/semaphore/api", "/api", 1)
+		} else if strings.HasSuffix(strings.TrimRight(base, "/"), "/api") {
+			alt = strings.TrimSuffix(strings.TrimRight(base, "/"), "/api") + "/semaphore/api"
+		}
+		if strings.TrimSpace(alt) != "" && strings.TrimSpace(alt) != strings.TrimSpace(base) {
+			altClient, altStatus, altErr := tryLogin(alt)
+			if altErr == nil && (altStatus == http.StatusNoContent || altStatus == http.StatusOK) {
+				c.cfg.BaseURL = alt
+				c.client = altClient
+				c.loggedIn = true
+				return altClient, nil
+			}
+		}
+		return nil, fmt.Errorf("semaphore login failed (%d)", status)
 	}
 
 	c.client = client

@@ -116,6 +116,11 @@ type Config struct {
 	Projects                   ProjectsConfig
 	Redis                      RedisConfig
 	EveServers                 []EveServerConfig
+	LabppAPIURL                string
+	LabppSkipTLSVerify         bool
+	DNSURL                     string
+	DNSAdminUsername           string
+	DNSUserZoneSuffix          string
 }
 
 type RunRequest struct {
@@ -269,6 +274,7 @@ type SkyforgeProject struct {
 	TofuApplyTemplateID  int       `json:"tofuApplyTemplateId,omitempty"`
 	AnsibleRunTemplateID int       `json:"ansibleRunTemplateId,omitempty"`
 	NetlabRunTemplateID  int       `json:"netlabRunTemplateId,omitempty"`
+	LabppRunTemplateID   int       `json:"labppRunTemplateId,omitempty"`
 	AWSAccountID         string    `json:"awsAccountId,omitempty"`
 	AWSRoleName          string    `json:"awsRoleName,omitempty"`
 	AWSRegion            string    `json:"awsRegion,omitempty"`
@@ -514,6 +520,22 @@ func normalizeEveServer(s EveServerConfig, fallback LabsConfig) EveServerConfig 
 	s.LabsPath = strings.TrimSpace(s.LabsPath)
 	s.TmpPath = strings.TrimSpace(s.TmpPath)
 
+	if s.Username == "" {
+		s.Username = strings.TrimSpace(fallback.EveUsername)
+	}
+	if s.Password == "" {
+		s.Password = strings.TrimSpace(fallback.EvePassword)
+	}
+	if !s.SkipTLSVerify && fallback.EveSkipTLSVerify {
+		s.SkipTLSVerify = true
+	}
+	if s.APIURL == "" && strings.TrimSpace(fallback.EveAPIURL) != "" {
+		s.APIURL = strings.TrimRight(strings.TrimSpace(fallback.EveAPIURL), "/")
+	}
+	if s.WebURL == "" && strings.TrimSpace(fallback.PublicURL) != "" {
+		s.WebURL = strings.TrimRight(strings.TrimSpace(fallback.PublicURL), "/")
+	}
+
 	if s.WebURL == "" && s.APIURL != "" {
 		web := s.APIURL
 		if strings.HasSuffix(web, "/api") {
@@ -656,6 +678,13 @@ func resolveNetlabServer(cfg Config, name string) (*NetlabServerConfig, string) 
 				return &mapped, mapped.Name
 			}
 		}
+		// If a dedicated Netlab pool isn't configured, treat the first configured EVE-NG server
+		// as the default Netlab runner. This keeps "Netlab runs default to EVE" working without
+		// requiring a separate SKYFORGE_NETLAB_SSH_HOST override.
+		if len(cfg.EveServers) > 0 {
+			mapped := netlabServerFromEve(cfg.EveServers[0], cfg.Netlab, cfg.Labs)
+			return &mapped, mapped.Name
+		}
 		if strings.TrimSpace(cfg.Netlab.SSHHost) == "" {
 			return nil, ""
 		}
@@ -778,6 +807,14 @@ func loadConfig() Config {
 		EveLabsPath:      getenv("SKYFORGE_EVE_LABS_PATH", "/opt/unetlab/labs"),
 		EveTmpPath:       getenv("SKYFORGE_EVE_TMP_PATH", "/opt/unetlab/tmp"),
 	}
+
+	labppAPIURL := strings.TrimRight(strings.TrimSpace(getenv("SKYFORGE_LABPP_API_URL", "")), "/")
+	labppSkipTLSVerify := getenv("SKYFORGE_LABPP_SKIP_TLS_VERIFY", "false") == "true"
+
+	dnsURL := strings.TrimRight(strings.TrimSpace(getenv("SKYFORGE_DNS_URL", "http://technitium-dns:5380")), "/")
+	dnsAdminUsername := strings.TrimSpace(getenv("SKYFORGE_DNS_ADMIN_USERNAME", "admin"))
+	dnsUserZoneSuffix := strings.TrimSpace(getenv("SKYFORGE_DNS_USER_ZONE_SUFFIX", "skyforge"))
+	dnsUserZoneSuffix = strings.TrimPrefix(dnsUserZoneSuffix, ".")
 
 	eveServersRaw := strings.TrimSpace(os.Getenv("SKYFORGE_EVE_SERVERS_JSON"))
 	if eveServersRaw == "" {
@@ -963,6 +1000,11 @@ func loadConfig() Config {
 		Projects:                   projectsCfg,
 		Redis:                      redisCfg,
 		EveServers:                 filteredEveServers,
+		LabppAPIURL:                labppAPIURL,
+		LabppSkipTLSVerify:         labppSkipTLSVerify,
+		DNSURL:                     dnsURL,
+		DNSAdminUsername:           dnsAdminUsername,
+		DNSUserZoneSuffix:          dnsUserZoneSuffix,
 	}
 }
 
@@ -1945,7 +1987,7 @@ func deleteProjectGCPCredentials(ctx context.Context, db *sql.DB, projectID stri
 
 func (s *pgProjectsStore) load() ([]SkyforgeProject, error) {
 	rows, err := s.db.Query(`SELECT id, slug, name, description, created_at, created_by,
-		blueprint, default_branch, terraform_state_key, tofu_init_template_id, tofu_plan_template_id, tofu_apply_template_id, ansible_run_template_id, netlab_run_template_id,
+		blueprint, default_branch, terraform_state_key, tofu_init_template_id, tofu_plan_template_id, tofu_apply_template_id, ansible_run_template_id, netlab_run_template_id, labpp_run_template_id,
 		aws_account_id, aws_role_name, aws_region, aws_auth_method, artifacts_bucket, is_public,
 		eve_server, netlab_server, semaphore_project_id, gitea_owner, gitea_repo
 	FROM sf_projects ORDER BY created_at DESC`)
@@ -1960,8 +2002,8 @@ func (s *pgProjectsStore) load() ([]SkyforgeProject, error) {
 		var (
 			id, slug, name, createdBy                                      string
 			description, blueprint, defaultBranch                          sql.NullString
-			terraformStateKey                                   sql.NullString
-			tofuInit, tofuPlan, tofuApply, ansibleRun, netlabRun sql.NullInt64
+			terraformStateKey                                              sql.NullString
+			tofuInit, tofuPlan, tofuApply, ansibleRun, netlabRun, labppRun sql.NullInt64
 			awsAccountID, awsRoleName, awsRegion, awsAuthMethod            sql.NullString
 			artifactsBucket                                                sql.NullString
 			isPublic                                                       bool
@@ -1972,7 +2014,7 @@ func (s *pgProjectsStore) load() ([]SkyforgeProject, error) {
 			giteaOwner, giteaRepo                                          string
 		)
 		if err := rows.Scan(&id, &slug, &name, &description, &createdAt, &createdBy,
-			&blueprint, &defaultBranch, &terraformStateKey, &tofuInit, &tofuPlan, &tofuApply, &ansibleRun, &netlabRun,
+			&blueprint, &defaultBranch, &terraformStateKey, &tofuInit, &tofuPlan, &tofuApply, &ansibleRun, &netlabRun, &labppRun,
 			&awsAccountID, &awsRoleName, &awsRegion, &awsAuthMethod, &artifactsBucket, &isPublic,
 			&eveServer, &netlabServer, &semaphoreProjectID, &giteaOwner, &giteaRepo,
 		); err != nil {
@@ -1993,6 +2035,7 @@ func (s *pgProjectsStore) load() ([]SkyforgeProject, error) {
 			TofuApplyTemplateID:  int(tofuApply.Int64),
 			AnsibleRunTemplateID: int(ansibleRun.Int64),
 			NetlabRunTemplateID:  int(netlabRun.Int64),
+			LabppRunTemplateID:   int(labppRun.Int64),
 			AWSAccountID:         awsAccountID.String,
 			AWSRoleName:          awsRoleName.String,
 			AWSRegion:            awsRegion.String,
@@ -2120,13 +2163,13 @@ func (s *pgProjectsStore) save(projects []SkyforgeProject) error {
 		}
 		if _, err := tx.Exec(`INSERT INTO sf_projects (
 		  id, slug, name, description, created_at, created_by,
-		  blueprint, default_branch, terraform_state_key, tofu_init_template_id, tofu_plan_template_id, tofu_apply_template_id, ansible_run_template_id, netlab_run_template_id,
+		  blueprint, default_branch, terraform_state_key, tofu_init_template_id, tofu_plan_template_id, tofu_apply_template_id, ansible_run_template_id, netlab_run_template_id, labpp_run_template_id,
 		  aws_account_id, aws_role_name, aws_region, aws_auth_method, artifacts_bucket, is_public,
 		  eve_server, netlab_server, semaphore_project_id, gitea_owner, gitea_repo, updated_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,now())`,
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,now())`,
 			id, slug, strings.TrimSpace(p.Name), nullIfEmpty(strings.TrimSpace(p.Description)), p.CreatedAt.UTC(), createdBy,
 			nullIfEmpty(strings.TrimSpace(p.Blueprint)), nullIfEmpty(strings.TrimSpace(p.DefaultBranch)),
-			nullIfEmpty(strings.TrimSpace(p.TerraformStateKey)), p.TofuInitTemplateID, p.TofuPlanTemplateID, p.TofuApplyTemplateID, p.AnsibleRunTemplateID, p.NetlabRunTemplateID,
+			nullIfEmpty(strings.TrimSpace(p.TerraformStateKey)), p.TofuInitTemplateID, p.TofuPlanTemplateID, p.TofuApplyTemplateID, p.AnsibleRunTemplateID, p.NetlabRunTemplateID, p.LabppRunTemplateID,
 			nullIfEmpty(strings.TrimSpace(p.AWSAccountID)), nullIfEmpty(strings.TrimSpace(p.AWSRoleName)), nullIfEmpty(strings.TrimSpace(p.AWSRegion)),
 			nullIfEmpty(strings.TrimSpace(p.AWSAuthMethod)), nullIfEmpty(strings.TrimSpace(p.ArtifactsBucket)), p.IsPublic,
 			nullIfEmpty(strings.TrimSpace(p.EveServer)), nullIfEmpty(strings.TrimSpace(p.NetlabServer)),
@@ -3124,6 +3167,28 @@ func ensureSemaphoreRepo(cfg Config, projectID int, name, gitURL, gitBranch stri
 	return 0, fmt.Errorf("semaphore create repository missing id")
 }
 
+func findSemaphoreRepoID(cfg Config, projectID int, name string) (int, error) {
+	resp, body, err := semaphoreDo(cfg, http.MethodGet, fmt.Sprintf("/project/%d/repositories", projectID), nil)
+	if err != nil {
+		return 0, err
+	}
+	if resp.StatusCode >= 400 {
+		return 0, fmt.Errorf("semaphore repositories list failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var repos []map[string]any
+	if err := json.Unmarshal(body, &repos); err != nil {
+		return 0, err
+	}
+	for _, r := range repos {
+		if rName, _ := r["name"].(string); strings.EqualFold(strings.TrimSpace(rName), strings.TrimSpace(name)) {
+			if id, ok := r["id"].(float64); ok {
+				return int(id), nil
+			}
+		}
+	}
+	return 0, fmt.Errorf("semaphore repository %q not found", name)
+}
+
 func ensureSemaphoreEnvironment(cfg Config, projectID int, name string, env map[string]string) (int, error) {
 	resp, body, err := semaphoreDo(cfg, http.MethodGet, fmt.Sprintf("/project/%d/environment", projectID), nil)
 	if err != nil {
@@ -3339,12 +3404,12 @@ func projectTerraformEnv(project SkyforgeProject) map[string]string {
 		region = strings.TrimSpace(project.AWSRegion)
 	}
 	return map[string]string{
-		"TF_IN_AUTOMATION":                "true",
-		"TF_VAR_scenario":                 "regular_cluster",
-		"AWS_EC2_METADATA_DISABLED":       "true",
-		"AWS_REGION":                      region,
-		"TF_VAR_ssh_key_name":             "REPLACE_ME",
-		"TF_VAR_artifacts_bucket":         "REPLACE_ME",
+		"TF_IN_AUTOMATION":          "true",
+		"TF_VAR_scenario":           "regular_cluster",
+		"AWS_EC2_METADATA_DISABLED": "true",
+		"AWS_REGION":                region,
+		"TF_VAR_ssh_key_name":       "REPLACE_ME",
+		"TF_VAR_artifacts_bucket":   "REPLACE_ME",
 	}
 }
 
@@ -3408,149 +3473,219 @@ func syncProjectResources(ctx context.Context, cfg Config, project *SkyforgeProj
 	}
 
 	if project.SemaphoreProjectID > 0 {
+		gitBranch := strings.TrimSpace(project.DefaultBranch)
+		if gitBranch == "" {
+			gitBranch = "master"
+		}
+
+		if strings.TrimSpace(project.GiteaOwner) != "" && strings.TrimSpace(project.GiteaRepo) != "" {
+			if err := ensureGiteaFile(cfg, project.GiteaOwner, project.GiteaRepo, "netlab/job/run_netlab_api.py", netlabAPIRunnerScript(), "chore: sync netlab runner", gitBranch, nil); err != nil {
+				addErr("gitea netlab runner", err)
+			} else {
+				addStep("netlab runner synced")
+			}
+			if err := ensureGiteaFile(cfg, project.GiteaOwner, project.GiteaRepo, "labpp/job/run_labpp_api.py", labppAPIRunnerScript(), "chore: sync labpp runner", gitBranch, nil); err != nil {
+				addErr("gitea labpp runner", err)
+			} else {
+				addStep("labpp runner synced")
+			}
+		}
+
 		repoID := 0
 		envID := 0
 		inventoryID := 0
-		keyID := 0
-		gitBranch := ""
+
 		if strings.EqualFold(strings.TrimSpace(project.GiteaOwner), strings.TrimSpace(cfg.Projects.GiteaUsername)) {
-			var err error
-			keyID, err = ensureSemaphoreHTTPKey(cfg, project.SemaphoreProjectID, "gitea-http", cfg.Projects.GiteaUsername, cfg.Projects.GiteaPassword)
+			keyID, err := ensureSemaphoreHTTPKey(cfg, project.SemaphoreProjectID, "gitea-http", cfg.Projects.GiteaUsername, cfg.Projects.GiteaPassword)
 			if err != nil {
 				addErr("semaphore http key", err)
 				return report
 			}
 			addStep("semaphore key ok")
 
-			gitBranch = strings.TrimSpace(project.DefaultBranch)
-			if gitBranch == "" {
-				gitBranch = "master"
-			}
-			giteaBase := normalizeGiteaBaseURL(cfg.GiteaBaseURL)
+			giteaBase := giteaInternalBaseURL(cfg)
 			if giteaBase == "" {
 				addErr("gitea base URL", fmt.Errorf("gitea base URL not configured"))
 				return report
 			}
 			gitURL := fmt.Sprintf("%s/%s/%s.git", giteaBase, project.GiteaOwner, project.GiteaRepo)
-			repoID, err = ensureSemaphoreRepo(cfg, project.SemaphoreProjectID, project.GiteaRepo, gitURL, gitBranch, keyID)
+			id, err := ensureSemaphoreRepo(cfg, project.SemaphoreProjectID, project.GiteaRepo, gitURL, gitBranch, keyID)
 			if err != nil {
 				addErr("semaphore repo", err)
 				return report
 			}
-
-			envID, err = ensureSemaphoreEnvironment(cfg, project.SemaphoreProjectID, "Terraform Defaults", projectTerraformEnv(*project))
-			if err != nil {
-				addErr("semaphore env", err)
-				return report
-			}
-			inventoryID, err = ensureSemaphoreInventory(cfg, project.SemaphoreProjectID, "localhost", "localhost ansible_connection=local\n")
-			if err != nil {
-				addErr("semaphore inventory", err)
-				return report
-			}
-
-			if id, err := ensureSemaphoreTemplate(cfg, project.SemaphoreProjectID, map[string]any{
-				"project_id":                    project.SemaphoreProjectID,
-				"repository_id":                 repoID,
-				"environment_id":                envID,
-				"inventory_id":                  inventoryID,
-				"name":                          "Tofu: AWS",
-				"description":                   "Runs OpenTofu against AWS infrastructure.",
-				"app":                           "tofu",
-				"playbook":                      ".",
-				"git_branch":                    gitBranch,
-				"arguments":                     string(mustJSON([]string{})),
-				"allow_override_args_in_task":   true,
-				"allow_override_branch_in_task": true,
-			}); err != nil {
-				addErr("semaphore tofu aws", err)
-			} else if project.TofuInitTemplateID != id {
-				project.TofuInitTemplateID = id
-				report.Updated = true
-			}
-
-			if id, err := ensureSemaphoreTemplate(cfg, project.SemaphoreProjectID, map[string]any{
-				"project_id":                    project.SemaphoreProjectID,
-				"repository_id":                 repoID,
-				"environment_id":                envID,
-				"inventory_id":                  inventoryID,
-				"name":                          "Tofu: Azure",
-				"description":                   "Runs OpenTofu against Azure infrastructure.",
-				"app":                           "tofu",
-				"playbook":                      ".",
-				"git_branch":                    gitBranch,
-				"arguments":                     string(mustJSON([]string{})),
-				"allow_override_args_in_task":   true,
-				"allow_override_branch_in_task": true,
-			}); err != nil {
-				addErr("semaphore tofu azure", err)
-			} else if project.TofuPlanTemplateID != id {
-				project.TofuPlanTemplateID = id
-				report.Updated = true
-			}
-
-			if id, err := ensureSemaphoreTemplate(cfg, project.SemaphoreProjectID, map[string]any{
-				"project_id":                    project.SemaphoreProjectID,
-				"repository_id":                 repoID,
-				"environment_id":                envID,
-				"inventory_id":                  inventoryID,
-				"name":                          "Tofu: GCP",
-				"description":                   "Runs OpenTofu against GCP infrastructure.",
-				"app":                           "tofu",
-				"playbook":                      ".",
-				"git_branch":                    gitBranch,
-				"arguments":                     string(mustJSON([]string{})),
-				"allow_override_args_in_task":   true,
-				"allow_override_branch_in_task": true,
-			}); err != nil {
-				addErr("semaphore tofu gcp", err)
-			} else if project.TofuApplyTemplateID != id {
-				project.TofuApplyTemplateID = id
-				report.Updated = true
-			}
-
-			if id, err := ensureSemaphoreTemplate(cfg, project.SemaphoreProjectID, map[string]any{
-				"project_id":                    project.SemaphoreProjectID,
-				"repository_id":                 repoID,
-				"environment_id":                envID,
-				"inventory_id":                  inventoryID,
-				"name":                          "Ansible: Run playbook.yml",
-				"description":                   "Runs ansible-playbook playbook.yml (placeholder).",
-				"app":                           "ansible",
-				"playbook":                      "playbook.yml",
-				"git_branch":                    gitBranch,
-				"arguments":                     string(mustJSON([]string{})),
-				"allow_override_args_in_task":   true,
-				"allow_override_branch_in_task": true,
-			}); err != nil {
-				addErr("semaphore ansible run", err)
-			} else if project.AnsibleRunTemplateID != id {
-				project.AnsibleRunTemplateID = id
-				report.Updated = true
-			}
-
-			if id, err := ensureSemaphoreTemplate(cfg, project.SemaphoreProjectID, map[string]any{
-				"project_id":                    project.SemaphoreProjectID,
-				"repository_id":                 repoID,
-				"environment_id":                envID,
-				"inventory_id":                  inventoryID,
-				"name":                          "Netlab: Run",
-				"description":                   "Runs the Netlab API runner.",
-				"app":                           "python",
-				"playbook":                      "netlab/job/run_netlab_api.py",
-				"git_branch":                    gitBranch,
-				"arguments":                     string(mustJSON([]string{})),
-				"allow_override_args_in_task":   true,
-				"allow_override_branch_in_task": true,
-			}); err != nil {
-				addErr("semaphore netlab run", err)
-			} else if project.NetlabRunTemplateID != id {
-				project.NetlabRunTemplateID = id
-				report.Updated = true
-			}
-
+			repoID = id
 		} else {
-			addStep("skip semaphore git wiring (user-owned repo)")
+			id, err := findSemaphoreRepoID(cfg, project.SemaphoreProjectID, project.GiteaRepo)
+			if err != nil {
+				// If the repo wiring was deleted (e.g. Semaphore DB reset), try to recreate it using the
+				// project owner's cached LDAP password. This keeps project-scoped sync working for
+				// user-owned repos without requiring admin credentials.
+				password, ok := getCachedLDAPPassword(project.GiteaOwner)
+				if !ok || strings.TrimSpace(password) == "" {
+					addErr("semaphore repo lookup", err)
+					return report
+				}
+				giteaBase := giteaInternalBaseURL(cfg)
+				if giteaBase == "" {
+					addErr("gitea base URL", fmt.Errorf("gitea base URL not configured"))
+					return report
+				}
+				gitURL := fmt.Sprintf("%s/%s/%s.git", giteaBase, project.GiteaOwner, project.GiteaRepo)
+				keyName := fmt.Sprintf("gitea-http-%s", strings.TrimSpace(project.GiteaOwner))
+				keyID, keyErr := ensureSemaphoreHTTPKey(cfg, project.SemaphoreProjectID, keyName, project.GiteaOwner, password)
+				if keyErr != nil {
+					addErr("semaphore http key", keyErr)
+					return report
+				}
+				id, repoErr := ensureSemaphoreRepo(cfg, project.SemaphoreProjectID, project.GiteaRepo, gitURL, gitBranch, keyID)
+				if repoErr != nil {
+					addErr("semaphore repo", repoErr)
+					return report
+				}
+				repoID = id
+				addStep("semaphore repo recreated")
+			} else {
+				repoID = id
+				addStep("semaphore repo ok")
+			}
+		}
+
+		var err error
+		envID, err = ensureSemaphoreEnvironment(cfg, project.SemaphoreProjectID, "Terraform Defaults", projectTerraformEnv(*project))
+		if err != nil {
+			addErr("semaphore env", err)
+			return report
+		}
+		inventoryID, err = ensureSemaphoreInventory(cfg, project.SemaphoreProjectID, "localhost", "localhost ansible_connection=local\n")
+		if err != nil {
+			addErr("semaphore inventory", err)
+			return report
+		}
+
+		if repoID == 0 || envID == 0 || inventoryID == 0 {
+			addErr("semaphore wiring", fmt.Errorf("missing repository/environment/inventory id"))
+			return report
+		}
+
+		if id, err := ensureSemaphoreTemplate(cfg, project.SemaphoreProjectID, map[string]any{
+			"project_id":                    project.SemaphoreProjectID,
+			"repository_id":                 repoID,
+			"environment_id":                envID,
+			"inventory_id":                  inventoryID,
+			"name":                          "Tofu: AWS",
+			"description":                   "Runs OpenTofu against AWS infrastructure.",
+			"app":                           "tofu",
+			"playbook":                      ".",
+			"git_branch":                    gitBranch,
+			"arguments":                     string(mustJSON([]string{})),
+			"allow_override_args_in_task":   true,
+			"allow_override_branch_in_task": true,
+		}); err != nil {
+			addErr("semaphore tofu aws", err)
+		} else if project.TofuInitTemplateID != id {
+			project.TofuInitTemplateID = id
+			report.Updated = true
+		}
+
+		if id, err := ensureSemaphoreTemplate(cfg, project.SemaphoreProjectID, map[string]any{
+			"project_id":                    project.SemaphoreProjectID,
+			"repository_id":                 repoID,
+			"environment_id":                envID,
+			"inventory_id":                  inventoryID,
+			"name":                          "Tofu: Azure",
+			"description":                   "Runs OpenTofu against Azure infrastructure.",
+			"app":                           "tofu",
+			"playbook":                      ".",
+			"git_branch":                    gitBranch,
+			"arguments":                     string(mustJSON([]string{})),
+			"allow_override_args_in_task":   true,
+			"allow_override_branch_in_task": true,
+		}); err != nil {
+			addErr("semaphore tofu azure", err)
+		} else if project.TofuPlanTemplateID != id {
+			project.TofuPlanTemplateID = id
+			report.Updated = true
+		}
+
+		if id, err := ensureSemaphoreTemplate(cfg, project.SemaphoreProjectID, map[string]any{
+			"project_id":                    project.SemaphoreProjectID,
+			"repository_id":                 repoID,
+			"environment_id":                envID,
+			"inventory_id":                  inventoryID,
+			"name":                          "Tofu: GCP",
+			"description":                   "Runs OpenTofu against GCP infrastructure.",
+			"app":                           "tofu",
+			"playbook":                      ".",
+			"git_branch":                    gitBranch,
+			"arguments":                     string(mustJSON([]string{})),
+			"allow_override_args_in_task":   true,
+			"allow_override_branch_in_task": true,
+		}); err != nil {
+			addErr("semaphore tofu gcp", err)
+		} else if project.TofuApplyTemplateID != id {
+			project.TofuApplyTemplateID = id
+			report.Updated = true
+		}
+
+		if id, err := ensureSemaphoreTemplate(cfg, project.SemaphoreProjectID, map[string]any{
+			"project_id":                    project.SemaphoreProjectID,
+			"repository_id":                 repoID,
+			"environment_id":                envID,
+			"inventory_id":                  inventoryID,
+			"name":                          "Ansible: Run playbook.yml",
+			"description":                   "Runs ansible-playbook playbook.yml (placeholder).",
+			"app":                           "ansible",
+			"playbook":                      "playbook.yml",
+			"git_branch":                    gitBranch,
+			"arguments":                     string(mustJSON([]string{})),
+			"allow_override_args_in_task":   true,
+			"allow_override_branch_in_task": true,
+		}); err != nil {
+			addErr("semaphore ansible run", err)
+		} else if project.AnsibleRunTemplateID != id {
+			project.AnsibleRunTemplateID = id
+			report.Updated = true
+		}
+
+		if id, err := ensureSemaphoreTemplate(cfg, project.SemaphoreProjectID, map[string]any{
+			"project_id":                    project.SemaphoreProjectID,
+			"repository_id":                 repoID,
+			"environment_id":                envID,
+			"inventory_id":                  inventoryID,
+			"name":                          "Netlab: Run",
+			"description":                   "Runs the Netlab API runner.",
+			"app":                           "python",
+			"playbook":                      "netlab/job/run_netlab_api.py",
+			"git_branch":                    gitBranch,
+			"arguments":                     string(mustJSON([]string{})),
+			"allow_override_args_in_task":   true,
+			"allow_override_branch_in_task": true,
+		}); err != nil {
+			addErr("semaphore netlab run", err)
+		} else if project.NetlabRunTemplateID != id {
+			project.NetlabRunTemplateID = id
+			report.Updated = true
+		}
+
+		if id, err := ensureSemaphoreTemplate(cfg, project.SemaphoreProjectID, map[string]any{
+			"project_id":                    project.SemaphoreProjectID,
+			"repository_id":                 repoID,
+			"environment_id":                envID,
+			"inventory_id":                  inventoryID,
+			"name":                          "LabPP: Run",
+			"description":                   "Runs the LabPP API runner.",
+			"app":                           "python",
+			"playbook":                      "labpp/job/run_labpp_api.py",
+			"git_branch":                    gitBranch,
+			"arguments":                     string(mustJSON([]string{})),
+			"allow_override_args_in_task":   true,
+			"allow_override_branch_in_task": true,
+		}); err != nil {
+			addErr("semaphore labpp run", err)
+		} else if project.LabppRunTemplateID != id {
+			project.LabppRunTemplateID = id
+			report.Updated = true
 		}
 
 		addStep("semaphore wiring ok")
@@ -3651,6 +3786,8 @@ func initService() (*Service, error) {
 	)
 
 	cfg := loadConfig()
+	box := newSecretBox(cfg.SessionSecret)
+	ldapPasswordBox = box
 	var auth *LDAPAuthenticator
 	if strings.TrimSpace(cfg.LDAP.URL) != "" && strings.TrimSpace(cfg.LDAP.BindTemplate) != "" {
 		auth = NewLDAPAuthenticator(cfg.LDAP, cfg.MaxGroups)
@@ -3684,7 +3821,7 @@ func initService() (*Service, error) {
 	)
 
 	fileProjectStore := newFileProjectsStore(cfg.Projects.DataDir)
-	fileAWSStore := newFileAWSStore(cfg.Projects.DataDir, newSecretBox(cfg.SessionSecret))
+	fileAWSStore := newFileAWSStore(cfg.Projects.DataDir, box)
 	fileUserStore := newFileUsersStore(cfg.Projects.DataDir)
 
 	if strings.EqualFold(strings.TrimSpace(cfg.StateBackend), "postgres") {
@@ -3702,7 +3839,7 @@ func initService() (*Service, error) {
 
 		pgProjects := newPGProjectsStore(db)
 		pgUsers := newPGUsersStore(db)
-		pgAWS := newPGAWSStore(db, newSecretBox(cfg.SessionSecret))
+		pgAWS := newPGAWSStore(db, box)
 		empty, err := isPostgresStateEmpty(ctx, db)
 		if err != nil {
 			_ = db.Close()
@@ -3760,6 +3897,7 @@ func initService() (*Service, error) {
 		projectStore:   projectStore,
 		awsStore:       awsStore,
 		userStore:      userStore,
+		box:            box,
 		db:             db,
 	}, nil
 }
@@ -3965,6 +4103,7 @@ type Service struct {
 	projectStore   projectsStore
 	awsStore       awsSSOTokenStore
 	userStore      usersStore
+	box            *secretBox
 	db             *sql.DB
 }
 
@@ -4543,6 +4682,24 @@ func fetchSemaphoreTasks(cfg Config, projectID, limit int) ([]map[string]any, er
 		return nil, err
 	}
 	return tasks, nil
+}
+
+func fetchSemaphoreTask(cfg Config, projectID, taskID int) (map[string]any, error) {
+	resp, body, err := semaphoreDo(cfg, http.MethodGet, fmt.Sprintf("/project/%d/tasks/%d", projectID, taskID), nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 400 {
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("semaphore responded %d", resp.StatusCode)
+	}
+	var task map[string]any
+	if err := json.Unmarshal(body, &task); err != nil {
+		return nil, err
+	}
+	return task, nil
 }
 
 func fetchSemaphoreTemplates(cfg Config, projectID int) ([]TemplateSummary, error) {
@@ -5152,7 +5309,7 @@ func listEveLabsViaNativeAPI(ctx context.Context, cfg LabsConfig, query EveLabQu
 			continue
 		}
 
-		labs, endpoint, err := eveListLabs(ctx, client, base, query)
+		labs, endpoint, err := eveListLabs(ctx, client, base, cfg.EveUsername, query)
 		if err != nil {
 			lastErr = err
 			continue
@@ -5592,7 +5749,20 @@ type eveNodesResponse struct {
 	Data    json.RawMessage `json:"data"`
 }
 
-func eveLabHasRunningNodes(ctx context.Context, client *http.Client, base string, labPath string) (bool, string, error) {
+func eveEscapeLabPath(labPath string) string {
+	parts := strings.Split(strings.Trim(labPath, "/"), "/")
+	escaped := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		escaped = append(escaped, url.PathEscape(part))
+	}
+	return strings.Join(escaped, "/")
+}
+
+func eveLabHasRunningNodes(ctx context.Context, client *http.Client, base string, username string, labPath string) (bool, string, error) {
 	base = strings.TrimRight(base, "/")
 	if strings.HasSuffix(base, "/api") {
 		base = strings.TrimSuffix(base, "/api")
@@ -5602,8 +5772,38 @@ func eveLabHasRunningNodes(ctx context.Context, client *http.Client, base string
 		return false, "", fmt.Errorf("empty eve lab path")
 	}
 
-	endpoint := base + "/api/labs/" + url.PathEscape(labPath) + "/nodes"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	username = strings.TrimSpace(username)
+	labPathEscaped := eveEscapeLabPath(labPath)
+
+	endpointLegacy := base + "/api/labs/" + labPathEscaped + "/nodes"
+	endpoint := endpointLegacy
+
+	if username != "" {
+		endpointUser := base + "/api/labs/" + url.PathEscape(username) + "/" + labPathEscaped + "/nodes"
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpointUser, nil)
+		if err != nil {
+			return false, "", err
+		}
+		req.Header.Set("Accept", "application/json")
+		resp, err := client.Do(req)
+		if err != nil {
+			return false, "", err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusNotFound {
+			// Some EVE installs don't include the authenticated username in the URL.
+			// Fall back to the legacy endpoint.
+			_, _ = io.Copy(io.Discard, resp.Body)
+		} else if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			return false, endpointUser, fmt.Errorf("eve-ng nodes endpoint %s returned %d", endpointUser, resp.StatusCode)
+		} else {
+			endpoint = endpointUser
+			return eveNodesHasRunning(endpoint, resp)
+		}
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpointLegacy, nil)
 	if err != nil {
 		return false, "", err
 	}
@@ -5615,9 +5815,13 @@ func eveLabHasRunningNodes(ctx context.Context, client *http.Client, base string
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		_, _ = io.Copy(io.Discard, resp.Body)
-		return false, endpoint, fmt.Errorf("eve-ng nodes endpoint %s returned %d", endpoint, resp.StatusCode)
+		return false, endpointLegacy, fmt.Errorf("eve-ng nodes endpoint %s returned %d", endpointLegacy, resp.StatusCode)
 	}
 
+	return eveNodesHasRunning(endpoint, resp)
+}
+
+func eveNodesHasRunning(endpoint string, resp *http.Response) (bool, string, error) {
 	var parsed eveNodesResponse
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
 		return false, endpoint, err
@@ -5661,7 +5865,7 @@ func eveLabHasRunningNodes(ctx context.Context, client *http.Client, base string
 	return false, endpoint, nil
 }
 
-func eveListLabs(ctx context.Context, client *http.Client, base string, query EveLabQuery) ([]LabSummary, string, error) {
+func eveListLabs(ctx context.Context, client *http.Client, base string, username string, query EveLabQuery) ([]LabSummary, string, error) {
 	// Normalize base to the EVE host root (strip trailing /api if present).
 	base = strings.TrimRight(base, "/")
 	if strings.HasSuffix(base, "/api") {
@@ -5753,7 +5957,7 @@ func eveListLabs(ctx context.Context, client *http.Client, base string, query Ev
 				for idx := range jobs {
 					lab := allLabs[idx]
 					perCall, cancel := context.WithTimeout(scanCtx, 3*time.Second)
-					running, _, err := eveLabHasRunningNodes(perCall, client, base, lab.ID)
+					running, _, err := eveLabHasRunningNodes(perCall, client, base, username, lab.ID)
 					cancel()
 					if err != nil {
 						scanErrMu.Lock()

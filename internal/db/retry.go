@@ -82,4 +82,3 @@ func WaitForDB(ctx context.Context, db *sqldb.Database, maxRetries int, initialD
 
 	return fmt.Errorf("database not available after %d attempts", maxRetries)
 }
-

@@ -85,13 +85,6 @@ func (s *Service) GetNetlabRuns(ctx context.Context, params *RunnerRunsParams) (
 	}, nil
 }
 
-// GetNetlabRunsV1 returns recent Netlab runs for a project (v1 alias).
-//
-//encore:api auth method=GET path=/api/v1/netlab/runs
-func (s *Service) GetNetlabRunsV1(ctx context.Context, params *RunnerRunsParams) (*NetlabRunsResponse, error) {
-	return s.GetNetlabRuns(ctx, params)
-}
-
 func parseRunnerRunsParams(cfg Config, params *RunnerRunsParams) (int, int, error) {
 	projectID := cfg.DefaultProject
 	limit := 10

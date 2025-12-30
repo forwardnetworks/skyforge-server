@@ -103,4 +103,3 @@ func appendLabSource(sources []LabSource, source map[string]any) []LabSource {
 		Meta:      meta,
 	})
 }
-
