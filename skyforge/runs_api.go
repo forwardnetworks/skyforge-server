@@ -2,13 +2,9 @@ package skyforge
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"log"
-	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"encore.dev/beta/errs"
 )
@@ -105,7 +101,6 @@ func (s *Service) CreateRun(ctx context.Context, req *RunRequest) (*RunsCreateRe
 	if err != nil {
 		return nil, err
 	}
-	claims := claimsFromAuthUser(user)
 	if !isAdminUser(s.cfg, user.Username) {
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden (use project run endpoints)").Err()
 	}
@@ -165,7 +160,16 @@ func (s *Service) GetRunOutput(ctx context.Context, id int, params *RunsOutputPa
 		log.Printf("listTaskLogs: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to fetch task output").Err()
 	}
-	outputJSON, err := toJSONMapSlice(output)
+	outputItems := make([]map[string]any, 0, len(output))
+	for _, entry := range output {
+		item := map[string]any{
+			"output": entry.Output,
+			"time":   entry.Time,
+			"stream": entry.Stream,
+		}
+		outputItems = append(outputItems, item)
+	}
+	outputJSON, err := toJSONMapSlice(outputItems)
 	if err != nil {
 		log.Printf("run output encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode task output").Err()

@@ -90,11 +90,7 @@ func (s *Service) RunProjectTofuPlan(ctx context.Context, id string) (*ProjectRu
 		return nil, err
 	}
 
-	envJSON, err := toJSONMap(env)
-	if err != nil {
-		log.Printf("tofu plan env encode: %v", err)
-		return nil, errs.B().Code(errs.Internal).Msg("failed to encode environment").Err()
-	}
+	envMap := env
 	{
 		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 		defer cancel()
@@ -120,10 +116,14 @@ func (s *Service) RunProjectTofuPlan(ctx context.Context, id string) (*ProjectRu
 		cloud = "aws"
 	}
 
-	meta := JSONMap{
+	meta, err := toJSONMap(map[string]any{
 		"deployment": dep.Name,
 		"cloud":      cloud,
 		"template":   template,
+	})
+	if err != nil {
+		log.Printf("tofu plan meta encode: %v", err)
+		return nil, errs.B().Code(errs.Internal).Msg("failed to encode metadata").Err()
 	}
 	task, err := createTask(ctx, s.db, pc.project.ID, &dep.ID, "tofu-plan", fmt.Sprintf("Skyforge tofu plan (%s)", pc.claims.Username), pc.claims.Username, meta)
 	if err != nil {
@@ -139,7 +139,7 @@ func (s *Service) RunProjectTofuPlan(ctx context.Context, id string) (*ProjectRu
 		TemplateRepo:   strings.TrimSpace(templateRepo),
 		TemplatesDir:   strings.TrimSpace(templatesDir),
 		Template:       strings.TrimSpace(template),
-		Environment:    envJSON,
+		Environment:    envMap,
 	}
 	s.queueTask(task, func(ctx context.Context, log *taskLogger) error {
 		return s.runTofuTask(ctx, spec, log)
@@ -259,11 +259,7 @@ func (s *Service) RunProjectTofuApply(ctx context.Context, id string, params *Pr
 		}
 	}
 
-	envJSON, err := toJSONMap(env)
-	if err != nil {
-		log.Printf("tofu apply env encode: %v", err)
-		return nil, errs.B().Code(errs.Internal).Msg("failed to encode environment").Err()
-	}
+	envMap := env
 	{
 		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 		defer cancel()
@@ -279,10 +275,14 @@ func (s *Service) RunProjectTofuApply(ctx context.Context, id string, params *Pr
 			fmt.Sprintf("action=%s cloud=%s template=%s", action, cloud, templateName),
 		)
 	}
-	meta := JSONMap{
+	meta, err := toJSONMap(map[string]any{
 		"cloud":    cloud,
 		"template": templateName,
 		"action":   action,
+	})
+	if err != nil {
+		log.Printf("tofu apply meta encode: %v", err)
+		return nil, errs.B().Code(errs.Internal).Msg("failed to encode metadata").Err()
 	}
 	task, err := createTask(ctx, s.db, pc.project.ID, nil, fmt.Sprintf("tofu-%s", action), fmt.Sprintf("Skyforge tofu %s %s (%s)", action, strings.ToUpper(cloud), pc.claims.Username), pc.claims.Username, meta)
 	if err != nil {
@@ -298,7 +298,7 @@ func (s *Service) RunProjectTofuApply(ctx context.Context, id string, params *Pr
 		TemplateRepo:   templateRepo,
 		TemplatesDir:   templatesDir,
 		Template:       templateName,
-		Environment:    envJSON,
+		Environment:    envMap,
 	}
 	s.queueTask(task, func(ctx context.Context, log *taskLogger) error {
 		return s.runTofuTask(ctx, spec, log)
@@ -469,10 +469,14 @@ func (s *Service) RunProjectNetlab(ctx context.Context, id string, req *ProjectN
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	meta := JSONMap{
+	meta, err := toJSONMap(map[string]any{
 		"action":     action,
 		"server":     server.Name,
 		"deployment": deploymentName,
+	})
+	if err != nil {
+		log.Printf("netlab meta encode: %v", err)
+		return nil, errs.B().Code(errs.Internal).Msg("failed to encode metadata").Err()
 	}
 	task, err := createTask(ctx, s.db, pc.project.ID, nil, "netlab-run", message, pc.claims.Username, meta)
 	if err != nil {
@@ -661,11 +665,15 @@ func (s *Service) RunProjectLabpp(ctx context.Context, id string, req *ProjectLa
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	meta := JSONMap{
+	meta, err := toJSONMap(map[string]any{
 		"action":     action,
 		"server":     eveServer.Name,
 		"deployment": deployment,
 		"template":   template,
+	})
+	if err != nil {
+		log.Printf("labpp meta encode: %v", err)
+		return nil, errs.B().Code(errs.Internal).Msg("failed to encode metadata").Err()
 	}
 	task, err := createTask(ctx, s.db, pc.project.ID, nil, "labpp-run", message, pc.claims.Username, meta)
 	if err != nil {
@@ -829,11 +837,15 @@ func (s *Service) RunProjectContainerlab(ctx context.Context, id string, req *Pr
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	meta := JSONMap{
+	meta, err := toJSONMap(map[string]any{
 		"action":   action,
 		"server":   server.Name,
 		"labName":  labName,
 		"template": template,
+	})
+	if err != nil {
+		log.Printf("containerlab meta encode: %v", err)
+		return nil, errs.B().Code(errs.Internal).Msg("failed to encode metadata").Err()
 	}
 	task, err := createTask(ctx, s.db, pc.project.ID, nil, "containerlab-run", message, pc.claims.Username, meta)
 	if err != nil {

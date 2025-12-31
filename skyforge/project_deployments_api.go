@@ -211,7 +211,7 @@ ORDER BY updated_at DESC`, pc.project.ID)
 			rec.LastFinishedAt = &v
 		}
 		out = append(out, &rec)
-		if shouldRefreshDeploymentStatus(rec.LastStatus) && rec.LastTaskProjectID != nil && rec.LastTaskID != nil {
+		if shouldRefreshDeploymentStatus(rec.LastStatus) && rec.LastTaskID != nil {
 			refresh = append(refresh, &rec)
 		}
 	}
@@ -1201,7 +1201,7 @@ func (s *Service) StopProjectDeployment(ctx context.Context, id, deploymentID st
 	if err != nil {
 		return nil, err
 	}
-	if dep.LastTaskProjectID == nil || dep.LastTaskID == nil {
+	if dep.LastTaskID == nil {
 		return &ProjectDeploymentActionResponse{ProjectID: pc.project.ID, Deployment: dep}, nil
 	}
 	if err := cancelTask(ctx, s.db, *dep.LastTaskID); err != nil {
@@ -1392,7 +1392,6 @@ func (s *Service) touchDeploymentFromRun(ctx context.Context, projectID, deploym
 	taskID := 0
 	status := ""
 	if run != nil {
-		taskProjectID = run.ProjectID
 		if task, _ := fromJSONMap(run.Task); task != nil {
 			if v, ok := task["id"].(float64); ok {
 				taskID = int(v)
