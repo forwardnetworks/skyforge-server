@@ -28,7 +28,7 @@ CREATE TABLE sf_projects (
   artifacts_bucket text,
   eve_server text,
   netlab_server text,
-  semaphore_project_id integer NOT NULL,
+  legacy_project_id integer NOT NULL,
   gitea_owner text NOT NULL,
   gitea_repo text NOT NULL,
   updated_at timestamptz NOT NULL DEFAULT now()

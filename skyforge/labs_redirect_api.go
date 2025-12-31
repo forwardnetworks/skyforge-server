@@ -3,7 +3,6 @@ package skyforge
 import (
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"encore.dev/beta/errs"
@@ -49,14 +48,9 @@ func (s *Service) resolveLabsRedirect(params *LabsRedirectParams) (string, error
 		projectID = strings.TrimSpace(params.ProjectID)
 	}
 	if targetName == "" && projectID != "" {
-		if pid, err := strconv.Atoi(projectID); err == nil && pid > 0 {
-			if projects, err := s.projectStore.load(); err == nil {
-				for _, p := range projects {
-					if p.SemaphoreProjectID == pid && strings.TrimSpace(p.EveServer) != "" {
-						targetName = strings.TrimSpace(p.EveServer)
-						break
-					}
-				}
+		if projects, err := s.projectStore.load(); err == nil {
+			if p := findProjectByKey(projects, projectID); p != nil && strings.TrimSpace(p.EveServer) != "" {
+				targetName = strings.TrimSpace(p.EveServer)
 			}
 		}
 	}

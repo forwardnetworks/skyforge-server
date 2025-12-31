@@ -5,87 +5,39 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"log"
+	"path"
 	"strconv"
 	"strings"
 	"time"
 
 	"encore.dev/beta/errs"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"gopkg.in/yaml.v3"
 )
 
 type ProjectRunResponse struct {
-	ProjectID int     `json:"project_id"`
+	ProjectID string  `json:"projectId"`
 	Task      JSONMap `json:"task"`
 	User      string  `json:"user"`
 }
 
 type ProjectTofuApplyParams struct {
-	Confirm string `query:"confirm" encore:"optional"`
-	Cloud   string `query:"cloud" encore:"optional"`
-	Action  string `query:"action" encore:"optional"`
-}
-
-func semaphoreConfigForUser(cfg Config, username string) (Config, error) {
-	password, ok := getCachedLDAPPassword(username)
-	if !ok {
-		// Fall back to an internal admin account when available.
-		// This keeps the UI functional even when the user hasn't reauthenticated
-		// after a server restart (LDAP password cache is session-scoped).
-		if strings.TrimSpace(cfg.SemaphoreAdminUsername) != "" && strings.TrimSpace(cfg.SemaphoreAdminPassword) != "" {
-			cfg.SemaphoreToken = ""
-			cfg.SemaphoreUsername = strings.TrimSpace(cfg.SemaphoreAdminUsername)
-			cfg.SemaphorePassword = strings.TrimSpace(cfg.SemaphoreAdminPassword)
-			cfg.SemaphorePasswordFile = ""
-			return cfg, nil
-		}
-		return cfg, errs.B().Code(errs.FailedPrecondition).Msg("LDAP password unavailable; reauthenticate").Err()
-	}
-	cfg.SemaphoreToken = ""
-	cfg.SemaphoreUsername = username
-	cfg.SemaphorePassword = password
-	cfg.SemaphorePasswordFile = ""
-	return cfg, nil
-}
-
-func ensureSemaphoreRepoAccessForUser(cfg Config, project SkyforgeProject, username string) error {
-	if project.SemaphoreProjectID == 0 {
-		return errs.B().Code(errs.InvalidArgument).Msg("project is missing semaphore wiring").Err()
-	}
-	if !strings.EqualFold(strings.TrimSpace(project.GiteaOwner), strings.TrimSpace(username)) {
-		return nil
-	}
-	password, ok := getCachedLDAPPassword(username)
-	if !ok {
-		// Repo access is typically provisioned at project creation time; if the user's LDAP
-		// password isn't cached (e.g., server restart), skip the re-provision step and let
-		// the run proceed. Semaphore will fail the clone step if access is truly missing.
-		return nil
-	}
-	gitBranch := strings.TrimSpace(project.DefaultBranch)
-	if gitBranch == "" {
-		gitBranch = "master"
-	}
-	giteaBase := giteaInternalBaseURL(cfg)
-	if giteaBase == "" {
-		return errs.B().Code(errs.FailedPrecondition).Msg("gitea base URL not configured").Err()
-	}
-	gitURL := fmt.Sprintf("%s/%s/%s.git", giteaBase, project.GiteaOwner, project.GiteaRepo)
-	keyID, err := ensureSemaphoreHTTPKey(cfg, project.SemaphoreProjectID, "gitea-http", username, password)
-	if err != nil {
-		return err
-	}
-	if _, err := ensureSemaphoreRepo(cfg, project.SemaphoreProjectID, project.GiteaRepo, gitURL, gitBranch, keyID); err != nil {
-		return err
-	}
-	return nil
+	Confirm        string `query:"confirm" encore:"optional"`
+	Cloud          string `query:"cloud" encore:"optional"`
+	Action         string `query:"action" encore:"optional"`
+	TemplateSource string `query:"templateSource" encore:"optional"`
+	TemplateRepo   string `query:"templateRepo" encore:"optional"`
+	TemplatesDir   string `query:"templatesDir" encore:"optional"`
+	Template       string `query:"template" encore:"optional"`
 }
 
 // RunProjectTofuPlan triggers a tofu plan run for a project.
 //
-//encore:api auth method=POST path=/api/projects/:id/runs/tofu-plan
+//encore:api auth method=POST path=/api/workspaces/:id/runs/tofu-plan
 func (s *Service) RunProjectTofuPlan(ctx context.Context, id string) (*ProjectRunResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -95,11 +47,18 @@ func (s *Service) RunProjectTofuPlan(ctx context.Context, id string) (*ProjectRu
 	if err != nil {
 		return nil, err
 	}
-	if pc.project.TofuPlanTemplateID == 0 || pc.project.SemaphoreProjectID == 0 {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("project is missing tofu plan wiring").Err()
-	}
 	if pc.access == "viewer" {
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	dep, err := s.getLatestDeploymentByType(ctx, pc.project.ID, "tofu")
+	if err != nil {
+		return nil, err
+	}
+	if dep == nil {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("no tofu deployment configured").Err()
 	}
 	region := strings.TrimSpace(pc.project.AWSRegion)
 	if region == "" {
@@ -131,18 +90,11 @@ func (s *Service) RunProjectTofuPlan(ctx context.Context, id string) (*ProjectRu
 		return nil, err
 	}
 
-	runReq := RunRequest{
-		TemplateID:  pc.project.TofuPlanTemplateID,
-		ProjectID:   &pc.project.SemaphoreProjectID,
-		Message:     fmt.Sprintf("Skyforge tofu plan (%s)", pc.claims.Username),
-		Environment: nil,
-	}
 	envJSON, err := toJSONMap(env)
 	if err != nil {
 		log.Printf("tofu plan env encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode environment").Err()
 	}
-	runReq.Environment = envJSON
 	{
 		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 		defer cancel()
@@ -155,27 +107,51 @@ func (s *Service) RunProjectTofuPlan(ctx context.Context, id string) (*ProjectRu
 			impersonated,
 			"project.run.tofu-plan",
 			pc.project.ID,
-			fmt.Sprintf("templateId=%d semaphoreProjectId=%d", pc.project.TofuPlanTemplateID, pc.project.SemaphoreProjectID),
+			fmt.Sprintf("deployment=%s", dep.Name),
 		)
 	}
-	semaphoreCfg, err := semaphoreConfigForUser(s.cfg, pc.claims.Username)
+	cfgAny, _ := fromJSONMap(dep.Config)
+	templateSource, _ := cfgAny["templateSource"].(string)
+	templateRepo, _ := cfgAny["templateRepo"].(string)
+	templatesDir, _ := cfgAny["templatesDir"].(string)
+	template, _ := cfgAny["template"].(string)
+	cloud, _ := cfgAny["cloud"].(string)
+	if strings.TrimSpace(cloud) == "" {
+		cloud = "aws"
+	}
+
+	meta := JSONMap{
+		"deployment": dep.Name,
+		"cloud":      cloud,
+		"template":   template,
+	}
+	task, err := createTask(ctx, s.db, pc.project.ID, &dep.ID, "tofu-plan", fmt.Sprintf("Skyforge tofu plan (%s)", pc.claims.Username), pc.claims.Username, meta)
 	if err != nil {
 		return nil, err
 	}
-	if err := ensureSemaphoreRepoAccessForUser(semaphoreCfg, pc.project, pc.claims.Username); err != nil {
-		return nil, err
+	spec := tofuRunSpec{
+		ProjectCtx:     pc,
+		ProjectSlug:    pc.project.Slug,
+		Username:       pc.claims.Username,
+		Cloud:          strings.ToLower(strings.TrimSpace(cloud)),
+		Action:         "plan",
+		TemplateSource: strings.TrimSpace(templateSource),
+		TemplateRepo:   strings.TrimSpace(templateRepo),
+		TemplatesDir:   strings.TrimSpace(templatesDir),
+		Template:       strings.TrimSpace(template),
+		Environment:    envJSON,
 	}
-	task, err := startSemaphoreRun(ctx, semaphoreCfg, s.db, pc.claims, runReq)
-	if err != nil {
-		return nil, err
-	}
-	taskJSON, err := toJSONMap(task)
+	s.queueTask(task, func(ctx context.Context, log *taskLogger) error {
+		return s.runTofuTask(ctx, spec, log)
+	})
+
+	taskJSON, err := toJSONMap(taskToRunInfo(*task))
 	if err != nil {
 		log.Printf("tofu plan task encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode run").Err()
 	}
 	return &ProjectRunResponse{
-		ProjectID: pc.project.SemaphoreProjectID,
+		ProjectID: pc.project.ID,
 		Task:      taskJSON,
 		User:      pc.claims.Username,
 	}, nil
@@ -183,7 +159,7 @@ func (s *Service) RunProjectTofuPlan(ctx context.Context, id string) (*ProjectRu
 
 // RunProjectTofuApply triggers a tofu apply run for a project.
 //
-//encore:api auth method=POST path=/api/projects/:id/runs/tofu-apply
+//encore:api auth method=POST path=/api/workspaces/:id/runs/tofu-apply
 func (s *Service) RunProjectTofuApply(ctx context.Context, id string, params *ProjectTofuApplyParams) (*ProjectRunResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -196,12 +172,16 @@ func (s *Service) RunProjectTofuApply(ctx context.Context, id string, params *Pr
 	if pc.access != "admin" && pc.access != "owner" {
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
-	if pc.project.SemaphoreProjectID == 0 {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("project is missing tofu apply wiring").Err()
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 	confirm := ""
 	cloud := "aws"
 	action := "apply"
+	templateSource := ""
+	templateRepo := ""
+	templatesDir := ""
+	templateName := ""
 	if params != nil {
 		confirm = strings.TrimSpace(params.Confirm)
 		if raw := strings.TrimSpace(params.Cloud); raw != "" {
@@ -210,6 +190,12 @@ func (s *Service) RunProjectTofuApply(ctx context.Context, id string, params *Pr
 		if raw := strings.TrimSpace(params.Action); raw != "" {
 			action = strings.ToLower(raw)
 		}
+		if raw := strings.TrimSpace(params.TemplateSource); raw != "" {
+			templateSource = strings.ToLower(raw)
+		}
+		templateRepo = strings.TrimSpace(params.TemplateRepo)
+		templatesDir = strings.TrimSpace(params.TemplatesDir)
+		templateName = strings.TrimSpace(params.Template)
 	}
 	if !strings.EqualFold(confirm, "true") {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("apply requires ?confirm=true").Err()
@@ -217,19 +203,13 @@ func (s *Service) RunProjectTofuApply(ctx context.Context, id string, params *Pr
 	if action != "apply" && action != "destroy" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid action (use apply or destroy)").Err()
 	}
-	templateID := 0
+	if templateName == "" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("template is required").Err()
+	}
 	switch cloud {
-	case "aws":
-		templateID = pc.project.TofuInitTemplateID
-	case "azure":
-		templateID = pc.project.TofuPlanTemplateID
-	case "gcp":
-		templateID = pc.project.TofuApplyTemplateID
+	case "aws", "azure", "gcp":
 	default:
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown cloud").Err()
-	}
-	if templateID == 0 {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("project is missing tofu apply wiring").Err()
 	}
 	region := strings.TrimSpace(pc.project.AWSRegion)
 	if region == "" {
@@ -240,6 +220,20 @@ func (s *Service) RunProjectTofuApply(ctx context.Context, id string, params *Pr
 		"AWS_EC2_METADATA_DISABLED": "true",
 		"AWS_SDK_LOAD_CONFIG":       "0",
 		"AWS_PROFILE":               "",
+	}
+	if templateName != "" {
+		if templatesDir == "" {
+			templatesDir = fmt.Sprintf("cloud/terraform/%s", cloud)
+		}
+		templatesDir = strings.Trim(strings.TrimSpace(templatesDir), "/")
+		if !isSafeRelativePath(templatesDir) {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("templatesDir must be a safe repo-relative path").Err()
+		}
+		templateName = strings.Trim(strings.TrimSpace(templateName), "/")
+		templatePath := path.Join(templatesDir, templateName)
+		if !isSafeRelativePath(templatePath) {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("template must be a safe repo-relative path").Err()
+		}
 	}
 	if s.cfg.Projects.ObjectStorageTerraformAccessKey != "" && s.cfg.Projects.ObjectStorageTerraformSecretKey != "" {
 		env["AWS_ACCESS_KEY_ID"] = s.cfg.Projects.ObjectStorageTerraformAccessKey
@@ -265,32 +259,11 @@ func (s *Service) RunProjectTofuApply(ctx context.Context, id string, params *Pr
 		}
 	}
 
-	runReq := RunRequest{
-		TemplateID:  templateID,
-		ProjectID:   &pc.project.SemaphoreProjectID,
-		Message:     fmt.Sprintf("Skyforge tofu %s %s (%s)", action, strings.ToUpper(cloud), pc.claims.Username),
-		Environment: nil,
-	}
-	paramsPayload := map[string]any{
-		"auto_approve": true,
-	}
-	if action == "destroy" {
-		paramsPayload["destroy"] = true
-	}
-	extra, err := toJSONMap(map[string]any{
-		"params": paramsPayload,
-	})
-	if err != nil {
-		log.Printf("tofu apply params encode: %v", err)
-		return nil, errs.B().Code(errs.Internal).Msg("failed to encode task params").Err()
-	}
-	runReq.Extra = extra
 	envJSON, err := toJSONMap(env)
 	if err != nil {
 		log.Printf("tofu apply env encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode environment").Err()
 	}
-	runReq.Environment = envJSON
 	{
 		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 		defer cancel()
@@ -303,27 +276,41 @@ func (s *Service) RunProjectTofuApply(ctx context.Context, id string, params *Pr
 			impersonated,
 			"project.run.tofu-apply",
 			pc.project.ID,
-			fmt.Sprintf("templateId=%d semaphoreProjectId=%d action=%s cloud=%s", templateID, pc.project.SemaphoreProjectID, action, cloud),
+			fmt.Sprintf("action=%s cloud=%s template=%s", action, cloud, templateName),
 		)
 	}
-	semaphoreCfg, err := semaphoreConfigForUser(s.cfg, pc.claims.Username)
+	meta := JSONMap{
+		"cloud":    cloud,
+		"template": templateName,
+		"action":   action,
+	}
+	task, err := createTask(ctx, s.db, pc.project.ID, nil, fmt.Sprintf("tofu-%s", action), fmt.Sprintf("Skyforge tofu %s %s (%s)", action, strings.ToUpper(cloud), pc.claims.Username), pc.claims.Username, meta)
 	if err != nil {
 		return nil, err
 	}
-	if err := ensureSemaphoreRepoAccessForUser(semaphoreCfg, pc.project, pc.claims.Username); err != nil {
-		return nil, err
+	spec := tofuRunSpec{
+		ProjectCtx:     pc,
+		ProjectSlug:    pc.project.Slug,
+		Username:       pc.claims.Username,
+		Cloud:          strings.ToLower(strings.TrimSpace(cloud)),
+		Action:         action,
+		TemplateSource: templateSource,
+		TemplateRepo:   templateRepo,
+		TemplatesDir:   templatesDir,
+		Template:       templateName,
+		Environment:    envJSON,
 	}
-	task, err := startSemaphoreRun(ctx, semaphoreCfg, s.db, pc.claims, runReq)
-	if err != nil {
-		return nil, err
-	}
-	taskJSON, err := toJSONMap(task)
+	s.queueTask(task, func(ctx context.Context, log *taskLogger) error {
+		return s.runTofuTask(ctx, spec, log)
+	})
+
+	taskJSON, err := toJSONMap(taskToRunInfo(*task))
 	if err != nil {
 		log.Printf("tofu apply task encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode run").Err()
 	}
 	return &ProjectRunResponse{
-		ProjectID: pc.project.SemaphoreProjectID,
+		ProjectID: pc.project.ID,
 		Task:      taskJSON,
 		User:      pc.claims.Username,
 	}, nil
@@ -331,62 +318,11 @@ func (s *Service) RunProjectTofuApply(ctx context.Context, id string, params *Pr
 
 // RunProjectAnsible triggers an ansible run for a project.
 //
-//encore:api auth method=POST path=/api/projects/:id/runs/ansible-run
+//encore:api auth method=POST path=/api/workspaces/:id/runs/ansible-run
 func (s *Service) RunProjectAnsible(ctx context.Context, id string) (*ProjectRunResponse, error) {
-	user, err := requireAuthUser()
-	if err != nil {
-		return nil, err
-	}
-	pc, err := s.projectContextForUser(user, id)
-	if err != nil {
-		return nil, err
-	}
-	if pc.project.AnsibleRunTemplateID == 0 || pc.project.SemaphoreProjectID == 0 {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("project is missing ansible run wiring").Err()
-	}
-	if pc.access == "viewer" {
-		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
-	}
-	runReq := RunRequest{
-		TemplateID: pc.project.AnsibleRunTemplateID,
-		ProjectID:  &pc.project.SemaphoreProjectID,
-		Message:    fmt.Sprintf("Skyforge ansible run (%s)", pc.claims.Username),
-	}
-	{
-		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
-		defer cancel()
-		writeAuditEvent(
-			ctx,
-			s.db,
-			pc.claims.Username,
-			containsUser(s.cfg.AdminUsers, pc.claims.Username),
-			"",
-			"project.run.ansible",
-			pc.project.ID,
-			fmt.Sprintf("templateId=%d semaphoreProjectId=%d", pc.project.AnsibleRunTemplateID, pc.project.SemaphoreProjectID),
-		)
-	}
-	semaphoreCfg, err := semaphoreConfigForUser(s.cfg, pc.claims.Username)
-	if err != nil {
-		return nil, err
-	}
-	if err := ensureSemaphoreRepoAccessForUser(semaphoreCfg, pc.project, pc.claims.Username); err != nil {
-		return nil, err
-	}
-	task, err := startSemaphoreRun(ctx, semaphoreCfg, s.db, pc.claims, runReq)
-	if err != nil {
-		return nil, err
-	}
-	taskJSON, err := toJSONMap(task)
-	if err != nil {
-		log.Printf("ansible task encode: %v", err)
-		return nil, errs.B().Code(errs.Internal).Msg("failed to encode run").Err()
-	}
-	return &ProjectRunResponse{
-		ProjectID: pc.project.SemaphoreProjectID,
-		Task:      taskJSON,
-		User:      pc.claims.Username,
-	}, nil
+	_ = ctx
+	_ = id
+	return nil, errs.B().Code(errs.Unimplemented).Msg("ansible runs are not supported in native mode").Err()
 }
 
 type ProjectNetlabRunRequest struct {
@@ -423,9 +359,23 @@ type ProjectLabppRunRequest struct {
 	Deployment        string  `json:"deployment,omitempty"`
 }
 
+type ProjectContainerlabRunRequest struct {
+	Message        string  `json:"message,omitempty"`
+	GitBranch      string  `json:"gitBranch,omitempty"`
+	Environment    JSONMap `json:"environment,omitempty"`
+	Action         string  `json:"action,omitempty"` // deploy, destroy
+	NetlabServer   string  `json:"netlabServer,omitempty"`
+	TemplateSource string  `json:"templateSource,omitempty"` // project (default), blueprints, or custom
+	TemplateRepo   string  `json:"templateRepo,omitempty"`   // owner/repo or URL (custom only)
+	TemplatesDir   string  `json:"templatesDir,omitempty"`   // repo-relative directory (default: blueprints/containerlab)
+	Template       string  `json:"template,omitempty"`       // filename (e.g. lab.yml)
+	Deployment     string  `json:"deployment,omitempty"`     // deployment name for lab naming
+	Reconfigure    bool    `json:"reconfigure,omitempty"`
+}
+
 // RunProjectNetlab triggers a netlab run for a project.
 //
-//encore:api auth method=POST path=/api/projects/:id/runs/netlab-run
+//encore:api auth method=POST path=/api/workspaces/:id/runs/netlab-run
 func (s *Service) RunProjectNetlab(ctx context.Context, id string, req *ProjectNetlabRunRequest) (*ProjectRunResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -435,11 +385,11 @@ func (s *Service) RunProjectNetlab(ctx context.Context, id string, req *ProjectN
 	if err != nil {
 		return nil, err
 	}
-	if pc.project.NetlabRunTemplateID == 0 || pc.project.SemaphoreProjectID == 0 {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("project is missing netlab run wiring").Err()
-	}
 	if pc.access == "viewer" {
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 	if req == nil {
 		req = &ProjectNetlabRunRequest{}
@@ -456,22 +406,6 @@ func (s *Service) RunProjectNetlab(ctx context.Context, id string, req *ProjectN
 	if server == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("netlab runner is not configured").Err()
 	}
-	env, err := fromJSONMap(req.Environment)
-	if err != nil {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid environment").Err()
-	}
-	if env == nil {
-		env = map[string]any{}
-	}
-	setEnvIfMissing := func(key, value string) {
-		if strings.TrimSpace(value) == "" {
-			return
-		}
-		if _, ok := env[key]; !ok {
-			env[key] = value
-		}
-	}
-
 	action := strings.ToLower(strings.TrimSpace(req.Action))
 	if action == "" {
 		action = "up"
@@ -506,86 +440,16 @@ func (s *Service) RunProjectNetlab(ctx context.Context, id string, req *ProjectN
 	}
 
 	workspaceRoot := fmt.Sprintf("/home/%s/netlab", pc.claims.Username)
-	apiURL := strings.TrimRight(fmt.Sprintf("https://%s/netlab", strings.TrimSpace(server.SSHHost)), "/")
-
-	setEnvIfMissing("NETLAB_API_URL", apiURL)
-	setEnvIfMissing("NETLAB_API_INSECURE", "true")
-	setEnvIfMissing("NETLAB_ACTION", action)
-	setEnvIfMissing("NETLAB_USER", strings.TrimSpace(pc.claims.Username))
-	setEnvIfMissing("NETLAB_PROJECT", strings.TrimSpace(pc.project.Slug))
-	setEnvIfMissing("NETLAB_DEPLOYMENT", deploymentName)
-	setEnvIfMissing("NETLAB_MULTILAB_ID", strconv.Itoa(multilabNumericID))
-	setEnvIfMissing("NETLAB_WORKSPACE_ROOT", workspaceRoot)
-	if req.Cleanup {
-		setEnvIfMissing("NETLAB_CLEANUP", "true")
-	}
 
 	// Backwards-compat for older runner scripts/config.
 	projectDir := strings.TrimSpace(req.NetlabProjectDir)
 	if projectDir == "" {
 		projectDir = fmt.Sprintf("%s/%s/%s", workspaceRoot, strings.TrimSpace(pc.project.Slug), deploymentName)
 	}
-	setEnvIfMissing("NETLAB_PROJECT_DIR", projectDir)
-	setEnvIfMissing("NETLAB_PROJECT_SLUG", pc.project.Slug)
-	setEnvIfMissing("NETLAB_PROJECT_ID", pc.project.ID)
-	setEnvIfMissing("NETLAB_DEPLOYMENT_ID", multilabID)
-	setEnvIfMissing("NETLAB_PLUGIN", "multilab")
-	setEnvIfMissing("NETLAB_SSH_HOST", strings.TrimSpace(server.SSHHost))
-	setEnvIfMissing("NETLAB_SSH_USER", strings.TrimSpace(pc.claims.Username))
-	setEnvIfMissing("NETLAB_STATE_ROOT", strings.TrimSpace(server.StateRoot))
-
-	// If a Netlab topology template is selected, sync it into the user's workspace on the runner host.
-	if req != nil && strings.TrimSpace(req.Template) != "" {
-		if err := s.syncNetlabTopologyFile(ctx, pc, server, req.TemplateSource, req.TemplateRepo, req.TemplatesDir, req.Template, projectDir, strings.TrimSpace(pc.claims.Username)); err != nil {
-			log.Printf("netlab template sync: %v", err)
-			return nil, errs.B().Code(errs.Unavailable).Msg("failed to sync netlab template").Err()
-		}
-	}
-
-	// Semaphore doesn't reliably expose task-scoped "environment" values as OS env vars
-	// for all runner types. Pass critical values as arguments as well (the runner script
-	// maps these to NETLAB_* env vars if missing).
-	args := []string{
-		"--api-url", apiURL,
-		"--api-insecure", "true",
-		"--user", strings.TrimSpace(pc.claims.Username),
-		"--project", strings.TrimSpace(pc.project.Slug),
-		"--deployment", deploymentName,
-		"--workspace-root", workspaceRoot,
-		"--plugin", "multilab",
-		"--multilab-id", strconv.Itoa(multilabNumericID),
-	}
-	if strings.TrimSpace(server.StateRoot) != "" {
-		args = append(args, "--state-root", strings.TrimSpace(server.StateRoot))
-	}
 
 	message := strings.TrimSpace(req.Message)
 	if message == "" {
 		message = fmt.Sprintf("Skyforge netlab run (%s)", pc.claims.Username)
-	}
-	runReq := RunRequest{
-		TemplateID:  pc.project.NetlabRunTemplateID,
-		ProjectID:   &pc.project.SemaphoreProjectID,
-		Message:     message,
-		GitBranch:   strings.TrimSpace(req.GitBranch),
-		Arguments:   string(mustJSON(args)),
-		Environment: nil,
-	}
-	envJSON, err := toJSONMap(env)
-	if err != nil {
-		log.Printf("netlab env encode: %v", err)
-		return nil, errs.B().Code(errs.Internal).Msg("failed to encode environment").Err()
-	}
-	runReq.Environment = envJSON
-
-	// Ensure the repo has the current runner script before starting the run.
-	// This repo is user-owned, so use the request identity for attribution.
-	defaultBranch := strings.TrimSpace(pc.project.DefaultBranch)
-	if defaultBranch == "" {
-		defaultBranch = "master"
-	}
-	if err := ensureGiteaFile(s.cfg, pc.project.GiteaOwner, pc.project.GiteaRepo, "netlab/job/run_netlab_api.py", netlabAPIRunnerScript(), "chore: update netlab api runner", defaultBranch, pc.claims); err != nil {
-		log.Printf("ensureGiteaFile netlab/job/run_netlab_api.py: %v", err)
 	}
 	{
 		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
@@ -599,27 +463,49 @@ func (s *Service) RunProjectNetlab(ctx context.Context, id string, req *ProjectN
 			impersonated,
 			"project.run.netlab",
 			pc.project.ID,
-			fmt.Sprintf("templateId=%d semaphoreProjectId=%d", pc.project.NetlabRunTemplateID, pc.project.SemaphoreProjectID),
+			fmt.Sprintf("action=%s server=%s", action, server.Name),
 		)
 	}
-	semaphoreCfg, err := semaphoreConfigForUser(s.cfg, pc.claims.Username)
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	meta := JSONMap{
+		"action":     action,
+		"server":     server.Name,
+		"deployment": deploymentName,
+	}
+	task, err := createTask(ctx, s.db, pc.project.ID, nil, "netlab-run", message, pc.claims.Username, meta)
 	if err != nil {
 		return nil, err
 	}
-	if err := ensureSemaphoreRepoAccessForUser(semaphoreCfg, pc.project, pc.claims.Username); err != nil {
-		return nil, err
+	spec := netlabRunSpec{
+		ProjectCtx:      pc,
+		ProjectSlug:     pc.project.Slug,
+		Username:        strings.TrimSpace(pc.claims.Username),
+		Action:          action,
+		Deployment:      deploymentName,
+		WorkspaceRoot:   workspaceRoot,
+		TemplateSource:  strings.TrimSpace(req.TemplateSource),
+		TemplateRepo:    strings.TrimSpace(req.TemplateRepo),
+		TemplatesDir:    strings.TrimSpace(req.TemplatesDir),
+		Template:        strings.TrimSpace(req.Template),
+		ProjectDir:      projectDir,
+		MultilabNumeric: multilabNumericID,
+		StateRoot:       strings.TrimSpace(server.StateRoot),
+		Cleanup:         req.Cleanup,
+		Server:          *server,
 	}
-	task, err := startSemaphoreRun(ctx, semaphoreCfg, s.db, pc.claims, runReq)
-	if err != nil {
-		return nil, err
-	}
-	taskJSON, err := toJSONMap(task)
+	s.queueTask(task, func(ctx context.Context, log *taskLogger) error {
+		return s.runNetlabTask(ctx, spec, log)
+	})
+
+	taskJSON, err := toJSONMap(taskToRunInfo(*task))
 	if err != nil {
 		log.Printf("netlab task encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode run").Err()
 	}
 	return &ProjectRunResponse{
-		ProjectID: pc.project.SemaphoreProjectID,
+		ProjectID: pc.project.ID,
 		Task:      taskJSON,
 		User:      pc.claims.Username,
 	}, nil
@@ -627,7 +513,7 @@ func (s *Service) RunProjectNetlab(ctx context.Context, id string, req *ProjectN
 
 // RunProjectLabpp triggers a LabPP run for a project.
 //
-//encore:api auth method=POST path=/api/projects/:id/runs/labpp-run
+//encore:api auth method=POST path=/api/workspaces/:id/runs/labpp-run
 func (s *Service) RunProjectLabpp(ctx context.Context, id string, req *ProjectLabppRunRequest) (*ProjectRunResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -637,11 +523,11 @@ func (s *Service) RunProjectLabpp(ctx context.Context, id string, req *ProjectLa
 	if err != nil {
 		return nil, err
 	}
-	if pc.project.LabppRunTemplateID == 0 || pc.project.SemaphoreProjectID == 0 {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("project is missing labpp run wiring").Err()
-	}
 	if pc.access == "viewer" {
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 	if req == nil {
 		req = &ProjectLabppRunRequest{}
@@ -660,22 +546,6 @@ func (s *Service) RunProjectLabpp(ctx context.Context, id string, req *ProjectLa
 	}
 	if eveServer == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("eve server is not configured").Err()
-	}
-
-	env, err := fromJSONMap(req.Environment)
-	if err != nil {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid environment").Err()
-	}
-	if env == nil {
-		env = map[string]any{}
-	}
-	setEnvIfMissing := func(key, value string) {
-		if strings.TrimSpace(value) == "" {
-			return
-		}
-		if _, ok := env[key]; !ok {
-			env[key] = value
-		}
 	}
 
 	apiURL := strings.TrimRight(strings.TrimSpace(s.cfg.LabppAPIURL), "/")
@@ -769,63 +639,9 @@ func (s *Service) RunProjectLabpp(ctx context.Context, id string, req *ProjectLa
 		labPath = "/" + strings.TrimPrefix(labPath, "/")
 	}
 
-	setEnvIfMissing("LABPP_API_URL", apiURL)
-	setEnvIfMissing("LABPP_API_INSECURE", fmt.Sprintf("%v", apiInsecure))
-	setEnvIfMissing("LABPP_ACTION", action)
-	setEnvIfMissing("LABPP_PROJECT", strings.TrimSpace(pc.project.Slug))
-	setEnvIfMissing("LABPP_DEPLOYMENT", deployment)
-	setEnvIfMissing("LABPP_TEMPLATES_ROOT", templatesRoot)
-	setEnvIfMissing("LABPP_TEMPLATE", template)
-	setEnvIfMissing("LABPP_LAB_PATH", labPath)
-	setEnvIfMissing("LABPP_API_MAX_SECONDS", "1200")
-	if threadCount > 0 {
-		setEnvIfMissing("LABPP_THREAD_COUNT", strconv.Itoa(threadCount))
-	}
-	setEnvIfMissing("LABPP_EVE_URL", eveURL)
-	setEnvIfMissing("LABPP_EVE_USERNAME", eveUsername)
-	setEnvIfMissing("LABPP_EVE_PASSWORD", evePassword)
-
-	args := []string{
-		"--api-url", apiURL,
-		"--api-insecure", fmt.Sprintf("%v", apiInsecure),
-		"--action", action,
-		"--project", strings.TrimSpace(pc.project.Slug),
-		"--deployment", deployment,
-		"--templates-root", templatesRoot,
-		"--template", template,
-		"--lab-path", labPath,
-		"--eve-url", eveURL,
-		"--eve-username", eveUsername,
-	}
-	if threadCount > 0 {
-		args = append(args, "--thread-count", strconv.Itoa(threadCount))
-	}
-
 	message := strings.TrimSpace(req.Message)
 	if message == "" {
 		message = fmt.Sprintf("Skyforge labpp run (%s)", pc.claims.Username)
-	}
-	runReq := RunRequest{
-		TemplateID:  pc.project.LabppRunTemplateID,
-		ProjectID:   &pc.project.SemaphoreProjectID,
-		Message:     message,
-		GitBranch:   strings.TrimSpace(req.GitBranch),
-		Arguments:   string(mustJSON(args)),
-		Environment: nil,
-	}
-	envJSON, err := toJSONMap(env)
-	if err != nil {
-		log.Printf("labpp env encode: %v", err)
-		return nil, errs.B().Code(errs.Internal).Msg("failed to encode environment").Err()
-	}
-	runReq.Environment = envJSON
-
-	defaultBranch := strings.TrimSpace(pc.project.DefaultBranch)
-	if defaultBranch == "" {
-		defaultBranch = "master"
-	}
-	if err := ensureGiteaFile(s.cfg, pc.project.GiteaOwner, pc.project.GiteaRepo, "labpp/job/run_labpp_api.py", labppAPIRunnerScript(), "chore: update labpp api runner", defaultBranch, pc.claims); err != nil {
-		log.Printf("ensureGiteaFile labpp/job/run_labpp_api.py: %v", err)
 	}
 	{
 		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
@@ -839,27 +655,216 @@ func (s *Service) RunProjectLabpp(ctx context.Context, id string, req *ProjectLa
 			impersonated,
 			"project.run.labpp",
 			pc.project.ID,
-			fmt.Sprintf("templateId=%d semaphoreProjectId=%d", pc.project.LabppRunTemplateID, pc.project.SemaphoreProjectID),
+			fmt.Sprintf("action=%s server=%s", action, eveServer.Name),
 		)
 	}
-	semaphoreCfg, err := semaphoreConfigForUser(s.cfg, pc.claims.Username)
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	meta := JSONMap{
+		"action":     action,
+		"server":     eveServer.Name,
+		"deployment": deployment,
+		"template":   template,
+	}
+	task, err := createTask(ctx, s.db, pc.project.ID, nil, "labpp-run", message, pc.claims.Username, meta)
 	if err != nil {
 		return nil, err
 	}
-	if err := ensureSemaphoreRepoAccessForUser(semaphoreCfg, pc.project, pc.claims.Username); err != nil {
-		return nil, err
+	spec := labppRunSpec{
+		APIURL:        apiURL,
+		Insecure:      apiInsecure,
+		Action:        action,
+		ProjectSlug:   strings.TrimSpace(pc.project.Slug),
+		Deployment:    deployment,
+		TemplatesRoot: templatesRoot,
+		Template:      template,
+		LabPath:       labPath,
+		ThreadCount:   threadCount,
+		EveURL:        eveURL,
+		EveUsername:   eveUsername,
+		EvePassword:   evePassword,
+		MaxSeconds:    1200,
 	}
-	task, err := startSemaphoreRun(ctx, semaphoreCfg, s.db, pc.claims, runReq)
-	if err != nil {
-		return nil, err
-	}
-	taskJSON, err := toJSONMap(task)
+	s.queueTask(task, func(ctx context.Context, log *taskLogger) error {
+		return s.runLabppTask(ctx, spec, log)
+	})
+
+	taskJSON, err := toJSONMap(taskToRunInfo(*task))
 	if err != nil {
 		log.Printf("labpp task encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode run").Err()
 	}
 	return &ProjectRunResponse{
-		ProjectID: pc.project.SemaphoreProjectID,
+		ProjectID: pc.project.ID,
+		Task:      taskJSON,
+		User:      pc.claims.Username,
+	}, nil
+}
+
+// RunProjectContainerlab triggers a Containerlab run for a project.
+//
+//encore:api auth method=POST path=/api/workspaces/:id/runs/containerlab-run
+func (s *Service) RunProjectContainerlab(ctx context.Context, id string, req *ProjectContainerlabRunRequest) (*ProjectRunResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	pc, err := s.projectContextForUser(user, id)
+	if err != nil {
+		return nil, err
+	}
+	if pc.access == "viewer" {
+		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	if req == nil {
+		req = &ProjectContainerlabRunRequest{}
+	}
+
+	serverName := strings.TrimSpace(req.NetlabServer)
+	if serverName == "" {
+		serverName = strings.TrimSpace(pc.project.NetlabServer)
+	}
+	if serverName == "" {
+		serverName = strings.TrimSpace(pc.project.EveServer)
+	}
+	server, _ := resolveNetlabServer(s.cfg, serverName)
+	if server == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("containerlab runner is not configured").Err()
+	}
+
+	apiURL := containerlabAPIURL(s.cfg, *server)
+	if apiURL == "" {
+		return nil, errs.B().Code(errs.Unavailable).Msg("containerlab api url is not configured").Err()
+	}
+	token, err := containerlabTokenForUser(s.cfg, pc.claims.Username)
+	if err != nil {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("containerlab jwt secret is not configured").Err()
+	}
+
+	action := strings.ToLower(strings.TrimSpace(req.Action))
+	reconfigure := req.Reconfigure
+	switch action {
+	case "", "deploy", "create", "start", "up":
+		if action == "start" {
+			reconfigure = true
+		}
+		action = "deploy"
+	case "destroy", "delete", "down", "stop":
+		action = "destroy"
+	default:
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid containerlab action (use deploy or destroy)").Err()
+	}
+
+	template := strings.TrimSpace(req.Template)
+	if action == "deploy" && template == "" {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("containerlab template is required").Err()
+	}
+
+	deploymentName := strings.TrimSpace(req.Deployment)
+	if deploymentName == "" {
+		deploymentName = strings.TrimSpace(template)
+	}
+	labName := containerlabLabName(pc.project.Slug, deploymentName)
+
+	var topologyJSON string
+	if action == "deploy" {
+		templatesDir := strings.TrimSpace(req.TemplatesDir)
+		if templatesDir == "" {
+			templatesDir = "blueprints/containerlab"
+		}
+		templatesDir = strings.Trim(strings.TrimSpace(templatesDir), "/")
+		if !isSafeRelativePath(templatesDir) {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("templatesDir must be a safe repo-relative path").Err()
+		}
+		ref, err := resolveTemplateRepoForProject(s.cfg, pc, req.TemplateSource, req.TemplateRepo)
+		if err != nil {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
+		}
+		filePath := path.Join(templatesDir, template)
+		body, err := readGiteaFileBytes(s.cfg, ref.Owner, ref.Repo, filePath, ref.Branch)
+		if err != nil {
+			log.Printf("containerlab template read: %v", err)
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to read containerlab template").Err()
+		}
+		var topo map[string]any
+		if err := yaml.Unmarshal(body, &topo); err != nil {
+			log.Printf("containerlab template parse: %v", err)
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid containerlab topology").Err()
+		}
+		if topo == nil {
+			topo = map[string]any{}
+		}
+		topo["name"] = labName
+		topologyBytes, err := json.Marshal(topo)
+		if err != nil {
+			log.Printf("containerlab template encode: %v", err)
+			return nil, errs.B().Code(errs.Internal).Msg("failed to encode topology").Err()
+		}
+		topologyJSON = string(topologyBytes)
+	}
+
+	message := strings.TrimSpace(req.Message)
+	if message == "" {
+		message = fmt.Sprintf("Skyforge containerlab run (%s)", pc.claims.Username)
+	}
+	{
+		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+		defer cancel()
+		actor, actorIsAdmin, impersonated := auditActor(s.cfg, pc.claims)
+		writeAuditEvent(
+			ctx,
+			s.db,
+			actor,
+			actorIsAdmin,
+			impersonated,
+			"project.run.containerlab",
+			pc.project.ID,
+			fmt.Sprintf("action=%s server=%s", action, server.Name),
+		)
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	meta := JSONMap{
+		"action":   action,
+		"server":   server.Name,
+		"labName":  labName,
+		"template": template,
+	}
+	task, err := createTask(ctx, s.db, pc.project.ID, nil, "containerlab-run", message, pc.claims.Username, meta)
+	if err != nil {
+		return nil, err
+	}
+	var topo map[string]any
+	if topologyJSON != "" {
+		if err := json.Unmarshal([]byte(topologyJSON), &topo); err != nil {
+			return nil, errs.B().Code(errs.Internal).Msg("failed to decode topology").Err()
+		}
+	}
+	spec := containerlabRunSpec{
+		APIURL:      apiURL,
+		Token:       token,
+		Action:      action,
+		LabName:     labName,
+		Topology:    topo,
+		Reconfigure: reconfigure,
+		SkipTLS:     containerlabSkipTLS(s.cfg, *server),
+	}
+	s.queueTask(task, func(ctx context.Context, log *taskLogger) error {
+		return s.runContainerlabTask(ctx, spec, log)
+	})
+
+	taskJSON, err := toJSONMap(taskToRunInfo(*task))
+	if err != nil {
+		log.Printf("containerlab task encode: %v", err)
+		return nil, errs.B().Code(errs.Internal).Msg("failed to encode run").Err()
+	}
+	return &ProjectRunResponse{
+		ProjectID: pc.project.ID,
 		Task:      taskJSON,
 		User:      pc.claims.Username,
 	}, nil
@@ -884,9 +889,15 @@ func populateAWSAuthEnv(ctx context.Context, cfg Config, db *sql.DB, store awsSS
 		if roleCreds == nil || roleCreds.AccessKeyId == nil || roleCreds.SecretAccessKey == nil || roleCreds.SessionToken == nil {
 			return errs.B().Code(errs.Unavailable).Msg("aws sso credentials unavailable").Err()
 		}
-		env["TF_VAR_aws_access_key_id"] = aws.ToString(roleCreds.AccessKeyId)
-		env["TF_VAR_aws_secret_access_key"] = aws.ToString(roleCreds.SecretAccessKey)
-		env["TF_VAR_aws_session_token"] = aws.ToString(roleCreds.SessionToken)
+		accessKeyID := aws.ToString(roleCreds.AccessKeyId)
+		secretAccessKey := aws.ToString(roleCreds.SecretAccessKey)
+		sessionToken := aws.ToString(roleCreds.SessionToken)
+		env["AWS_ACCESS_KEY_ID"] = accessKeyID
+		env["AWS_SECRET_ACCESS_KEY"] = secretAccessKey
+		env["AWS_SESSION_TOKEN"] = sessionToken
+		env["TF_VAR_aws_access_key_id"] = accessKeyID
+		env["TF_VAR_aws_secret_access_key"] = secretAccessKey
+		env["TF_VAR_aws_session_token"] = sessionToken
 	case "static":
 		if db == nil {
 			return errs.B().Code(errs.Unavailable).Msg("aws static credentials unavailable (db not configured)").Err()
@@ -914,6 +925,9 @@ func populateAWSAuthEnv(ctx context.Context, cfg Config, db *sql.DB, store awsSS
 
 func shouldUseAWS(project SkyforgeProject) bool {
 	authMethod := strings.ToLower(strings.TrimSpace(project.AWSAuthMethod))
+	if authMethod == "" {
+		authMethod = "sso"
+	}
 	switch authMethod {
 	case "static":
 		return true

@@ -27,7 +27,7 @@ def _set_env_if_missing(name, value):
 
 
 def parse_args(argv):
-  p = argparse.ArgumentParser(description="Skyforge Netlab API runner (Semaphore)")
+  p = argparse.ArgumentParser(description="Skyforge Netlab API runner")
   p.add_argument("--api-url", dest="NETLAB_API_URL")
   p.add_argument("--api-insecure", dest="NETLAB_API_INSECURE")
   p.add_argument("--action", dest="NETLAB_ACTION")
@@ -197,7 +197,7 @@ def _set_env_if_missing(name, value):
 
 
 def parse_args(argv):
-  p = argparse.ArgumentParser(description="Skyforge LabPP API runner (Semaphore)")
+  p = argparse.ArgumentParser(description="Skyforge LabPP API runner")
   p.add_argument("--api-url", dest="LABPP_API_URL")
   p.add_argument("--api-insecure", dest="LABPP_API_INSECURE")
   p.add_argument("--action", dest="LABPP_ACTION")
@@ -363,6 +363,149 @@ def main():
         sys.exit(1)
       return
     time.sleep(poll_interval)
+
+
+if __name__ == "__main__":
+  main()
+`
+}
+
+func containerlabAPIRunnerScript() string {
+	return `#!/usr/bin/env python3
+import argparse
+import json
+import os
+import sys
+import urllib.request
+from urllib.error import HTTPError, URLError
+
+
+def getenv(name, default=""):
+  return os.getenv(name, default)
+
+
+def _set_env_if_missing(name, value):
+  if value is None:
+    return
+  value = str(value).strip()
+  if not value:
+    return
+  if getenv(name, "").strip():
+    return
+  os.environ[name] = value
+
+
+def parse_args(argv):
+  p = argparse.ArgumentParser(description="Skyforge Containerlab API runner")
+  p.add_argument("--api-url", dest="CONTAINERLAB_API_URL")
+  p.add_argument("--api-insecure", dest="CONTAINERLAB_API_INSECURE")
+  p.add_argument("--token", dest="CONTAINERLAB_TOKEN")
+  p.add_argument("--action", dest="CONTAINERLAB_ACTION")
+  p.add_argument("--lab-name", dest="CONTAINERLAB_LAB_NAME")
+  p.add_argument("--topology-url", dest="CONTAINERLAB_TOPOLOGY_URL")
+  p.add_argument("--topology-json", dest="CONTAINERLAB_TOPOLOGY_JSON")
+  p.add_argument("--reconfigure", dest="CONTAINERLAB_RECONFIGURE")
+  args, extra = p.parse_known_args(argv)
+  return args, extra
+
+
+def apply_env_assignments(args):
+  for a in args:
+    if not isinstance(a, str):
+      continue
+    a = a.strip()
+    if not a:
+      continue
+    if "=" not in a:
+      continue
+    k, v = a.split("=", 1)
+    k = k.strip()
+    v = v.strip()
+    if not k:
+      continue
+    _set_env_if_missing(k, v)
+
+
+def request_json(url, payload=None, token=""):
+  data = None
+  headers = {"Content-Type": "application/json"}
+  if token:
+    headers["Authorization"] = "Bearer " + token
+  if payload is not None:
+    data = json.dumps(payload).encode("utf-8")
+  req = urllib.request.Request(url, data=data, headers=headers)
+  context = None
+  if url.startswith("https") and getenv("CONTAINERLAB_API_INSECURE", "false").lower() == "true":
+    import ssl
+    context = ssl._create_unverified_context()
+  timeout = float(getenv("CONTAINERLAB_API_TIMEOUT", "20"))
+  with urllib.request.urlopen(req, context=context, timeout=timeout) as resp:
+    body = resp.read().decode("utf-8")
+    if not body:
+      return {}
+    return json.loads(body)
+
+
+def main():
+  args, extra = parse_args(sys.argv[1:])
+  for k, v in vars(args).items():
+    _set_env_if_missing(k, v)
+  apply_env_assignments(extra)
+
+  api_url = getenv("CONTAINERLAB_API_URL", "").rstrip("/")
+  if not api_url:
+    sys.stderr.write("ERROR: CONTAINERLAB_API_URL is required\n")
+    sys.exit(2)
+  token = getenv("CONTAINERLAB_TOKEN", "").strip()
+  action = (getenv("CONTAINERLAB_ACTION") or "deploy").lower()
+  lab_name = getenv("CONTAINERLAB_LAB_NAME", "").strip()
+  topology_url = getenv("CONTAINERLAB_TOPOLOGY_URL", "").strip()
+  topology_json = getenv("CONTAINERLAB_TOPOLOGY_JSON", "").strip()
+  reconfigure = getenv("CONTAINERLAB_RECONFIGURE", "false").lower() == "true"
+
+  try:
+    if action in ("deploy", "create", "start", "up"):
+      if topology_url and topology_json:
+        sys.stderr.write("ERROR: both topology URL and JSON provided\n")
+        sys.exit(2)
+      if not topology_url and not topology_json:
+        sys.stderr.write("ERROR: topology URL or JSON is required\n")
+        sys.exit(2)
+      payload = {}
+      if topology_url:
+        payload["topologySourceUrl"] = topology_url
+      else:
+        payload["topologyContent"] = json.loads(topology_json)
+      url = f"{api_url}/api/v1/labs"
+      if reconfigure:
+        url += "?reconfigure=true"
+      resp = request_json(url, payload=payload, token=token)
+      sys.stdout.write(json.dumps(resp, indent=2, sort_keys=True) + "\n")
+      return
+    if action in ("destroy", "delete", "down", "stop"):
+      if not lab_name:
+        sys.stderr.write("ERROR: lab name is required for destroy\n")
+        sys.exit(2)
+      url = f"{api_url}/api/v1/labs/{lab_name}"
+      resp = request_json(url, payload=None, token=token)
+      sys.stdout.write(json.dumps(resp, indent=2, sort_keys=True) + "\n")
+      return
+    if action == "info":
+      if not lab_name:
+        sys.stderr.write("ERROR: lab name is required for info\n")
+        sys.exit(2)
+      url = f"{api_url}/api/v1/labs/{lab_name}"
+      resp = request_json(url, payload=None, token=token)
+      sys.stdout.write(json.dumps(resp, indent=2, sort_keys=True) + "\n")
+      return
+    sys.stderr.write("ERROR: unknown action\n")
+    sys.exit(2)
+  except HTTPError as exc:
+    sys.stderr.write(exc.read().decode("utf-8"))
+    sys.exit(2)
+  except URLError as exc:
+    sys.stderr.write(f"ERROR: failed to reach containerlab API: {exc}\n")
+    sys.exit(2)
 
 
 if __name__ == "__main__":

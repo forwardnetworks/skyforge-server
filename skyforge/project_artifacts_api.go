@@ -27,7 +27,7 @@ type ProjectArtifactsListResponse struct {
 
 // ListProjectArtifacts lists artifact objects for a project.
 //
-//encore:api auth method=GET path=/api/projects/:id/artifacts
+//encore:api auth method=GET path=/api/workspaces/:id/artifacts
 func (s *Service) ListProjectArtifacts(ctx context.Context, id string, params *ProjectArtifactsListParams) (*ProjectArtifactsListResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {

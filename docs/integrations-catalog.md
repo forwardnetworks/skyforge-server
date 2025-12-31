@@ -9,9 +9,6 @@ These are vendor/protocol adapters (HTTP/SSH/SDK). Domain orchestration should c
 - `encore.app/integrations/gitea`
   - Purpose: repo provisioning, blueprint migration, directory listing, file create/update, collaborator management.
   - Used by: `encore.app/skyforge` projects/project-sync logic.
-- `encore.app/integrations/semaphore`
-  - Purpose: typed HTTP client wrapper for Semaphore API (task/template/repo orchestration lives in `skyforge` for now).
-  - Used by: `encore.app/skyforge` run/lab orchestration.
 - `encore.app/integrations/sshutil`
   - Purpose: shared SSH dial + command execution (used by Netlab and other SSH-backed features).
   - Used by: `encore.app/skyforge` Netlab provider.
@@ -33,7 +30,7 @@ Providers are domain-level implementations (e.g., “labs”) that may use one o
 - Labs providers (current dispatch lives in `encore.app/skyforge`):
   - `eve-ng` (public + authenticated listing)
   - `netlab` (SSH-backed state directory listing)
-  - `semaphore` (task output markers → running labs)
+  - (native task engine; no external runner dependency)
 
 Target end state: `encore.app/providers/labs/*` packages that depend on `encore.app/integrations/*`, with the `skyforge` service orchestrating and exposing API endpoints.
 

@@ -26,7 +26,6 @@ type ProjectDeleteResponse struct {
 	RequireForce         bool               `json:"requireForce,omitempty"`
 	GiteaOwner           string             `json:"giteaOwner,omitempty"`
 	GiteaRepo            string             `json:"giteaRepo,omitempty"`
-	SemaphoreProjectID   int                `json:"semaphoreProjectId,omitempty"`
 	TerraformStateKey    string             `json:"terraformStateKey,omitempty"`
 	TerraformStatePrefix string             `json:"terraformStatePrefix,omitempty"`
 	Status               string             `json:"status,omitempty"`
@@ -41,7 +40,7 @@ type ProjectDeleteItem struct {
 
 // DeleteProject deletes a project and its backing resources.
 //
-//encore:api auth method=DELETE path=/api/projects/:id
+//encore:api auth method=DELETE path=/api/workspaces/:id
 func (s *Service) DeleteProject(ctx context.Context, id string, params *ProjectDeleteParams) (*ProjectDeleteResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -76,7 +75,6 @@ func (s *Service) DeleteProject(ctx context.Context, id string, params *ProjectD
 			RequireForce:         deleteMode == "dry-run",
 			GiteaOwner:           pc.project.GiteaOwner,
 			GiteaRepo:            pc.project.GiteaRepo,
-			SemaphoreProjectID:   pc.project.SemaphoreProjectID,
 			TerraformStateKey:    pc.project.TerraformStateKey,
 			TerraformStatePrefix: statePrefix,
 		}, nil
@@ -96,18 +94,10 @@ func (s *Service) DeleteProject(ctx context.Context, id string, params *ProjectD
 			impersonated,
 			"project.delete",
 			pc.project.ID,
-			fmt.Sprintf("slug=%s repo=%s/%s semaphoreProjectId=%d", pc.project.Slug, pc.project.GiteaOwner, pc.project.GiteaRepo, pc.project.SemaphoreProjectID),
+			fmt.Sprintf("slug=%s repo=%s/%s", pc.project.Slug, pc.project.GiteaOwner, pc.project.GiteaRepo),
 		)
 	}
 	if !inventoryOnly {
-		if pc.project.SemaphoreProjectID != 0 {
-			resp, body, err := semaphoreDo(s.cfg, http.MethodDelete, fmt.Sprintf("/project/%d", pc.project.SemaphoreProjectID), nil)
-			if err != nil {
-				log.Printf("semaphore delete project: %v", err)
-			} else if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
-				log.Printf("semaphore delete project failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
-			}
-		}
 		resp, body, err := giteaDo(s.cfg, http.MethodDelete, fmt.Sprintf("/repos/%s/%s", url.PathEscape(pc.project.GiteaOwner), url.PathEscape(pc.project.GiteaRepo)), nil)
 		if err != nil {
 			log.Printf("gitea delete repo: %v", err)

@@ -1,4 +1,4 @@
-h1:P3hwb2FDk+tNEOL5x61XFnLPzCTlZHFbbAOur+R3R4A=
+h1:b4xf0y/f0KLYkAu1G1ermvVo6ssUUdr7s2Yc8l3hrQg=
 20251220000100_init.up.sql h1:YCWvMBPS4NllVUMuxfGa/GI6PNNfPI4aiCQzxCuHoYY=
 20251221000100_cloud_credentials.up.sql h1:eV5g4ndFX+Vv/jGTQoj4rgLgXJemBeS9u0XyKVlEnwQ=
 20251222000100_project_visibility.up.sql h1:8N5AoNS1iVXnMARyCmsiffW4n6CrAq/nmxailQPZ3cw=
@@ -9,3 +9,5 @@ h1:P3hwb2FDk+tNEOL5x61XFnLPzCTlZHFbbAOur+R3R4A=
 20251229000100_dns_tokens.up.sql h1:1EpaT4MtQ28NABDN6BBAy9zWHR5BdK5/m77IlYK78rg=
 20251230000100_syslog_events.up.sql h1:KLPMXav6/9SGauXAqNWTKW+9NHXxfKAn4jHElAyV2Qo=
 20251230000200_webhooks_snmp.up.sql h1:9Oceq9kh9MTsoDlTfFH9BLlDofttD3AIOszWbYbLduM=
+20251231000100_containerlab_templates.up.sql h1:pm0PD8e1f6aEw1WJ+SxKIEZFlKvTfXwYzCLTgNFuPCY=
+20260101000100_pki_certs.up.sql h1:gtFQf20oVOJfPvZAsEIlZBQ6JxeRiOtiHcKeuwOlzY4=

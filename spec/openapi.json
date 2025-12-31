@@ -987,10 +987,6 @@
             },
             "type": "array"
           },
-          "semaphoreProjectId": {
-            "format": "int64",
-            "type": "integer"
-          },
           "slug": {
             "type": "string"
           },
@@ -1051,7 +1047,6 @@
           "artifactsBucket",
           "eveServer",
           "netlabServer",
-          "semaphoreProjectId",
           "giteaOwner",
           "giteaRepo"
         ],
@@ -1100,8 +1095,7 @@
             "type": "string"
           },
           "projectId": {
-            "format": "int64",
-            "type": "integer"
+            "type": "string"
           },
           "repository": {
             "type": "string"
@@ -2797,7 +2791,7 @@
               "application/json": {
                 "schema": {
                   "properties": {
-                    "projects": {
+                    "workspaces": {
                       "items": {
                         "$ref": "#/components/schemas/skyforge.SkyforgeProject"
                       },
@@ -3352,7 +3346,7 @@
         "summary": "ListNetlabServers returns configured Netlab runners.\n"
       }
     },
-    "/api/projects": {
+    "/api/workspaces": {
       "get": {
         "operationId": "GET:skyforge.GetProjects",
         "parameters": [
@@ -3385,7 +3379,7 @@
                   },
                   "required": [
                     "user",
-                    "projects"
+                    "workspaces"
                   ],
                   "type": "object"
                 }
@@ -3397,7 +3391,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "GetProjects returns projects visible to the authenticated user.\n"
+        "summary": "GetProjects returns workspaces visible to the authenticated user.\n"
       },
       "post": {
         "operationId": "POST:skyforge.CreateProject",
@@ -3555,10 +3549,6 @@
                       },
                       "type": "array"
                     },
-                    "semaphoreProjectId": {
-                      "format": "int64",
-                      "type": "integer"
-                    },
                     "slug": {
                       "type": "string"
                     },
@@ -3619,7 +3609,6 @@
                     "artifactsBucket",
                     "eveServer",
                     "netlabServer",
-                    "semaphoreProjectId",
                     "giteaOwner",
                     "giteaRepo"
                   ],
@@ -3636,7 +3625,7 @@
         "summary": "CreateProject provisions a new Skyforge project.\n"
       }
     },
-    "/api/projects/{id}": {
+    "/api/workspaces/{id}": {
       "delete": {
         "operationId": "DELETE:skyforge.DeleteProject",
         "parameters": [
@@ -3726,10 +3715,6 @@
                     "requireForce": {
                       "type": "boolean"
                     },
-                    "semaphoreProjectId": {
-                      "format": "int64",
-                      "type": "integer"
-                    },
                     "status": {
                       "type": "string"
                     },
@@ -3746,7 +3731,6 @@
                     "requireForce",
                     "giteaOwner",
                     "giteaRepo",
-                    "semaphoreProjectId",
                     "terraformStateKey",
                     "terraformStatePrefix",
                     "status",
@@ -3765,7 +3749,7 @@
         "summary": "DeleteProject deletes a project and its backing resources.\n"
       }
     },
-    "/api/projects/{id}/artifacts": {
+    "/api/workspaces/{id}/artifacts": {
       "get": {
         "operationId": "GET:skyforge.ListProjectArtifacts",
         "parameters": [
@@ -3846,7 +3830,7 @@
         "summary": "ListProjectArtifacts lists artifact objects for a project.\n"
       }
     },
-    "/api/projects/{id}/artifacts/download": {
+    "/api/workspaces/{id}/artifacts/download": {
       "get": {
         "operationId": "GET:skyforge.DownloadProjectArtifact",
         "parameters": [
@@ -3911,7 +3895,7 @@
         "summary": "DownloadProjectArtifact returns a presigned download redirect for the artifact.\n"
       }
     },
-    "/api/projects/{id}/artifacts/upload": {
+    "/api/workspaces/{id}/artifacts/upload": {
       "post": {
         "operationId": "POST:skyforge.UploadProjectArtifact",
         "parameters": [
@@ -3998,7 +3982,7 @@
         "summary": "UploadProjectArtifact uploads or presigns an artifact to the project's bucket.\n"
       }
     },
-    "/api/projects/{id}/cloud/aws-static": {
+    "/api/workspaces/{id}/cloud/aws-static": {
       "delete": {
         "operationId": "DELETE:skyforge.DeleteProjectAWSStatic",
         "parameters": [
@@ -4153,7 +4137,7 @@
         "summary": "PutProjectAWSStatic stores AWS static credentials.\n"
       }
     },
-    "/api/projects/{id}/cloud/azure": {
+    "/api/workspaces/{id}/cloud/azure": {
       "delete": {
         "operationId": "DELETE:skyforge.DeleteProjectAzureCredentials",
         "parameters": [
@@ -4320,7 +4304,7 @@
         "summary": "PutProjectAzureCredentials stores Azure service principal credentials.\n"
       }
     },
-    "/api/projects/{id}/cloud/gcp": {
+    "/api/workspaces/{id}/cloud/gcp": {
       "delete": {
         "operationId": "DELETE:skyforge.DeleteProjectGCPCredentials",
         "parameters": [
@@ -4479,7 +4463,7 @@
         "summary": "PutProjectGCPCredentials stores GCP service account JSON.\n"
       }
     },
-    "/api/projects/{id}/deployments": {
+    "/api/workspaces/{id}/deployments": {
       "get": {
         "operationId": "GET:skyforge.ListProjectDeployments",
         "parameters": [
@@ -4643,7 +4627,7 @@
         "summary": "CreateProjectDeployment creates a deployment definition for a project.\n"
       }
     },
-    "/api/projects/{id}/deployments/{deploymentID}": {
+    "/api/workspaces/{id}/deployments/{deploymentID}": {
       "delete": {
         "operationId": "DELETE:skyforge.DeleteProjectDeployment",
         "parameters": [
@@ -4826,7 +4810,7 @@
         "summary": "UpdateProjectDeployment updates an existing deployment definition.\n"
       }
     },
-    "/api/projects/{id}/deployments/{deploymentID}/destroy": {
+    "/api/workspaces/{id}/deployments/{deploymentID}/destroy": {
       "post": {
         "operationId": "POST:skyforge.DestroyProjectDeployment",
         "parameters": [
@@ -4887,7 +4871,7 @@
         "summary": "DestroyProjectDeployment triggers a destructive run (destroy) for a deployment.\n"
       }
     },
-    "/api/projects/{id}/deployments/{deploymentID}/start": {
+    "/api/workspaces/{id}/deployments/{deploymentID}/start": {
       "post": {
         "operationId": "POST:skyforge.StartProjectDeployment",
         "parameters": [
@@ -4963,10 +4947,10 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "StartProjectDeployment starts a deployment run in Semaphore.\n"
+        "summary": "StartProjectDeployment starts a deployment run in Skyforge.\n"
       }
     },
-    "/api/projects/{id}/deployments/{deploymentID}/stop": {
+    "/api/workspaces/{id}/deployments/{deploymentID}/stop": {
       "post": {
         "operationId": "POST:skyforge.StopProjectDeployment",
         "parameters": [
@@ -5027,7 +5011,7 @@
         "summary": "StopProjectDeployment attempts to stop the most recent task for this deployment.\n"
       }
     },
-    "/api/projects/{id}/eve": {
+    "/api/workspaces/{id}/eve": {
       "get": {
         "operationId": "GET:skyforge.GetProjectEve",
         "parameters": [
@@ -5060,17 +5044,12 @@
                     },
                     "projectId": {
                       "type": "string"
-                    },
-                    "semaphorePid": {
-                      "format": "int64",
-                      "type": "integer"
                     }
                   },
                   "required": [
                     "projectId",
                     "eveServer",
-                    "eveServers",
-                    "semaphorePid"
+                    "eveServers"
                   ],
                   "type": "object"
                 }
@@ -5206,10 +5185,6 @@
                       },
                       "type": "array"
                     },
-                    "semaphoreProjectId": {
-                      "format": "int64",
-                      "type": "integer"
-                    },
                     "slug": {
                       "type": "string"
                     },
@@ -5270,7 +5245,6 @@
                     "artifactsBucket",
                     "eveServer",
                     "netlabServer",
-                    "semaphoreProjectId",
                     "giteaOwner",
                     "giteaRepo"
                   ],
@@ -5287,7 +5261,7 @@
         "summary": "UpdateProjectEve updates the project's EVE server selection.\n"
       }
     },
-    "/api/projects/{id}/eve/lab": {
+    "/api/workspaces/{id}/eve/lab": {
       "get": {
         "operationId": "GET:skyforge.GetProjectEveLab",
         "parameters": [
@@ -5417,7 +5391,7 @@
         "summary": "CreateProjectEveLab creates an EVE lab for the project.\n"
       }
     },
-    "/api/projects/{id}/members": {
+    "/api/workspaces/{id}/members": {
       "put": {
         "operationId": "PUT:skyforge.UpdateProjectMembers",
         "parameters": [
@@ -5582,10 +5556,6 @@
                       },
                       "type": "array"
                     },
-                    "semaphoreProjectId": {
-                      "format": "int64",
-                      "type": "integer"
-                    },
                     "slug": {
                       "type": "string"
                     },
@@ -5646,7 +5616,6 @@
                     "artifactsBucket",
                     "eveServer",
                     "netlabServer",
-                    "semaphoreProjectId",
                     "giteaOwner",
                     "giteaRepo"
                   ],
@@ -5663,7 +5632,7 @@
         "summary": "UpdateProjectMembers updates project membership.\n"
       }
     },
-    "/api/projects/{id}/netlab": {
+    "/api/workspaces/{id}/netlab": {
       "get": {
         "operationId": "GET:skyforge.GetProjectNetlab",
         "parameters": [
@@ -5696,17 +5665,12 @@
                     },
                     "projectId": {
                       "type": "string"
-                    },
-                    "semaphorePid": {
-                      "format": "int64",
-                      "type": "integer"
                     }
                   },
                   "required": [
                     "projectId",
                     "netlabServer",
-                    "netlabServers",
-                    "semaphorePid"
+                    "netlabServers"
                   ],
                   "type": "object"
                 }
@@ -5842,10 +5806,6 @@
                       },
                       "type": "array"
                     },
-                    "semaphoreProjectId": {
-                      "format": "int64",
-                      "type": "integer"
-                    },
                     "slug": {
                       "type": "string"
                     },
@@ -5906,7 +5866,6 @@
                     "artifactsBucket",
                     "eveServer",
                     "netlabServer",
-                    "semaphoreProjectId",
                     "giteaOwner",
                     "giteaRepo"
                   ],
@@ -5923,7 +5882,7 @@
         "summary": "UpdateProjectNetlab updates the project's netlab server selection.\n"
       }
     },
-    "/api/projects/{id}/netlab/templates": {
+    "/api/workspaces/{id}/netlab/templates": {
       "get": {
         "operationId": "GET:skyforge.GetProjectNetlabTemplates",
         "parameters": [
@@ -6016,7 +5975,7 @@
         "summary": "GetProjectNetlabTemplates lists Netlab templates for a project.\n"
       }
     },
-    "/api/projects/{id}/runs/ansible-run": {
+    "/api/workspaces/{id}/runs/ansible-run": {
       "post": {
         "operationId": "POST:skyforge.RunProjectAnsible",
         "parameters": [
@@ -6067,7 +6026,7 @@
         "summary": "RunProjectAnsible triggers an ansible run for a project.\n"
       }
     },
-    "/api/projects/{id}/runs/netlab-run": {
+    "/api/workspaces/{id}/runs/netlab-run": {
       "post": {
         "operationId": "POST:skyforge.RunProjectNetlab",
         "parameters": [
@@ -6155,7 +6114,7 @@
         "summary": "RunProjectNetlab triggers a netlab run for a project.\n"
       }
     },
-    "/api/projects/{id}/runs/tofu-apply": {
+    "/api/workspaces/{id}/runs/tofu-apply": {
       "post": {
         "operationId": "POST:skyforge.RunProjectTofuApply",
         "parameters": [
@@ -6236,7 +6195,7 @@
         "summary": "RunProjectTofuApply triggers a tofu apply run for a project.\n"
       }
     },
-    "/api/projects/{id}/runs/tofu-plan": {
+    "/api/workspaces/{id}/runs/tofu-plan": {
       "post": {
         "operationId": "POST:skyforge.RunProjectTofuPlan",
         "parameters": [
@@ -6287,7 +6246,7 @@
         "summary": "RunProjectTofuPlan triggers a tofu plan run for a project.\n"
       }
     },
-    "/api/projects/{id}/sync": {
+    "/api/workspaces/{id}/sync": {
       "post": {
         "operationId": "POST:skyforge.SyncProject",
         "parameters": [
@@ -6351,7 +6310,7 @@
         "summary": "SyncProject syncs resources for a single project.\n"
       }
     },
-    "/api/projects/{id}/variable-groups": {
+    "/api/workspaces/{id}/variable-groups": {
       "get": {
         "operationId": "GET:skyforge.ListProjectVariableGroups",
         "parameters": [
@@ -6397,7 +6356,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "ListProjectVariableGroups lists Semaphore environments for a project.\n"
+        "summary": "ListProjectVariableGroups lists Skyforge environments for a project.\n"
       },
       "post": {
         "operationId": "POST:skyforge.CreateProjectVariableGroup",
@@ -6473,10 +6432,10 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "CreateProjectVariableGroup creates a Semaphore environment for a project.\n"
+        "summary": "CreateProjectVariableGroup creates a Skyforge environment for a project.\n"
       }
     },
-    "/api/projects/{id}/variable-groups/{groupID}": {
+    "/api/workspaces/{id}/variable-groups/{groupID}": {
       "delete": {
         "operationId": "DELETE:skyforge.DeleteProjectVariableGroup",
         "parameters": [
@@ -6534,7 +6493,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "DeleteProjectVariableGroup deletes a Semaphore environment for a project.\n"
+        "summary": "DeleteProjectVariableGroup deletes a Skyforge environment for a project.\n"
       },
       "put": {
         "operationId": "PUT:skyforge.UpdateProjectVariableGroup",
@@ -6622,10 +6581,10 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "UpdateProjectVariableGroup updates a Semaphore environment for a project.\n"
+        "summary": "UpdateProjectVariableGroup updates a Skyforge environment for a project.\n"
       }
     },
-    "/api/projects/{projectID}/blueprint/sync": {
+    "/api/workspaces/{projectID}/blueprint/sync": {
       "post": {
         "operationId": "POST:skyforge.SyncProjectBlueprint",
         "parameters": [
@@ -6746,7 +6705,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "GetRuns returns recent runs from Semaphore.\n"
+        "summary": "GetRuns returns recent runs from Skyforge.\n"
       },
       "post": {
         "operationId": "POST:skyforge.CreateRun",
@@ -6850,7 +6809,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "CreateRun launches a task in Semaphore (admin only).\n"
+        "summary": "CreateRun launches a task in Skyforge (admin only).\n"
       }
     },
     "/api/runs/{id}/output": {
@@ -6920,50 +6879,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "GetRunOutput returns output for a specific Semaphore task.\n"
-      }
-    },
-    "/api/semaphore/sso": {
-      "get": {
-        "operationId": "GET:skyforge.SemaphoreSSO",
-        "responses": {
-          "200": {
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "SemaphoreSSO performs a one-time token exchange for Semaphore and redirects to\nthe UI.\n"
-      }
-    },
-    "/api/semaphore/sso/status": {
-      "get": {
-        "operationId": "GET:skyforge.SemaphoreSSOStatus",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "status": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "status"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "SemaphoreSSOStatus verifies that the current user can perform SSO.\n"
+        "summary": "GetRunOutput returns output for a specific Skyforge task.\n"
       }
     },
     "/api/session": {

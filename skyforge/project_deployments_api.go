@@ -12,7 +12,9 @@ import (
 	"log"
 	"net/http"
 	"net/http/cookiejar"
+	"path"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -62,15 +64,16 @@ type ProjectDeploymentActionResponse struct {
 }
 
 type ProjectDeploymentInfoResponse struct {
-	ProjectID   string             `json:"projectId"`
-	Deployment  *ProjectDeployment `json:"deployment"`
-	Provider    string             `json:"provider"`
-	RetrievedAt string             `json:"retrievedAt"`
-	Status      string             `json:"status,omitempty"`
-	Log         string             `json:"log,omitempty"`
-	Note        string             `json:"note,omitempty"`
-	Netlab      *NetlabInfo        `json:"netlab,omitempty"`
-	Labpp       *LabppInfo         `json:"labpp,omitempty"`
+	ProjectID    string             `json:"projectId"`
+	Deployment   *ProjectDeployment `json:"deployment"`
+	Provider     string             `json:"provider"`
+	RetrievedAt  string             `json:"retrievedAt"`
+	Status       string             `json:"status,omitempty"`
+	Log          string             `json:"log,omitempty"`
+	Note         string             `json:"note,omitempty"`
+	Netlab       *NetlabInfo        `json:"netlab,omitempty"`
+	Labpp        *LabppInfo         `json:"labpp,omitempty"`
+	Containerlab *ContainerlabInfo  `json:"containerlab,omitempty"`
 }
 
 type NetlabInfo struct {
@@ -86,6 +89,20 @@ type LabppInfo struct {
 	Endpoint  string `json:"endpoint,omitempty"`
 }
 
+type ContainerlabInfo struct {
+	LabName string `json:"labName"`
+	APIURL  string `json:"apiUrl"`
+}
+
+type terraformStateOutput struct {
+	Value     any  `json:"value"`
+	Sensitive bool `json:"sensitive"`
+}
+
+type terraformState struct {
+	Outputs map[string]terraformStateOutput `json:"outputs"`
+}
+
 func normalizeDeploymentName(name string) (string, error) {
 	name = slugify(name)
 	if !deploymentNameRE.MatchString(name) {
@@ -97,16 +114,16 @@ func normalizeDeploymentName(name string) (string, error) {
 func normalizeDeploymentType(raw string) (string, error) {
 	t := strings.ToLower(strings.TrimSpace(raw))
 	switch t {
-	case "tofu", "netlab", "labpp":
+	case "tofu", "netlab", "labpp", "containerlab":
 		return t, nil
 	default:
-		return "", errs.B().Code(errs.InvalidArgument).Msg("deployment type must be tofu, netlab, or labpp").Err()
+		return "", errs.B().Code(errs.InvalidArgument).Msg("deployment type must be tofu, netlab, labpp, or containerlab").Err()
 	}
 }
 
 // ListProjectDeployments lists deployment definitions for a project.
 //
-//encore:api auth method=GET path=/api/projects/:id/deployments
+//encore:api auth method=GET path=/api/workspaces/:id/deployments
 func (s *Service) ListProjectDeployments(ctx context.Context, id string) (*ProjectDeploymentListResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -204,36 +221,37 @@ ORDER BY updated_at DESC`, pc.project.ID)
 	}
 
 	if len(refresh) > 0 {
-		semaphoreCfg, err := semaphoreConfigForUser(s.cfg, pc.claims.Username)
-		if err != nil {
-			log.Printf("deployments status refresh: %v", err)
-		} else {
-			for _, dep := range refresh {
-				task, err := fetchSemaphoreTask(semaphoreCfg, *dep.LastTaskProjectID, *dep.LastTaskID)
-				if err != nil || task == nil {
-					continue
-				}
-				status := strings.TrimSpace(firstString(task, "status", "state"))
-				if status == "" {
-					continue
-				}
-				if dep.LastStatus != nil && strings.EqualFold(*dep.LastStatus, status) {
-					continue
-				}
-				finishedAt := parseDeploymentTimestamp(firstString(task, "end_time", "finished_at", "end", "stopped_at"))
-				if finishedAt == nil && isTerminalDeploymentStatus(status) {
-					now := time.Now().UTC()
-					finishedAt = &now
-				}
-				if err := s.updateDeploymentStatus(ctx, pc.project.ID, dep.ID, status, finishedAt); err != nil {
-					log.Printf("deployments status update: %v", err)
-					continue
-				}
-				dep.LastStatus = &status
-				if finishedAt != nil {
-					v := finishedAt.UTC().Format(time.RFC3339)
-					dep.LastFinishedAt = &v
-				}
+		for _, dep := range refresh {
+			if dep.LastTaskID == nil {
+				continue
+			}
+			task, err := getTask(ctx, s.db, *dep.LastTaskID)
+			if err != nil || task == nil {
+				continue
+			}
+			status := strings.TrimSpace(task.Status)
+			if status == "" {
+				continue
+			}
+			if dep.LastStatus != nil && strings.EqualFold(*dep.LastStatus, status) {
+				continue
+			}
+			var finishedAt *time.Time
+			if task.FinishedAt.Valid {
+				finished := task.FinishedAt.Time.UTC()
+				finishedAt = &finished
+			} else if isTerminalDeploymentStatus(status) {
+				now := time.Now().UTC()
+				finishedAt = &now
+			}
+			if err := s.updateDeploymentStatus(ctx, pc.project.ID, dep.ID, status, finishedAt); err != nil {
+				log.Printf("deployments status update: %v", err)
+				continue
+			}
+			dep.LastStatus = &status
+			if finishedAt != nil {
+				v := finishedAt.UTC().Format(time.RFC3339)
+				dep.LastFinishedAt = &v
 			}
 		}
 	}
@@ -243,7 +261,7 @@ ORDER BY updated_at DESC`, pc.project.ID)
 
 // CreateProjectDeployment creates a deployment definition for a project.
 //
-//encore:api auth method=POST path=/api/projects/:id/deployments
+//encore:api auth method=POST path=/api/workspaces/:id/deployments
 func (s *Service) CreateProjectDeployment(ctx context.Context, id string, req *ProjectDeploymentCreateRequest) (*ProjectDeployment, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -295,7 +313,36 @@ func (s *Service) CreateProjectDeployment(ctx context.Context, id string, req *P
 		if cloud == "" {
 			cloud = "aws"
 		}
+		templateSource := strings.ToLower(getString("templateSource"))
+		if templateSource == "" {
+			templateSource = "project"
+		}
+		templateRepo := getString("templateRepo")
+		templatesDir := strings.Trim(getString("templatesDir"), "/")
+		template := strings.Trim(getString("template"), "/")
+		if template == "" {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("template is required").Err()
+		}
+		if templateSource == "custom" && templateRepo == "" {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("custom repo is required").Err()
+		}
+		if templatesDir == "" {
+			templatesDir = fmt.Sprintf("cloud/terraform/%s", cloud)
+		}
+		if !isSafeRelativePath(templatesDir) {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("templatesDir must be a safe repo-relative path").Err()
+		}
+		templatePath := path.Join(templatesDir, template)
+		if !isSafeRelativePath(templatePath) {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("template must be a safe repo-relative path").Err()
+		}
 		cfgAny["cloud"] = cloud
+		cfgAny["templateSource"] = templateSource
+		if templateRepo != "" {
+			cfgAny["templateRepo"] = templateRepo
+		}
+		cfgAny["templatesDir"] = templatesDir
+		cfgAny["template"] = template
 	case "netlab":
 		if getString("netlabServer") == "" {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("netlabServer is required").Err()
@@ -310,6 +357,36 @@ func (s *Service) CreateProjectDeployment(ctx context.Context, id string, req *P
 		if getString("template") == "" {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("template is required").Err()
 		}
+	case "containerlab":
+		if getString("netlabServer") == "" {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("netlabServer is required").Err()
+		}
+		template := strings.TrimSpace(getString("template"))
+		if template == "" {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("template is required").Err()
+		}
+		templateSource := strings.ToLower(getString("templateSource"))
+		if templateSource == "" {
+			templateSource = "project"
+		}
+		templateRepo := getString("templateRepo")
+		templatesDir := strings.Trim(getString("templatesDir"), "/")
+		if templateSource == "custom" && templateRepo == "" {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("custom repo is required").Err()
+		}
+		if templatesDir == "" {
+			templatesDir = "blueprints/containerlab"
+		}
+		if !isSafeRelativePath(templatesDir) {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("templatesDir must be a safe repo-relative path").Err()
+		}
+		cfgAny["templateSource"] = templateSource
+		if templateRepo != "" {
+			cfgAny["templateRepo"] = templateRepo
+		}
+		cfgAny["templatesDir"] = templatesDir
+		cfgAny["template"] = template
+		cfgAny["labName"] = containerlabLabName(pc.project.Slug, name)
 	}
 	cfg, _ = toJSONMap(cfgAny)
 	cfgBytes, _ := json.Marshal(cfg)
@@ -332,7 +409,7 @@ func (s *Service) CreateProjectDeployment(ctx context.Context, id string, req *P
 
 // UpdateProjectDeployment updates an existing deployment definition.
 //
-//encore:api auth method=PUT path=/api/projects/:id/deployments/:deploymentID
+//encore:api auth method=PUT path=/api/workspaces/:id/deployments/:deploymentID
 func (s *Service) UpdateProjectDeployment(ctx context.Context, id, deploymentID string, req *ProjectDeploymentUpdateRequest) (*ProjectDeployment, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -395,7 +472,7 @@ func (s *Service) UpdateProjectDeployment(ctx context.Context, id, deploymentID 
 
 // DeleteProjectDeployment removes a deployment definition from Skyforge.
 //
-//encore:api auth method=DELETE path=/api/projects/:id/deployments/:deploymentID
+//encore:api auth method=DELETE path=/api/workspaces/:id/deployments/:deploymentID
 func (s *Service) DeleteProjectDeployment(ctx context.Context, id, deploymentID string) (*ProjectDeploymentActionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -438,7 +515,7 @@ type ProjectDeploymentOpRequest struct {
 
 // RunProjectDeploymentAction runs a deployment operation with consistent UX verbs.
 //
-//encore:api auth method=POST path=/api/projects/:id/deployments/:deploymentID/action
+//encore:api auth method=POST path=/api/workspaces/:id/deployments/:deploymentID/action
 func (s *Service) RunProjectDeploymentAction(ctx context.Context, id, deploymentID string, req *ProjectDeploymentOpRequest) (*ProjectDeploymentActionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -486,15 +563,39 @@ func (s *Service) RunProjectDeploymentAction(ctx context.Context, id, deployment
 	switch dep.Type {
 	case "tofu":
 		cloud, _ := cfgAny["cloud"].(string)
+		templateSource, _ := cfgAny["templateSource"].(string)
+		templateRepo, _ := cfgAny["templateRepo"].(string)
+		templatesDir, _ := cfgAny["templatesDir"].(string)
+		template, _ := cfgAny["template"].(string)
 		cloud = strings.ToLower(strings.TrimSpace(cloud))
 		if cloud == "" {
 			cloud = "aws"
 		}
+		templateSource = strings.TrimSpace(templateSource)
+		templateRepo = strings.TrimSpace(templateRepo)
+		templatesDir = strings.TrimSpace(templatesDir)
+		template = strings.TrimSpace(template)
 		switch op {
 		case "create":
-			run, err = s.RunProjectTofuApply(ctx, id, &ProjectTofuApplyParams{Confirm: "true", Cloud: cloud, Action: "apply"})
+			run, err = s.RunProjectTofuApply(ctx, id, &ProjectTofuApplyParams{
+				Confirm:        "true",
+				Cloud:          cloud,
+				Action:         "apply",
+				TemplateSource: templateSource,
+				TemplateRepo:   templateRepo,
+				TemplatesDir:   templatesDir,
+				Template:       template,
+			})
 		case "destroy":
-			run, err = s.RunProjectTofuApply(ctx, id, &ProjectTofuApplyParams{Confirm: "true", Cloud: cloud, Action: "destroy"})
+			run, err = s.RunProjectTofuApply(ctx, id, &ProjectTofuApplyParams{
+				Confirm:        "true",
+				Cloud:          cloud,
+				Action:         "destroy",
+				TemplateSource: templateSource,
+				TemplateRepo:   templateRepo,
+				TemplatesDir:   templatesDir,
+				Template:       template,
+			})
 		default:
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("unsupported tofu action (use create or destroy)").Err()
 		}
@@ -601,6 +702,56 @@ func (s *Service) RunProjectDeploymentAction(ctx context.Context, id, deployment
 		if err != nil {
 			return nil, err
 		}
+	case "containerlab":
+		netlabServer, _ := cfgAny["netlabServer"].(string)
+		templateSource, _ := cfgAny["templateSource"].(string)
+		templateRepo, _ := cfgAny["templateRepo"].(string)
+		templatesDir, _ := cfgAny["templatesDir"].(string)
+		template, _ := cfgAny["template"].(string)
+		labName, _ := cfgAny["labName"].(string)
+
+		netlabServer = strings.TrimSpace(netlabServer)
+		if netlabServer == "" {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
+		}
+		if strings.TrimSpace(template) == "" && op != "destroy" {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("containerlab template is required").Err()
+		}
+		if (op == "start" || op == "stop") && !infraCreated {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("containerlab deployment must be created before start/stop").Err()
+		}
+
+		containerlabAction := "deploy"
+		reconfigure := false
+		switch op {
+		case "create":
+			containerlabAction = "deploy"
+		case "start":
+			containerlabAction = "deploy"
+			reconfigure = true
+		case "stop":
+			containerlabAction = "destroy"
+		case "destroy":
+			containerlabAction = "destroy"
+		}
+
+		run, err = s.RunProjectContainerlab(ctx, id, &ProjectContainerlabRunRequest{
+			Message:        strings.TrimSpace(fmt.Sprintf("Skyforge containerlab run (%s)", pc.claims.Username)),
+			Action:         containerlabAction,
+			NetlabServer:   netlabServer,
+			TemplateSource: strings.TrimSpace(templateSource),
+			TemplateRepo:   strings.TrimSpace(templateRepo),
+			TemplatesDir:   strings.TrimSpace(templatesDir),
+			Template:       strings.TrimSpace(template),
+			Deployment:     strings.TrimSpace(dep.Name),
+			Reconfigure:    reconfigure,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(labName) == "" {
+			cfgAny["labName"] = containerlabLabName(pc.project.Slug, dep.Name)
+		}
 	default:
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown deployment type").Err()
 	}
@@ -695,7 +846,7 @@ func netlabAPIGet(ctx context.Context, url string) (*http.Response, []byte, erro
 // GetProjectDeploymentInfo returns provider-specific info for a deployment.
 // For Netlab deployments, this executes `netlab status` against the associated Netlab API and returns the output.
 //
-//encore:api auth method=GET path=/api/projects/:id/deployments/:deploymentID/info
+//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/info
 func (s *Service) GetProjectDeploymentInfo(ctx context.Context, id, deploymentID string) (*ProjectDeploymentInfoResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -887,6 +1038,81 @@ func (s *Service) GetProjectDeploymentInfo(ctx context.Context, id, deploymentID
 
 		resp.Labpp = &LabppInfo{EveServer: eveServerName, EveURL: base, LabPath: labPath, Endpoint: endpoint}
 		return resp, nil
+	case "tofu":
+		stateKey := strings.TrimSpace(pc.project.TerraformStateKey)
+		if stateKey == "" {
+			resp.Note = "terraform state key is not configured"
+			return resp, nil
+		}
+		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		stateBytes, err := getTerraformStateObject(ctx, s.cfg, "terraform-state", stateKey)
+		if err != nil {
+			resp.Note = "failed to load terraform state"
+			return resp, nil
+		}
+		var state terraformState
+		if err := json.Unmarshal(stateBytes, &state); err != nil {
+			resp.Note = "terraform state could not be parsed"
+			return resp, nil
+		}
+		resp.Log = formatTerraformOutputs(state.Outputs)
+		return resp, nil
+	case "containerlab":
+		netlabServer, _ := cfgAny["netlabServer"].(string)
+		netlabServer = strings.TrimSpace(netlabServer)
+		if netlabServer == "" {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
+		}
+		server, _ := resolveNetlabServer(s.cfg, netlabServer)
+		if server == nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("containerlab runner is not configured").Err()
+		}
+		apiURL := containerlabAPIURL(s.cfg, *server)
+		if apiURL == "" {
+			return nil, errs.B().Code(errs.Unavailable).Msg("containerlab api url is not configured").Err()
+		}
+		labName, _ := cfgAny["labName"].(string)
+		labName = strings.TrimSpace(labName)
+		if labName == "" {
+			labName = containerlabLabName(pc.project.Slug, dep.Name)
+		}
+		resp.Containerlab = &ContainerlabInfo{LabName: labName, APIURL: apiURL}
+
+		token, err := containerlabTokenForUser(s.cfg, pc.claims.Username)
+		if err != nil {
+			resp.Note = "containerlab auth is not configured"
+			resp.Status = "error"
+			return resp, nil
+		}
+		checkCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		getResp, body, err := containerlabAPIGet(checkCtx, fmt.Sprintf("%s/api/v1/labs/%s", apiURL, labName), token, containerlabSkipTLS(s.cfg, *server))
+		if err != nil {
+			resp.Note = "failed to reach containerlab api"
+			resp.Status = "error"
+			return resp, nil
+		}
+		if getResp.StatusCode == http.StatusNotFound {
+			resp.Status = "not_found"
+			resp.Note = "lab not found"
+			return resp, nil
+		}
+		if getResp.StatusCode < 200 || getResp.StatusCode >= 300 {
+			resp.Status = "error"
+			resp.Note = strings.TrimSpace(string(body))
+			return resp, nil
+		}
+		resp.Status = "ok"
+		if len(body) > 0 {
+			var pretty bytes.Buffer
+			if err := json.Indent(&pretty, body, "", "  "); err == nil {
+				resp.Log = pretty.String()
+			} else {
+				resp.Log = string(body)
+			}
+		}
+		return resp, nil
 	default:
 		resp.Note = "info is not yet supported for this deployment type"
 		return resp, nil
@@ -912,23 +1138,50 @@ func derefString(v *string) string {
 	return *v
 }
 
-// StartProjectDeployment starts a deployment run in Semaphore.
+func formatTerraformOutputs(outputs map[string]terraformStateOutput) string {
+	if len(outputs) == 0 {
+		return "No terraform outputs found in state."
+	}
+	keys := make([]string, 0, len(outputs))
+	for key := range outputs {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	lines := make([]string, 0, len(keys))
+	for _, key := range keys {
+		out := outputs[key]
+		value := "<unknown>"
+		if out.Sensitive {
+			value = "<sensitive>"
+		} else if out.Value == nil {
+			value = "null"
+		} else if raw, err := json.Marshal(out.Value); err == nil {
+			value = string(raw)
+		} else {
+			value = fmt.Sprint(out.Value)
+		}
+		lines = append(lines, fmt.Sprintf("%s = %s", key, value))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// StartProjectDeployment starts a deployment run.
 //
-//encore:api auth method=POST path=/api/projects/:id/deployments/:deploymentID/start
+//encore:api auth method=POST path=/api/workspaces/:id/deployments/:deploymentID/start
 func (s *Service) StartProjectDeployment(ctx context.Context, id, deploymentID string, req *ProjectDeploymentStartRequest) (*ProjectDeploymentActionResponse, error) {
 	return s.runDeployment(ctx, id, deploymentID, req, "start")
 }
 
 // DestroyProjectDeployment triggers a destructive run (destroy) for a deployment.
 //
-//encore:api auth method=POST path=/api/projects/:id/deployments/:deploymentID/destroy
+//encore:api auth method=POST path=/api/workspaces/:id/deployments/:deploymentID/destroy
 func (s *Service) DestroyProjectDeployment(ctx context.Context, id, deploymentID string) (*ProjectDeploymentActionResponse, error) {
 	return s.runDeployment(ctx, id, deploymentID, &ProjectDeploymentStartRequest{Action: "destroy"}, "destroy")
 }
 
 // StopProjectDeployment attempts to stop the most recent task for this deployment.
 //
-//encore:api auth method=POST path=/api/projects/:id/deployments/:deploymentID/stop
+//encore:api auth method=POST path=/api/workspaces/:id/deployments/:deploymentID/stop
 func (s *Service) StopProjectDeployment(ctx context.Context, id, deploymentID string) (*ProjectDeploymentActionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -951,17 +1204,13 @@ func (s *Service) StopProjectDeployment(ctx context.Context, id, deploymentID st
 	if dep.LastTaskProjectID == nil || dep.LastTaskID == nil {
 		return &ProjectDeploymentActionResponse{ProjectID: pc.project.ID, Deployment: dep}, nil
 	}
-	semaphoreCfg, err := semaphoreConfigForUser(s.cfg, pc.claims.Username)
-	if err != nil {
-		return nil, err
+	if err := cancelTask(ctx, s.db, *dep.LastTaskID); err != nil {
+		log.Printf("deployment stop: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to cancel task").Err()
 	}
-	resp, body, err := semaphoreDo(semaphoreCfg, http.MethodPost, fmt.Sprintf("/project/%d/tasks/%d/stop", *dep.LastTaskProjectID, *dep.LastTaskID), map[string]any{})
-	if err != nil {
-		log.Printf("semaphore stop: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to reach semaphore").Err()
-	}
-	if resp == nil || (resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK) {
-		return nil, errs.B().Code(errs.Unavailable).Msg(fmt.Sprintf("semaphore stop rejected: %s", strings.TrimSpace(string(body)))).Err()
+	now := time.Now().UTC()
+	if err := s.updateDeploymentStatus(ctx, pc.project.ID, dep.ID, "canceled", &now); err != nil {
+		log.Printf("deployment stop update: %v", err)
 	}
 	return &ProjectDeploymentActionResponse{ProjectID: pc.project.ID, Deployment: dep}, nil
 }
@@ -999,11 +1248,23 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 	case "tofu":
 		cfg, _ := fromJSONMap(dep.Config)
 		cloud, _ := cfg["cloud"].(string)
+		templateSource, _ := cfg["templateSource"].(string)
+		templateRepo, _ := cfg["templateRepo"].(string)
+		templatesDir, _ := cfg["templatesDir"].(string)
+		template, _ := cfg["template"].(string)
 		cloud = strings.ToLower(strings.TrimSpace(cloud))
 		if cloud == "" {
 			cloud = "aws"
 		}
-		run, err = s.RunProjectTofuApply(ctx, id, &ProjectTofuApplyParams{Confirm: "true", Cloud: cloud, Action: action})
+		run, err = s.RunProjectTofuApply(ctx, id, &ProjectTofuApplyParams{
+			Confirm:        "true",
+			Cloud:          cloud,
+			Action:         action,
+			TemplateSource: strings.TrimSpace(templateSource),
+			TemplateRepo:   strings.TrimSpace(templateRepo),
+			TemplatesDir:   strings.TrimSpace(templatesDir),
+			Template:       strings.TrimSpace(template),
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -1073,6 +1334,39 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 		})
 		if err != nil {
 			return nil, err
+		}
+	case "containerlab":
+		cfg, _ := fromJSONMap(dep.Config)
+		netlabServer, _ := cfg["netlabServer"].(string)
+		templateSource, _ := cfg["templateSource"].(string)
+		templateRepo, _ := cfg["templateRepo"].(string)
+		templatesDir, _ := cfg["templatesDir"].(string)
+		template, _ := cfg["template"].(string)
+		labName, _ := cfg["labName"].(string)
+		containerlabAction := "deploy"
+		reconfigure := false
+		if mode == "destroy" {
+			containerlabAction = "destroy"
+		}
+		if mode == "start" {
+			reconfigure = true
+		}
+		run, err = s.RunProjectContainerlab(ctx, id, &ProjectContainerlabRunRequest{
+			Message:        strings.TrimSpace(fmt.Sprintf("Skyforge containerlab run (%s)", pc.claims.Username)),
+			Action:         containerlabAction,
+			NetlabServer:   strings.TrimSpace(netlabServer),
+			TemplateSource: strings.TrimSpace(templateSource),
+			TemplateRepo:   strings.TrimSpace(templateRepo),
+			TemplatesDir:   strings.TrimSpace(templatesDir),
+			Template:       strings.TrimSpace(template),
+			Deployment:     strings.TrimSpace(dep.Name),
+			Reconfigure:    reconfigure,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(labName) == "" {
+			cfg["labName"] = containerlabLabName(pc.project.Slug, dep.Name)
 		}
 	default:
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown deployment type").Err()
@@ -1147,6 +1441,23 @@ WHERE project_id=$3 AND id=$4`, status, *finishedAt, projectID, deploymentID)
   updated_at=now()
 WHERE project_id=$2 AND id=$3`, status, projectID, deploymentID)
 	return err
+}
+
+func (s *Service) getLatestDeploymentByType(ctx context.Context, projectID, depType string) (*ProjectDeployment, error) {
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	var deploymentID string
+	err := s.db.QueryRowContext(ctx, `SELECT id FROM sf_deployments WHERE project_id=$1 AND type=$2 ORDER BY updated_at DESC LIMIT 1`, projectID, depType).Scan(&deploymentID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return s.getProjectDeployment(ctx, projectID, deploymentID)
 }
 
 func nullIfZeroInt(v int) any {

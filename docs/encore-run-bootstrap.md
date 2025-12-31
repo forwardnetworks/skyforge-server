@@ -10,7 +10,7 @@ This guide standardizes how to run the Skyforge server locally with Encore while
 - Docker running (Encore local runtime requires Docker even if you point DB/Redis elsewhere).
 - A populated local env file:
   - Copy `skyforge/server/.env.local.example` → `skyforge/server/.env.local`
-  - Fill in required values (LDAP/semaphore/session secret).
+  - Fill in required values (LDAP/session secret).
 
 ## Option A (default): run with Encore local infra
 

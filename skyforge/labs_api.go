@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -100,26 +99,16 @@ func (s *Service) GetLabsRunning(ctx context.Context, params *LabsRunningParams)
 		projectID = strings.TrimSpace(params.ProjectID)
 	}
 	if projectID != "" && eveServer == "" {
-		if pid, err := strconv.Atoi(projectID); err == nil && pid > 0 {
-			if projects, err := s.projectStore.load(); err == nil {
-				for _, p := range projects {
-					if p.SemaphoreProjectID == pid && strings.TrimSpace(p.EveServer) != "" {
-						eveServer = strings.TrimSpace(p.EveServer)
-						break
-					}
-				}
+		if projects, err := s.projectStore.load(); err == nil {
+			if p := findProjectByKey(projects, projectID); p != nil && strings.TrimSpace(p.EveServer) != "" {
+				eveServer = strings.TrimSpace(p.EveServer)
 			}
 		}
 	}
 	if projectID != "" && netlabServer == "" {
-		if pid, err := strconv.Atoi(projectID); err == nil && pid > 0 {
-			if projects, err := s.projectStore.load(); err == nil {
-				for _, p := range projects {
-					if p.SemaphoreProjectID == pid && strings.TrimSpace(p.NetlabServer) != "" {
-						netlabServer = strings.TrimSpace(p.NetlabServer)
-						break
-					}
-				}
+		if projects, err := s.projectStore.load(); err == nil {
+			if p := findProjectByKey(projects, projectID); p != nil && strings.TrimSpace(p.NetlabServer) != "" {
+				netlabServer = strings.TrimSpace(p.NetlabServer)
 			}
 		}
 	}
@@ -163,25 +152,19 @@ func (s *Service) GetLabsForUser(ctx context.Context, params *LabsRunningParams)
 
 	ownerOverride := ""
 	if projectID != "" {
-		if pid, err := strconv.Atoi(projectID); err == nil && pid > 0 {
-			if projects, err := s.projectStore.load(); err == nil {
-				for _, p := range projects {
-					if p.SemaphoreProjectID != pid {
-						continue
-					}
-					if eveServer == "" && strings.TrimSpace(p.EveServer) != "" {
-						eveServer = strings.TrimSpace(p.EveServer)
-					}
-					if netlabServer == "" && strings.TrimSpace(p.NetlabServer) != "" {
-						netlabServer = strings.TrimSpace(p.NetlabServer)
-					}
-					if projectAccessLevelForClaims(s.cfg, p, claims) == "none" {
-						labsErrors.Add(1)
-						return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
-					}
-					ownerOverride = projectPrimaryOwner(p)
-					break
+		if projects, err := s.projectStore.load(); err == nil {
+			if p := findProjectByKey(projects, projectID); p != nil {
+				if eveServer == "" && strings.TrimSpace(p.EveServer) != "" {
+					eveServer = strings.TrimSpace(p.EveServer)
 				}
+				if netlabServer == "" && strings.TrimSpace(p.NetlabServer) != "" {
+					netlabServer = strings.TrimSpace(p.NetlabServer)
+				}
+				if projectAccessLevelForClaims(s.cfg, *p, claims) == "none" {
+					labsErrors.Add(1)
+					return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
+				}
+				ownerOverride = projectPrimaryOwner(*p)
 			}
 		}
 	}
@@ -304,19 +287,13 @@ func (s *Service) ListNetlabLabs(ctx context.Context, params *NetlabLabsParams) 
 		}
 	}
 	if projectID != "" {
-		if pid, err := strconv.Atoi(projectID); err == nil && pid > 0 {
-			if projects, err := s.projectStore.load(); err == nil {
-				for _, p := range projects {
-					if p.SemaphoreProjectID != pid {
-						continue
-					}
-					if projectAccessLevelForClaims(s.cfg, p, claims) == "none" {
-						return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
-					}
-					if serverName == "" && strings.TrimSpace(p.NetlabServer) != "" {
-						serverName = strings.TrimSpace(p.NetlabServer)
-					}
-					break
+		if projects, err := s.projectStore.load(); err == nil {
+			if p := findProjectByKey(projects, projectID); p != nil {
+				if projectAccessLevelForClaims(s.cfg, *p, claims) == "none" {
+					return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
+				}
+				if serverName == "" && strings.TrimSpace(p.NetlabServer) != "" {
+					serverName = strings.TrimSpace(p.NetlabServer)
 				}
 			}
 		}
@@ -392,19 +369,13 @@ func (s *Service) GetNetlabLab(ctx context.Context, id string, params *NetlabLab
 		projectID = strings.TrimSpace(params.ProjectID)
 	}
 	if projectID != "" {
-		if pid, err := strconv.Atoi(projectID); err == nil && pid > 0 {
-			if projects, err := s.projectStore.load(); err == nil {
-				for _, p := range projects {
-					if p.SemaphoreProjectID != pid {
-						continue
-					}
-					if projectAccessLevelForClaims(s.cfg, p, claims) == "none" {
-						return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
-					}
-					if serverName == "" && strings.TrimSpace(p.NetlabServer) != "" {
-						serverName = strings.TrimSpace(p.NetlabServer)
-					}
-					break
+		if projects, err := s.projectStore.load(); err == nil {
+			if p := findProjectByKey(projects, projectID); p != nil {
+				if projectAccessLevelForClaims(s.cfg, *p, claims) == "none" {
+					return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
+				}
+				if serverName == "" && strings.TrimSpace(p.NetlabServer) != "" {
+					serverName = strings.TrimSpace(p.NetlabServer)
 				}
 			}
 		}

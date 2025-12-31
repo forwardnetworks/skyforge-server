@@ -21,7 +21,7 @@ type NetlabRun struct {
 }
 
 type NetlabRunsResponse struct {
-	ProjectID int         `json:"project_id"`
+	ProjectID string      `json:"projectId"`
 	User      string      `json:"user"`
 	Runs      []NetlabRun `json:"runs"`
 }
@@ -35,37 +35,39 @@ func (s *Service) GetNetlabRuns(ctx context.Context, params *RunnerRunsParams) (
 	if err != nil {
 		return nil, err
 	}
-	claims := claimsFromAuthUser(user)
-	projectID, limit, err := parseRunnerRunsParams(s.cfg, params)
+	projectKey, limit, err := parseRunnerRunsParams(params)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.authorizeSemaphoreProjectID(claims, projectID); err != nil {
+	project, err := s.resolveProjectForUser(ctx, user, projectKey)
+	if err != nil {
 		return nil, err
 	}
-
-	tasks, err := fetchSemaphoreTasks(s.cfg, projectID, limit)
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	tasks, err := listTasks(ctx, s.db, project.ID, limit)
 	if err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to query semaphore").Err()
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to query runs").Err()
 	}
 
 	runs := make([]NetlabRun, 0, limit)
 	for _, task := range tasks {
-		tplAlias, _ := task["tpl_alias"].(string)
-		tplApp, _ := task["tpl_app"].(string)
-		if !strings.HasPrefix(strings.ToLower(tplAlias), "netlab") && strings.ToLower(tplApp) != "netlab" {
+		if !strings.HasPrefix(strings.ToLower(task.TaskType), "netlab") {
 			continue
 		}
-		taskID, ok := task["id"].(float64)
-		if !ok || int(taskID) <= 0 {
-			continue
-		}
-		output, err := cachedSemaphoreTaskOutput(s.cfg, projectID, int(taskID))
+		output, err := listTaskLogs(ctx, s.db, task.ID, 2000)
 		if err != nil {
 			continue
 		}
-		labs, artifacts := parseSkyforgeMarkers(output)
-		taskJSON, err := toJSONMap(task)
+		logRows := make([]map[string]any, 0, len(output))
+		for _, row := range output {
+			logRows = append(logRows, map[string]any{"output": row.Output})
+		}
+		labs, artifacts := parseSkyforgeMarkers(logRows)
+		runInfo := taskToRunInfo(task)
+		runInfo["projectId"] = project.ID
+		taskJSON, err := toJSONMap(runInfo)
 		if err != nil {
 			return nil, errs.B().Code(errs.Internal).Msg("failed to encode task").Err()
 		}
@@ -79,31 +81,24 @@ func (s *Service) GetNetlabRuns(ctx context.Context, params *RunnerRunsParams) (
 
 	_ = ctx
 	return &NetlabRunsResponse{
-		ProjectID: projectID,
+		ProjectID: project.ID,
 		User:      user.Username,
 		Runs:      runs,
 	}, nil
 }
 
-func parseRunnerRunsParams(cfg Config, params *RunnerRunsParams) (int, int, error) {
-	projectID := cfg.DefaultProject
+func parseRunnerRunsParams(params *RunnerRunsParams) (string, int, error) {
+	projectID := ""
 	limit := 10
 	if params != nil {
 		if raw := strings.TrimSpace(params.ProjectID); raw != "" {
-			v, err := strconv.Atoi(raw)
-			if err != nil || v <= 0 {
-				return 0, 0, errs.B().Code(errs.InvalidArgument).Msg("invalid project_id").Err()
-			}
-			projectID = v
+			projectID = raw
 		}
 		if raw := strings.TrimSpace(params.Limit); raw != "" {
 			if v, err := strconv.Atoi(raw); err == nil && v > 0 && v <= 25 {
 				limit = v
 			}
 		}
-	}
-	if projectID == 0 {
-		return 0, 0, errs.B().Code(errs.InvalidArgument).Msg("project_id is required").Err()
 	}
 	return projectID, limit, nil
 }

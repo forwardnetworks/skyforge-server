@@ -46,14 +46,6 @@ func labProvidersForQuery(cfg Config, query ProviderQuery) []labsProvider {
 		},
 	})
 
-	out = append(out, labsProvider{
-		name:       "semaphore",
-		publicOnly: true,
-		list: func(ctx context.Context, cfg Config, query ProviderQuery) ([]LabSummary, map[string]any, error) {
-			return listSemaphoreLabs(ctx, cfg, query.Owner, query.Mode)
-		},
-	})
-
 	if strings.TrimSpace(query.OnlyProvider) == "" {
 		return out
 	}

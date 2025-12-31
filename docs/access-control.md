@@ -13,7 +13,7 @@ This document captures the Skyforge access-control conventions for Skyforge’s 
 Skyforge has two “project identity” shapes:
 
 1) **Skyforge project key** (string): slug/ID used in routes like `/api/projects/:id/...`  
-2) **Semaphore project id** (int): `project_id` used in query params for Semaphore-backed endpoints like `/api/runs?project_id=...`
+2) **Legacy project id** (int): `project_id` used in query params for run/task endpoints like `/api/runs?project_id=...`
 
 Use the correct guard for each.
 
@@ -27,10 +27,9 @@ This enforces:
 - project exists
 - membership/role access is not `"none"`
 
-### B) Semaphore project id endpoints
+### B) Legacy project id endpoints
 
-If an endpoint is scoped by `project_id` (Semaphore project id), call:
-- `s.authorizeSemaphoreProjectID(claims, projectID)`
+If an endpoint is scoped by `project_id` (legacy project id), call:
 
 This enforces:
 - authentication required

@@ -1,6 +1,6 @@
 # Integrations Architecture (Skyforge domain)
 
-This is a target architecture for Skyforge’s external integrations (Semaphore, Gitea, EVE-NG, Netlab) using Encore-native patterns while keeping Skyforge’s domain focused on labs and automation.
+This is a target architecture for Skyforge’s external integrations (Gitea, EVE-NG, Netlab) using Encore-native patterns while keeping Skyforge’s domain focused on labs and automation.
 
 Goal: make integrations **easy to swap**, **easy to test**, and **hard to leak** into UI/domain code.
 
@@ -20,7 +20,7 @@ Keep Encore services small and domain-oriented, and move vendor glue into non-se
 Recommended future split (can be gradual; no need to do all at once):
 
 - `encore.app/skyforge` (core domain orchestration; auth/session, project membership)
-- `encore.app/runs` (Semaphore-backed runs orchestration: list/start/output)
+- `encore.app/runs` (native task orchestration: list/start/output)
 - `encore.app/labs` (provider-backed labs queries/actions: EVE/Netlab)
 - `encore.app/artifacts` (artifact upload/download/transfer, backed by `storage`)
 - `encore.app/storage` (object storage primitive, already present)
@@ -31,9 +31,6 @@ You can keep the current single `skyforge` service short-term, but the code shou
 
 Create a stable “adapter layer” under `encore.app/integrations/*`:
 
-- `encore.app/integrations/semaphore`
-  - Typed client for Semaphore HTTP API (list tasks, create task, templates, repos, keys, envs).
-  - No auth decisions; takes already-authorized identifiers (Semaphore project id, template id, etc).
 - `encore.app/integrations/gitea`
   - Typed client for Gitea (ensure repo/file, list directory, collaborators, etc).
 - `encore.app/integrations/eve`
@@ -73,9 +70,6 @@ For now you can keep the existing goroutine-based sync, but new workflows should
 
 These are the main clusters that should move into adapters/providers over time:
 
-- Semaphore:
-  - `semaphoreDo`, `fetchSemaphoreTasks`, `cachedSemaphoreTaskOutput`, `ensureSemaphore*`, `startSemaphoreRun`
-  - Currently spread across `skyforge/service.go`, `skyforge/runs_helpers.go`, `skyforge/projects_api.go`
 - Netlab SSH helpers:
   - `dialSSH`, `runSSHCommand` (currently in `skyforge/service.go`)
 - Labs provider selection:
@@ -91,7 +85,7 @@ These are the main clusters that should move into adapters/providers over time:
 
 ## What this buys you (direction)
 
-- Semaphore/EVE/Netlab become “plug-ins” behind stable interfaces.
+- EVE/Netlab become “plug-ins” behind stable interfaces.
 - You can swap implementations (or add new providers) without touching UI-facing endpoints.
 - You can test orchestration logic with fake adapters.
 - You reduce the “giant service.go integration blob” risk as Skyforge grows.

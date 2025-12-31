@@ -2,7 +2,6 @@ package skyforge
 
 import (
 	"context"
-	"strconv"
 	"strings"
 
 	"encore.dev/beta/errs"
@@ -15,7 +14,7 @@ type TemplatesParams struct {
 
 type TemplatesResponse struct {
 	User      string            `json:"user"`
-	ProjectID int               `json:"project_id"`
+	ProjectID string            `json:"projectId"`
 	Templates []TemplateSummary `json:"templates"`
 }
 
@@ -23,15 +22,9 @@ type TemplatesResponse struct {
 //
 //encore:api public method=GET path=/api/templates
 func (s *Service) GetTemplates(ctx context.Context, params *TemplatesParams) (*TemplatesResponse, error) {
-	projectID := s.cfg.DefaultProject
+	projectID := ""
 	if params != nil {
-		if projectParam := strings.TrimSpace(params.ProjectID); projectParam != "" {
-			if v, err := strconv.Atoi(projectParam); err == nil {
-				projectID = v
-			} else if strings.TrimSpace(params.Cookie) != "" {
-				return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid project_id").Err()
-			}
-		}
+		projectID = strings.TrimSpace(params.ProjectID)
 	}
 
 	claims := claimsFromCookie(s.sessionManager, func() string {
@@ -47,7 +40,7 @@ func (s *Service) GetTemplates(ctx context.Context, params *TemplatesParams) (*T
 			Templates: []TemplateSummary{},
 		}, nil
 	}
-	if projectID == 0 {
+	if projectID == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("project_id is required").Err()
 	}
 
@@ -55,22 +48,18 @@ func (s *Service) GetTemplates(ctx context.Context, params *TemplatesParams) (*T
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load projects").Err()
 	}
-	if p := findProjectBySemaphoreID(projects, projectID); p != nil {
+	if p := findProjectByKey(projects, projectID); p != nil {
 		if projectAccessLevel(s.cfg, *p, claims.Username) == "none" {
 			return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 		}
-	} else if !isAdminUser(s.cfg, claims.Username) && projectID != s.cfg.DefaultProject {
-		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
+	} else {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("project not found").Err()
 	}
 
-	templates, err := fetchSemaphoreTemplates(s.cfg, projectID)
-	if err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to query semaphore").Err()
-	}
 	_ = ctx
 	return &TemplatesResponse{
 		User:      claims.Username,
 		ProjectID: projectID,
-		Templates: templates,
+		Templates: []TemplateSummary{},
 	}, nil
 }

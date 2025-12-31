@@ -17,15 +17,93 @@ type ProjectsListParams struct {
 }
 
 type ProjectsListResponse struct {
-	User     string            `json:"user"`
-	Projects []SkyforgeProject `json:"projects"`
+	User       string            `json:"user"`
+	Workspaces []SkyforgeProject `json:"workspaces"`
 }
 
 const defaultBlueprintCatalog = "skyforge/blueprints"
 
-// GetProjects returns projects visible to the authenticated user.
+func nextLegacyProjectID(projects []SkyforgeProject) int {
+	maxID := 0
+	for _, p := range projects {
+		if p.LegacyProjectID > maxID {
+			maxID = p.LegacyProjectID
+		}
+	}
+	if maxID < 1 {
+		return 1
+	}
+	return maxID + 1
+}
+
+func defaultWorkspaceSlug(username string) string {
+	normalized := strings.ToLower(strings.TrimSpace(username))
+	if normalized == "" {
+		normalized = "user"
+	}
+	return slugify(fmt.Sprintf("workspace-%s", normalized))
+}
+
+func defaultWorkspaceName(username string) string {
+	normalized := strings.TrimSpace(username)
+	if normalized == "" {
+		normalized = "User"
+	}
+	return fmt.Sprintf("%s Workspace", normalized)
+}
+
+func (s *Service) ensureDefaultWorkspace(ctx context.Context, user *AuthUser) (*SkyforgeProject, error) {
+	if user == nil {
+		return nil, nil
+	}
+	projects, err := s.projectStore.load()
+	if err != nil {
+		return nil, err
+	}
+	baseSlug := defaultWorkspaceSlug(user.Username)
+	slug := baseSlug
+	for _, p := range projects {
+		if strings.EqualFold(p.CreatedBy, user.Username) && strings.EqualFold(p.Slug, baseSlug) {
+			return &p, nil
+		}
+		if strings.EqualFold(p.Slug, slug) && !strings.EqualFold(p.CreatedBy, user.Username) {
+			slug = fmt.Sprintf("%s-%d", baseSlug, time.Now().Unix()%10000)
+		}
+	}
+	req := &ProjectCreateRequest{
+		Name:      defaultWorkspaceName(user.Username),
+		Slug:      slug,
+		Blueprint: defaultBlueprintCatalog,
+	}
+	created, err := s.CreateProject(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return created, nil
+}
+
+func (s *Service) resolveProjectForUser(ctx context.Context, user *AuthUser, projectKey string) (*SkyforgeProject, error) {
+	projectKey = strings.TrimSpace(projectKey)
+	if projectKey == "" {
+		project, err := s.ensureDefaultWorkspace(ctx, user)
+		if err != nil {
+			return nil, err
+		}
+		if project == nil {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("project_id is required").Err()
+		}
+		return project, nil
+	}
+	pc, err := s.projectContextForUser(user, projectKey)
+	if err != nil {
+		return nil, err
+	}
+	return &pc.project, nil
+}
+
+// GetProjects returns workspaces visible to the authenticated user.
 //
-//encore:api auth method=GET path=/api/projects tag:list-projects
+//encore:api auth method=GET path=/api/workspaces tag:list-projects
 func (s *Service) GetProjects(ctx context.Context, params *ProjectsListParams) (*ProjectsListResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -34,6 +112,9 @@ func (s *Service) GetProjects(ctx context.Context, params *ProjectsListParams) (
 	claims := claimsFromAuthUser(user)
 	isAdmin := isAdminUser(s.cfg, user.Username)
 
+	if _, err := s.ensureDefaultWorkspace(ctx, user); err != nil {
+		log.Printf("default workspace ensure: %v", err)
+	}
 	projects, err := s.projectStore.load()
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load projects").Err()
@@ -72,8 +153,8 @@ func (s *Service) GetProjects(ctx context.Context, params *ProjectsListParams) (
 
 	_ = ctx
 	return &ProjectsListResponse{
-		User:     user.Username,
-		Projects: projects,
+		User:       user.Username,
+		Workspaces: projects,
 	}, nil
 }
 
@@ -98,7 +179,7 @@ type BlueprintSyncResponse struct {
 
 // CreateProject provisions a new Skyforge project.
 //
-//encore:api auth method=POST path=/api/projects
+//encore:api auth method=POST path=/api/workspaces
 func (s *Service) CreateProject(ctx context.Context, req *ProjectCreateRequest) (*SkyforgeProject, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -333,263 +414,46 @@ variable "TF_VAR_gcp_region" {
 		log.Printf("ensureGiteaFile playbook.yml: %v", err)
 	}
 
-	semaphoreCfg := s.cfg
-	semaphoreCfg.SemaphoreToken = ""
-	semaphoreCfg.SemaphoreUsername = user.Username
-	semaphoreCfg.SemaphorePassword = ldapPassword
-	semaphoreCfg.SemaphorePasswordFile = ""
-
-	semaphoreProjectID, err := ensureSemaphoreProject(semaphoreCfg, name)
-	if err != nil {
-		fallback := strings.TrimSpace(user.Email)
-		if fallback == "" && strings.TrimSpace(s.cfg.CorpEmailDomain) != "" {
-			fallback = fmt.Sprintf("%s@%s", user.Username, s.cfg.CorpEmailDomain)
-		}
-		if strings.Contains(fallback, "@") && !strings.EqualFold(fallback, semaphoreCfg.SemaphoreUsername) {
-			altCfg := semaphoreCfg
-			altCfg.SemaphoreUsername = fallback
-			semaphoreProjectID, err = ensureSemaphoreProject(altCfg, name)
-			if err == nil {
-				semaphoreCfg = altCfg
-			}
-		}
-	}
-	if err != nil && strings.TrimSpace(s.cfg.SemaphoreAdminUsername) != "" {
-		adminCfg := s.cfg
-		adminCfg.SemaphoreToken = ""
-		adminCfg.SemaphoreUsername = strings.TrimSpace(s.cfg.SemaphoreAdminUsername)
-		adminCfg.SemaphorePassword = strings.TrimSpace(s.cfg.SemaphoreAdminPassword)
-		adminCfg.SemaphorePasswordFile = strings.TrimSpace(s.cfg.SemaphoreAdminPasswordFile)
-		if adminCfg.SemaphoreUsername != "" && (adminCfg.SemaphorePassword != "" || adminCfg.SemaphorePasswordFile != "") {
-			adminProjectID, adminErr := ensureSemaphoreProject(adminCfg, name)
-			if adminErr == nil {
-				userID, userErr := findSemaphoreUserID(adminCfg, user.Username)
-				if userErr != nil {
-					log.Printf("findSemaphoreUserID: %v", userErr)
-				} else if err := ensureSemaphoreProjectUser(adminCfg, adminProjectID, userID, "owner"); err != nil {
-					log.Printf("ensureSemaphoreProjectUser: %v", err)
-				}
-				semaphoreProjectID = adminProjectID
-				err = nil
-			} else {
-				log.Printf("ensureSemaphoreProject admin fallback: %v", adminErr)
-			}
-		}
-	}
-	if err != nil {
-		log.Printf("ensureSemaphoreProject: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to provision semaphore project").Err()
-	}
-
-	keyID, err := ensureSemaphoreHTTPKey(semaphoreCfg, semaphoreProjectID, "gitea-http", giteaCfg.Projects.GiteaUsername, giteaCfg.Projects.GiteaPassword)
-	if err != nil {
-		log.Printf("ensureSemaphoreHTTPKey: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to provision semaphore key").Err()
-	}
-
-	giteaBase := giteaInternalBaseURL(s.cfg)
-	if giteaBase == "" {
-		log.Printf("ensureSemaphoreRepo: missing gitea base URL")
-		return nil, errs.B().Code(errs.Unavailable).Msg("gitea base URL not configured").Err()
-	}
-	gitURL := fmt.Sprintf("%s/%s/%s.git", giteaBase, owner, repo)
-	repoID, err := ensureSemaphoreRepo(semaphoreCfg, semaphoreProjectID, repo, gitURL, defaultBranch, keyID)
-	if err != nil {
-		log.Printf("ensureSemaphoreRepo: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to provision semaphore repository").Err()
-	}
-
-	projectEnv := map[string]string{
-		"TF_IN_AUTOMATION":          "true",
-		"TF_VAR_scenario":           "regular_cluster",
-		"AWS_EC2_METADATA_DISABLED": "true",
-		"TF_VAR_ssh_key_name":       "REPLACE_ME",
-		"TF_VAR_artifacts_bucket":   "REPLACE_ME",
-	}
-	if strings.TrimSpace(s.cfg.AwsSSORegion) != "" {
-		projectEnv["AWS_REGION"] = strings.TrimSpace(s.cfg.AwsSSORegion)
-	}
-	if s.cfg.Projects.ObjectStorageTerraformAccessKey != "" && s.cfg.Projects.ObjectStorageTerraformSecretKey != "" {
-		projectEnv["AWS_ACCESS_KEY_ID"] = s.cfg.Projects.ObjectStorageTerraformAccessKey
-		projectEnv["AWS_SECRET_ACCESS_KEY"] = s.cfg.Projects.ObjectStorageTerraformSecretKey
-		projectEnv["AWS_SDK_LOAD_CONFIG"] = "0"
-		projectEnv["AWS_PROFILE"] = ""
-	}
-
-	envID, err := ensureSemaphoreEnvironment(semaphoreCfg, semaphoreProjectID, "Terraform Defaults", projectEnv)
-	if err != nil {
-		log.Printf("ensureSemaphoreEnvironment: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to provision semaphore environment").Err()
-	}
-
-	terraformInventoryID, err := ensureSemaphoreInventory(semaphoreCfg, semaphoreProjectID, "terraform", "terraform\n")
-	if err != nil {
-		log.Printf("ensureSemaphoreInventory terraform: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to provision semaphore inventory").Err()
-	}
-	localInventoryID, err := ensureSemaphoreInventory(semaphoreCfg, semaphoreProjectID, "localhost", "localhost ansible_connection=local\n")
-	if err != nil {
-		log.Printf("ensureSemaphoreInventory localhost: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to provision semaphore inventory").Err()
-	}
-
-	tofuInitID, err := ensureSemaphoreTemplate(semaphoreCfg, semaphoreProjectID, map[string]any{
-		"project_id":                    semaphoreProjectID,
-		"repository_id":                 repoID,
-		"environment_id":                envID,
-		"inventory_id":                  terraformInventoryID,
-		"name":                          "Tofu: AWS",
-		"description":                   "Runs OpenTofu against AWS infrastructure.",
-		"type":                          "apply",
-		"app":                           "tofu",
-		"playbook":                      ".",
-		"git_branch":                    defaultBranch,
-		"arguments":                     string(mustJSON([]string{})),
-		"allow_override_args_in_task":   true,
-		"allow_override_branch_in_task": true,
-	})
-	if err != nil {
-		log.Printf("ensureSemaphoreTemplate tofu init: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to provision semaphore templates").Err()
-	}
-
-	tofuPlanID, err := ensureSemaphoreTemplate(semaphoreCfg, semaphoreProjectID, map[string]any{
-		"project_id":                    semaphoreProjectID,
-		"repository_id":                 repoID,
-		"environment_id":                envID,
-		"inventory_id":                  terraformInventoryID,
-		"name":                          "Tofu: Azure",
-		"description":                   "Runs OpenTofu against Azure infrastructure.",
-		"type":                          "apply",
-		"app":                           "tofu",
-		"playbook":                      ".",
-		"git_branch":                    defaultBranch,
-		"arguments":                     string(mustJSON([]string{})),
-		"allow_override_args_in_task":   true,
-		"allow_override_branch_in_task": true,
-	})
-	if err != nil {
-		log.Printf("ensureSemaphoreTemplate tofu plan: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to provision semaphore templates").Err()
-	}
-
-	tofuApplyID, err := ensureSemaphoreTemplate(semaphoreCfg, semaphoreProjectID, map[string]any{
-		"project_id":                    semaphoreProjectID,
-		"repository_id":                 repoID,
-		"environment_id":                envID,
-		"inventory_id":                  terraformInventoryID,
-		"name":                          "Tofu: GCP",
-		"description":                   "Runs OpenTofu against GCP infrastructure.",
-		"type":                          "apply",
-		"app":                           "tofu",
-		"playbook":                      ".",
-		"git_branch":                    defaultBranch,
-		"arguments":                     string(mustJSON([]string{})),
-		"allow_override_args_in_task":   false,
-		"allow_override_branch_in_task": true,
-	})
-	if err != nil {
-		log.Printf("ensureSemaphoreTemplate tofu apply: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to provision semaphore templates").Err()
-	}
-
-	ansibleRunID, err := ensureSemaphoreTemplate(semaphoreCfg, semaphoreProjectID, map[string]any{
-		"project_id":                    semaphoreProjectID,
-		"repository_id":                 repoID,
-		"environment_id":                envID,
-		"inventory_id":                  localInventoryID,
-		"name":                          "Ansible: Run playbook.yml",
-		"description":                   "Runs ansible-playbook playbook.yml (placeholder).",
-		"app":                           "ansible",
-		"playbook":                      "playbook.yml",
-		"git_branch":                    defaultBranch,
-		"arguments":                     string(mustJSON([]string{})),
-		"allow_override_args_in_task":   true,
-		"allow_override_branch_in_task": true,
-	})
-	if err != nil {
-		log.Printf("ensureSemaphoreTemplate ansible run: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to provision semaphore templates").Err()
-	}
-
-	netlabScript := netlabAPIRunnerScript()
-	if err := ensureGiteaFile(giteaCfg, owner, repo, "netlab/job/run_netlab_api.py", netlabScript, "chore: add netlab api runner", defaultBranch, claims); err != nil {
-		log.Printf("ensureGiteaFile netlab/job/run_netlab_api.py: %v", err)
-	}
-
-	netlabRunID, err := ensureSemaphoreTemplate(semaphoreCfg, semaphoreProjectID, map[string]any{
-		"project_id":                    semaphoreProjectID,
-		"repository_id":                 repoID,
-		"environment_id":                envID,
-		"inventory_id":                  localInventoryID,
-		"name":                          "Netlab: Run",
-		"description":                   "Runs the Netlab API runner.",
-		"app":                           "python",
-		"playbook":                      "netlab/job/run_netlab_api.py",
-		"git_branch":                    defaultBranch,
-		"arguments":                     string(mustJSON([]string{})),
-		"allow_override_args_in_task":   true,
-		"allow_override_branch_in_task": true,
-	})
-	if err != nil {
-		log.Printf("ensureSemaphoreTemplate netlab run: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to provision semaphore templates").Err()
-	}
-
-	labppScript := labppAPIRunnerScript()
-	if err := ensureGiteaFile(giteaCfg, owner, repo, "labpp/job/run_labpp_api.py", labppScript, "chore: add labpp api runner", defaultBranch, claims); err != nil {
-		log.Printf("ensureGiteaFile labpp/job/run_labpp_api.py: %v", err)
-	}
-
-	labppRunID, err := ensureSemaphoreTemplate(semaphoreCfg, semaphoreProjectID, map[string]any{
-		"project_id":                    semaphoreProjectID,
-		"repository_id":                 repoID,
-		"environment_id":                envID,
-		"inventory_id":                  localInventoryID,
-		"name":                          "LabPP: Run",
-		"description":                   "Runs the LabPP API runner.",
-		"app":                           "python",
-		"playbook":                      "labpp/job/run_labpp_api.py",
-		"git_branch":                    defaultBranch,
-		"arguments":                     string(mustJSON([]string{})),
-		"allow_override_args_in_task":   true,
-		"allow_override_branch_in_task": true,
-	})
-	if err != nil {
-		log.Printf("ensureSemaphoreTemplate labpp run: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to provision semaphore templates").Err()
-	}
+	legacyProjectID := nextLegacyProjectID(projects)
+	tofuInitID := 0
+	tofuPlanID := 0
+	tofuApplyID := 0
+	ansibleRunID := 0
+	netlabRunID := 0
+	labppRunID := 0
+	containerlabRunID := 0
 
 	created := SkyforgeProject{
-		ID:                   fmt.Sprintf("%d-%s", time.Now().Unix(), slug),
-		Slug:                 slug,
-		Name:                 name,
-		Description:          strings.TrimSpace(req.Description),
-		CreatedAt:            time.Now().UTC(),
-		CreatedBy:            user.Username,
-		IsPublic:             req.IsPublic,
-		Owners:               []string{user.Username},
-		Editors:              nil,
-		Viewers:              normalizeUsernameList(req.SharedUsers),
-		Blueprint:            strings.TrimSpace(req.Blueprint),
-		DefaultBranch:        defaultBranch,
-		TerraformStateKey:    terraformStateKey,
-		TofuInitTemplateID:   tofuInitID,
-		TofuPlanTemplateID:   tofuPlanID,
-		TofuApplyTemplateID:  tofuApplyID,
-		AnsibleRunTemplateID: ansibleRunID,
-		NetlabRunTemplateID:  netlabRunID,
-		LabppRunTemplateID:   labppRunID,
-		AWSAccountID:         strings.TrimSpace(req.AWSAccountID),
-		AWSRoleName:          strings.TrimSpace(req.AWSRoleName),
-		AWSRegion:            strings.TrimSpace(req.AWSRegion),
-		AWSAuthMethod:        strings.TrimSpace(strings.ToLower(req.AWSAuthMethod)),
-		ArtifactsBucket:      artifactsBucket,
-		EveServer:            eveServer,
-		NetlabServer:         netlabServer,
-		SemaphoreProjectID:   semaphoreProjectID,
-		GiteaOwner:           owner,
-		GiteaRepo:            repo,
+		ID:                        fmt.Sprintf("%d-%s", time.Now().Unix(), slug),
+		Slug:                      slug,
+		Name:                      name,
+		Description:               strings.TrimSpace(req.Description),
+		CreatedAt:                 time.Now().UTC(),
+		CreatedBy:                 user.Username,
+		IsPublic:                  req.IsPublic,
+		Owners:                    []string{user.Username},
+		Editors:                   nil,
+		Viewers:                   normalizeUsernameList(req.SharedUsers),
+		Blueprint:                 strings.TrimSpace(req.Blueprint),
+		DefaultBranch:             defaultBranch,
+		TerraformStateKey:         terraformStateKey,
+		TofuInitTemplateID:        tofuInitID,
+		TofuPlanTemplateID:        tofuPlanID,
+		TofuApplyTemplateID:       tofuApplyID,
+		AnsibleRunTemplateID:      ansibleRunID,
+		NetlabRunTemplateID:       netlabRunID,
+		LabppRunTemplateID:        labppRunID,
+		ContainerlabRunTemplateID: containerlabRunID,
+		AWSAccountID:              strings.TrimSpace(req.AWSAccountID),
+		AWSRoleName:               strings.TrimSpace(req.AWSRoleName),
+		AWSRegion:                 strings.TrimSpace(req.AWSRegion),
+		AWSAuthMethod:             strings.TrimSpace(strings.ToLower(req.AWSAuthMethod)),
+		ArtifactsBucket:           artifactsBucket,
+		EveServer:                 eveServer,
+		NetlabServer:              netlabServer,
+		LegacyProjectID:           legacyProjectID,
+		GiteaOwner:                owner,
+		GiteaRepo:                 repo,
 	}
 	if created.AWSAuthMethod == "" {
 		created.AWSAuthMethod = "sso"
@@ -628,7 +492,7 @@ variable "TF_VAR_gcp_region" {
 			impersonated,
 			"project.create",
 			created.ID,
-			fmt.Sprintf("slug=%s repo=%s/%s semaphoreProjectId=%d", created.Slug, created.GiteaOwner, created.GiteaRepo, created.SemaphoreProjectID),
+			fmt.Sprintf("slug=%s repo=%s/%s", created.Slug, created.GiteaOwner, created.GiteaRepo),
 		)
 	}
 	syncGiteaCollaboratorsForProject(giteaCfg, created)
@@ -637,7 +501,7 @@ variable "TF_VAR_gcp_region" {
 
 // SyncProjectBlueprint syncs a project's blueprint catalog into the repo.
 //
-//encore:api auth method=POST path=/api/projects/:projectID/blueprint/sync
+//encore:api auth method=POST path=/api/workspaces/:projectID/blueprint/sync
 func (s *Service) SyncProjectBlueprint(ctx context.Context, projectID string) (*BlueprintSyncResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {

@@ -48,16 +48,6 @@ import (
 	redis "github.com/redis/go-redis/v9"
 )
 
-type cacheEntry[T any] struct {
-	value     T
-	expiresAt time.Time
-}
-
-var semaphoreOutputCache struct {
-	mu    sync.Mutex
-	items map[string]cacheEntry[[]map[string]any]
-}
-
 var redisClient *redis.Client
 var cloudCredentialStatusCache struct {
 	mu    sync.Mutex
@@ -65,67 +55,64 @@ var cloudCredentialStatusCache struct {
 }
 
 type Config struct {
-	ListenAddr                 string
-	SessionSecret              string
-	SessionTTL                 time.Duration
-	SessionCookie              string
-	CookieSecure               string
-	CookieDomain               string
-	InternalToken              string
-	StaticRoot                 string
-	PlatformDataDir            string
-	MaxGroups                  int
-	AdminUsers                 []string
-	AdminPassword              string
-	ProjectSyncSeconds         int
-	UI                         UIConfig
-	NotificationsEnabled       bool
-	NotificationsInterval      time.Duration
-	CloudCredentialChecks      time.Duration
-	CorpEmailDomain            string
-	AwsSSOAccountID            string
-	AwsSSORoleName             string
-	AwsSSOStartURL             string
-	AwsSSORegion               string
-	GiteaBaseURL               string
-	NetboxBaseURL              string
-	NautobotBaseURL            string
-	StateBackend               string
-	DBHost                     string
-	DBPort                     int
-	DBName                     string
-	DBUser                     string
-	DBPassword                 string
-	DBPasswordFile             string
-	DBSSLMode                  string
-	Netlab                     NetlabConfig
-	NetlabServers              []NetlabServerConfig
-	Labs                       LabsConfig
-	SemaphoreURL               string
-	SemaphoreToken             string
-	SemaphoreUsername          string
-	SemaphorePassword          string
-	SemaphorePasswordFile      string
-	SemaphoreAdminUsername     string
-	SemaphoreAdminPassword     string
-	SemaphoreAdminPasswordFile string
-	DefaultProject             int
-	LDAP                       LDAPConfig
-	LDAPLookupBindDN           string
-	LDAPLookupBindPassword     string
-	Projects                   ProjectsConfig
-	Redis                      RedisConfig
-	EveServers                 []EveServerConfig
-	LabppAPIURL                string
-	LabppSkipTLSVerify         bool
-	DNSURL                     string
-	DNSAdminUsername           string
-	DNSUserZoneSuffix          string
+	ListenAddr                string
+	SessionSecret             string
+	SessionTTL                time.Duration
+	SessionCookie             string
+	CookieSecure              string
+	CookieDomain              string
+	InternalToken             string
+	StaticRoot                string
+	PlatformDataDir           string
+	MaxGroups                 int
+	AdminUsers                []string
+	AdminPassword             string
+	ProjectSyncSeconds        int
+	UI                        UIConfig
+	NotificationsEnabled      bool
+	NotificationsInterval     time.Duration
+	CloudCredentialChecks     time.Duration
+	CorpEmailDomain           string
+	AwsSSOAccountID           string
+	AwsSSORoleName            string
+	AwsSSOStartURL            string
+	AwsSSORegion              string
+	GiteaBaseURL              string
+	NetboxBaseURL             string
+	NautobotBaseURL           string
+	StateBackend              string
+	DBHost                    string
+	DBPort                    int
+	DBName                    string
+	DBUser                    string
+	DBPassword                string
+	DBPasswordFile            string
+	DBSSLMode                 string
+	Netlab                    NetlabConfig
+	NetlabServers             []NetlabServerConfig
+	Labs                      LabsConfig
+	LDAP                      LDAPConfig
+	LDAPLookupBindDN          string
+	LDAPLookupBindPassword    string
+	Projects                  ProjectsConfig
+	Redis                     RedisConfig
+	EveServers                []EveServerConfig
+	LabppAPIURL               string
+	LabppSkipTLSVerify        bool
+	ContainerlabAPIPath       string
+	ContainerlabJWTSecret     string
+	ContainerlabSkipTLSVerify bool
+	PKICACert                 string
+	PKICAKey                  string
+	PKIDefaultDays            int
+	DNSURL                    string
+	DNSAdminUsername          string
+	DNSUserZoneSuffix         string
 }
 
 type RunRequest struct {
 	TemplateID  int     `json:"templateId"`
-	ProjectID   *int    `json:"projectId,omitempty"`
+	ProjectID   *string `json:"projectId,omitempty"`
 	Debug       bool    `json:"debug,omitempty"`
 	DryRun      bool    `json:"dryRun,omitempty"`
 	Diff        bool    `json:"diff,omitempty"`
@@ -142,7 +129,7 @@ type RunRequest struct {
 type TemplateSummary struct {
 	ID          int    `json:"id"`
 	Name        string `json:"name"`
-	ProjectID   int    `json:"projectId"`
+	ProjectID   string `json:"projectId"`
 	Repository  string `json:"repository,omitempty"`
 	Playbook    string `json:"playbook,omitempty"`
 	Description string `json:"description,omitempty"`
@@ -198,11 +185,13 @@ type NetlabConfig struct {
 }
 
 type NetlabServerConfig struct {
-	Name       string `json:"name,omitempty"`
-	SSHHost    string `json:"sshHost,omitempty"`
-	SSHUser    string `json:"sshUser,omitempty"`
-	SSHKeyFile string `json:"sshKeyFile,omitempty"`
-	StateRoot  string `json:"stateRoot,omitempty"`
+	Name                      string `json:"name,omitempty"`
+	SSHHost                   string `json:"sshHost,omitempty"`
+	SSHUser                   string `json:"sshUser,omitempty"`
+	SSHKeyFile                string `json:"sshKeyFile,omitempty"`
+	StateRoot                 string `json:"stateRoot,omitempty"`
+	ContainerlabAPIURL        string `json:"containerlabApiUrl,omitempty"`
+	ContainerlabSkipTLSVerify bool   `json:"containerlabSkipTlsVerify,omitempty"`
 }
 
 type LabsConfig struct {
@@ -253,38 +242,39 @@ type RedisConfig struct {
 }
 
 type SkyforgeProject struct {
-	ID                   string    `json:"id"`
-	Slug                 string    `json:"slug"`
-	Name                 string    `json:"name"`
-	Description          string    `json:"description,omitempty"`
-	CreatedAt            time.Time `json:"createdAt"`
-	CreatedBy            string    `json:"createdBy"`
-	IsPublic             bool      `json:"isPublic"`
-	Owners               []string  `json:"owners,omitempty"`
-	OwnerGroups          []string  `json:"ownerGroups,omitempty"`
-	Editors              []string  `json:"editors,omitempty"`
-	EditorGroups         []string  `json:"editorGroups,omitempty"`
-	Viewers              []string  `json:"viewers,omitempty"`
-	ViewerGroups         []string  `json:"viewerGroups,omitempty"`
-	Blueprint            string    `json:"blueprint,omitempty"`
-	DefaultBranch        string    `json:"defaultBranch,omitempty"`
-	TerraformStateKey    string    `json:"terraformStateKey,omitempty"`
-	TofuInitTemplateID   int       `json:"tofuInitTemplateId,omitempty"`
-	TofuPlanTemplateID   int       `json:"tofuPlanTemplateId,omitempty"`
-	TofuApplyTemplateID  int       `json:"tofuApplyTemplateId,omitempty"`
-	AnsibleRunTemplateID int       `json:"ansibleRunTemplateId,omitempty"`
-	NetlabRunTemplateID  int       `json:"netlabRunTemplateId,omitempty"`
-	LabppRunTemplateID   int       `json:"labppRunTemplateId,omitempty"`
-	AWSAccountID         string    `json:"awsAccountId,omitempty"`
-	AWSRoleName          string    `json:"awsRoleName,omitempty"`
-	AWSRegion            string    `json:"awsRegion,omitempty"`
-	AWSAuthMethod        string    `json:"awsAuthMethod,omitempty"`
-	ArtifactsBucket      string    `json:"artifactsBucket,omitempty"`
-	EveServer            string    `json:"eveServer,omitempty"`
-	NetlabServer         string    `json:"netlabServer,omitempty"`
-	SemaphoreProjectID   int       `json:"semaphoreProjectId"`
-	GiteaOwner           string    `json:"giteaOwner"`
-	GiteaRepo            string    `json:"giteaRepo"`
+	ID                        string    `json:"id"`
+	Slug                      string    `json:"slug"`
+	Name                      string    `json:"name"`
+	Description               string    `json:"description,omitempty"`
+	CreatedAt                 time.Time `json:"createdAt"`
+	CreatedBy                 string    `json:"createdBy"`
+	IsPublic                  bool      `json:"isPublic"`
+	Owners                    []string  `json:"owners,omitempty"`
+	OwnerGroups               []string  `json:"ownerGroups,omitempty"`
+	Editors                   []string  `json:"editors,omitempty"`
+	EditorGroups              []string  `json:"editorGroups,omitempty"`
+	Viewers                   []string  `json:"viewers,omitempty"`
+	ViewerGroups              []string  `json:"viewerGroups,omitempty"`
+	Blueprint                 string    `json:"blueprint,omitempty"`
+	DefaultBranch             string    `json:"defaultBranch,omitempty"`
+	TerraformStateKey         string    `json:"terraformStateKey,omitempty"`
+	TofuInitTemplateID        int       `json:"tofuInitTemplateId,omitempty"`
+	TofuPlanTemplateID        int       `json:"tofuPlanTemplateId,omitempty"`
+	TofuApplyTemplateID       int       `json:"tofuApplyTemplateId,omitempty"`
+	AnsibleRunTemplateID      int       `json:"ansibleRunTemplateId,omitempty"`
+	NetlabRunTemplateID       int       `json:"netlabRunTemplateId,omitempty"`
+	LabppRunTemplateID        int       `json:"labppRunTemplateId,omitempty"`
+	ContainerlabRunTemplateID int       `json:"containerlabRunTemplateId,omitempty"`
+	AWSAccountID              string    `json:"awsAccountId,omitempty"`
+	AWSRoleName               string    `json:"awsRoleName,omitempty"`
+	AWSRegion                 string    `json:"awsRegion,omitempty"`
+	AWSAuthMethod             string    `json:"awsAuthMethod,omitempty"`
+	ArtifactsBucket           string    `json:"artifactsBucket,omitempty"`
+	EveServer                 string    `json:"eveServer,omitempty"`
+	NetlabServer              string    `json:"netlabServer,omitempty"`
+	LegacyProjectID           int       `json:"-"`
+	GiteaOwner                string    `json:"giteaOwner"`
+	GiteaRepo                 string    `json:"giteaRepo"`
 }
 
 type LabSummary struct {
@@ -410,18 +400,18 @@ func secretFileNameForEnv(key string) string {
 		return "skyforge-redis-password"
 	case "SKYFORGE_GITEA_PASSWORD":
 		return "gitea-admin-password"
+	case "SKYFORGE_CONTAINERLAB_JWT_SECRET":
+		return "skyforge-containerlab-jwt-secret"
+	case "SKYFORGE_PKI_CA_CERT":
+		return "skyforge-pki-ca-cert"
+	case "SKYFORGE_PKI_CA_KEY":
+		return "skyforge-pki-ca-key"
 	case "SKYFORGE_OBJECT_STORAGE_TERRAFORM_ACCESS_KEY":
 		return "object-storage-terraform-access-key"
 	case "SKYFORGE_OBJECT_STORAGE_TERRAFORM_SECRET_KEY":
 		return "object-storage-terraform-secret-key"
-	case "SKYFORGE_SEMAPHORE_TOKEN":
-		return "skyforge-semaphore-token"
-	case "SKYFORGE_SEMAPHORE_PASSWORD":
-		return "semaphore-provisioner-password"
 	case "SKYFORGE_INTERNAL_TOKEN":
 		return "skyforge-internal-token"
-	case "SKYFORGE_SEMAPHORE_URL":
-		return "skyforge-semaphore-url"
 	default:
 		return ""
 	}
@@ -571,6 +561,7 @@ func normalizeNetlabServer(s NetlabServerConfig, fallback NetlabConfig) NetlabSe
 	s.SSHUser = strings.TrimSpace(s.SSHUser)
 	s.SSHKeyFile = strings.TrimSpace(s.SSHKeyFile)
 	s.StateRoot = strings.TrimSpace(s.StateRoot)
+	s.ContainerlabAPIURL = strings.TrimRight(strings.TrimSpace(s.ContainerlabAPIURL), "/")
 
 	if s.SSHUser == "" {
 		s.SSHUser = strings.TrimSpace(fallback.SSHUser)
@@ -734,13 +725,6 @@ func loadConfig() Config {
 		}
 	}
 
-	defaultProject := 0
-	if raw := os.Getenv("SKYFORGE_SEMAPHORE_PROJECT_ID"); raw != "" {
-		if id, err := strconv.Atoi(raw); err == nil {
-			defaultProject = id
-		}
-	}
-
 	adminUsers := parseUserList(getenv("SKYFORGE_ADMIN_USERS", ""))
 	adminPassword := strings.TrimSpace(getOptionalSecret("SKYFORGE_ADMIN_PASSWORD"))
 	corpEmailDomain := inferEmailDomain(getenv("SKYFORGE_CORP_EMAIL_DOMAIN", ""))
@@ -810,6 +794,25 @@ func loadConfig() Config {
 
 	labppAPIURL := strings.TrimRight(strings.TrimSpace(getenv("SKYFORGE_LABPP_API_URL", "")), "/")
 	labppSkipTLSVerify := getenv("SKYFORGE_LABPP_SKIP_TLS_VERIFY", "false") == "true"
+
+	containerlabAPIPath := strings.TrimSpace(getenv("SKYFORGE_CONTAINERLAB_API_PATH", "/containerlab"))
+	if containerlabAPIPath == "" {
+		containerlabAPIPath = "/containerlab"
+	}
+	if !strings.HasPrefix(containerlabAPIPath, "/") {
+		containerlabAPIPath = "/" + containerlabAPIPath
+	}
+	containerlabJWTSecret := strings.TrimSpace(getOptionalSecret("SKYFORGE_CONTAINERLAB_JWT_SECRET"))
+	containerlabSkipTLSVerify := getenv("SKYFORGE_CONTAINERLAB_SKIP_TLS_VERIFY", "false") == "true"
+
+	pkiCACert := strings.TrimSpace(getOptionalSecret("SKYFORGE_PKI_CA_CERT"))
+	pkiCAKey := strings.TrimSpace(getOptionalSecret("SKYFORGE_PKI_CA_KEY"))
+	pkiDefaultDays := 365
+	if raw := strings.TrimSpace(getenv("SKYFORGE_PKI_DEFAULT_DAYS", "")); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil && v > 0 {
+			pkiDefaultDays = v
+		}
+	}
 
 	dnsURL := strings.TrimRight(strings.TrimSpace(getenv("SKYFORGE_DNS_URL", "http://technitium-dns:5380")), "/")
 	dnsAdminUsername := strings.TrimSpace(getenv("SKYFORGE_DNS_ADMIN_USERNAME", "admin"))
@@ -901,13 +904,6 @@ func loadConfig() Config {
 		KeyPrefix:    strings.TrimSpace(getenv("SKYFORGE_REDIS_KEY_PREFIX", "skyforge")),
 	}
 
-	semaphoreToken := strings.TrimSpace(getOptionalSecret("SKYFORGE_SEMAPHORE_TOKEN"))
-	semaphoreUsername := strings.TrimSpace(getenv("SKYFORGE_SEMAPHORE_USERNAME", ""))
-	semaphorePassword := strings.TrimSpace(getOptionalSecret("SKYFORGE_SEMAPHORE_PASSWORD"))
-	semaphorePasswordFile := strings.TrimSpace(getenv("SKYFORGE_SEMAPHORE_PASSWORD_FILE", ""))
-	semaphoreAdminUsername := strings.TrimSpace(getenv("SKYFORGE_SEMAPHORE_ADMIN_USERNAME", ""))
-	semaphoreAdminPassword := strings.TrimSpace(getOptionalSecret("SKYFORGE_SEMAPHORE_ADMIN_PASSWORD"))
-	semaphoreAdminPasswordFile := strings.TrimSpace(getenv("SKYFORGE_SEMAPHORE_ADMIN_PASSWORD_FILE", ""))
 	projectSyncSeconds := 0
 	if raw := strings.TrimSpace(getenv("SKYFORGE_PROJECT_SYNC_SECONDS", "0")); raw != "" {
 		if val, err := strconv.Atoi(raw); err == nil {
@@ -949,123 +945,60 @@ func loadConfig() Config {
 	}
 
 	return Config{
-		ListenAddr:                 getenv("SKYFORGE_LISTEN_ADDR", ":8085"),
-		SessionSecret:              mustGetSecret("SKYFORGE_SESSION_SECRET"),
-		SessionTTL:                 sessionTTL,
-		SessionCookie:              getenv("SKYFORGE_SESSION_COOKIE", "skyforge_session"),
-		CookieSecure:               getenv("SKYFORGE_COOKIE_SECURE", "auto"),
-		CookieDomain:               strings.TrimSpace(getenv("SKYFORGE_COOKIE_DOMAIN", "")),
-		InternalToken:              strings.TrimSpace(getOptionalSecret("SKYFORGE_INTERNAL_TOKEN")),
-		StaticRoot:                 strings.TrimSpace(getenv("SKYFORGE_STATIC_ROOT", "/opt/skyforge/static")),
-		PlatformDataDir:            strings.TrimSpace(getenv("SKYFORGE_PLATFORM_DATA_DIR", "/var/lib/skyforge/platform-data")),
-		MaxGroups:                  maxGroups,
-		AdminUsers:                 adminUsers,
-		AdminPassword:              adminPassword,
-		ProjectSyncSeconds:         projectSyncSeconds,
-		UI:                         uiCfg,
-		NotificationsEnabled:       notificationsEnabled,
-		NotificationsInterval:      notificationsInterval,
-		CloudCredentialChecks:      cloudCredentialChecks,
-		CorpEmailDomain:            corpEmailDomain,
-		AwsSSOAccountID:            awsSSOAccountID,
-		AwsSSORoleName:             awsSSORoleName,
-		AwsSSOStartURL:             awsSSOStartURL,
-		AwsSSORegion:               awsSSORegion,
-		GiteaBaseURL:               giteaBaseURL,
-		NetboxBaseURL:              netboxBaseURL,
-		NautobotBaseURL:            nautobotBaseURL,
-		StateBackend:               stateBackend,
-		DBHost:                     dbHost,
-		DBPort:                     dbPort,
-		DBName:                     dbName,
-		DBUser:                     dbUser,
-		DBPassword:                 dbPassword,
-		DBPasswordFile:             dbPasswordFile,
-		DBSSLMode:                  dbSSLMode,
-		Netlab:                     netlabCfg,
-		NetlabServers:              filteredNetlabServers,
-		Labs:                       labsCfg,
-		SemaphoreURL:               strings.TrimRight(mustGetSecret("SKYFORGE_SEMAPHORE_URL"), "/"),
-		SemaphoreToken:             semaphoreToken,
-		SemaphoreUsername:          semaphoreUsername,
-		SemaphorePassword:          semaphorePassword,
-		SemaphorePasswordFile:      semaphorePasswordFile,
-		SemaphoreAdminUsername:     semaphoreAdminUsername,
-		SemaphoreAdminPassword:     semaphoreAdminPassword,
-		SemaphoreAdminPasswordFile: semaphoreAdminPasswordFile,
-		DefaultProject:             defaultProject,
-		LDAP:                       ldapCfg,
-		LDAPLookupBindDN:           ldapLookupBindDN,
-		LDAPLookupBindPassword:     ldapLookupBindPassword,
-		Projects:                   projectsCfg,
-		Redis:                      redisCfg,
-		EveServers:                 filteredEveServers,
-		LabppAPIURL:                labppAPIURL,
-		LabppSkipTLSVerify:         labppSkipTLSVerify,
-		DNSURL:                     dnsURL,
-		DNSAdminUsername:           dnsAdminUsername,
-		DNSUserZoneSuffix:          dnsUserZoneSuffix,
+		ListenAddr:                getenv("SKYFORGE_LISTEN_ADDR", ":8085"),
+		SessionSecret:             mustGetSecret("SKYFORGE_SESSION_SECRET"),
+		SessionTTL:                sessionTTL,
+		SessionCookie:             getenv("SKYFORGE_SESSION_COOKIE", "skyforge_session"),
+		CookieSecure:              getenv("SKYFORGE_COOKIE_SECURE", "auto"),
+		CookieDomain:              strings.TrimSpace(getenv("SKYFORGE_COOKIE_DOMAIN", "")),
+		InternalToken:             strings.TrimSpace(getOptionalSecret("SKYFORGE_INTERNAL_TOKEN")),
+		StaticRoot:                strings.TrimSpace(getenv("SKYFORGE_STATIC_ROOT", "/opt/skyforge/static")),
+		PlatformDataDir:           strings.TrimSpace(getenv("SKYFORGE_PLATFORM_DATA_DIR", "/var/lib/skyforge/platform-data")),
+		MaxGroups:                 maxGroups,
+		AdminUsers:                adminUsers,
+		AdminPassword:             adminPassword,
+		ProjectSyncSeconds:        projectSyncSeconds,
+		UI:                        uiCfg,
+		NotificationsEnabled:      notificationsEnabled,
+		NotificationsInterval:     notificationsInterval,
+		CloudCredentialChecks:     cloudCredentialChecks,
+		CorpEmailDomain:           corpEmailDomain,
+		AwsSSOAccountID:           awsSSOAccountID,
+		AwsSSORoleName:            awsSSORoleName,
+		AwsSSOStartURL:            awsSSOStartURL,
+		AwsSSORegion:              awsSSORegion,
+		GiteaBaseURL:              giteaBaseURL,
+		NetboxBaseURL:             netboxBaseURL,
+		NautobotBaseURL:           nautobotBaseURL,
+		StateBackend:              stateBackend,
+		DBHost:                    dbHost,
+		DBPort:                    dbPort,
+		DBName:                    dbName,
+		DBUser:                    dbUser,
+		DBPassword:                dbPassword,
+		DBPasswordFile:            dbPasswordFile,
+		DBSSLMode:                 dbSSLMode,
+		Netlab:                    netlabCfg,
+		NetlabServers:             filteredNetlabServers,
+		Labs:                      labsCfg,
+		LDAP:                      ldapCfg,
+		LDAPLookupBindDN:          ldapLookupBindDN,
+		LDAPLookupBindPassword:    ldapLookupBindPassword,
+		Projects:                  projectsCfg,
+		Redis:                     redisCfg,
+		EveServers:                filteredEveServers,
+		LabppAPIURL:               labppAPIURL,
+		LabppSkipTLSVerify:        labppSkipTLSVerify,
+		ContainerlabAPIPath:       containerlabAPIPath,
+		ContainerlabJWTSecret:     containerlabJWTSecret,
+		ContainerlabSkipTLSVerify: containerlabSkipTLSVerify,
+		PKICACert:                 pkiCACert,
+		PKICAKey:                  pkiCAKey,
+		PKIDefaultDays:            pkiDefaultDays,
+		DNSURL:                    dnsURL,
+		DNSAdminUsername:          dnsAdminUsername,
+		DNSUserZoneSuffix:         dnsUserZoneSuffix,
 	}
-}
-
-func redisSemaphoreOutputKey(cfg Config, projectID, taskID int) string {
-	prefix := strings.TrimSpace(cfg.Redis.KeyPrefix)
-	if prefix == "" {
-		prefix = "skyforge"
-	}
-	return fmt.Sprintf("%s:semaphore-output:%d:%d", prefix, projectID, taskID)
-}
-
-func cachedSemaphoreTaskOutput(cfg Config, projectID, taskID int) ([]map[string]any, error) {
-	const ttl = 30 * time.Second
-	key := fmt.Sprintf("%d:%d", projectID, taskID)
-
-	semaphoreOutputCache.mu.Lock()
-	if semaphoreOutputCache.items == nil {
-		semaphoreOutputCache.items = map[string]cacheEntry[[]map[string]any]{}
-	}
-	if entry, ok := semaphoreOutputCache.items[key]; ok && time.Now().Before(entry.expiresAt) {
-		semaphoreOutputCache.mu.Unlock()
-		return entry.value, nil
-	}
-	semaphoreOutputCache.mu.Unlock()
-
-	if cfg.Redis.Enabled && redisClient != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 750*time.Millisecond)
-		defer cancel()
-		raw, err := redisClient.Get(ctx, redisSemaphoreOutputKey(cfg, projectID, taskID)).Bytes()
-		if err == nil && len(raw) > 0 {
-			var cached []map[string]any
-			if err := json.Unmarshal(raw, &cached); err == nil {
-				semaphoreOutputCache.mu.Lock()
-				semaphoreOutputCache.items[key] = cacheEntry[[]map[string]any]{value: cached, expiresAt: time.Now().Add(ttl)}
-				semaphoreOutputCache.mu.Unlock()
-				return cached, nil
-			}
-		} else if err != nil && !errors.Is(err, redis.Nil) {
-			log.Printf("redis cache read failed: %v", err)
-		}
-	}
-
-	output, err := fetchSemaphoreTaskOutput(cfg, projectID, taskID)
-	if err != nil {
-		return nil, err
-	}
-
-	semaphoreOutputCache.mu.Lock()
-	semaphoreOutputCache.items[key] = cacheEntry[[]map[string]any]{value: output, expiresAt: time.Now().Add(ttl)}
-	semaphoreOutputCache.mu.Unlock()
-
-	if cfg.Redis.Enabled && redisClient != nil {
-		if payload, err := json.Marshal(output); err == nil && len(payload) > 0 {
-			ctx, cancel := context.WithTimeout(context.Background(), 750*time.Millisecond)
-			defer cancel()
-			if err := redisClient.Set(ctx, redisSemaphoreOutputKey(cfg, projectID, taskID), payload, ttl).Err(); err != nil {
-				log.Printf("redis cache write failed: %v", err)
-			}
-		}
-	}
-	return output, nil
 }
 
 type projectsStore interface {
@@ -1987,9 +1920,9 @@ func deleteProjectGCPCredentials(ctx context.Context, db *sql.DB, projectID stri
 
 func (s *pgProjectsStore) load() ([]SkyforgeProject, error) {
 	rows, err := s.db.Query(`SELECT id, slug, name, description, created_at, created_by,
-		blueprint, default_branch, terraform_state_key, tofu_init_template_id, tofu_plan_template_id, tofu_apply_template_id, ansible_run_template_id, netlab_run_template_id, labpp_run_template_id,
+		blueprint, default_branch, terraform_state_key, tofu_init_template_id, tofu_plan_template_id, tofu_apply_template_id, ansible_run_template_id, netlab_run_template_id, labpp_run_template_id, containerlab_run_template_id,
 		aws_account_id, aws_role_name, aws_region, aws_auth_method, artifacts_bucket, is_public,
-		eve_server, netlab_server, semaphore_project_id, gitea_owner, gitea_repo
+		eve_server, netlab_server, legacy_project_id, gitea_owner, gitea_repo
 	FROM sf_projects ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
@@ -2000,53 +1933,54 @@ func (s *pgProjectsStore) load() ([]SkyforgeProject, error) {
 	projectByID := map[string]*SkyforgeProject{}
 	for rows.Next() {
 		var (
-			id, slug, name, createdBy                                      string
-			description, blueprint, defaultBranch                          sql.NullString
-			terraformStateKey                                              sql.NullString
-			tofuInit, tofuPlan, tofuApply, ansibleRun, netlabRun, labppRun sql.NullInt64
-			awsAccountID, awsRoleName, awsRegion, awsAuthMethod            sql.NullString
-			artifactsBucket                                                sql.NullString
-			isPublic                                                       bool
-			eveServer                                                      sql.NullString
-			netlabServer                                                   sql.NullString
-			createdAt                                                      time.Time
-			semaphoreProjectID                                             int
-			giteaOwner, giteaRepo                                          string
+			id, slug, name, createdBy                                                       string
+			description, blueprint, defaultBranch                                           sql.NullString
+			terraformStateKey                                                               sql.NullString
+			tofuInit, tofuPlan, tofuApply, ansibleRun, netlabRun, labppRun, containerlabRun sql.NullInt64
+			awsAccountID, awsRoleName, awsRegion, awsAuthMethod                             sql.NullString
+			artifactsBucket                                                                 sql.NullString
+			isPublic                                                                        bool
+			eveServer                                                                       sql.NullString
+			netlabServer                                                                    sql.NullString
+			createdAt                                                                       time.Time
+			legacyProjectID                                                                 int
+			giteaOwner, giteaRepo                                                           string
 		)
 		if err := rows.Scan(&id, &slug, &name, &description, &createdAt, &createdBy,
-			&blueprint, &defaultBranch, &terraformStateKey, &tofuInit, &tofuPlan, &tofuApply, &ansibleRun, &netlabRun, &labppRun,
+			&blueprint, &defaultBranch, &terraformStateKey, &tofuInit, &tofuPlan, &tofuApply, &ansibleRun, &netlabRun, &labppRun, &containerlabRun,
 			&awsAccountID, &awsRoleName, &awsRegion, &awsAuthMethod, &artifactsBucket, &isPublic,
-			&eveServer, &netlabServer, &semaphoreProjectID, &giteaOwner, &giteaRepo,
+			&eveServer, &netlabServer, &legacyProjectID, &giteaOwner, &giteaRepo,
 		); err != nil {
 			return nil, err
 		}
 		p := SkyforgeProject{
-			ID:                   id,
-			Slug:                 slug,
-			Name:                 name,
-			Description:          description.String,
-			CreatedAt:            createdAt,
-			CreatedBy:            createdBy,
-			Blueprint:            blueprint.String,
-			DefaultBranch:        defaultBranch.String,
-			TerraformStateKey:    terraformStateKey.String,
-			TofuInitTemplateID:   int(tofuInit.Int64),
-			TofuPlanTemplateID:   int(tofuPlan.Int64),
-			TofuApplyTemplateID:  int(tofuApply.Int64),
-			AnsibleRunTemplateID: int(ansibleRun.Int64),
-			NetlabRunTemplateID:  int(netlabRun.Int64),
-			LabppRunTemplateID:   int(labppRun.Int64),
-			AWSAccountID:         awsAccountID.String,
-			AWSRoleName:          awsRoleName.String,
-			AWSRegion:            awsRegion.String,
-			AWSAuthMethod:        awsAuthMethod.String,
-			ArtifactsBucket:      artifactsBucket.String,
-			IsPublic:             isPublic,
-			EveServer:            eveServer.String,
-			NetlabServer:         netlabServer.String,
-			SemaphoreProjectID:   semaphoreProjectID,
-			GiteaOwner:           giteaOwner,
-			GiteaRepo:            giteaRepo,
+			ID:                        id,
+			Slug:                      slug,
+			Name:                      name,
+			Description:               description.String,
+			CreatedAt:                 createdAt,
+			CreatedBy:                 createdBy,
+			Blueprint:                 blueprint.String,
+			DefaultBranch:             defaultBranch.String,
+			TerraformStateKey:         terraformStateKey.String,
+			TofuInitTemplateID:        int(tofuInit.Int64),
+			TofuPlanTemplateID:        int(tofuPlan.Int64),
+			TofuApplyTemplateID:       int(tofuApply.Int64),
+			AnsibleRunTemplateID:      int(ansibleRun.Int64),
+			NetlabRunTemplateID:       int(netlabRun.Int64),
+			LabppRunTemplateID:        int(labppRun.Int64),
+			ContainerlabRunTemplateID: int(containerlabRun.Int64),
+			AWSAccountID:              awsAccountID.String,
+			AWSRoleName:               awsRoleName.String,
+			AWSRegion:                 awsRegion.String,
+			AWSAuthMethod:             awsAuthMethod.String,
+			ArtifactsBucket:           artifactsBucket.String,
+			IsPublic:                  isPublic,
+			EveServer:                 eveServer.String,
+			NetlabServer:              netlabServer.String,
+			LegacyProjectID:           legacyProjectID,
+			GiteaOwner:                giteaOwner,
+			GiteaRepo:                 giteaRepo,
 		}
 		projects = append(projects, p)
 		projectByID[id] = &projects[len(projects)-1]
@@ -2163,17 +2097,17 @@ func (s *pgProjectsStore) save(projects []SkyforgeProject) error {
 		}
 		if _, err := tx.Exec(`INSERT INTO sf_projects (
 		  id, slug, name, description, created_at, created_by,
-		  blueprint, default_branch, terraform_state_key, tofu_init_template_id, tofu_plan_template_id, tofu_apply_template_id, ansible_run_template_id, netlab_run_template_id, labpp_run_template_id,
+		  blueprint, default_branch, terraform_state_key, tofu_init_template_id, tofu_plan_template_id, tofu_apply_template_id, ansible_run_template_id, netlab_run_template_id, labpp_run_template_id, containerlab_run_template_id,
 		  aws_account_id, aws_role_name, aws_region, aws_auth_method, artifacts_bucket, is_public,
-		  eve_server, netlab_server, semaphore_project_id, gitea_owner, gitea_repo, updated_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,now())`,
+		  eve_server, netlab_server, legacy_project_id, gitea_owner, gitea_repo, updated_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,now())`,
 			id, slug, strings.TrimSpace(p.Name), nullIfEmpty(strings.TrimSpace(p.Description)), p.CreatedAt.UTC(), createdBy,
 			nullIfEmpty(strings.TrimSpace(p.Blueprint)), nullIfEmpty(strings.TrimSpace(p.DefaultBranch)),
-			nullIfEmpty(strings.TrimSpace(p.TerraformStateKey)), p.TofuInitTemplateID, p.TofuPlanTemplateID, p.TofuApplyTemplateID, p.AnsibleRunTemplateID, p.NetlabRunTemplateID, p.LabppRunTemplateID,
+			nullIfEmpty(strings.TrimSpace(p.TerraformStateKey)), p.TofuInitTemplateID, p.TofuPlanTemplateID, p.TofuApplyTemplateID, p.AnsibleRunTemplateID, p.NetlabRunTemplateID, p.LabppRunTemplateID, p.ContainerlabRunTemplateID,
 			nullIfEmpty(strings.TrimSpace(p.AWSAccountID)), nullIfEmpty(strings.TrimSpace(p.AWSRoleName)), nullIfEmpty(strings.TrimSpace(p.AWSRegion)),
 			nullIfEmpty(strings.TrimSpace(p.AWSAuthMethod)), nullIfEmpty(strings.TrimSpace(p.ArtifactsBucket)), p.IsPublic,
 			nullIfEmpty(strings.TrimSpace(p.EveServer)), nullIfEmpty(strings.TrimSpace(p.NetlabServer)),
-			p.SemaphoreProjectID, strings.TrimSpace(p.GiteaOwner), strings.TrimSpace(p.GiteaRepo),
+			p.LegacyProjectID, strings.TrimSpace(p.GiteaOwner), strings.TrimSpace(p.GiteaRepo),
 		); err != nil {
 			return err
 		}
@@ -2618,12 +2552,13 @@ func syncGroupMembershipForUser(p *SkyforgeProject, claims *SessionClaims) (stri
 	return "", false
 }
 
-func findProjectBySemaphoreID(projects []SkyforgeProject, semaphoreProjectID int) *SkyforgeProject {
-	if semaphoreProjectID <= 0 {
+func findProjectByKey(projects []SkyforgeProject, key string) *SkyforgeProject {
+	key = strings.TrimSpace(key)
+	if key == "" {
 		return nil
 	}
 	for i := range projects {
-		if projects[i].SemaphoreProjectID == semaphoreProjectID {
+		if projects[i].ID == key || strings.EqualFold(projects[i].Slug, key) {
 			return &projects[i]
 		}
 	}
@@ -2937,459 +2872,6 @@ func getAWSRoleCredentials(ctx context.Context, cfg Config, store awsSSOTokenSto
 	})
 }
 
-func ensureSemaphoreProject(cfg Config, name string) (int, error) {
-	resp, body, err := semaphoreDo(cfg, http.MethodGet, "/projects", nil)
-	if err != nil {
-		return 0, err
-	}
-	if resp.StatusCode >= 400 {
-		return 0, fmt.Errorf("semaphore responded %d listing projects", resp.StatusCode)
-	}
-	var projects []map[string]any
-	if err := json.Unmarshal(body, &projects); err != nil {
-		return 0, err
-	}
-	for _, p := range projects {
-		if pName, _ := p["name"].(string); pName == name {
-			if id, ok := p["id"].(float64); ok {
-				return int(id), nil
-			}
-		}
-	}
-	resp, body, err = semaphoreDo(cfg, http.MethodPost, "/projects", map[string]any{
-		"name":               name,
-		"alert":              false,
-		"alert_chat":         "",
-		"max_parallel_tasks": 0,
-	})
-	if err != nil {
-		return 0, err
-	}
-	if resp.StatusCode != http.StatusCreated {
-		return 0, fmt.Errorf("semaphore create project failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	var created map[string]any
-	if err := json.Unmarshal(body, &created); err != nil {
-		return 0, err
-	}
-	if id, ok := created["id"].(float64); ok {
-		return int(id), nil
-	}
-	return 0, fmt.Errorf("semaphore create project missing id")
-}
-
-type semaphoreUser struct {
-	ID       int    `json:"id"`
-	Username string `json:"username"`
-}
-
-func findSemaphoreUserID(cfg Config, username string) (int, error) {
-	resp, body, err := semaphoreDo(cfg, http.MethodGet, "/users", nil)
-	if err != nil {
-		return 0, err
-	}
-	if resp.StatusCode >= 400 {
-		return 0, fmt.Errorf("semaphore users list failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	var users []semaphoreUser
-	if err := json.Unmarshal(body, &users); err != nil {
-		return 0, err
-	}
-	for _, user := range users {
-		if strings.EqualFold(user.Username, username) {
-			return user.ID, nil
-		}
-	}
-	return 0, fmt.Errorf("semaphore user %s not found", username)
-}
-
-func ensureSemaphoreProjectUser(cfg Config, projectID int, userID int, role string) error {
-	if projectID == 0 || userID == 0 {
-		return fmt.Errorf("invalid project/user id")
-	}
-	resp, body, err := semaphoreDo(cfg, http.MethodGet, fmt.Sprintf("/project/%d/users", projectID), nil)
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("semaphore project users list failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	var users []map[string]any
-	if err := json.Unmarshal(body, &users); err != nil {
-		return err
-	}
-	for _, u := range users {
-		if id, ok := u["id"].(float64); ok && int(id) == userID {
-			return nil
-		}
-	}
-	payload := map[string]any{
-		"user_id": userID,
-		"role":    role,
-	}
-	resp, body, err = semaphoreDo(cfg, http.MethodPost, fmt.Sprintf("/project/%d/users", projectID), payload)
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("semaphore project user add failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	return nil
-}
-
-func ensureSemaphoreHTTPKey(cfg Config, projectID int, name, login, password string) (int, error) {
-	resp, body, err := semaphoreDo(cfg, http.MethodGet, fmt.Sprintf("/project/%d/keys", projectID), nil)
-	if err != nil {
-		return 0, err
-	}
-	if resp.StatusCode >= 400 {
-		return 0, fmt.Errorf("semaphore keys list failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	var keys []map[string]any
-	if err := json.Unmarshal(body, &keys); err != nil {
-		return 0, err
-	}
-	for _, k := range keys {
-		if kName, _ := k["name"].(string); kName == name {
-			if id, ok := k["id"].(float64); ok {
-				keyID := int(id)
-				if login != "" && password != "" {
-					updatePayload := map[string]any{
-						"id":         keyID,
-						"name":       name,
-						"type":       "login_password",
-						"project_id": projectID,
-						"login_password": map[string]any{
-							"login":    login,
-							"password": password,
-						},
-					}
-					resp, body, err := semaphoreDo(cfg, http.MethodPut, fmt.Sprintf("/project/%d/keys/%d", projectID, keyID), updatePayload)
-					if err != nil {
-						return 0, err
-					}
-					if resp.StatusCode >= http.StatusBadRequest {
-						return 0, fmt.Errorf("semaphore update key failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
-					}
-				}
-				return keyID, nil
-			}
-		}
-	}
-	resp, body, err = semaphoreDo(cfg, http.MethodPost, fmt.Sprintf("/project/%d/keys", projectID), map[string]any{
-		"name":       name,
-		"type":       "login_password",
-		"project_id": projectID,
-		"login_password": map[string]any{
-			"login":    login,
-			"password": password,
-		},
-	})
-	if err != nil {
-		return 0, err
-	}
-	if resp.StatusCode != http.StatusCreated {
-		return 0, fmt.Errorf("semaphore create key failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	var created map[string]any
-	if err := json.Unmarshal(body, &created); err != nil {
-		return 0, err
-	}
-	if id, ok := created["id"].(float64); ok {
-		return int(id), nil
-	}
-	return 0, fmt.Errorf("semaphore create key missing id")
-}
-
-func ensureSemaphoreRepo(cfg Config, projectID int, name, gitURL, gitBranch string, keyID int) (int, error) {
-	resp, body, err := semaphoreDo(cfg, http.MethodGet, fmt.Sprintf("/project/%d/repositories", projectID), nil)
-	if err != nil {
-		return 0, err
-	}
-	if resp.StatusCode >= 400 {
-		return 0, fmt.Errorf("semaphore repositories list failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	var repos []map[string]any
-	if err := json.Unmarshal(body, &repos); err != nil {
-		return 0, err
-	}
-	for _, r := range repos {
-		if rName, _ := r["name"].(string); rName == name {
-			if id, ok := r["id"].(float64); ok {
-				repoID := int(id)
-				currentKey := 0
-				if rawKey, ok := r["ssh_key_id"].(float64); ok {
-					currentKey = int(rawKey)
-				}
-				currentBranch, _ := r["git_branch"].(string)
-				currentURL, _ := r["git_url"].(string)
-				if keyID > 0 && (currentKey != keyID || strings.TrimSpace(currentBranch) != gitBranch || strings.TrimSpace(currentURL) != gitURL) {
-					updatePayload := map[string]any{
-						"id":         repoID,
-						"name":       name,
-						"project_id": projectID,
-						"git_url":    gitURL,
-						"git_branch": gitBranch,
-						"ssh_key_id": keyID,
-					}
-					resp, body, err := semaphoreDo(cfg, http.MethodPut, fmt.Sprintf("/project/%d/repositories/%d", projectID, repoID), updatePayload)
-					if err != nil {
-						return 0, err
-					}
-					if resp.StatusCode >= http.StatusBadRequest {
-						return 0, fmt.Errorf("semaphore update repo failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
-					}
-				}
-				return repoID, nil
-			}
-		}
-	}
-	resp, body, err = semaphoreDo(cfg, http.MethodPost, fmt.Sprintf("/project/%d/repositories", projectID), map[string]any{
-		"name":       name,
-		"project_id": projectID,
-		"git_url":    gitURL,
-		"git_branch": gitBranch,
-		"ssh_key_id": keyID,
-	})
-	if err != nil {
-		return 0, err
-	}
-	if resp.StatusCode != http.StatusCreated {
-		return 0, fmt.Errorf("semaphore create repository failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	var created map[string]any
-	if err := json.Unmarshal(body, &created); err != nil {
-		return 0, err
-	}
-	if id, ok := created["id"].(float64); ok {
-		return int(id), nil
-	}
-	return 0, fmt.Errorf("semaphore create repository missing id")
-}
-
-func findSemaphoreRepoID(cfg Config, projectID int, name string) (int, error) {
-	resp, body, err := semaphoreDo(cfg, http.MethodGet, fmt.Sprintf("/project/%d/repositories", projectID), nil)
-	if err != nil {
-		return 0, err
-	}
-	if resp.StatusCode >= 400 {
-		return 0, fmt.Errorf("semaphore repositories list failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	var repos []map[string]any
-	if err := json.Unmarshal(body, &repos); err != nil {
-		return 0, err
-	}
-	for _, r := range repos {
-		if rName, _ := r["name"].(string); strings.EqualFold(strings.TrimSpace(rName), strings.TrimSpace(name)) {
-			if id, ok := r["id"].(float64); ok {
-				return int(id), nil
-			}
-		}
-	}
-	return 0, fmt.Errorf("semaphore repository %q not found", name)
-}
-
-func ensureSemaphoreEnvironment(cfg Config, projectID int, name string, env map[string]string) (int, error) {
-	resp, body, err := semaphoreDo(cfg, http.MethodGet, fmt.Sprintf("/project/%d/environment", projectID), nil)
-	if err != nil {
-		return 0, err
-	}
-	if resp.StatusCode >= 400 {
-		return 0, fmt.Errorf("semaphore environment list failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	var envs []map[string]any
-	if err := json.Unmarshal(body, &envs); err != nil {
-		return 0, err
-	}
-	for _, e := range envs {
-		if eName, _ := e["name"].(string); eName == name {
-			if id, ok := e["id"].(float64); ok {
-				envID := int(id)
-				existingEnv, _ := e["env"].(string)
-				needsUpdate := strings.Contains(existingEnv, "AWS_SECRET_ACCESS_KEY") || strings.Contains(existingEnv, "AWS_ACCESS_KEY_ID")
-				if !needsUpdate {
-					if _, ok := env["AWS_ACCESS_KEY_ID"]; ok && !strings.Contains(existingEnv, "AWS_ACCESS_KEY_ID") {
-						needsUpdate = true
-					}
-				}
-				if !needsUpdate {
-					if _, ok := env["AWS_SECRET_ACCESS_KEY"]; ok && !strings.Contains(existingEnv, "AWS_SECRET_ACCESS_KEY") {
-						needsUpdate = true
-					}
-				}
-				if !needsUpdate && (strings.Contains(existingEnv, "AWS_PROFILE") || strings.Contains(existingEnv, "AWS_SDK_LOAD_CONFIG")) {
-					needsUpdate = true
-				}
-				if !needsUpdate {
-					if _, ok := env["AWS_SHARED_CREDENTIALS_FILE"]; ok && !strings.Contains(existingEnv, "AWS_SHARED_CREDENTIALS_FILE") {
-						needsUpdate = true
-					}
-					if !ok && strings.Contains(existingEnv, "AWS_SHARED_CREDENTIALS_FILE") {
-						needsUpdate = true
-					}
-				}
-				if needsUpdate {
-					updatePayload := map[string]any{
-						"id":         envID,
-						"name":       name,
-						"project_id": projectID,
-						"json":       "{}",
-						"env":        string(mustJSON(env)),
-					}
-					resp, body, err := semaphoreDo(cfg, http.MethodPut, fmt.Sprintf("/project/%d/environment/%d", projectID, envID), updatePayload)
-					if err != nil {
-						return 0, err
-					}
-					if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
-						return 0, fmt.Errorf("semaphore update environment failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
-					}
-				}
-				return envID, nil
-			}
-		}
-	}
-	resp, body, err = semaphoreDo(cfg, http.MethodPost, fmt.Sprintf("/project/%d/environment", projectID), map[string]any{
-		"name":       name,
-		"project_id": projectID,
-		"json":       "{}",
-		"env":        string(mustJSON(env)),
-	})
-	if err != nil {
-		return 0, err
-	}
-	if resp.StatusCode != http.StatusCreated {
-		return 0, fmt.Errorf("semaphore create environment failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	var created map[string]any
-	if err := json.Unmarshal(body, &created); err != nil {
-		return 0, err
-	}
-	if id, ok := created["id"].(float64); ok {
-		return int(id), nil
-	}
-	return 0, fmt.Errorf("semaphore create environment missing id")
-}
-
-func ensureSemaphoreInventory(cfg Config, projectID int, name string, inventory string) (int, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		name = "localhost"
-	}
-	inventory = strings.TrimSpace(inventory)
-	if inventory == "" {
-		inventory = "localhost ansible_connection=local\n"
-	}
-
-	resp, body, err := semaphoreDo(cfg, http.MethodGet, fmt.Sprintf("/project/%d/inventory", projectID), nil)
-	if err != nil {
-		return 0, err
-	}
-	if resp.StatusCode >= 400 {
-		return 0, fmt.Errorf("semaphore inventory list failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	var inventories []map[string]any
-	if err := json.Unmarshal(body, &inventories); err != nil {
-		return 0, err
-	}
-	for _, inv := range inventories {
-		if invName, _ := inv["name"].(string); invName == name {
-			if id, ok := inv["id"].(float64); ok {
-				return int(id), nil
-			}
-		}
-	}
-
-	noneKeyID := 0
-	resp, body, err = semaphoreDo(cfg, http.MethodGet, fmt.Sprintf("/project/%d/keys", projectID), nil)
-	if err == nil && resp.StatusCode < 400 {
-		var keys []map[string]any
-		if err := json.Unmarshal(body, &keys); err == nil {
-			for _, k := range keys {
-				name, _ := k["name"].(string)
-				typ, _ := k["type"].(string)
-				if strings.EqualFold(strings.TrimSpace(name), "none") || strings.EqualFold(strings.TrimSpace(name), "None") {
-					if typ == "" || strings.EqualFold(strings.TrimSpace(typ), "none") {
-						if id, ok := k["id"].(float64); ok {
-							noneKeyID = int(id)
-							break
-						}
-					}
-				}
-			}
-		}
-	}
-	if noneKeyID <= 0 {
-		noneKeyID = 1
-	}
-
-	resp, body, err = semaphoreDo(cfg, http.MethodPost, fmt.Sprintf("/project/%d/inventory", projectID), map[string]any{
-		"project_id": projectID,
-		"name":       name,
-		"type":       "static",
-		"inventory":  inventory,
-		"ssh_key_id": noneKeyID,
-	})
-	if err != nil {
-		return 0, err
-	}
-	if resp.StatusCode != http.StatusCreated {
-		return 0, fmt.Errorf("semaphore create inventory failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	var created map[string]any
-	if err := json.Unmarshal(body, &created); err != nil {
-		return 0, err
-	}
-	if id, ok := created["id"].(float64); ok {
-		return int(id), nil
-	}
-	return 0, fmt.Errorf("semaphore create inventory missing id")
-}
-
-func mustJSON(v any) []byte {
-	out, err := json.Marshal(v)
-	if err != nil {
-		return []byte("{}")
-	}
-	return out
-}
-
-func ensureSemaphoreTemplate(cfg Config, projectID int, payload map[string]any) (int, error) {
-	resp, body, err := semaphoreDo(cfg, http.MethodGet, fmt.Sprintf("/project/%d/templates", projectID), nil)
-	if err != nil {
-		return 0, err
-	}
-	if resp.StatusCode >= 400 {
-		return 0, fmt.Errorf("semaphore templates list failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	var templates []map[string]any
-	if err := json.Unmarshal(body, &templates); err != nil {
-		return 0, err
-	}
-	name, _ := payload["name"].(string)
-	for _, t := range templates {
-		if tName, _ := t["name"].(string); tName == name {
-			if id, ok := t["id"].(float64); ok {
-				return int(id), nil
-			}
-		}
-	}
-	resp, body, err = semaphoreDo(cfg, http.MethodPost, fmt.Sprintf("/project/%d/templates", projectID), payload)
-	if err != nil {
-		return 0, err
-	}
-	if resp.StatusCode != http.StatusCreated {
-		return 0, fmt.Errorf("semaphore create template failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	var created map[string]any
-	if err := json.Unmarshal(body, &created); err != nil {
-		return 0, err
-	}
-	if id, ok := created["id"].(float64); ok {
-		return int(id), nil
-	}
-	return 0, fmt.Errorf("semaphore create template missing id")
-}
-
 type projectSyncReport struct {
 	ProjectID string   `json:"projectId"`
 	Slug      string   `json:"slug"`
@@ -3398,12 +2880,12 @@ type projectSyncReport struct {
 	Errors    []string `json:"errors,omitempty"`
 }
 
-func projectTerraformEnv(project SkyforgeProject) map[string]string {
+func projectTerraformEnv(cfg Config, project SkyforgeProject) map[string]string {
 	region := "us-east-1"
 	if strings.TrimSpace(project.AWSRegion) != "" {
 		region = strings.TrimSpace(project.AWSRegion)
 	}
-	return map[string]string{
+	env := map[string]string{
 		"TF_IN_AUTOMATION":          "true",
 		"TF_VAR_scenario":           "regular_cluster",
 		"AWS_EC2_METADATA_DISABLED": "true",
@@ -3411,6 +2893,11 @@ func projectTerraformEnv(project SkyforgeProject) map[string]string {
 		"TF_VAR_ssh_key_name":       "REPLACE_ME",
 		"TF_VAR_artifacts_bucket":   "REPLACE_ME",
 	}
+	if cfg.Projects.ObjectStorageTerraformAccessKey != "" && cfg.Projects.ObjectStorageTerraformSecretKey != "" {
+		env["AWS_ACCESS_KEY_ID"] = cfg.Projects.ObjectStorageTerraformAccessKey
+		env["AWS_SECRET_ACCESS_KEY"] = cfg.Projects.ObjectStorageTerraformSecretKey
+	}
+	return env
 }
 
 func syncProjectResources(ctx context.Context, cfg Config, project *SkyforgeProject) projectSyncReport {
@@ -3458,237 +2945,6 @@ func syncProjectResources(ctx context.Context, cfg Config, project *SkyforgeProj
 				addStep("updated default branch")
 			}
 		}
-	}
-
-	if strings.TrimSpace(project.Name) != "" {
-		if id, err := ensureSemaphoreProject(cfg, project.Name); err != nil {
-			addErr("semaphore project ensure", err)
-		} else if project.SemaphoreProjectID != id {
-			project.SemaphoreProjectID = id
-			report.Updated = true
-			addStep("updated semaphore project id")
-		}
-	} else {
-		addErr("missing project name", nil)
-	}
-
-	if project.SemaphoreProjectID > 0 {
-		gitBranch := strings.TrimSpace(project.DefaultBranch)
-		if gitBranch == "" {
-			gitBranch = "master"
-		}
-
-		if strings.TrimSpace(project.GiteaOwner) != "" && strings.TrimSpace(project.GiteaRepo) != "" {
-			if err := ensureGiteaFile(cfg, project.GiteaOwner, project.GiteaRepo, "netlab/job/run_netlab_api.py", netlabAPIRunnerScript(), "chore: sync netlab runner", gitBranch, nil); err != nil {
-				addErr("gitea netlab runner", err)
-			} else {
-				addStep("netlab runner synced")
-			}
-			if err := ensureGiteaFile(cfg, project.GiteaOwner, project.GiteaRepo, "labpp/job/run_labpp_api.py", labppAPIRunnerScript(), "chore: sync labpp runner", gitBranch, nil); err != nil {
-				addErr("gitea labpp runner", err)
-			} else {
-				addStep("labpp runner synced")
-			}
-		}
-
-		repoID := 0
-		envID := 0
-		inventoryID := 0
-
-		if strings.EqualFold(strings.TrimSpace(project.GiteaOwner), strings.TrimSpace(cfg.Projects.GiteaUsername)) {
-			keyID, err := ensureSemaphoreHTTPKey(cfg, project.SemaphoreProjectID, "gitea-http", cfg.Projects.GiteaUsername, cfg.Projects.GiteaPassword)
-			if err != nil {
-				addErr("semaphore http key", err)
-				return report
-			}
-			addStep("semaphore key ok")
-
-			giteaBase := giteaInternalBaseURL(cfg)
-			if giteaBase == "" {
-				addErr("gitea base URL", fmt.Errorf("gitea base URL not configured"))
-				return report
-			}
-			gitURL := fmt.Sprintf("%s/%s/%s.git", giteaBase, project.GiteaOwner, project.GiteaRepo)
-			id, err := ensureSemaphoreRepo(cfg, project.SemaphoreProjectID, project.GiteaRepo, gitURL, gitBranch, keyID)
-			if err != nil {
-				addErr("semaphore repo", err)
-				return report
-			}
-			repoID = id
-		} else {
-			id, err := findSemaphoreRepoID(cfg, project.SemaphoreProjectID, project.GiteaRepo)
-			if err != nil {
-				// If the repo wiring was deleted (e.g. Semaphore DB reset), try to recreate it using the
-				// project owner's cached LDAP password. This keeps project-scoped sync working for
-				// user-owned repos without requiring admin credentials.
-				password, ok := getCachedLDAPPassword(project.GiteaOwner)
-				if !ok || strings.TrimSpace(password) == "" {
-					addErr("semaphore repo lookup", err)
-					return report
-				}
-				giteaBase := giteaInternalBaseURL(cfg)
-				if giteaBase == "" {
-					addErr("gitea base URL", fmt.Errorf("gitea base URL not configured"))
-					return report
-				}
-				gitURL := fmt.Sprintf("%s/%s/%s.git", giteaBase, project.GiteaOwner, project.GiteaRepo)
-				keyName := fmt.Sprintf("gitea-http-%s", strings.TrimSpace(project.GiteaOwner))
-				keyID, keyErr := ensureSemaphoreHTTPKey(cfg, project.SemaphoreProjectID, keyName, project.GiteaOwner, password)
-				if keyErr != nil {
-					addErr("semaphore http key", keyErr)
-					return report
-				}
-				id, repoErr := ensureSemaphoreRepo(cfg, project.SemaphoreProjectID, project.GiteaRepo, gitURL, gitBranch, keyID)
-				if repoErr != nil {
-					addErr("semaphore repo", repoErr)
-					return report
-				}
-				repoID = id
-				addStep("semaphore repo recreated")
-			} else {
-				repoID = id
-				addStep("semaphore repo ok")
-			}
-		}
-
-		var err error
-		envID, err = ensureSemaphoreEnvironment(cfg, project.SemaphoreProjectID, "Terraform Defaults", projectTerraformEnv(*project))
-		if err != nil {
-			addErr("semaphore env", err)
-			return report
-		}
-		inventoryID, err = ensureSemaphoreInventory(cfg, project.SemaphoreProjectID, "localhost", "localhost ansible_connection=local\n")
-		if err != nil {
-			addErr("semaphore inventory", err)
-			return report
-		}
-
-		if repoID == 0 || envID == 0 || inventoryID == 0 {
-			addErr("semaphore wiring", fmt.Errorf("missing repository/environment/inventory id"))
-			return report
-		}
-
-		if id, err := ensureSemaphoreTemplate(cfg, project.SemaphoreProjectID, map[string]any{
-			"project_id":                    project.SemaphoreProjectID,
-			"repository_id":                 repoID,
-			"environment_id":                envID,
-			"inventory_id":                  inventoryID,
-			"name":                          "Tofu: AWS",
-			"description":                   "Runs OpenTofu against AWS infrastructure.",
-			"app":                           "tofu",
-			"playbook":                      ".",
-			"git_branch":                    gitBranch,
-			"arguments":                     string(mustJSON([]string{})),
-			"allow_override_args_in_task":   true,
-			"allow_override_branch_in_task": true,
-		}); err != nil {
-			addErr("semaphore tofu aws", err)
-		} else if project.TofuInitTemplateID != id {
-			project.TofuInitTemplateID = id
-			report.Updated = true
-		}
-
-		if id, err := ensureSemaphoreTemplate(cfg, project.SemaphoreProjectID, map[string]any{
-			"project_id":                    project.SemaphoreProjectID,
-			"repository_id":                 repoID,
-			"environment_id":                envID,
-			"inventory_id":                  inventoryID,
-			"name":                          "Tofu: Azure",
-			"description":                   "Runs OpenTofu against Azure infrastructure.",
-			"app":                           "tofu",
-			"playbook":                      ".",
-			"git_branch":                    gitBranch,
-			"arguments":                     string(mustJSON([]string{})),
-			"allow_override_args_in_task":   true,
-			"allow_override_branch_in_task": true,
-		}); err != nil {
-			addErr("semaphore tofu azure", err)
-		} else if project.TofuPlanTemplateID != id {
-			project.TofuPlanTemplateID = id
-			report.Updated = true
-		}
-
-		if id, err := ensureSemaphoreTemplate(cfg, project.SemaphoreProjectID, map[string]any{
-			"project_id":                    project.SemaphoreProjectID,
-			"repository_id":                 repoID,
-			"environment_id":                envID,
-			"inventory_id":                  inventoryID,
-			"name":                          "Tofu: GCP",
-			"description":                   "Runs OpenTofu against GCP infrastructure.",
-			"app":                           "tofu",
-			"playbook":                      ".",
-			"git_branch":                    gitBranch,
-			"arguments":                     string(mustJSON([]string{})),
-			"allow_override_args_in_task":   true,
-			"allow_override_branch_in_task": true,
-		}); err != nil {
-			addErr("semaphore tofu gcp", err)
-		} else if project.TofuApplyTemplateID != id {
-			project.TofuApplyTemplateID = id
-			report.Updated = true
-		}
-
-		if id, err := ensureSemaphoreTemplate(cfg, project.SemaphoreProjectID, map[string]any{
-			"project_id":                    project.SemaphoreProjectID,
-			"repository_id":                 repoID,
-			"environment_id":                envID,
-			"inventory_id":                  inventoryID,
-			"name":                          "Ansible: Run playbook.yml",
-			"description":                   "Runs ansible-playbook playbook.yml (placeholder).",
-			"app":                           "ansible",
-			"playbook":                      "playbook.yml",
-			"git_branch":                    gitBranch,
-			"arguments":                     string(mustJSON([]string{})),
-			"allow_override_args_in_task":   true,
-			"allow_override_branch_in_task": true,
-		}); err != nil {
-			addErr("semaphore ansible run", err)
-		} else if project.AnsibleRunTemplateID != id {
-			project.AnsibleRunTemplateID = id
-			report.Updated = true
-		}
-
-		if id, err := ensureSemaphoreTemplate(cfg, project.SemaphoreProjectID, map[string]any{
-			"project_id":                    project.SemaphoreProjectID,
-			"repository_id":                 repoID,
-			"environment_id":                envID,
-			"inventory_id":                  inventoryID,
-			"name":                          "Netlab: Run",
-			"description":                   "Runs the Netlab API runner.",
-			"app":                           "python",
-			"playbook":                      "netlab/job/run_netlab_api.py",
-			"git_branch":                    gitBranch,
-			"arguments":                     string(mustJSON([]string{})),
-			"allow_override_args_in_task":   true,
-			"allow_override_branch_in_task": true,
-		}); err != nil {
-			addErr("semaphore netlab run", err)
-		} else if project.NetlabRunTemplateID != id {
-			project.NetlabRunTemplateID = id
-			report.Updated = true
-		}
-
-		if id, err := ensureSemaphoreTemplate(cfg, project.SemaphoreProjectID, map[string]any{
-			"project_id":                    project.SemaphoreProjectID,
-			"repository_id":                 repoID,
-			"environment_id":                envID,
-			"inventory_id":                  inventoryID,
-			"name":                          "LabPP: Run",
-			"description":                   "Runs the LabPP API runner.",
-			"app":                           "python",
-			"playbook":                      "labpp/job/run_labpp_api.py",
-			"git_branch":                    gitBranch,
-			"arguments":                     string(mustJSON([]string{})),
-			"allow_override_args_in_task":   true,
-			"allow_override_branch_in_task": true,
-		}); err != nil {
-			addErr("semaphore labpp run", err)
-		} else if project.LabppRunTemplateID != id {
-			project.LabppRunTemplateID = id
-			report.Updated = true
-		}
-
-		addStep("semaphore wiring ok")
 	}
 
 	if strings.TrimSpace(project.GiteaOwner) != "" && strings.TrimSpace(project.GiteaRepo) != "" {
@@ -3771,10 +3027,7 @@ func initService() (*Service, error) {
 		"SKYFORGE_GITEA_PASSWORD",
 		"SKYFORGE_OBJECT_STORAGE_TERRAFORM_ACCESS_KEY",
 		"SKYFORGE_OBJECT_STORAGE_TERRAFORM_SECRET_KEY",
-		"SKYFORGE_SEMAPHORE_TOKEN",
-		"SKYFORGE_SEMAPHORE_PASSWORD",
 		"SKYFORGE_INTERNAL_TOKEN",
-		"SKYFORGE_SEMAPHORE_URL",
 	)
 
 	meta := encore.Meta()
@@ -3900,164 +3153,6 @@ func initService() (*Service, error) {
 		box:            box,
 		db:             db,
 	}, nil
-}
-
-func handleRunCreate(w http.ResponseWriter, r *http.Request, cfg Config, db *sql.DB, claims *SessionClaims) {
-	var req RunRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid payload", http.StatusBadRequest)
-		return
-	}
-	projectID := cfg.DefaultProject
-	if req.ProjectID != nil {
-		projectID = *req.ProjectID
-	}
-	if projectID == 0 {
-		http.Error(w, "project_id is required", http.StatusBadRequest)
-		return
-	}
-	if req.TemplateID == 0 {
-		http.Error(w, "templateId is required", http.StatusBadRequest)
-		return
-	}
-	payload := map[string]any{
-		"template_id": req.TemplateID,
-		"debug":       req.Debug,
-		"dry_run":     req.DryRun,
-		"diff":        req.Diff,
-	}
-	if req.Playbook != "" {
-		payload["playbook"] = req.Playbook
-	}
-	if req.Environment != nil {
-		envBytes, err := json.Marshal(req.Environment)
-		if err != nil {
-			log.Printf("handleRunCreate env marshal: %v", err)
-			http.Error(w, "failed to encode environment", http.StatusBadRequest)
-			return
-		}
-		payload["environment"] = string(envBytes)
-	}
-	if req.Limit != "" {
-		payload["limit"] = req.Limit
-	}
-	if req.GitBranch != "" {
-		payload["git_branch"] = req.GitBranch
-	}
-	if req.Message != "" {
-		payload["message"] = req.Message
-	}
-	if strings.TrimSpace(req.Arguments) != "" {
-		payload["arguments"] = req.Arguments
-	}
-	if req.InventoryID != nil {
-		payload["inventory_id"] = *req.InventoryID
-	}
-	if req.Extra != nil {
-		for k, v := range req.Extra {
-			payload[k] = v
-		}
-	}
-
-	resp, body, err := semaphoreDo(cfg, http.MethodPost, fmt.Sprintf("/project/%d/tasks", projectID), payload)
-	if err != nil {
-		log.Printf("handleRunCreate semaphoreDo: %v", err)
-		http.Error(w, "failed to reach semaphore", http.StatusBadGateway)
-		return
-	}
-	if resp.StatusCode >= 400 {
-		log.Printf("handleRunCreate semaphore response %d", resp.StatusCode)
-		http.Error(w, "semaphore rejected request", resp.StatusCode)
-		return
-	}
-	var task map[string]any
-	if err := json.Unmarshal(body, &task); err != nil {
-		log.Printf("handleRunCreate decode: %v", err)
-		http.Error(w, "failed to decode semaphore response", http.StatusBadGateway)
-		return
-	}
-	if db != nil {
-		taskID := ""
-		switch v := task["id"].(type) {
-		case float64:
-			if int(v) > 0 {
-				taskID = strconv.Itoa(int(v))
-			}
-		case int:
-			if v > 0 {
-				taskID = strconv.Itoa(v)
-			}
-		case string:
-			taskID = strings.TrimSpace(v)
-		}
-		title := "Run started"
-		message := fmt.Sprintf("Semaphore task %s started for project %d.", taskID, projectID)
-		if taskID == "" {
-			message = fmt.Sprintf("Semaphore task started for project %d.", projectID)
-		}
-		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
-		defer cancel()
-		if _, err := createNotification(ctx, db, claims.Username, title, message, "TASK_ASSIGNED", "runs", taskID, "medium"); err != nil {
-			log.Printf("create notification (run): %v", err)
-		}
-	}
-	writeJSON(w, http.StatusAccepted, map[string]any{
-		"project_id": projectID,
-		"task":       task,
-		"user":       claims.Username,
-	})
-}
-
-func handleRunList(w http.ResponseWriter, r *http.Request, cfg Config, claims *SessionClaims) {
-	projectParam := r.URL.Query().Get("project_id")
-	projectID := cfg.DefaultProject
-	if projectParam != "" {
-		if v, err := strconv.Atoi(projectParam); err == nil {
-			projectID = v
-		} else {
-			http.Error(w, "invalid project_id", http.StatusBadRequest)
-			return
-		}
-	}
-	if projectID == 0 {
-		http.Error(w, "project_id is required", http.StatusBadRequest)
-		return
-	}
-
-	limitParam := r.URL.Query().Get("limit")
-	limit := 5
-	if limitParam != "" {
-		if v, err := strconv.Atoi(limitParam); err == nil && v > 0 {
-			limit = v
-		}
-	}
-
-	tasks, err := fetchSemaphoreTasks(cfg, projectID, limit)
-	if err != nil {
-		log.Printf("fetchSemaphoreTasks: %v", err)
-		http.Error(w, "failed to query semaphore", http.StatusBadGateway)
-		return
-	}
-
-	if owner := strings.TrimSpace(r.URL.Query().Get("owner")); owner != "" {
-		filtered := make([]map[string]any, 0, len(tasks))
-		for _, task := range tasks {
-			if username, ok := task["user_name"].(string); ok && strings.EqualFold(username, owner) {
-				filtered = append(filtered, task)
-			}
-		}
-		tasks = filtered
-	}
-
-	user := ""
-	if claims != nil {
-		user = claims.Username
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"user":  user,
-		"tasks": tasks,
-	})
 }
 
 // Session + Auth types
@@ -4660,111 +3755,6 @@ func extractLabIDFromMetadataPath(stateRoot, path string) string {
 		return parts[len(parts)-1]
 	}
 	return ""
-}
-
-// Semaphore integration
-
-func fetchSemaphoreTasks(cfg Config, projectID, limit int) ([]map[string]any, error) {
-	resp, body, err := semaphoreDo(cfg, http.MethodGet, fmt.Sprintf("/project/%d/tasks?limit=%d", projectID, limit), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode >= 400 {
-		if resp.StatusCode == http.StatusNotFound {
-			return []map[string]any{}, nil
-		}
-		return nil, fmt.Errorf("semaphore responded %d", resp.StatusCode)
-	}
-
-	var tasks []map[string]any
-	if err := json.Unmarshal(body, &tasks); err != nil {
-		return nil, err
-	}
-	for _, task := range tasks {
-		annotateSemaphoreTask(task)
-	}
-	return tasks, nil
-}
-
-func fetchSemaphoreTask(cfg Config, projectID, taskID int) (map[string]any, error) {
-	resp, body, err := semaphoreDo(cfg, http.MethodGet, fmt.Sprintf("/project/%d/tasks/%d", projectID, taskID), nil)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode >= 400 {
-		if resp.StatusCode == http.StatusNotFound {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("semaphore responded %d", resp.StatusCode)
-	}
-	var task map[string]any
-	if err := json.Unmarshal(body, &task); err != nil {
-		return nil, err
-	}
-	annotateSemaphoreTask(task)
-	return task, nil
-}
-
-func fetchSemaphoreTemplates(cfg Config, projectID int) ([]TemplateSummary, error) {
-	resp, body, err := semaphoreDo(cfg, http.MethodGet, fmt.Sprintf("/project/%d/templates", projectID), nil)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode >= 400 {
-		if resp.StatusCode == http.StatusNotFound {
-			return []TemplateSummary{}, nil
-		}
-		return nil, fmt.Errorf("semaphore responded %d", resp.StatusCode)
-	}
-	var raw []map[string]any
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, err
-	}
-	results := make([]TemplateSummary, 0, len(raw))
-	for _, tpl := range raw {
-		item := TemplateSummary{}
-		if v, ok := tpl["id"].(float64); ok {
-			item.ID = int(v)
-		}
-		if v, ok := tpl["name"].(string); ok {
-			item.Name = v
-		}
-		if v, ok := tpl["project_id"].(float64); ok {
-			item.ProjectID = int(v)
-		}
-		if v, ok := tpl["repository"].(string); ok {
-			item.Repository = v
-		}
-		if v, ok := tpl["playbook"].(string); ok {
-			item.Playbook = v
-		}
-		if v, ok := tpl["description"].(string); ok {
-			item.Description = v
-		}
-		if v, ok := tpl["inventory_id"].(float64); ok {
-			item.InventoryID = int(v)
-		}
-		results = append(results, item)
-	}
-	return results, nil
-}
-
-func fetchSemaphoreTaskOutput(cfg Config, projectID, taskID int) ([]map[string]any, error) {
-	resp, body, err := semaphoreDo(cfg, http.MethodGet, fmt.Sprintf("/project/%d/tasks/%d/output", projectID, taskID), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("semaphore responded %d", resp.StatusCode)
-	}
-
-	var lines []map[string]any
-	if err := json.Unmarshal(body, &lines); err != nil {
-		return nil, err
-	}
-	return lines, nil
 }
 
 func getSetting(ctx context.Context, db *sql.DB, key string) (string, bool, error) {
@@ -6160,20 +5150,6 @@ func parseActorFromMessage(message string) string {
 	return candidate
 }
 
-func annotateSemaphoreTask(task map[string]any) {
-	actor := strings.TrimSpace(firstString(task, "user_name", "username", "user", "owner", "created_by"))
-	if actor == "" || strings.EqualFold(actor, "skyforge") || strings.EqualFold(actor, "system") {
-		if msg, ok := task["message"].(string); ok {
-			actor = parseActorFromMessage(msg)
-		}
-	}
-	if actor != "" {
-		task["user_name"] = actor
-		task["username"] = actor
-		task["user"] = actor
-	}
-}
-
 type ProviderQuery struct {
 	Owner        string
 	Mode         string
@@ -6335,75 +5311,6 @@ func parseSkyforgeMarkers(output []map[string]any) (map[string]string, map[strin
 		}
 	}
 	return labs, artifacts
-}
-
-func listSemaphoreLabs(ctx context.Context, cfg Config, owner string, mode string) ([]LabSummary, map[string]any, error) {
-	source := map[string]any{
-		"provider":  "semaphore",
-		"mode":      "live",
-		"transport": "http",
-		"endpoint":  cfg.SemaphoreURL,
-	}
-
-	projectID := cfg.DefaultProject
-	if projectID == 0 {
-		source["mode"] = "disabled"
-		return []LabSummary{}, source, fmt.Errorf("semaphore project id is not configured")
-	}
-
-	tasks, err := fetchSemaphoreTasks(cfg, projectID, 15)
-	if err != nil {
-		return []LabSummary{}, source, err
-	}
-
-	now := time.Now().UTC().Format(time.RFC3339)
-	labs := make([]LabSummary, 0, 32)
-
-	for _, task := range tasks {
-		taskID := int(firstNumber(task, "id"))
-		if taskID <= 0 {
-			continue
-		}
-
-		taskOwner := firstString(task, "username", "user", "created_by", "owner")
-		if owner != "" && (taskOwner == "" || !strings.EqualFold(taskOwner, owner)) {
-			continue
-		}
-
-		taskStatus := strings.ToLower(firstString(task, "status", "state"))
-		isRunning := taskStatus == "running" || taskStatus == "in_progress" || taskStatus == "in-progress" || taskStatus == "processing"
-
-		if mode == "running" && !isRunning {
-			continue
-		}
-
-		output, err := cachedSemaphoreTaskOutput(cfg, projectID, taskID)
-		if err != nil {
-			continue
-		}
-		markers, _ := parseSkyforgeMarkers(output)
-		if len(markers) == 0 {
-			continue
-		}
-
-		for key, value := range markers {
-			name := value
-			if name == "" {
-				name = key
-			}
-			labOwner := taskOwner
-			labs = append(labs, LabSummary{
-				ID:        fmt.Sprintf("semaphore:%d:%s", taskID, key),
-				Name:      name,
-				Owner:     labOwner,
-				Status:    map[string]string{"true": "running", "false": "stopped"}[fmt.Sprint(isRunning)],
-				Provider:  "semaphore",
-				UpdatedAt: now,
-			})
-		}
-	}
-
-	return labs, source, nil
 }
 
 func firstNumber(obj map[string]any, keys ...string) float64 {

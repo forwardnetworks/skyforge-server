@@ -40,7 +40,7 @@ type ProjectArtifactDownloadResponse struct {
 
 // UploadProjectArtifact uploads or presigns an artifact to the project's bucket.
 //
-//encore:api auth method=POST path=/api/projects/:id/artifacts/upload
+//encore:api auth method=POST path=/api/workspaces/:id/artifacts/upload
 func (s *Service) UploadProjectArtifact(ctx context.Context, id string, req *ProjectArtifactUploadRequest) (*ProjectArtifactUploadResponse, error) {
 	return s.handleProjectArtifactUpload(ctx, id, req)
 }
@@ -105,7 +105,7 @@ func (s *Service) handleProjectArtifactUpload(ctx context.Context, id string, re
 
 // DownloadProjectArtifact returns a presigned download redirect for the artifact.
 //
-//encore:api auth method=GET path=/api/projects/:id/artifacts/download
+//encore:api auth method=GET path=/api/workspaces/:id/artifacts/download
 func (s *Service) DownloadProjectArtifact(ctx context.Context, id string, params *ProjectArtifactDownloadParams) (*ProjectArtifactDownloadResponse, error) {
 	return s.handleProjectArtifactDownload(ctx, id, params)
 }

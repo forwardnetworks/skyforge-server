@@ -30,7 +30,7 @@ type ProjectLabppTemplatesRequest struct {
 // Templates are expected to live under a repo directory (default: blueprints/labpp)
 // where each template is a subdirectory (e.g. blueprints/labpp/junos-example/...).
 //
-//encore:api auth method=GET path=/api/projects/:id/labpp/templates
+//encore:api auth method=GET path=/api/workspaces/:id/labpp/templates
 func (s *Service) GetProjectLabppTemplates(ctx context.Context, id string, req *ProjectLabppTemplatesRequest) (*ProjectLabppTemplatesResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {

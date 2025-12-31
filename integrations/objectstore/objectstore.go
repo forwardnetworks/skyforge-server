@@ -3,6 +3,7 @@ package objectstore
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -61,4 +62,21 @@ func (c *Client) DeletePrefix(ctx context.Context, bucket, prefix string) error 
 		}
 	}
 	return nil
+}
+
+func (c *Client) GetObject(ctx context.Context, bucket, key string) ([]byte, error) {
+	client, err := c.minioClient()
+	if err != nil {
+		return nil, err
+	}
+	obj, err := client.GetObject(ctx, bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, err
+	}
+	defer obj.Close()
+	data, err := io.ReadAll(obj)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
 }

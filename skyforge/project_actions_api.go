@@ -12,7 +12,7 @@ import (
 
 // SyncProject syncs resources for a single project.
 //
-//encore:api auth method=POST path=/api/projects/:id/sync
+//encore:api auth method=POST path=/api/workspaces/:id/sync
 func (s *Service) SyncProject(ctx context.Context, id string) (*projectSyncReport, error) {
 	projectSyncManualRequests.Add(1)
 	user, err := requireAuthUser()
@@ -65,7 +65,7 @@ type ProjectMembersRequest struct {
 
 // UpdateProjectMembers updates project membership.
 //
-//encore:api auth method=PUT path=/api/projects/:id/members
+//encore:api auth method=PUT path=/api/workspaces/:id/members
 func (s *Service) UpdateProjectMembers(ctx context.Context, id string, req *ProjectMembersRequest) (*SkyforgeProject, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -127,10 +127,9 @@ func (s *Service) UpdateProjectMembers(ctx context.Context, id string, req *Proj
 }
 
 type ProjectEveConfigResponse struct {
-	ProjectID    string   `json:"projectId"`
-	EveServer    string   `json:"eveServer"`
-	EveServers   []string `json:"eveServers"`
-	SemaphorePID int      `json:"semaphorePid"`
+	ProjectID  string   `json:"projectId"`
+	EveServer  string   `json:"eveServer"`
+	EveServers []string `json:"eveServers"`
 }
 
 type ProjectEveConfigRequest struct {
@@ -139,7 +138,7 @@ type ProjectEveConfigRequest struct {
 
 // GetProjectEve returns the project's EVE server selection.
 //
-//encore:api auth method=GET path=/api/projects/:id/eve
+//encore:api auth method=GET path=/api/workspaces/:id/eve
 func (s *Service) GetProjectEve(ctx context.Context, id string) (*ProjectEveConfigResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -154,16 +153,15 @@ func (s *Service) GetProjectEve(ctx context.Context, id string) (*ProjectEveConf
 	}
 	_ = ctx
 	return &ProjectEveConfigResponse{
-		ProjectID:    pc.project.ID,
-		EveServer:    pc.project.EveServer,
-		EveServers:   eveServerNames(s.cfg.EveServers),
-		SemaphorePID: pc.project.SemaphoreProjectID,
+		ProjectID:  pc.project.ID,
+		EveServer:  pc.project.EveServer,
+		EveServers: eveServerNames(s.cfg.EveServers),
 	}, nil
 }
 
 // UpdateProjectEve updates the project's EVE server selection.
 //
-//encore:api auth method=PUT path=/api/projects/:id/eve
+//encore:api auth method=PUT path=/api/workspaces/:id/eve
 func (s *Service) UpdateProjectEve(ctx context.Context, id string, req *ProjectEveConfigRequest) (*SkyforgeProject, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -202,7 +200,6 @@ type ProjectNetlabConfigResponse struct {
 	ProjectID     string   `json:"projectId"`
 	NetlabServer  string   `json:"netlabServer"`
 	NetlabServers []string `json:"netlabServers"`
-	SemaphorePID  int      `json:"semaphorePid"`
 }
 
 type ProjectNetlabConfigRequest struct {
@@ -211,7 +208,7 @@ type ProjectNetlabConfigRequest struct {
 
 // GetProjectNetlab returns the project's netlab server selection.
 //
-//encore:api auth method=GET path=/api/projects/:id/netlab
+//encore:api auth method=GET path=/api/workspaces/:id/netlab
 func (s *Service) GetProjectNetlab(ctx context.Context, id string) (*ProjectNetlabConfigResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -229,13 +226,12 @@ func (s *Service) GetProjectNetlab(ctx context.Context, id string) (*ProjectNetl
 		ProjectID:     pc.project.ID,
 		NetlabServer:  pc.project.NetlabServer,
 		NetlabServers: netlabServerNamesForConfig(s.cfg),
-		SemaphorePID:  pc.project.SemaphoreProjectID,
 	}, nil
 }
 
 // UpdateProjectNetlab updates the project's netlab server selection.
 //
-//encore:api auth method=PUT path=/api/projects/:id/netlab
+//encore:api auth method=PUT path=/api/workspaces/:id/netlab
 func (s *Service) UpdateProjectNetlab(ctx context.Context, id string, req *ProjectNetlabConfigRequest) (*SkyforgeProject, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -282,14 +278,14 @@ type ProjectEveLabResponse struct {
 
 // GetProjectEveLab returns EVE lab state for the project.
 //
-//encore:api auth method=GET path=/api/projects/:id/eve/lab
+//encore:api auth method=GET path=/api/workspaces/:id/eve/lab
 func (s *Service) GetProjectEveLab(ctx context.Context, id string) (*ProjectEveLabResponse, error) {
 	return s.handleProjectEveLab(ctx, id, false)
 }
 
 // CreateProjectEveLab creates an EVE lab for the project.
 //
-//encore:api auth method=POST path=/api/projects/:id/eve/lab
+//encore:api auth method=POST path=/api/workspaces/:id/eve/lab
 func (s *Service) CreateProjectEveLab(ctx context.Context, id string) (*ProjectEveLabResponse, error) {
 	return s.handleProjectEveLab(ctx, id, true)
 }
@@ -386,7 +382,7 @@ type ProjectAWSSSOUpdateResponse struct {
 
 // PutProjectAWSSSOConfig stores the AWS SSO account/role for the project.
 //
-//encore:api auth method=PUT path=/api/projects/:id/cloud/aws-sso
+//encore:api auth method=PUT path=/api/workspaces/:id/cloud/aws-sso
 func (s *Service) PutProjectAWSSSOConfig(ctx context.Context, id string, req *ProjectAWSSSOUpdateRequest) (*ProjectAWSSSOUpdateResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -439,7 +435,7 @@ func (s *Service) PutProjectAWSSSOConfig(ctx context.Context, id string, req *Pr
 
 // GetProjectAWSStatic returns AWS static credential status.
 //
-//encore:api auth method=GET path=/api/projects/:id/cloud/aws-static
+//encore:api auth method=GET path=/api/workspaces/:id/cloud/aws-static
 func (s *Service) GetProjectAWSStatic(ctx context.Context, id string) (*ProjectAWSStaticGetResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -482,7 +478,7 @@ func (s *Service) GetProjectAWSStatic(ctx context.Context, id string) (*ProjectA
 
 // PutProjectAWSStatic stores AWS static credentials.
 //
-//encore:api auth method=PUT path=/api/projects/:id/cloud/aws-static
+//encore:api auth method=PUT path=/api/workspaces/:id/cloud/aws-static
 func (s *Service) PutProjectAWSStatic(ctx context.Context, id string, req *ProjectAWSStaticPutRequest) (*ProjectAWSStaticStatusResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -518,7 +514,7 @@ func (s *Service) PutProjectAWSStatic(ctx context.Context, id string, req *Proje
 
 // DeleteProjectAWSStatic clears AWS static credentials.
 //
-//encore:api auth method=DELETE path=/api/projects/:id/cloud/aws-static
+//encore:api auth method=DELETE path=/api/workspaces/:id/cloud/aws-static
 func (s *Service) DeleteProjectAWSStatic(ctx context.Context, id string) (*ProjectAWSStaticStatusResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -570,7 +566,7 @@ type ProjectAzureCredentialStatusResponse struct {
 
 // GetProjectAzureCredentials returns Azure service principal status.
 //
-//encore:api auth method=GET path=/api/projects/:id/cloud/azure
+//encore:api auth method=GET path=/api/workspaces/:id/cloud/azure
 func (s *Service) GetProjectAzureCredentials(ctx context.Context, id string) (*ProjectAzureCredentialGetResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -617,7 +613,7 @@ func (s *Service) GetProjectAzureCredentials(ctx context.Context, id string) (*P
 
 // PutProjectAzureCredentials stores Azure service principal credentials.
 //
-//encore:api auth method=PUT path=/api/projects/:id/cloud/azure
+//encore:api auth method=PUT path=/api/workspaces/:id/cloud/azure
 func (s *Service) PutProjectAzureCredentials(ctx context.Context, id string, req *ProjectAzureCredentialPutRequest) (*ProjectAzureCredentialStatusResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -659,7 +655,7 @@ func (s *Service) PutProjectAzureCredentials(ctx context.Context, id string, req
 
 // DeleteProjectAzureCredentials clears Azure credentials.
 //
-//encore:api auth method=DELETE path=/api/projects/:id/cloud/azure
+//encore:api auth method=DELETE path=/api/workspaces/:id/cloud/azure
 func (s *Service) DeleteProjectAzureCredentials(ctx context.Context, id string) (*ProjectAzureCredentialStatusResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -709,7 +705,7 @@ type ProjectGCPCredentialStatusResponse struct {
 
 // GetProjectGCPCredentials returns GCP service account status.
 //
-//encore:api auth method=GET path=/api/projects/:id/cloud/gcp
+//encore:api auth method=GET path=/api/workspaces/:id/cloud/gcp
 func (s *Service) GetProjectGCPCredentials(ctx context.Context, id string) (*ProjectGCPCredentialGetResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -758,7 +754,7 @@ func (s *Service) GetProjectGCPCredentials(ctx context.Context, id string) (*Pro
 
 // PutProjectGCPCredentials stores GCP service account JSON.
 //
-//encore:api auth method=PUT path=/api/projects/:id/cloud/gcp
+//encore:api auth method=PUT path=/api/workspaces/:id/cloud/gcp
 func (s *Service) PutProjectGCPCredentials(ctx context.Context, id string, req *ProjectGCPCredentialPutRequest) (*ProjectGCPCredentialStatusResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -794,7 +790,7 @@ func (s *Service) PutProjectGCPCredentials(ctx context.Context, id string, req *
 
 // DeleteProjectGCPCredentials clears GCP credentials.
 //
-//encore:api auth method=DELETE path=/api/projects/:id/cloud/gcp
+//encore:api auth method=DELETE path=/api/workspaces/:id/cloud/gcp
 func (s *Service) DeleteProjectGCPCredentials(ctx context.Context, id string) (*ProjectGCPCredentialStatusResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {

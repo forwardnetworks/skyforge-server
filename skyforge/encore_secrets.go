@@ -17,10 +17,7 @@ var secrets struct {
 	SKYFORGE_GITEA_PASSWORD                      string
 	SKYFORGE_OBJECT_STORAGE_TERRAFORM_ACCESS_KEY string
 	SKYFORGE_OBJECT_STORAGE_TERRAFORM_SECRET_KEY string
-	SKYFORGE_SEMAPHORE_TOKEN                     string
-	SKYFORGE_SEMAPHORE_PASSWORD                  string
 	SKYFORGE_INTERNAL_TOKEN                      string
-	SKYFORGE_SEMAPHORE_URL                       string
 }
 
 func getEncoreSecret(key string) string {
@@ -45,14 +42,8 @@ func getEncoreSecret(key string) string {
 		return strings.TrimSpace(secrets.SKYFORGE_OBJECT_STORAGE_TERRAFORM_ACCESS_KEY)
 	case "SKYFORGE_OBJECT_STORAGE_TERRAFORM_SECRET_KEY":
 		return strings.TrimSpace(secrets.SKYFORGE_OBJECT_STORAGE_TERRAFORM_SECRET_KEY)
-	case "SKYFORGE_SEMAPHORE_TOKEN":
-		return strings.TrimSpace(secrets.SKYFORGE_SEMAPHORE_TOKEN)
-	case "SKYFORGE_SEMAPHORE_PASSWORD":
-		return strings.TrimSpace(secrets.SKYFORGE_SEMAPHORE_PASSWORD)
 	case "SKYFORGE_INTERNAL_TOKEN":
 		return strings.TrimSpace(secrets.SKYFORGE_INTERNAL_TOKEN)
-	case "SKYFORGE_SEMAPHORE_URL":
-		return strings.TrimSpace(secrets.SKYFORGE_SEMAPHORE_URL)
 	default:
 		return ""
 	}

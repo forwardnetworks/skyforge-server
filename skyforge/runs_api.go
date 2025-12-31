@@ -24,28 +24,13 @@ type RunsListResponse struct {
 	Tasks []JSONMap `json:"tasks"`
 }
 
-// GetRuns returns recent runs from Semaphore.
+// GetRuns returns recent runs from native Skyforge tasks.
 //
 //encore:api auth method=GET path=/api/runs tag:list-runs
 func (s *Service) GetRuns(ctx context.Context, params *RunsListParams) (*RunsListResponse, error) {
 	runListRequests.Add(1)
 	user, err := requireAuthUser()
 	if err != nil {
-		return nil, err
-	}
-	claims := claimsFromAuthUser(user)
-	projectID := s.cfg.DefaultProject
-	if params != nil && strings.TrimSpace(params.ProjectID) != "" {
-		if v, err := strconv.Atoi(strings.TrimSpace(params.ProjectID)); err == nil {
-			projectID = v
-		} else {
-			return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid project_id").Err()
-		}
-	}
-	if projectID == 0 {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("project_id is required").Err()
-	}
-	if err := s.authorizeSemaphoreProjectID(claims, projectID); err != nil {
 		return nil, err
 	}
 	limit := 5
@@ -55,22 +40,31 @@ func (s *Service) GetRuns(ctx context.Context, params *RunsListParams) (*RunsLis
 		}
 	}
 
-	semaphoreCfg, err := semaphoreConfigForUser(s.cfg, claims.Username)
+	project, err := s.resolveProjectForUser(ctx, user, "")
 	if err != nil {
 		return nil, err
 	}
-	tasks, err := fetchSemaphoreTasks(semaphoreCfg, projectID, limit)
+	if params != nil && strings.TrimSpace(params.ProjectID) != "" {
+		project, err = s.resolveProjectForUser(ctx, user, params.ProjectID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	tasks, err := listTasks(ctx, s.db, project.ID, limit)
 	if err != nil {
 		runErrors.Add(1)
-		log.Printf("fetchSemaphoreTasks: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to query semaphore").Err()
+		log.Printf("listTasks: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to query runs").Err()
 	}
 
 	if params != nil {
 		if owner := strings.TrimSpace(params.Owner); owner != "" {
-			filtered := make([]map[string]any, 0, len(tasks))
+			filtered := make([]TaskRecord, 0, len(tasks))
 			for _, task := range tasks {
-				if username, ok := task["user_name"].(string); ok && strings.EqualFold(username, owner) {
+				if strings.EqualFold(task.CreatedBy, owner) {
 					filtered = append(filtered, task)
 				}
 			}
@@ -78,7 +72,13 @@ func (s *Service) GetRuns(ctx context.Context, params *RunsListParams) (*RunsLis
 		}
 	}
 
-	tasksJSON, err := toJSONMapSlice(tasks)
+	runItems := make([]map[string]any, 0, len(tasks))
+	for _, task := range tasks {
+		run := taskToRunInfo(task)
+		run["projectId"] = project.ID
+		runItems = append(runItems, run)
+	}
+	tasksJSON, err := toJSONMapSlice(runItems)
 	if err != nil {
 		log.Printf("runs list encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode runs").Err()
@@ -91,12 +91,12 @@ func (s *Service) GetRuns(ctx context.Context, params *RunsListParams) (*RunsLis
 }
 
 type RunsCreateResponse struct {
-	ProjectID int     `json:"project_id"`
+	ProjectID string  `json:"projectId"`
 	Task      JSONMap `json:"task"`
 	User      string  `json:"user"`
 }
 
-// CreateRun launches a task in Semaphore (admin only).
+// CreateRun is a reserved endpoint for admin-triggered native tasks.
 //
 //encore:api auth method=POST path=/api/runs
 func (s *Service) CreateRun(ctx context.Context, req *RunRequest) (*RunsCreateResponse, error) {
@@ -112,108 +112,17 @@ func (s *Service) CreateRun(ctx context.Context, req *RunRequest) (*RunsCreateRe
 	if req == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid payload").Err()
 	}
-	projectID := s.cfg.DefaultProject
+	projectKey := ""
 	if req.ProjectID != nil {
-		projectID = *req.ProjectID
+		projectKey = *req.ProjectID
 	}
-	if projectID == 0 {
+	if projectKey == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("project_id is required").Err()
 	}
-	if err := s.authorizeSemaphoreProjectID(claims, projectID); err != nil {
+	if _, err := s.resolveProjectForUser(ctx, user, projectKey); err != nil {
 		return nil, err
 	}
-	if req.TemplateID == 0 {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("templateId is required").Err()
-	}
-
-	payload := map[string]any{
-		"template_id": req.TemplateID,
-		"debug":       req.Debug,
-		"dry_run":     req.DryRun,
-		"diff":        req.Diff,
-	}
-	if req.Playbook != "" {
-		payload["playbook"] = req.Playbook
-	}
-	if req.Environment != nil {
-		envBytes, err := json.Marshal(req.Environment)
-		if err != nil {
-			return nil, errs.B().Code(errs.InvalidArgument).Msg("failed to encode environment").Err()
-		}
-		payload["environment"] = string(envBytes)
-	}
-	if req.Limit != "" {
-		payload["limit"] = req.Limit
-	}
-	if req.GitBranch != "" {
-		payload["git_branch"] = req.GitBranch
-	}
-	if req.Message != "" {
-		payload["message"] = req.Message
-	}
-	if strings.TrimSpace(req.Arguments) != "" {
-		payload["arguments"] = req.Arguments
-	}
-	if req.InventoryID != nil {
-		payload["inventory_id"] = *req.InventoryID
-	}
-	if req.Extra != nil {
-		for k, v := range req.Extra {
-			payload[k] = v
-		}
-	}
-
-	resp, body, err := semaphoreDo(s.cfg, http.MethodPost, fmt.Sprintf("/project/%d/tasks", projectID), payload)
-	if err != nil {
-		runErrors.Add(1)
-		log.Printf("create run semaphoreDo: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to reach semaphore").Err()
-	}
-	if resp.StatusCode >= 400 {
-		runErrors.Add(1)
-		log.Printf("create run semaphore response %d", resp.StatusCode)
-		return nil, errs.B().Code(errs.Unavailable).Msg("semaphore rejected request").Err()
-	}
-	var task map[string]any
-	if err := json.Unmarshal(body, &task); err != nil {
-		log.Printf("create run decode: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to decode semaphore response").Err()
-	}
-	if s.db != nil {
-		taskID := ""
-		switch v := task["id"].(type) {
-		case float64:
-			if int(v) > 0 {
-				taskID = strconv.Itoa(int(v))
-			}
-		case int:
-			if v > 0 {
-				taskID = strconv.Itoa(v)
-			}
-		case string:
-			taskID = strings.TrimSpace(v)
-		}
-		title := "Run started"
-		message := fmt.Sprintf("Semaphore task %s started for project %d.", taskID, projectID)
-		if taskID == "" {
-			message = fmt.Sprintf("Semaphore task started for project %d.", projectID)
-		}
-		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		defer cancel()
-		if _, err := createNotification(ctx, s.db, user.Username, title, message, "TASK_ASSIGNED", "runs", taskID, "medium"); err != nil {
-			log.Printf("create notification (run): %v", err)
-		}
-	}
-	taskJSON, err := toJSONMap(task)
-	if err != nil {
-		log.Printf("create run encode: %v", err)
-		return nil, errs.B().Code(errs.Internal).Msg("failed to encode run").Err()
-	}
-	return &RunsCreateResponse{
-		ProjectID: projectID,
-		Task:      taskJSON,
-		User:      user.Username,
-	}, nil
+	return nil, errs.B().Code(errs.Unimplemented).Msg("direct run creation is not supported in native mode").Err()
 }
 
 type RunsOutputParams struct {
@@ -222,12 +131,12 @@ type RunsOutputParams struct {
 
 type RunsOutputResponse struct {
 	TaskID    int       `json:"task_id"`
-	ProjectID int       `json:"project_id"`
+	ProjectID string    `json:"projectId"`
 	Output    []JSONMap `json:"output"`
 	User      string    `json:"user"`
 }
 
-// GetRunOutput returns output for a specific Semaphore task.
+// GetRunOutput returns output for a specific native task.
 //
 //encore:api auth method=GET path=/api/runs/:id/output
 func (s *Service) GetRunOutput(ctx context.Context, id int, params *RunsOutputParams) (*RunsOutputResponse, error) {
@@ -236,35 +145,27 @@ func (s *Service) GetRunOutput(ctx context.Context, id int, params *RunsOutputPa
 	if err != nil {
 		return nil, err
 	}
-	claims := claimsFromAuthUser(user)
 	if id <= 0 {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid task id").Err()
 	}
-	projectID := s.cfg.DefaultProject
-	if params != nil && strings.TrimSpace(params.ProjectID) != "" {
-		if v, err := strconv.Atoi(strings.TrimSpace(params.ProjectID)); err == nil {
-			projectID = v
-		} else {
-			return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid project_id").Err()
-		}
+	projectKey := ""
+	if params != nil {
+		projectKey = strings.TrimSpace(params.ProjectID)
 	}
-	if projectID == 0 {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("project_id is required").Err()
-	}
-	if err := s.authorizeSemaphoreProjectID(claims, projectID); err != nil {
-		return nil, err
-	}
-	semaphoreCfg, err := semaphoreConfigForUser(s.cfg, claims.Username)
+	project, err := s.resolveProjectForUser(ctx, user, projectKey)
 	if err != nil {
 		return nil, err
 	}
-	payload, err := cachedSemaphoreTaskOutput(semaphoreCfg, projectID, id)
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	output, err := listTaskLogs(ctx, s.db, id, 2000)
 	if err != nil {
 		runErrors.Add(1)
-		log.Printf("fetchSemaphoreTaskOutput: %v", err)
+		log.Printf("listTaskLogs: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to fetch task output").Err()
 	}
-	outputJSON, err := toJSONMapSlice(payload)
+	outputJSON, err := toJSONMapSlice(output)
 	if err != nil {
 		log.Printf("run output encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode task output").Err()
@@ -272,7 +173,7 @@ func (s *Service) GetRunOutput(ctx context.Context, id int, params *RunsOutputPa
 	_ = ctx
 	return &RunsOutputResponse{
 		TaskID:    id,
-		ProjectID: projectID,
+		ProjectID: project.ID,
 		Output:    outputJSON,
 		User:      user.Username,
 	}, nil

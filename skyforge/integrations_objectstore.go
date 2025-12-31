@@ -47,3 +47,11 @@ func deleteTerraformStatePrefix(ctx context.Context, cfg Config, bucket, prefix 
 	}
 	return client.DeletePrefix(ctx, bucket, prefix)
 }
+
+func getTerraformStateObject(ctx context.Context, cfg Config, bucket, key string) ([]byte, error) {
+	client, err := objectStoreClientFor(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return client.GetObject(ctx, bucket, key)
+}
