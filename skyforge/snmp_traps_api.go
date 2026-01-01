@@ -43,9 +43,23 @@ func (s *Service) getSnmpTrapToken(ctx context.Context, username string) (*snmpT
 	}
 	plain, err := s.box.decrypt(enc)
 	if err != nil {
-		return nil, err
+		s.deleteSnmpTrapToken(ctx, username)
+		return nil, nil
 	}
 	return &snmpTrapTokenRecord{Community: strings.TrimSpace(plain), UpdatedAt: updated}, nil
+}
+
+func (s *Service) deleteSnmpTrapToken(ctx context.Context, username string) {
+	if s.db == nil {
+		return
+	}
+	username = strings.ToLower(strings.TrimSpace(username))
+	if username == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	_, _ = s.db.ExecContext(ctx, `DELETE FROM sf_snmp_trap_tokens WHERE username=$1`, username)
 }
 
 func (s *Service) putSnmpTrapToken(ctx context.Context, username, community string) error {

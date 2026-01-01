@@ -47,6 +47,20 @@ func (s *Service) resolveLabsRedirect(params *LabsRedirectParams) (string, error
 		targetName = strings.TrimSpace(params.EveServer)
 		projectID = strings.TrimSpace(params.ProjectID)
 	}
+	server, err := s.selectEveServer(targetName, projectID)
+	if err != nil {
+		return "", err
+	}
+	target := strings.TrimSpace(server.Name)
+	if target == "" {
+		target = "eve-default"
+	}
+	return "/api/skyforge/api/eve/sso?server=" + url.QueryEscape(target), nil
+}
+
+func (s *Service) selectEveServer(targetName, projectID string) (*EveServerConfig, error) {
+	targetName = strings.TrimSpace(targetName)
+	projectID = strings.TrimSpace(projectID)
 	if targetName == "" && projectID != "" {
 		if projects, err := s.projectStore.load(); err == nil {
 			if p := findProjectByKey(projects, projectID); p != nil && strings.TrimSpace(p.EveServer) != "" {
@@ -71,24 +85,9 @@ func (s *Service) resolveLabsRedirect(params *LabsRedirectParams) (string, error
 		}
 	}
 	if selected == nil {
-		return "", errs.B().Code(errs.Unavailable).Msg("no eve-ng servers configured").Err()
+		return nil, errs.B().Code(errs.Unavailable).Msg("no eve-ng servers configured").Err()
 	}
 
 	server := normalizeEveServer(*selected, s.cfg.Labs)
-	web := strings.TrimSpace(server.WebURL)
-	if web == "" {
-		web = strings.TrimSpace(server.APIURL)
-	}
-	if web == "" && strings.TrimSpace(server.SSHHost) != "" {
-		web = "https://" + strings.TrimSpace(server.SSHHost)
-	}
-	web = strings.TrimRight(web, "/")
-	if !strings.HasSuffix(web, "/") {
-		web += "/"
-	}
-	parsed, err := url.Parse(web)
-	if err != nil || parsed == nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return "", errs.B().Code(errs.Unavailable).Msg("invalid eve-ng redirect target").Err()
-	}
-	return web, nil
+	return &server, nil
 }

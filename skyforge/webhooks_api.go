@@ -47,9 +47,23 @@ func (s *Service) getWebhookToken(ctx context.Context, username string) (*webhoo
 	}
 	token, err := s.box.decrypt(tokenEnc)
 	if err != nil {
-		return nil, err
+		s.deleteWebhookToken(ctx, username)
+		return nil, nil
 	}
 	return &webhookTokenRecord{Token: strings.TrimSpace(token), UpdatedAt: updatedAt}, nil
+}
+
+func (s *Service) deleteWebhookToken(ctx context.Context, username string) {
+	if s.db == nil {
+		return
+	}
+	username = strings.ToLower(strings.TrimSpace(username))
+	if username == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	_, _ = s.db.ExecContext(ctx, `DELETE FROM sf_webhook_tokens WHERE username=$1`, username)
 }
 
 func (s *Service) putWebhookToken(ctx context.Context, username, token string) error {
@@ -85,7 +99,7 @@ func generateOpaqueToken(bytes int) (string, error) {
 }
 
 type WebhookTokenResponse struct {
-	Token        string `json:"token"`
+	Token         string `json:"token"`
 	IngestBaseURL string `json:"ingestBaseUrl"`
 	UpdatedAt     string `json:"updatedAt,omitempty"`
 }
@@ -114,7 +128,7 @@ func (s *Service) GetWebhookToken(ctx context.Context) (*WebhookTokenResponse, e
 		rec = &webhookTokenRecord{Token: token, UpdatedAt: time.Now().UTC()}
 	}
 	return &WebhookTokenResponse{
-		Token:        rec.Token,
+		Token:         rec.Token,
 		IngestBaseURL: strings.TrimRight(s.cfg.Labs.PublicURL, "/") + "/hooks/" + rec.Token,
 		UpdatedAt:     rec.UpdatedAt.UTC().Format(time.RFC3339),
 	}, nil
@@ -136,7 +150,7 @@ func (s *Service) RotateWebhookToken(ctx context.Context) (*WebhookTokenResponse
 		return nil, errs.B().Code(errs.Internal).Msg("failed to store token").Err()
 	}
 	return &WebhookTokenResponse{
-		Token:        token,
+		Token:         token,
 		IngestBaseURL: strings.TrimRight(s.cfg.Labs.PublicURL, "/") + "/hooks/" + token,
 		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
 	}, nil
@@ -304,7 +318,8 @@ func subtleConstantTimeEqual(a, b string) bool {
 // WebhookIngestAny receives webhook events via tokenized URLs.
 //
 // Example:
-//   POST https://<hostname>/hooks/<token>/github
+//
+//	POST https://<hostname>/hooks/<token>/github
 //
 //encore:api public raw method=POST path=/hooks/*rest
 func (s *Service) WebhookIngestAny(w http.ResponseWriter, req *http.Request) {
