@@ -1743,6 +1743,228 @@ func deleteProjectAWSStaticCredentials(ctx context.Context, db *sql.DB, projectI
 	return err
 }
 
+type forwardCredentials struct {
+	BaseURL        string
+	Username       string
+	Password       string
+	CollectorID    string
+	CollectorUser  string
+	DeviceUsername string
+	DevicePassword string
+	JumpHost       string
+	JumpUsername   string
+	JumpPrivateKey string
+	JumpCert       string
+	UpdatedAt      time.Time
+}
+
+func getProjectForwardCredentials(ctx context.Context, db *sql.DB, box *secretBox, projectID string) (*forwardCredentials, error) {
+	if db == nil || box == nil {
+		return nil, fmt.Errorf("db is not configured")
+	}
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return nil, fmt.Errorf("project id is required")
+	}
+	var baseURL, username, password sql.NullString
+	var collectorID, collectorUser sql.NullString
+	var deviceUser, devicePass sql.NullString
+	var jumpHost, jumpUser, jumpKey, jumpCert sql.NullString
+	var updatedAt sql.NullTime
+	err := db.QueryRowContext(ctx, `SELECT base_url, username, password,
+  COALESCE(collector_id, ''), COALESCE(collector_username, ''),
+  COALESCE(device_username, ''), COALESCE(device_password, ''),
+  COALESCE(jump_host, ''), COALESCE(jump_username, ''), COALESCE(jump_private_key, ''), COALESCE(jump_cert, ''),
+  updated_at
+FROM sf_project_forward_credentials WHERE project_id=$1`, projectID).Scan(
+		&baseURL,
+		&username,
+		&password,
+		&collectorID,
+		&collectorUser,
+		&deviceUser,
+		&devicePass,
+		&jumpHost,
+		&jumpUser,
+		&jumpKey,
+		&jumpCert,
+		&updatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	baseURLValue, err := box.decrypt(baseURL.String)
+	if err != nil {
+		return nil, err
+	}
+	usernameValue, err := box.decrypt(username.String)
+	if err != nil {
+		return nil, err
+	}
+	passwordValue, err := box.decrypt(password.String)
+	if err != nil {
+		return nil, err
+	}
+	collectorIDValue, err := box.decrypt(collectorID.String)
+	if err != nil {
+		return nil, err
+	}
+	collectorUserValue, err := box.decrypt(collectorUser.String)
+	if err != nil {
+		return nil, err
+	}
+	deviceUserValue, err := box.decrypt(deviceUser.String)
+	if err != nil {
+		return nil, err
+	}
+	devicePassValue, err := box.decrypt(devicePass.String)
+	if err != nil {
+		return nil, err
+	}
+	jumpHostValue, err := box.decrypt(jumpHost.String)
+	if err != nil {
+		return nil, err
+	}
+	jumpUserValue, err := box.decrypt(jumpUser.String)
+	if err != nil {
+		return nil, err
+	}
+	jumpKeyValue, err := box.decrypt(jumpKey.String)
+	if err != nil {
+		return nil, err
+	}
+	jumpCertValue, err := box.decrypt(jumpCert.String)
+	if err != nil {
+		return nil, err
+	}
+	rec := &forwardCredentials{
+		BaseURL:        strings.TrimSpace(baseURLValue),
+		Username:       strings.TrimSpace(usernameValue),
+		Password:       strings.TrimSpace(passwordValue),
+		CollectorID:    strings.TrimSpace(collectorIDValue),
+		CollectorUser:  strings.TrimSpace(collectorUserValue),
+		DeviceUsername: strings.TrimSpace(deviceUserValue),
+		DevicePassword: strings.TrimSpace(devicePassValue),
+		JumpHost:       strings.TrimSpace(jumpHostValue),
+		JumpUsername:   strings.TrimSpace(jumpUserValue),
+		JumpPrivateKey: strings.TrimSpace(jumpKeyValue),
+		JumpCert:       strings.TrimSpace(jumpCertValue),
+	}
+	if updatedAt.Valid {
+		rec.UpdatedAt = updatedAt.Time
+	}
+	return rec, nil
+}
+
+func putProjectForwardCredentials(ctx context.Context, db *sql.DB, box *secretBox, projectID string, rec forwardCredentials) error {
+	if db == nil || box == nil {
+		return fmt.Errorf("db is not configured")
+	}
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return fmt.Errorf("project id is required")
+	}
+	baseURL := strings.TrimSpace(rec.BaseURL)
+	username := strings.TrimSpace(rec.Username)
+	password := strings.TrimSpace(rec.Password)
+	if baseURL == "" || username == "" || password == "" {
+		return fmt.Errorf("baseUrl, username, and password are required")
+	}
+	encBaseURL, err := encryptIfPlain(box, baseURL)
+	if err != nil {
+		return err
+	}
+	encUser, err := encryptIfPlain(box, username)
+	if err != nil {
+		return err
+	}
+	encPass, err := encryptIfPlain(box, password)
+	if err != nil {
+		return err
+	}
+	encCollectorID, err := encryptIfPlain(box, rec.CollectorID)
+	if err != nil {
+		return err
+	}
+	encCollectorUser, err := encryptIfPlain(box, rec.CollectorUser)
+	if err != nil {
+		return err
+	}
+	encDeviceUser, err := encryptIfPlain(box, rec.DeviceUsername)
+	if err != nil {
+		return err
+	}
+	encDevicePass, err := encryptIfPlain(box, rec.DevicePassword)
+	if err != nil {
+		return err
+	}
+	encJumpHost, err := encryptIfPlain(box, rec.JumpHost)
+	if err != nil {
+		return err
+	}
+	encJumpUser, err := encryptIfPlain(box, rec.JumpUsername)
+	if err != nil {
+		return err
+	}
+	encJumpKey, err := encryptIfPlain(box, rec.JumpPrivateKey)
+	if err != nil {
+		return err
+	}
+	encJumpCert, err := encryptIfPlain(box, rec.JumpCert)
+	if err != nil {
+		return err
+	}
+	_, err = db.ExecContext(ctx, `INSERT INTO sf_project_forward_credentials (
+  project_id, base_url, username, password,
+  collector_id, collector_username,
+  device_username, device_password,
+  jump_host, jump_username, jump_private_key, jump_cert,
+  updated_at
+) VALUES ($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),NULLIF($12,''),now())
+ON CONFLICT (project_id) DO UPDATE SET
+  base_url=excluded.base_url,
+  username=excluded.username,
+  password=excluded.password,
+  collector_id=excluded.collector_id,
+  collector_username=excluded.collector_username,
+  device_username=excluded.device_username,
+  device_password=excluded.device_password,
+  jump_host=excluded.jump_host,
+  jump_username=excluded.jump_username,
+  jump_private_key=excluded.jump_private_key,
+  jump_cert=excluded.jump_cert,
+  updated_at=now()`,
+		projectID,
+		encBaseURL,
+		encUser,
+		encPass,
+		encCollectorID,
+		encCollectorUser,
+		encDeviceUser,
+		encDevicePass,
+		encJumpHost,
+		encJumpUser,
+		encJumpKey,
+		encJumpCert,
+	)
+	return err
+}
+
+func deleteProjectForwardCredentials(ctx context.Context, db *sql.DB, projectID string) error {
+	if db == nil {
+		return fmt.Errorf("db is not configured")
+	}
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return nil
+	}
+	_, err := db.ExecContext(ctx, `DELETE FROM sf_project_forward_credentials WHERE project_id=$1`, projectID)
+	return err
+}
+
 func getProjectAzureCredentials(ctx context.Context, db *sql.DB, box *secretBox, projectID string) (*azureServicePrincipal, error) {
 	if db == nil || box == nil {
 		return nil, fmt.Errorf("db is not configured")

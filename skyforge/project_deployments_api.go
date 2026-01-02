@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"path"
 	"regexp"
 	"sort"
@@ -63,6 +64,10 @@ type ProjectDeploymentActionResponse struct {
 	Run        JSONMap            `json:"run,omitempty"`
 }
 
+type ProjectDeploymentDeleteRequest struct {
+	ForwardDelete bool `query:"forward_delete" encore:"optional"`
+}
+
 type ProjectDeploymentInfoResponse struct {
 	ProjectID    string             `json:"projectId"`
 	Deployment   *ProjectDeployment `json:"deployment"`
@@ -71,6 +76,8 @@ type ProjectDeploymentInfoResponse struct {
 	Status       string             `json:"status,omitempty"`
 	Log          string             `json:"log,omitempty"`
 	Note         string             `json:"note,omitempty"`
+	ForwardID    string             `json:"forwardNetworkId,omitempty"`
+	ForwardURL   string             `json:"forwardSnapshotUrl,omitempty"`
 	Netlab       *NetlabInfo        `json:"netlab,omitempty"`
 	Labpp        *LabppInfo         `json:"labpp,omitempty"`
 	Containerlab *ContainerlabInfo  `json:"containerlab,omitempty"`
@@ -404,7 +411,19 @@ func (s *Service) CreateProjectDeployment(ctx context.Context, id string, req *P
 		}
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to create deployment").Err()
 	}
-	return s.getProjectDeployment(ctx, pc.project.ID, deploymentID)
+	dep, err := s.getProjectDeployment(ctx, pc.project.ID, deploymentID)
+	if err != nil {
+		return nil, err
+	}
+	if dep != nil && (typ == "netlab" || typ == "labpp") {
+		if _, err := s.ensureForwardNetworkForDeployment(ctx, pc, dep); err != nil {
+			log.Printf("forward network create: %v", err)
+			_, _ = s.db.ExecContext(ctx, `DELETE FROM sf_deployments WHERE project_id=$1 AND id=$2`, pc.project.ID, deploymentID)
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to create Forward network").Err()
+		}
+		return s.getProjectDeployment(ctx, pc.project.ID, deploymentID)
+	}
+	return dep, nil
 }
 
 // UpdateProjectDeployment updates an existing deployment definition.
@@ -473,7 +492,7 @@ func (s *Service) UpdateProjectDeployment(ctx context.Context, id, deploymentID 
 // DeleteProjectDeployment removes a deployment definition from Skyforge.
 //
 //encore:api auth method=DELETE path=/api/workspaces/:id/deployments/:deploymentID
-func (s *Service) DeleteProjectDeployment(ctx context.Context, id, deploymentID string) (*ProjectDeploymentActionResponse, error) {
+func (s *Service) DeleteProjectDeployment(ctx context.Context, id, deploymentID string, req *ProjectDeploymentDeleteRequest) (*ProjectDeploymentActionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -491,6 +510,30 @@ func (s *Service) DeleteProjectDeployment(ctx context.Context, id, deploymentID 
 	existing, err := s.getProjectDeployment(ctx, pc.project.ID, deploymentID)
 	if err != nil {
 		return nil, err
+	}
+	if req != nil && req.ForwardDelete {
+		cfgAny, _ := fromJSONMap(existing.Config)
+		if cfgAny == nil {
+			cfgAny = map[string]any{}
+		}
+		if raw, ok := cfgAny[forwardNetworkIDKey]; ok {
+			networkID := strings.TrimSpace(fmt.Sprintf("%v", raw))
+			if networkID != "" {
+				forwardCfg, err := s.forwardConfigForProject(ctx, pc.project.ID)
+				if err != nil {
+					return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward config").Err()
+				}
+				if forwardCfg != nil {
+					client, err := newForwardClient(*forwardCfg)
+					if err != nil {
+						return nil, errs.B().Code(errs.Unavailable).Msg("failed to init Forward client").Err()
+					}
+					if err := forwardDeleteNetwork(ctx, client, networkID); err != nil {
+						return nil, errs.B().Code(errs.Unavailable).Msg("failed to delete Forward network").Err()
+					}
+				}
+			}
+		}
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
@@ -875,11 +918,33 @@ func (s *Service) GetProjectDeploymentInfo(ctx context.Context, id, deploymentID
 	if cfgAny == nil {
 		cfgAny = map[string]any{}
 	}
+	getString := func(key string) string {
+		raw, ok := cfgAny[key]
+		if !ok {
+			return ""
+		}
+		if v, ok := raw.(string); ok {
+			return strings.TrimSpace(v)
+		}
+		return strings.TrimSpace(fmt.Sprintf("%v", raw))
+	}
+	if forwardNetworkID := getString(forwardNetworkIDKey); forwardNetworkID != "" {
+		resp.ForwardID = forwardNetworkID
+		if forwardCfg, err := s.forwardConfigForProject(ctx, pc.project.ID); err == nil && forwardCfg != nil {
+			baseURL := strings.TrimSpace(forwardCfg.BaseURL)
+			if baseURL == "" {
+				baseURL = defaultForwardBaseURL
+			}
+			if normalized, err := normalizeForwardBaseURL(baseURL); err == nil {
+				baseURL = normalized
+			}
+			resp.ForwardURL = fmt.Sprintf("%s/?/networkId=%s", strings.TrimRight(baseURL, "/"), url.QueryEscape(forwardNetworkID))
+		}
+	}
 
 	switch dep.Type {
 	case "netlab":
-		netlabServer, _ := cfgAny["netlabServer"].(string)
-		netlabServer = strings.TrimSpace(netlabServer)
+		netlabServer := getString("netlabServer")
 		if netlabServer == "" {
 			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
 		}
@@ -959,7 +1024,15 @@ func (s *Service) GetProjectDeploymentInfo(ctx context.Context, id, deploymentID
 			MultilabID: multilabNumericID,
 			APIURL:     apiURL,
 		}
-
+		if strings.TrimSpace(resp.Log) != "" {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+				defer cancel()
+				if err := s.syncForwardNetlabDevices(ctx, pc, dep, resp.Log); err != nil {
+					log.Printf("forward netlab sync: %v", err)
+				}
+			}()
+		}
 		return resp, nil
 	case "labpp":
 		template, _ := cfgAny["template"].(string)
