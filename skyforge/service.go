@@ -2411,15 +2411,19 @@ func readFileSecret(path string) (string, error) {
 func openSkyforgeDB(cfg Config) (*sql.DB, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	explicitDBConfigured := strings.TrimSpace(cfg.DBHost) != "" &&
+		strings.TrimSpace(cfg.DBName) != "" &&
+		strings.TrimSpace(cfg.DBUser) != ""
+	if explicitDBConfigured {
+		return openSkyforgeExplicitDB(cfg)
+	}
 	if db, err := openSkyforgeEncoreDB(ctx); err == nil {
 		return db, nil
-	} else {
-		rlog.Warn("Encore database unavailable, falling back to explicit configuration", "error", err)
 	}
+	return nil, fmt.Errorf("missing SKYFORGE_DB_HOST/NAME/USER")
+}
 
-	if strings.TrimSpace(cfg.DBHost) == "" || strings.TrimSpace(cfg.DBName) == "" || strings.TrimSpace(cfg.DBUser) == "" {
-		return nil, fmt.Errorf("missing SKYFORGE_DB_HOST/NAME/USER")
-	}
+func openSkyforgeExplicitDB(cfg Config) (*sql.DB, error) {
 	pass := strings.TrimSpace(cfg.DBPassword)
 	if pass == "" && strings.TrimSpace(cfg.DBPasswordFile) != "" {
 		fromFile, err := readFileSecret(cfg.DBPasswordFile)

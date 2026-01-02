@@ -66,14 +66,23 @@ func netlabCredentialForDevice(device, image string) (netlabDeviceCredential, bo
 	if device == "" && image == "" {
 		return netlabDeviceCredential{}, false
 	}
+	isValid := func(cred netlabDeviceCredential) bool {
+		return strings.TrimSpace(cred.Username) != "" && strings.TrimSpace(cred.Password) != ""
+	}
 	for _, set := range netlabDefaults.Sets {
 		if set.Device != "" && strings.EqualFold(set.Device, device) && len(set.Credentials) > 0 {
-			return set.Credentials[0], true
+			if isValid(set.Credentials[0]) {
+				return set.Credentials[0], true
+			}
+			return netlabDeviceCredential{}, false
 		}
 	}
 	for _, set := range netlabDefaults.Sets {
 		if set.ImagePrefix != "" && strings.HasPrefix(image, strings.ToLower(set.ImagePrefix)) && len(set.Credentials) > 0 {
-			return set.Credentials[0], true
+			if isValid(set.Credentials[0]) {
+				return set.Credentials[0], true
+			}
+			return netlabDeviceCredential{}, false
 		}
 	}
 	return netlabDeviceCredential{}, false
