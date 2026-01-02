@@ -102,7 +102,8 @@ func parseNetlabStatusOutput(logText string) []netlabStatusDevice {
 		return nil
 	}
 	rows := []netlabStatusDevice{}
-	lines := strings.Split(logText, "\n")
+	cleaned := stripANSICodes(logText)
+	lines := strings.Split(cleaned, "\n")
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if !strings.HasPrefix(trimmed, "│") {
@@ -140,6 +141,31 @@ func parseNetlabStatusOutput(logText string) []netlabStatusDevice {
 		rows = append(rows, row)
 	}
 	return rows
+}
+
+func stripANSICodes(value string) string {
+	if value == "" {
+		return value
+	}
+	var b strings.Builder
+	b.Grow(len(value))
+	inEscape := false
+	for i := 0; i < len(value); i++ {
+		ch := value[i]
+		if inEscape {
+			// ANSI escape sequences end in a letter.
+			if (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') {
+				inEscape = false
+			}
+			continue
+		}
+		if ch == 0x1b {
+			inEscape = true
+			continue
+		}
+		b.WriteByte(ch)
+	}
+	return b.String()
 }
 
 func (s *Service) forwardConfigForProject(ctx context.Context, projectID string) (*forwardCredentials, error) {
@@ -334,6 +360,7 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, pc *projectConte
 		return nil
 	}
 	jumpServerID := getString(forwardJumpServerIDKey)
+	defaultCliCredentialID := getString(forwardCliCredentialIDKey)
 	credentialIDsByDevice := map[string]string{}
 	if raw, ok := cfgAny[forwardCliCredentialMap]; ok {
 		if parsed, ok := raw.(map[string]any); ok {
@@ -364,12 +391,15 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, pc *projectConte
 		}
 		deviceKey := strings.ToLower(strings.TrimSpace(row.Device))
 		cred, ok := netlabCredentialForDevice(row.Device, row.Image)
-		if !ok {
+		if !ok && defaultCliCredentialID == "" {
 			continue
 		}
 		cliCredentialID := ""
 		if deviceKey != "" {
 			cliCredentialID = credentialIDsByDevice[deviceKey]
+		}
+		if cliCredentialID == "" {
+			cliCredentialID = defaultCliCredentialID
 		}
 		if cliCredentialID == "" && strings.TrimSpace(cred.Username) != "" {
 			created, err := forwardCreateCliCredential(ctx, client, networkID, cred.Username, cred.Password)
