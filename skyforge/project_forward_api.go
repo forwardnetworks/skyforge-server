@@ -37,6 +37,13 @@ type ProjectForwardCollectorsResponse struct {
 	Collectors []ProjectForwardCollector `json:"collectors"`
 }
 
+type ProjectForwardCollectorCreateResponse struct {
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	Username         string `json:"username"`
+	AuthorizationKey string `json:"authorizationKey"`
+}
+
 const defaultForwardBaseURL = "https://fwd.app"
 
 // GetProjectForwardConfig returns Forward Networks credentials for a workspace.
@@ -231,6 +238,46 @@ func (s *Service) GetProjectForwardCollectors(ctx context.Context, id string) (*
 		})
 	}
 	return &ProjectForwardCollectorsResponse{Collectors: out}, nil
+}
+
+// CreateProjectForwardCollector creates a Forward collector for the workspace.
+//
+//encore:api auth method=POST path=/api/workspaces/:id/integrations/forward/collectors
+func (s *Service) CreateProjectForwardCollector(ctx context.Context, id string) (*ProjectForwardCollectorCreateResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	pc, err := s.projectContextForUser(user, id)
+	if err != nil {
+		return nil, err
+	}
+	if pc.access != "admin" && pc.access != "owner" {
+		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
+	}
+
+	forwardCfg, err := s.forwardConfigForProject(ctx, pc.project.ID)
+	if err != nil || forwardCfg == nil {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("Forward credentials required").Err()
+	}
+	client, err := newForwardClient(*forwardCfg)
+	if err != nil {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid Forward config").Err()
+	}
+	name := strings.TrimSpace(pc.project.Slug)
+	if name == "" {
+		name = strings.TrimSpace(pc.project.ID)
+	}
+	collector, err := forwardCreateCollector(ctx, client, name)
+	if err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to create Forward collector").Err()
+	}
+	return &ProjectForwardCollectorCreateResponse{
+		ID:               strings.TrimSpace(collector.ID),
+		Name:             strings.TrimSpace(collector.Name),
+		Username:         strings.TrimSpace(collector.Username),
+		AuthorizationKey: strings.TrimSpace(collector.AuthorizationKey),
+	}, nil
 }
 
 // PostProjectForwardConfig stores Forward Networks credentials for a workspace (POST fallback).

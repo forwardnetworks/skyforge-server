@@ -38,6 +38,13 @@ type forwardCollector struct {
 	Username string `json:"username"`
 }
 
+type forwardCollectorCreateResponse struct {
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	Username         string `json:"username"`
+	AuthorizationKey string `json:"authorizationKey"`
+}
+
 type forwardCollectorStatus struct {
 	IsSet bool `json:"isSet"`
 }
@@ -167,6 +174,25 @@ func forwardListCollectors(ctx context.Context, c *forwardClient) ([]forwardColl
 		}
 	}
 	return collectors, nil
+}
+
+func forwardCreateCollector(ctx context.Context, c *forwardClient, name string) (*forwardCollectorCreateResponse, error) {
+	payload := map[string]string{"collectorName": strings.TrimSpace(name)}
+	resp, body, err := c.doJSON(ctx, http.MethodPost, "/api/collectors", nil, payload)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("forward create collector failed: %s", strings.TrimSpace(string(body)))
+	}
+	var out forwardCollectorCreateResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(out.ID) == "" || strings.TrimSpace(out.AuthorizationKey) == "" {
+		return nil, fmt.Errorf("forward create collector returned empty credentials")
+	}
+	return &out, nil
 }
 
 func forwardGetCollectorStatus(ctx context.Context, c *forwardClient, networkID string) (*forwardCollectorStatus, error) {
