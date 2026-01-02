@@ -184,12 +184,6 @@ func (s *Service) forwardConfigForProject(ctx context.Context, projectID string)
 	if strings.TrimSpace(rec.BaseURL) == "" {
 		rec.BaseURL = defaultForwardBaseURL
 	}
-	rec.DeviceUsername = ""
-	rec.DevicePassword = ""
-	rec.JumpHost = ""
-	rec.JumpUsername = ""
-	rec.JumpPrivateKey = ""
-	rec.JumpCert = ""
 	if strings.TrimSpace(rec.Username) == "" || strings.TrimSpace(rec.Password) == "" {
 		return nil, nil
 	}

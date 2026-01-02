@@ -16,6 +16,8 @@ type ProjectForwardConfigResponse struct {
 	Username    string `json:"username,omitempty"`
 	CollectorID string `json:"collectorId,omitempty"`
 	HasPassword bool   `json:"hasPassword"`
+	HasJumpKey  bool   `json:"hasJumpPrivateKey"`
+	HasJumpCert bool   `json:"hasJumpCert"`
 	UpdatedAt   string `json:"updatedAt,omitempty"`
 }
 
@@ -25,6 +27,8 @@ type ProjectForwardConfigRequest struct {
 	Password          string `json:"password"`
 	CollectorID       string `json:"collectorId"`
 	CollectorUsername string `json:"collectorUsername"`
+	JumpPrivateKey    string `json:"jumpPrivateKey"`
+	JumpCert          string `json:"jumpCert"`
 }
 
 type ProjectForwardCollector struct {
@@ -77,6 +81,8 @@ func (s *Service) GetProjectForwardConfig(ctx context.Context, id string) (*Proj
 			Configured:  false,
 			BaseURL:     defaultForwardBaseURL,
 			HasPassword: false,
+			HasJumpKey:  false,
+			HasJumpCert: false,
 		}, nil
 	}
 	updatedAt := ""
@@ -93,6 +99,8 @@ func (s *Service) GetProjectForwardConfig(ctx context.Context, id string) (*Proj
 		Username:    rec.Username,
 		CollectorID: rec.CollectorID,
 		HasPassword: rec.Password != "",
+		HasJumpKey:  strings.TrimSpace(rec.JumpPrivateKey) != "",
+		HasJumpCert: strings.TrimSpace(rec.JumpCert) != "",
 		UpdatedAt:   updatedAt,
 	}, nil
 }
@@ -127,6 +135,8 @@ func (s *Service) PutProjectForwardConfig(ctx context.Context, id string, req *P
 	password := strings.TrimSpace(req.Password)
 	collectorID := strings.TrimSpace(req.CollectorID)
 	collectorUser := strings.TrimSpace(req.CollectorUsername)
+	jumpKey := strings.TrimSpace(req.JumpPrivateKey)
+	jumpCert := strings.TrimSpace(req.JumpCert)
 
 	box := newSecretBox(s.cfg.SessionSecret)
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -145,6 +155,14 @@ func (s *Service) PutProjectForwardConfig(ctx context.Context, id string, req *P
 	}
 	if password == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("password is required").Err()
+	}
+	if current != nil {
+		if jumpKey == "" {
+			jumpKey = current.JumpPrivateKey
+		}
+		if jumpCert == "" {
+			jumpCert = current.JumpCert
+		}
 	}
 
 	cfg := forwardCredentials{
@@ -173,11 +191,13 @@ func (s *Service) PutProjectForwardConfig(ctx context.Context, id string, req *P
 	}
 
 	if err := putProjectForwardCredentials(ctx, s.db, box, pc.project.ID, forwardCredentials{
-		BaseURL:       baseURL,
-		Username:      username,
-		Password:      password,
-		CollectorID:   collectorID,
-		CollectorUser: collectorUser,
+		BaseURL:        baseURL,
+		Username:       username,
+		Password:       password,
+		CollectorID:    collectorID,
+		CollectorUser:  collectorUser,
+		JumpPrivateKey: jumpKey,
+		JumpCert:       jumpCert,
 	}); err != nil {
 		log.Printf("forward put: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to store Forward config").Err()
@@ -197,6 +217,8 @@ func (s *Service) PutProjectForwardConfig(ctx context.Context, id string, req *P
 		Username:    username,
 		CollectorID: collectorID,
 		HasPassword: true,
+		HasJumpKey:  jumpKey != "",
+		HasJumpCert: jumpCert != "",
 		UpdatedAt:   time.Now().UTC().Format(time.RFC3339),
 	}, nil
 }
