@@ -275,9 +275,9 @@ func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *pro
 	jumpKey := strings.TrimSpace(forwardCfg.JumpPrivateKey)
 	jumpUser := strings.TrimSpace(forwardCfg.JumpUsername)
 	jumpCert := strings.TrimSpace(forwardCfg.JumpCert)
-	if dep.Type == "netlab" {
-		userName := strings.TrimSpace(pc.claims.Username)
-		if userName != "" {
+	useUserJump := strings.TrimSpace(forwardCfg.JumpPrivateKey) != "" || strings.TrimSpace(forwardCfg.JumpCert) != ""
+	if dep.Type == "netlab" && useUserJump {
+		if userName := strings.TrimSpace(pc.claims.Username); userName != "" {
 			jumpUser = userName
 		}
 	}
@@ -288,7 +288,7 @@ func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *pro
 				if jumpHost == "" {
 					jumpHost = strings.TrimSpace(server.SSHHost)
 				}
-				if jumpUser == "" {
+				if jumpUser == "" || !useUserJump {
 					jumpUser = strings.TrimSpace(server.SSHUser)
 				}
 				if jumpKey == "" && server.SSHKeyFile != "" {
