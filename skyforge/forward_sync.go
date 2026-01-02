@@ -8,12 +8,15 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	_ "embed"
 )
 
 const (
 	forwardNetworkIDKey       = "forwardNetworkId"
 	forwardNetworkNameKey     = "forwardNetworkName"
 	forwardCliCredentialIDKey = "forwardCliCredentialId"
+	forwardCliCredentialMap   = "forwardCliCredentialIdsByDevice"
 	forwardJumpServerIDKey    = "forwardJumpServerId"
 )
 
@@ -21,6 +24,60 @@ const (
 	defaultNetlabDeviceUsername = "admin"
 	defaultNetlabDevicePassword = "admin"
 )
+
+//go:embed netlab_device_defaults.json
+var netlabDeviceDefaultsJSON []byte
+
+type netlabDeviceCredential struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+type netlabDeviceCredentialSet struct {
+	Device      string                   `json:"device,omitempty"`
+	ImagePrefix string                   `json:"image_prefix,omitempty"`
+	Credentials []netlabDeviceCredential `json:"credentials"`
+}
+
+type netlabDeviceDefaults struct {
+	Source    string                      `json:"source"`
+	Generated string                      `json:"generated_at"`
+	Sets      []netlabDeviceCredentialSet `json:"sets"`
+	Fallback  []netlabDeviceCredential    `json:"fallback"`
+}
+
+var netlabDefaults = loadNetlabDeviceDefaults()
+
+func loadNetlabDeviceDefaults() netlabDeviceDefaults {
+	var catalog netlabDeviceDefaults
+	if len(netlabDeviceDefaultsJSON) == 0 {
+		return catalog
+	}
+	if err := json.Unmarshal(netlabDeviceDefaultsJSON, &catalog); err != nil {
+		log.Printf("netlab defaults: failed to parse catalog: %v", err)
+		return netlabDeviceDefaults{}
+	}
+	return catalog
+}
+
+func netlabCredentialForDevice(device, image string) (netlabDeviceCredential, bool) {
+	device = strings.ToLower(strings.TrimSpace(device))
+	image = strings.ToLower(strings.TrimSpace(image))
+	if device == "" && image == "" {
+		return netlabDeviceCredential{}, false
+	}
+	for _, set := range netlabDefaults.Sets {
+		if set.Device != "" && strings.EqualFold(set.Device, device) && len(set.Credentials) > 0 {
+			return set.Credentials[0], true
+		}
+	}
+	for _, set := range netlabDefaults.Sets {
+		if set.ImagePrefix != "" && strings.HasPrefix(image, strings.ToLower(set.ImagePrefix)) && len(set.Credentials) > 0 {
+			return set.Credentials[0], true
+		}
+	}
+	return netlabDeviceCredential{}, false
+}
 
 type netlabStatusDevice struct {
 	Node     string
@@ -267,11 +324,21 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, pc *projectConte
 	if networkID == "" {
 		return nil
 	}
-	cliCredentialID := getString(forwardCliCredentialIDKey)
 	jumpServerID := getString(forwardJumpServerIDKey)
+	credentialIDsByDevice := map[string]string{}
+	if raw, ok := cfgAny[forwardCliCredentialMap]; ok {
+		if parsed, ok := raw.(map[string]any); ok {
+			for key, value := range parsed {
+				if id, ok := value.(string); ok && strings.TrimSpace(id) != "" {
+					credentialIDsByDevice[strings.ToLower(strings.TrimSpace(key))] = strings.TrimSpace(id)
+				}
+			}
+		}
+	}
 
 	devices := []forwardClassicDevice{}
 	seen := map[string]bool{}
+	changed := false
 	for _, row := range parseNetlabStatusOutput(logText) {
 		mgmt := strings.TrimSpace(row.MgmtIPv4)
 		if mgmt == "" || mgmt == "—" {
@@ -285,6 +352,31 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, pc *projectConte
 		name := strings.TrimSpace(row.Node)
 		if name == "" {
 			name = mgmt
+		}
+		deviceKey := strings.ToLower(strings.TrimSpace(row.Device))
+		cred, ok := netlabCredentialForDevice(row.Device, row.Image)
+		if !ok {
+			continue
+		}
+		cliCredentialID := ""
+		if deviceKey != "" {
+			cliCredentialID = credentialIDsByDevice[deviceKey]
+		}
+		if cliCredentialID == "" && strings.TrimSpace(cred.Username) != "" {
+			created, err := forwardCreateCliCredential(ctx, client, networkID, cred.Username, cred.Password)
+			if err != nil {
+				if strings.Contains(err.Error(), "No collector configured") {
+					log.Printf("forward cli credential skipped: %v", err)
+				} else {
+					return err
+				}
+			} else {
+				cliCredentialID = created.ID
+				if deviceKey != "" {
+					credentialIDsByDevice[deviceKey] = cliCredentialID
+					changed = true
+				}
+			}
 		}
 		devices = append(devices, forwardClassicDevice{
 			Name:            name,
@@ -303,6 +395,12 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, pc *projectConte
 	}
 	if err := forwardStartCollection(ctx, client, networkID); err != nil {
 		log.Printf("forward start collection: %v", err)
+	}
+	if changed {
+		cfgAny[forwardCliCredentialMap] = credentialIDsByDevice
+		if err := s.updateDeploymentConfig(ctx, pc.project.ID, dep.ID, cfgAny); err != nil {
+			return err
+		}
 	}
 	return nil
 }
