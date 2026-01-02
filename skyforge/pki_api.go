@@ -19,6 +19,7 @@ import (
 
 	"encore.dev/beta/errs"
 	"github.com/google/uuid"
+	"golang.org/x/crypto/ssh"
 )
 
 type PKIRootResponse struct {
@@ -67,6 +68,51 @@ type PKICertDownloadResponse struct {
 	PEM       string `json:"pem"`
 	KeyPEM    string `json:"keyPem"`
 	BundlePEM string `json:"bundlePem"`
+}
+
+type PKISSHRootResponse struct {
+	PublicKey   string `json:"publicKey"`
+	Fingerprint string `json:"fingerprint"`
+	KeyType     string `json:"keyType"`
+}
+
+type PKISSHIssueRequest struct {
+	Principals []string `json:"principals,omitempty"`
+	ProjectID  string   `json:"projectId,omitempty"`
+	TTLDays    int      `json:"ttlDays,omitempty"`
+}
+
+type PKISSHIssueResponse struct {
+	ID          string   `json:"id"`
+	Principals  []string `json:"principals"`
+	PublicKey   string   `json:"publicKey"`
+	PrivateKey  string   `json:"privateKey"`
+	Certificate string   `json:"certificate"`
+	IssuedAt    string   `json:"issuedAt"`
+	ExpiresAt   string   `json:"expiresAt"`
+	ProjectID   string   `json:"projectId,omitempty"`
+	Fingerprint string   `json:"fingerprint"`
+}
+
+type PKISSHCertSummary struct {
+	ID          string   `json:"id"`
+	Principals  []string `json:"principals"`
+	ProjectID   string   `json:"projectId,omitempty"`
+	IssuedAt    string   `json:"issuedAt"`
+	ExpiresAt   string   `json:"expiresAt"`
+	RevokedAt   string   `json:"revokedAt,omitempty"`
+	Fingerprint string   `json:"fingerprint"`
+}
+
+type PKISSHCertsResponse struct {
+	Certs []PKISSHCertSummary `json:"certs"`
+}
+
+type PKISSHCertDownloadResponse struct {
+	ID          string `json:"id"`
+	PublicKey   string `json:"publicKey"`
+	PrivateKey  string `json:"privateKey"`
+	Certificate string `json:"certificate"`
 }
 
 // GetPKIRoot returns the root CA certificate.
@@ -376,6 +422,295 @@ func (s *Service) RevokePKICert(ctx context.Context, id string) (*PKICertSummary
 	return resp, nil
 }
 
+// GetPKISSHRoot returns the SSH CA public key.
+//
+//encore:api auth method=GET path=/api/pki/ssh/root
+func (s *Service) GetPKISSHRoot(ctx context.Context) (*PKISSHRootResponse, error) {
+	_ = ctx
+	signer, pubKey, err := loadSSHCAConfig(s.cfg)
+	if err != nil {
+		return nil, err
+	}
+	publicKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(pubKey)))
+	return &PKISSHRootResponse{
+		PublicKey:   publicKey,
+		Fingerprint: ssh.FingerprintSHA256(pubKey),
+		KeyType:     signer.PublicKey().Type(),
+	}, nil
+}
+
+// IssuePKISSHCert issues an SSH user certificate signed by the Skyforge SSH CA.
+//
+//encore:api auth method=POST path=/api/pki/ssh/issue
+func (s *Service) IssuePKISSHCert(ctx context.Context, req *PKISSHIssueRequest) (*PKISSHIssueResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	if s.db == nil || s.box == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	if req == nil {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid payload").Err()
+	}
+	projectID := strings.TrimSpace(req.ProjectID)
+	if projectID != "" {
+		if _, err := s.projectContextForUser(user, projectID); err != nil {
+			return nil, err
+		}
+	}
+	principals := normalizePrincipals(user.Username, req.Principals)
+	if len(principals) == 0 {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("principal is required").Err()
+	}
+
+	caSigner, _, err := loadSSHCAConfig(s.cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	ttlDays := s.cfg.SSHCADefaultDays
+	if req.TTLDays > 0 {
+		ttlDays = req.TTLDays
+	}
+	if ttlDays < 1 || ttlDays > 365 {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("ttlDays must be between 1 and 365").Err()
+	}
+
+	now := time.Now().UTC()
+	notAfter := now.Add(time.Duration(ttlDays) * 24 * time.Hour)
+
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return nil, errs.B().Code(errs.Internal).Msg("failed to generate serial").Err()
+	}
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, errs.B().Code(errs.Internal).Msg("failed to generate key").Err()
+	}
+	pubKey, err := ssh.NewPublicKey(&key.PublicKey)
+	if err != nil {
+		return nil, errs.B().Code(errs.Internal).Msg("failed to generate public key").Err()
+	}
+
+	cert := &ssh.Certificate{
+		Key:             pubKey,
+		Serial:          serial.Uint64(),
+		CertType:        ssh.UserCert,
+		KeyId:           strings.Join(principals, ","),
+		ValidPrincipals: principals,
+		ValidAfter:      uint64(now.Add(-2 * time.Minute).Unix()),
+		ValidBefore:     uint64(notAfter.Unix()),
+		Permissions: ssh.Permissions{
+			Extensions: map[string]string{
+				"permit-pty":             "",
+				"permit-agent-forwarding": "",
+				"permit-port-forwarding":  "",
+				"permit-user-rc":          "",
+				"permit-X11-forwarding":   "",
+			},
+		},
+	}
+	if err := cert.SignCert(rand.Reader, caSigner); err != nil {
+		return nil, errs.B().Code(errs.Internal).Msg("failed to sign SSH certificate").Err()
+	}
+
+	publicKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(pubKey)))
+	certText := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(cert)))
+	privateKey := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	if privateKey == nil {
+		return nil, errs.B().Code(errs.Internal).Msg("failed to encode SSH key").Err()
+	}
+
+	encKey, err := encryptIfPlain(s.box, string(privateKey))
+	if err != nil {
+		return nil, errs.B().Code(errs.Internal).Msg("failed to encrypt key").Err()
+	}
+	principalsJSON, _ := json.Marshal(principals)
+	certID := uuid.NewString()
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	_, err = s.db.ExecContext(ctx, `INSERT INTO sf_pki_ssh_certs (
+  id, username, project_id, principals, public_key, cert, key_pem, expires_at
+) VALUES ($1,$2,NULLIF($3,''),$4,$5,$6,$7,$8)`,
+		certID, strings.ToLower(strings.TrimSpace(user.Username)), projectID, principalsJSON, publicKey, certText, encKey, notAfter)
+	if err != nil {
+		log.Printf("pki ssh cert insert: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to store SSH certificate").Err()
+	}
+
+	return &PKISSHIssueResponse{
+		ID:          certID,
+		Principals:  principals,
+		PublicKey:   publicKey,
+		PrivateKey:  string(privateKey),
+		Certificate: certText,
+		IssuedAt:    now.Format(time.RFC3339),
+		ExpiresAt:   notAfter.Format(time.RFC3339),
+		ProjectID:   projectID,
+		Fingerprint: ssh.FingerprintSHA256(cert),
+	}, nil
+}
+
+// ListPKISSHCerts lists issued SSH certificates for the current user.
+//
+//encore:api auth method=GET path=/api/pki/ssh/certs
+func (s *Service) ListPKISSHCerts(ctx context.Context) (*PKISSHCertsResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	username := strings.ToLower(strings.TrimSpace(user.Username))
+	rows, err := s.db.QueryContext(ctx, `SELECT id, principals, project_id, issued_at, expires_at, revoked_at, cert
+FROM sf_pki_ssh_certs
+WHERE username=$1
+ORDER BY issued_at DESC`, username)
+	if err != nil {
+		log.Printf("pki ssh certs list: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to query SSH certificates").Err()
+	}
+	defer rows.Close()
+
+	certs := make([]PKISSHCertSummary, 0, 32)
+	for rows.Next() {
+		var (
+			id, certText string
+			principalsRaw []byte
+			projectID     sql.NullString
+			issuedAt      time.Time
+			expiresAt     time.Time
+			revokedAt     sql.NullTime
+		)
+		if err := rows.Scan(&id, &principalsRaw, &projectID, &issuedAt, &expiresAt, &revokedAt, &certText); err != nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to decode SSH certificates").Err()
+		}
+		var principals []string
+		_ = json.Unmarshal(principalsRaw, &principals)
+		fingerprint := ""
+		if parsed, _, _, _, err := ssh.ParseAuthorizedKey([]byte(certText)); err == nil {
+			fingerprint = ssh.FingerprintSHA256(parsed)
+		}
+		entry := PKISSHCertSummary{
+			ID:          id,
+			Principals:  principals,
+			ProjectID:   projectID.String,
+			IssuedAt:    issuedAt.UTC().Format(time.RFC3339),
+			ExpiresAt:   expiresAt.UTC().Format(time.RFC3339),
+			Fingerprint: fingerprint,
+		}
+		if revokedAt.Valid {
+			entry.RevokedAt = revokedAt.Time.UTC().Format(time.RFC3339)
+		}
+		certs = append(certs, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to query SSH certificates").Err()
+	}
+	return &PKISSHCertsResponse{Certs: certs}, nil
+}
+
+// DownloadPKISSHCert returns the SSH certificate + key bundle for a specific cert.
+//
+//encore:api auth method=GET path=/api/pki/ssh/certs/:id/download
+func (s *Service) DownloadPKISSHCert(ctx context.Context, id string) (*PKISSHCertDownloadResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	if s.db == nil || s.box == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("id is required").Err()
+	}
+	username := strings.ToLower(strings.TrimSpace(user.Username))
+	row := s.db.QueryRowContext(ctx, `SELECT public_key, cert, key_pem, username FROM sf_pki_ssh_certs WHERE id=$1`, id)
+	var publicKey, certText, keyEnc, owner string
+	if err := row.Scan(&publicKey, &certText, &keyEnc, &owner); err != nil {
+		return nil, errs.B().Code(errs.NotFound).Msg("SSH certificate not found").Err()
+	}
+	if !isAdminUser(s.cfg, username) && !strings.EqualFold(owner, username) {
+		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
+	}
+	keyPEM, err := s.box.decrypt(keyEnc)
+	if err != nil {
+		return nil, errs.B().Code(errs.Internal).Msg("failed to decrypt key").Err()
+	}
+	return &PKISSHCertDownloadResponse{
+		ID:          id,
+		PublicKey:   publicKey,
+		PrivateKey:  keyPEM,
+		Certificate: certText,
+	}, nil
+}
+
+// RevokePKISSHCert marks an SSH certificate revoked.
+//
+//encore:api auth method=POST path=/api/pki/ssh/certs/:id/revoke
+func (s *Service) RevokePKISSHCert(ctx context.Context, id string) (*PKISSHCertSummary, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("id is required").Err()
+	}
+	username := strings.ToLower(strings.TrimSpace(user.Username))
+	row := s.db.QueryRowContext(ctx, `SELECT principals, project_id, issued_at, expires_at, revoked_at, cert, username FROM sf_pki_ssh_certs WHERE id=$1`, id)
+	var (
+		principalsRaw []byte
+		projectID     sql.NullString
+		issuedAt      time.Time
+		expiresAt     time.Time
+		revokedAt     sql.NullTime
+		certText      string
+		owner         string
+	)
+	if err := row.Scan(&principalsRaw, &projectID, &issuedAt, &expiresAt, &revokedAt, &certText, &owner); err != nil {
+		return nil, errs.B().Code(errs.NotFound).Msg("SSH certificate not found").Err()
+	}
+	if !isAdminUser(s.cfg, username) && !strings.EqualFold(owner, username) {
+		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
+	}
+	if revokedAt.Valid {
+		// already revoked
+	} else {
+		_, err := s.db.ExecContext(ctx, `UPDATE sf_pki_ssh_certs SET revoked_at=now() WHERE id=$1`, id)
+		if err != nil {
+			log.Printf("pki ssh revoke: %v", err)
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to revoke SSH certificate").Err()
+		}
+		revokedAt = sql.NullTime{Time: time.Now().UTC(), Valid: true}
+	}
+	var principals []string
+	_ = json.Unmarshal(principalsRaw, &principals)
+	fingerprint := ""
+	if parsed, _, _, _, err := ssh.ParseAuthorizedKey([]byte(certText)); err == nil {
+		fingerprint = ssh.FingerprintSHA256(parsed)
+	}
+	resp := &PKISSHCertSummary{
+		ID:          id,
+		Principals:  principals,
+		ProjectID:   projectID.String,
+		IssuedAt:    issuedAt.UTC().Format(time.RFC3339),
+		ExpiresAt:   expiresAt.UTC().Format(time.RFC3339),
+		Fingerprint: fingerprint,
+	}
+	if revokedAt.Valid {
+		resp.RevokedAt = revokedAt.Time.UTC().Format(time.RFC3339)
+	}
+	return resp, nil
+}
+
 func loadPKIConfig(cfg Config) (*x509.Certificate, *rsa.PrivateKey, error) {
 	certPEM := strings.TrimSpace(cfg.PKICACert)
 	keyPEM := strings.TrimSpace(cfg.PKICAKey)
@@ -409,6 +744,18 @@ func loadPKIConfig(cfg Config) (*x509.Certificate, *rsa.PrivateKey, error) {
 	return cert, key, nil
 }
 
+func loadSSHCAConfig(cfg Config) (ssh.Signer, ssh.PublicKey, error) {
+	keyPEM := strings.TrimSpace(cfg.SSHCAKey)
+	if keyPEM == "" {
+		return nil, nil, errs.B().Code(errs.FailedPrecondition).Msg("SSH CA is not configured").Err()
+	}
+	signer, err := ssh.ParsePrivateKey([]byte(keyPEM))
+	if err != nil {
+		return nil, nil, errs.B().Code(errs.Internal).Msg("failed to parse SSH CA key").Err()
+	}
+	return signer, signer.PublicKey(), nil
+}
+
 func normalizeSANs(commonName string, sans []string) []string {
 	seen := map[string]bool{}
 	out := []string{}
@@ -426,6 +773,28 @@ func normalizeSANs(commonName string, sans []string) []string {
 	add(commonName)
 	for _, s := range sans {
 		add(s)
+	}
+	return out
+}
+
+func normalizePrincipals(defaultPrincipal string, principals []string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		value = strings.ToLower(value)
+		if seen[value] {
+			return
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	add(defaultPrincipal)
+	for _, principal := range principals {
+		add(principal)
 	}
 	return out
 }

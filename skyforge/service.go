@@ -105,6 +105,8 @@ type Config struct {
 	PKICACert                 string
 	PKICAKey                  string
 	PKIDefaultDays            int
+	SSHCAKey                  string
+	SSHCADefaultDays          int
 	DNSURL                    string
 	DNSAdminUsername          string
 	DNSUserZoneSuffix         string
@@ -406,6 +408,8 @@ func secretFileNameForEnv(key string) string {
 		return "skyforge-pki-ca-cert"
 	case "SKYFORGE_PKI_CA_KEY":
 		return "skyforge-pki-ca-key"
+	case "SKYFORGE_SSH_CA_KEY":
+		return "skyforge-ssh-ca-key"
 	case "SKYFORGE_OBJECT_STORAGE_TERRAFORM_ACCESS_KEY":
 		return "object-storage-terraform-access-key"
 	case "SKYFORGE_OBJECT_STORAGE_TERRAFORM_SECRET_KEY":
@@ -813,6 +817,13 @@ func loadConfig() Config {
 			pkiDefaultDays = v
 		}
 	}
+	sshCAKey := strings.TrimSpace(getOptionalSecret("SKYFORGE_SSH_CA_KEY"))
+	sshDefaultDays := 30
+	if raw := strings.TrimSpace(getenv("SKYFORGE_SSH_DEFAULT_DAYS", "")); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil && v > 0 {
+			sshDefaultDays = v
+		}
+	}
 
 	dnsURL := strings.TrimRight(strings.TrimSpace(getenv("SKYFORGE_DNS_URL", "http://technitium-dns:5380")), "/")
 	dnsAdminUsername := strings.TrimSpace(getenv("SKYFORGE_DNS_ADMIN_USERNAME", "admin"))
@@ -995,6 +1006,8 @@ func loadConfig() Config {
 		PKICACert:                 pkiCACert,
 		PKICAKey:                  pkiCAKey,
 		PKIDefaultDays:            pkiDefaultDays,
+		SSHCAKey:                  sshCAKey,
+		SSHCADefaultDays:          sshDefaultDays,
 		DNSURL:                    dnsURL,
 		DNSAdminUsername:          dnsAdminUsername,
 		DNSUserZoneSuffix:         dnsUserZoneSuffix,
