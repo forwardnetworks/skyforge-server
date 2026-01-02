@@ -55,3 +55,11 @@ func getTerraformStateObject(ctx context.Context, cfg Config, bucket, key string
 	}
 	return client.GetObject(ctx, bucket, key)
 }
+
+func putTerraformStateObject(ctx context.Context, cfg Config, bucket, key string, data []byte) error {
+	client, err := objectStoreClientFor(cfg)
+	if err != nil {
+		return err
+	}
+	return client.PutObject(ctx, bucket, key, data)
+}

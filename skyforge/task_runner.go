@@ -447,12 +447,42 @@ func (s *Service) runTofuTask(ctx context.Context, spec tofuRunSpec, log *taskLo
 	case "plan":
 		return runTofuCommand(ctx, log, tofuPath, workDir, env, "plan", "-input=false", "-no-color")
 	case "apply":
-		return runTofuCommand(ctx, log, tofuPath, workDir, env, "apply", "-auto-approve", "-input=false", "-no-color")
+		if err := runTofuCommand(ctx, log, tofuPath, workDir, env, "apply", "-auto-approve", "-input=false", "-no-color"); err != nil {
+			return err
+		}
+		s.syncTofuState(ctx, spec, workDir, log)
+		return nil
 	case "destroy":
-		return runTofuCommand(ctx, log, tofuPath, workDir, env, "destroy", "-auto-approve", "-input=false", "-no-color")
+		if err := runTofuCommand(ctx, log, tofuPath, workDir, env, "destroy", "-auto-approve", "-input=false", "-no-color"); err != nil {
+			return err
+		}
+		s.syncTofuState(ctx, spec, workDir, log)
+		return nil
 	default:
 		return fmt.Errorf("unknown tofu action")
 	}
+}
+
+func (s *Service) syncTofuState(ctx context.Context, spec tofuRunSpec, workDir string, log *taskLogger) {
+	if spec.ProjectCtx == nil {
+		return
+	}
+	stateKey := strings.TrimSpace(spec.ProjectCtx.project.TerraformStateKey)
+	if stateKey == "" {
+		log.Infof("Terraform state key not configured; skipping state upload.")
+		return
+	}
+	statePath := filepath.Join(workDir, "terraform.tfstate")
+	stateBytes, err := os.ReadFile(statePath)
+	if err != nil {
+		log.Infof("Failed to read terraform state: %v", err)
+		return
+	}
+	if err := putTerraformStateObject(ctx, s.cfg, "terraform-state", stateKey, stateBytes); err != nil {
+		log.Infof("Failed to upload terraform state: %v", err)
+		return
+	}
+	log.Infof("Terraform state synced to object storage.")
 }
 
 func runTofuCommand(ctx context.Context, log *taskLogger, binary string, workDir string, env map[string]string, args ...string) error {

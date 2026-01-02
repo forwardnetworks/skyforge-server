@@ -1,6 +1,7 @@
 package objectstore
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -79,4 +80,16 @@ func (c *Client) GetObject(ctx context.Context, bucket, key string) ([]byte, err
 		return nil, err
 	}
 	return data, nil
+}
+
+func (c *Client) PutObject(ctx context.Context, bucket, key string, data []byte) error {
+	client, err := c.minioClient()
+	if err != nil {
+		return err
+	}
+	reader := bytes.NewReader(data)
+	_, err = client.PutObject(ctx, bucket, key, reader, int64(len(data)), minio.PutObjectOptions{
+		ContentType: "application/json",
+	})
+	return err
 }
