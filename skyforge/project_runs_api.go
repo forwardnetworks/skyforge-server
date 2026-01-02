@@ -67,6 +67,8 @@ func (s *Service) RunProjectTofuPlan(ctx context.Context, id string) (*ProjectRu
 	env := map[string]any{
 		"TF_IN_AUTOMATION":          "true",
 		"AWS_EC2_METADATA_DISABLED": "true",
+		"AWS_REGION":                region,
+		"AWS_DEFAULT_REGION":        region,
 		"AWS_SDK_LOAD_CONFIG":       "0",
 		"AWS_PROFILE":               "",
 	}
