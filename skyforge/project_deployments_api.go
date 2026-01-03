@@ -27,23 +27,23 @@ import (
 var deploymentNameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,62}$`)
 
 type WorkspaceDeployment struct {
-	ID                string  `json:"id"`
+	ID                  string  `json:"id"`
 	WorkspaceID         string  `json:"workspaceId"`
-	Name              string  `json:"name"`
-	Type              string  `json:"type"`
-	Config            JSONMap `json:"config"`
-	CreatedBy         string  `json:"createdBy"`
-	CreatedAt         string  `json:"createdAt"`
-	UpdatedAt         string  `json:"updatedAt"`
+	Name                string  `json:"name"`
+	Type                string  `json:"type"`
+	Config              JSONMap `json:"config"`
+	CreatedBy           string  `json:"createdBy"`
+	CreatedAt           string  `json:"createdAt"`
+	UpdatedAt           string  `json:"updatedAt"`
 	LastTaskWorkspaceID *int    `json:"lastTaskWorkspaceId,omitempty"`
-	LastTaskID        *int    `json:"lastTaskId,omitempty"`
-	LastStatus        *string `json:"lastStatus,omitempty"`
-	LastStartedAt     *string `json:"lastStartedAt,omitempty"`
-	LastFinishedAt    *string `json:"lastFinishedAt,omitempty"`
+	LastTaskID          *int    `json:"lastTaskId,omitempty"`
+	LastStatus          *string `json:"lastStatus,omitempty"`
+	LastStartedAt       *string `json:"lastStartedAt,omitempty"`
+	LastFinishedAt      *string `json:"lastFinishedAt,omitempty"`
 }
 
 type WorkspaceDeploymentListResponse struct {
-	WorkspaceID   string               `json:"workspaceId"`
+	WorkspaceID string                 `json:"workspaceId"`
 	Deployments []*WorkspaceDeployment `json:"deployments"`
 }
 
@@ -59,9 +59,9 @@ type WorkspaceDeploymentUpdateRequest struct {
 }
 
 type WorkspaceDeploymentActionResponse struct {
-	WorkspaceID  string             `json:"workspaceId"`
-	Deployment *WorkspaceDeployment `json:"deployment"`
-	Run        JSONMap            `json:"run,omitempty"`
+	WorkspaceID string               `json:"workspaceId"`
+	Deployment  *WorkspaceDeployment `json:"deployment"`
+	Run         JSONMap              `json:"run,omitempty"`
 }
 
 type WorkspaceDeploymentDeleteRequest struct {
@@ -69,18 +69,24 @@ type WorkspaceDeploymentDeleteRequest struct {
 }
 
 type WorkspaceDeploymentInfoResponse struct {
-	WorkspaceID    string             `json:"workspaceId"`
+	WorkspaceID  string               `json:"workspaceId"`
 	Deployment   *WorkspaceDeployment `json:"deployment"`
-	Provider     string             `json:"provider"`
-	RetrievedAt  string             `json:"retrievedAt"`
-	Status       string             `json:"status,omitempty"`
-	Log          string             `json:"log,omitempty"`
-	Note         string             `json:"note,omitempty"`
-	ForwardID    string             `json:"forwardNetworkId,omitempty"`
-	ForwardURL   string             `json:"forwardSnapshotUrl,omitempty"`
-	Netlab       *NetlabInfo        `json:"netlab,omitempty"`
-	Labpp        *LabppInfo         `json:"labpp,omitempty"`
-	Containerlab *ContainerlabInfo  `json:"containerlab,omitempty"`
+	Provider     string               `json:"provider"`
+	RetrievedAt  string               `json:"retrievedAt"`
+	Status       string               `json:"status,omitempty"`
+	Log          string               `json:"log,omitempty"`
+	Note         string               `json:"note,omitempty"`
+	ForwardID    string               `json:"forwardNetworkId,omitempty"`
+	ForwardURL   string               `json:"forwardSnapshotUrl,omitempty"`
+	Netlab       *NetlabInfo          `json:"netlab,omitempty"`
+	Labpp        *LabppInfo           `json:"labpp,omitempty"`
+	Containerlab *ContainerlabInfo    `json:"containerlab,omitempty"`
+}
+
+type NetlabGraphResponse struct {
+	GeneratedAt string `json:"generatedAt"`
+	SVG         string `json:"svg"`
+	OutputPath  string `json:"outputPath,omitempty"`
 }
 
 type NetlabInfo struct {
@@ -161,15 +167,15 @@ ORDER BY updated_at DESC`, pc.workspace.ID)
 	refresh := make([]*WorkspaceDeployment, 0, 4)
 	for rows.Next() {
 		var (
-			rec               WorkspaceDeployment
-			raw               json.RawMessage
+			rec                 WorkspaceDeployment
+			raw                 json.RawMessage
 			lastTaskWorkspaceID sql.NullInt64
-			lastTaskID        sql.NullInt64
-			lastStatus        sql.NullString
-			lastStarted       sql.NullTime
-			lastFinished      sql.NullTime
-			createdAt         time.Time
-			updatedAt         time.Time
+			lastTaskID          sql.NullInt64
+			lastStatus          sql.NullString
+			lastStarted         sql.NullTime
+			lastFinished        sql.NullTime
+			createdAt           time.Time
+			updatedAt           time.Time
 		)
 		if err := rows.Scan(
 			&rec.ID,
@@ -835,6 +841,11 @@ type netlabAPILog struct {
 	Log string `json:"log"`
 }
 
+type netlabGraphAPIResponse struct {
+	SVGBase64  string `json:"svgBase64"`
+	OutputPath string `json:"outputPath,omitempty"`
+}
+
 func netlabAPIDo(ctx context.Context, url string, payload any) (*http.Response, []byte, error) {
 	var body io.Reader
 	if payload != nil {
@@ -908,7 +919,7 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 	}
 
 	resp := &WorkspaceDeploymentInfoResponse{
-		WorkspaceID:   pc.workspace.ID,
+		WorkspaceID: pc.workspace.ID,
 		Deployment:  dep,
 		Provider:    dep.Type,
 		RetrievedAt: time.Now().UTC().Format(time.RFC3339),
@@ -965,7 +976,7 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 		payload := map[string]any{
 			"action":        "status",
 			"user":          strings.TrimSpace(pc.claims.Username),
-			"workspace":       strings.TrimSpace(pc.workspace.Slug),
+			"workspace":     strings.TrimSpace(pc.workspace.Slug),
 			"deployment":    strings.TrimSpace(dep.Name),
 			"workspaceRoot": workspaceRoot,
 			"plugin":        "multilab",
@@ -1190,6 +1201,96 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 		resp.Note = "info is not yet supported for this deployment type"
 		return resp, nil
 	}
+}
+
+// GetWorkspaceDeploymentNetlabGraph returns a rendered netlab topology graph for a deployment.
+//
+//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/netlab-graph
+func (s *Service) GetWorkspaceDeploymentNetlabGraph(ctx context.Context, id, deploymentID string) (*NetlabGraphResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	pc, err := s.workspaceContextForUser(user, id)
+	if err != nil {
+		return nil, err
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+	if err != nil {
+		return nil, err
+	}
+	if dep.Type != "netlab" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("graph is only available for netlab deployments").Err()
+	}
+
+	cfgAny, _ := fromJSONMap(dep.Config)
+	getString := func(key string) string {
+		raw, ok := cfgAny[key]
+		if !ok {
+			return ""
+		}
+		if v, ok := raw.(string); ok {
+			return strings.TrimSpace(v)
+		}
+		return strings.TrimSpace(fmt.Sprintf("%v", raw))
+	}
+
+	netlabServer := getString("netlabServer")
+	if netlabServer == "" {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
+	}
+
+	server, _ := resolveNetlabServer(s.cfg, netlabServer)
+	if server == nil || strings.TrimSpace(server.SSHHost) == "" {
+		return nil, errs.B().Code(errs.Unavailable).Msg("netlab runner is not configured").Err()
+	}
+
+	multilabID := dep.ID
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(multilabID))
+	multilabNumericID := int(h.Sum32()%199) + 1
+
+	workspaceRoot := fmt.Sprintf("/home/%s/netlab", pc.claims.Username)
+	apiURL := strings.TrimRight(fmt.Sprintf("https://%s/netlab", strings.TrimSpace(server.SSHHost)), "/")
+	payload := map[string]any{
+		"user":          strings.TrimSpace(pc.claims.Username),
+		"workspace":     strings.TrimSpace(pc.workspace.Slug),
+		"deployment":    strings.TrimSpace(dep.Name),
+		"workspaceRoot": workspaceRoot,
+		"plugin":        "multilab",
+		"multilabId":    strconv.Itoa(multilabNumericID),
+		"instance":      strconv.Itoa(multilabNumericID),
+		"stateRoot":     strings.TrimSpace(server.StateRoot),
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	postResp, body, err := netlabAPIDo(ctx, apiURL+"/graph", payload)
+	if err != nil {
+		log.Printf("netlab graph: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to reach netlab API").Err()
+	}
+	if postResp.StatusCode < 200 || postResp.StatusCode >= 300 {
+		return nil, errs.B().Code(errs.Unavailable).Msg(fmt.Sprintf("netlab API rejected request: %s", strings.TrimSpace(string(body)))).Err()
+	}
+
+	var graph netlabGraphAPIResponse
+	if err := json.Unmarshal(body, &graph); err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("netlab graph returned invalid response").Err()
+	}
+	if strings.TrimSpace(graph.SVGBase64) == "" {
+		return nil, errs.B().Code(errs.Unavailable).Msg("netlab graph returned empty output").Err()
+	}
+
+	return &NetlabGraphResponse{
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		SVG:         graph.SVGBase64,
+		OutputPath:  graph.OutputPath,
+	}, nil
 }
 
 func checkCtxTimeout(ctx context.Context, fallback time.Duration) time.Duration {
@@ -1547,15 +1648,15 @@ func (s *Service) getWorkspaceDeployment(ctx context.Context, workspaceID, deplo
 	defer cancel()
 
 	var (
-		rec               WorkspaceDeployment
-		raw               json.RawMessage
+		rec                 WorkspaceDeployment
+		raw                 json.RawMessage
 		lastTaskWorkspaceID sql.NullInt64
-		lastTaskID        sql.NullInt64
-		lastStatus        sql.NullString
-		lastStarted       sql.NullTime
-		lastFinished      sql.NullTime
-		createdAt         time.Time
-		updatedAt         time.Time
+		lastTaskID          sql.NullInt64
+		lastStatus          sql.NullString
+		lastStarted         sql.NullTime
+		lastFinished        sql.NullTime
+		createdAt           time.Time
+		updatedAt           time.Time
 	)
 	err := s.db.QueryRowContext(ctx, `SELECT id, name, type, config, created_by, created_at, updated_at,
   last_task_workspace_id, last_task_id, last_status, last_started_at, last_finished_at
