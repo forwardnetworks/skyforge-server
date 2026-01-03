@@ -12,45 +12,45 @@ import (
 	"encore.app/storage"
 )
 
-type ProjectArtifactUploadRequest struct {
+type WorkspaceArtifactUploadRequest struct {
 	Key           string `json:"key"`
 	ContentBase64 string `json:"contentBase64"`
 }
 
-type ProjectArtifactUploadResponse struct {
+type WorkspaceArtifactUploadResponse struct {
 	Status        string `json:"status"`
 	Bucket        string `json:"bucket"`
 	Key           string `json:"key"`
-	ProjectID     string `json:"projectId"`
-	ProjectSlug   string `json:"projectSlug"`
+	WorkspaceID   string `json:"workspaceId"`
+	WorkspaceSlug string `json:"workspaceSlug"`
 	UploadedBy    string `json:"uploadedBy"`
 	UploadedAtUtc string `json:"uploadedAtUtc,omitempty"`
 }
 
-type ProjectArtifactDownloadParams struct {
+type WorkspaceArtifactDownloadParams struct {
 	Key string `query:"key"`
 }
 
-type ProjectArtifactDownloadResponse struct {
+type WorkspaceArtifactDownloadResponse struct {
 	Status   string `json:"status"`
 	Bucket   string `json:"bucket"`
 	Key      string `json:"key"`
 	FileData string `json:"fileData"`
 }
 
-// UploadProjectArtifact uploads or presigns an artifact to the project's bucket.
+// UploadWorkspaceArtifact uploads or presigns an artifact to the workspace's bucket.
 //
 //encore:api auth method=POST path=/api/workspaces/:id/artifacts/upload
-func (s *Service) UploadProjectArtifact(ctx context.Context, id string, req *ProjectArtifactUploadRequest) (*ProjectArtifactUploadResponse, error) {
-	return s.handleProjectArtifactUpload(ctx, id, req)
+func (s *Service) UploadWorkspaceArtifact(ctx context.Context, id string, req *WorkspaceArtifactUploadRequest) (*WorkspaceArtifactUploadResponse, error) {
+	return s.handleWorkspaceArtifactUpload(ctx, id, req)
 }
 
-func (s *Service) handleProjectArtifactUpload(ctx context.Context, id string, req *ProjectArtifactUploadRequest) (*ProjectArtifactUploadResponse, error) {
+func (s *Service) handleWorkspaceArtifactUpload(ctx context.Context, id string, req *WorkspaceArtifactUploadRequest) (*WorkspaceArtifactUploadResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.projectContextForUser(user, id)
+	pc, err := s.workspaceContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ func (s *Service) handleProjectArtifactUpload(ctx context.Context, id string, re
 	if err != nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid contentBase64").Err()
 	}
-	objectName := artifactObjectName(pc.project.ID, key)
+	objectName := artifactObjectName(pc.workspace.ID, key)
 	if err := storage.Write(ctx, &storage.WriteRequest{ObjectName: objectName, Data: payload}); err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to upload artifact").Err()
 	}
@@ -87,35 +87,35 @@ func (s *Service) handleProjectArtifactUpload(ctx context.Context, id string, re
 			actor,
 			actorIsAdmin,
 			impersonated,
-			"project.artifact.upload",
-			pc.project.ID,
+			"workspace.artifact.upload",
+			pc.workspace.ID,
 			fmt.Sprintf("bucket=%s key=%s size=%d", storage.StorageBucketName, key, len(payload)),
 		)
 	}
-	return &ProjectArtifactUploadResponse{
+	return &WorkspaceArtifactUploadResponse{
 		Status:        "uploaded",
 		Bucket:        storage.StorageBucketName,
 		Key:           key,
-		ProjectID:     pc.project.ID,
-		ProjectSlug:   pc.project.Slug,
+		WorkspaceID:     pc.workspace.ID,
+		WorkspaceSlug:   pc.workspace.Slug,
 		UploadedBy:    pc.claims.Username,
 		UploadedAtUtc: time.Now().UTC().Format(time.RFC3339),
 	}, nil
 }
 
-// DownloadProjectArtifact returns a presigned download redirect for the artifact.
+// DownloadWorkspaceArtifact returns a presigned download redirect for the artifact.
 //
 //encore:api auth method=GET path=/api/workspaces/:id/artifacts/download
-func (s *Service) DownloadProjectArtifact(ctx context.Context, id string, params *ProjectArtifactDownloadParams) (*ProjectArtifactDownloadResponse, error) {
-	return s.handleProjectArtifactDownload(ctx, id, params)
+func (s *Service) DownloadWorkspaceArtifact(ctx context.Context, id string, params *WorkspaceArtifactDownloadParams) (*WorkspaceArtifactDownloadResponse, error) {
+	return s.handleWorkspaceArtifactDownload(ctx, id, params)
 }
 
-func (s *Service) handleProjectArtifactDownload(ctx context.Context, id string, params *ProjectArtifactDownloadParams) (*ProjectArtifactDownloadResponse, error) {
+func (s *Service) handleWorkspaceArtifactDownload(ctx context.Context, id string, params *WorkspaceArtifactDownloadParams) (*WorkspaceArtifactDownloadResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.projectContextForUser(user, id)
+	pc, err := s.workspaceContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -127,13 +127,13 @@ func (s *Service) handleProjectArtifactDownload(ctx context.Context, id string, 
 	if key == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("key is required").Err()
 	}
-	objectName := artifactObjectName(pc.project.ID, key)
+	objectName := artifactObjectName(pc.workspace.ID, key)
 	data, err := storage.Read(ctx, &storage.ReadRequest{ObjectName: objectName})
 	if err != nil {
 		return nil, errs.B().Code(errs.NotFound).Msg("artifact not found").Err()
 	}
 	artifactDownloads.Add(1)
-	return &ProjectArtifactDownloadResponse{
+	return &WorkspaceArtifactDownloadResponse{
 		Status:   "ok",
 		Bucket:   storage.StorageBucketName,
 		Key:      key,
@@ -141,11 +141,11 @@ func (s *Service) handleProjectArtifactDownload(ctx context.Context, id string, 
 	}, nil
 }
 
-func artifactObjectName(projectID, key string) string {
-	projectID = strings.TrimSpace(projectID)
+func artifactObjectName(workspaceID, key string) string {
+	workspaceID = strings.TrimSpace(workspaceID)
 	key = strings.TrimPrefix(strings.TrimSpace(key), "/")
-	if projectID == "" {
+	if workspaceID == "" {
 		return fmt.Sprintf("artifacts/%s", key)
 	}
-	return fmt.Sprintf("artifacts/%s/%s", projectID, key)
+	return fmt.Sprintf("artifacts/%s/%s", workspaceID, key)
 }

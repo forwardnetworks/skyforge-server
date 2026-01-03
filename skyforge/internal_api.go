@@ -9,21 +9,21 @@ import (
 	"encore.dev/beta/errs"
 )
 
-type InternalProjectsExportParams struct {
+type InternalWorkspacesExportParams struct {
 	Token string `header:"X-Skyforge-Internal-Token"`
 }
 
-type InternalProjectsExportResponse struct {
-	Projects   []SkyforgeProject `json:"projects"`
-	Users      []string          `json:"users"`
-	Timestamp  string            `json:"timestamp"`
-	StateStore string            `json:"stateStore"`
+type InternalWorkspacesExportResponse struct {
+	Workspaces []SkyforgeWorkspace `json:"workspaces"`
+	Users      []string            `json:"users"`
+	Timestamp  string              `json:"timestamp"`
+	StateStore string              `json:"stateStore"`
 }
 
-// ExportProjects returns project and user state for internal tooling.
+// ExportWorkspaces returns workspace and user state for internal tooling.
 //
-//encore:api public method=GET path=/api/internal/projects-export
-func (s *Service) ExportProjects(ctx context.Context, params *InternalProjectsExportParams) (*InternalProjectsExportResponse, error) {
+//encore:api public method=GET path=/api/internal/workspaces-export
+func (s *Service) ExportWorkspaces(ctx context.Context, params *InternalWorkspacesExportParams) (*InternalWorkspacesExportResponse, error) {
 	if strings.TrimSpace(s.cfg.InternalToken) == "" {
 		return nil, errs.B().Code(errs.NotFound).Msg("not found").Err()
 	}
@@ -34,17 +34,17 @@ func (s *Service) ExportProjects(ctx context.Context, params *InternalProjectsEx
 	if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(s.cfg.InternalToken)) != 1 {
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
-	projects, err := s.projectStore.load()
+	workspaces, err := s.workspaceStore.load()
 	if err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load projects").Err()
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load workspaces").Err()
 	}
 	users, err := s.userStore.load()
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load users").Err()
 	}
 	_ = ctx
-	return &InternalProjectsExportResponse{
-		Projects:   projects,
+	return &InternalWorkspacesExportResponse{
+		Workspaces: workspaces,
 		Users:      users,
 		Timestamp:  time.Now().UTC().Format(time.RFC3339),
 		StateStore: s.cfg.StateBackend,

@@ -34,7 +34,7 @@ func isShareableUser(cfg Config, username string) bool {
 	return true
 }
 
-// ListAssignableUsers lists users that can be shared on projects.
+// ListAssignableUsers lists users that can be shared on workspaces.
 //
 // Skyforge uses username-based identities, so `id` is the username.
 //

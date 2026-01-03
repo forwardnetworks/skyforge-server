@@ -9,8 +9,8 @@ import (
 )
 
 type RunnerRunsParams struct {
-	ProjectID string `query:"project_id" encore:"optional"`
-	Limit     string `query:"limit" encore:"optional"`
+	WorkspaceID string `query:"workspace_id" encore:"optional"`
+	Limit       string `query:"limit" encore:"optional"`
 }
 
 type NetlabRun struct {
@@ -21,12 +21,12 @@ type NetlabRun struct {
 }
 
 type NetlabRunsResponse struct {
-	ProjectID string      `json:"projectId"`
-	User      string      `json:"user"`
-	Runs      []NetlabRun `json:"runs"`
+	WorkspaceID string      `json:"workspaceId"`
+	User        string      `json:"user"`
+	Runs        []NetlabRun `json:"runs"`
 }
 
-// GetNetlabRuns returns recent Netlab runs for a project.
+// GetNetlabRuns returns recent Netlab runs for a workspace.
 //
 //encore:api auth method=GET path=/api/netlab/runs
 func (s *Service) GetNetlabRuns(ctx context.Context, params *RunnerRunsParams) (*NetlabRunsResponse, error) {
@@ -35,18 +35,18 @@ func (s *Service) GetNetlabRuns(ctx context.Context, params *RunnerRunsParams) (
 	if err != nil {
 		return nil, err
 	}
-	projectKey, limit, err := parseRunnerRunsParams(params)
+	workspaceKey, limit, err := parseRunnerRunsParams(params)
 	if err != nil {
 		return nil, err
 	}
-	project, err := s.resolveProjectForUser(ctx, user, projectKey)
+	workspace, err := s.resolveWorkspaceForUser(ctx, user, workspaceKey)
 	if err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	tasks, err := listTasks(ctx, s.db, project.ID, limit)
+	tasks, err := listTasks(ctx, s.db, workspace.ID, limit)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to query runs").Err()
 	}
@@ -66,7 +66,7 @@ func (s *Service) GetNetlabRuns(ctx context.Context, params *RunnerRunsParams) (
 		}
 		labs, artifacts := parseSkyforgeMarkers(logRows)
 		runInfo := taskToRunInfo(task)
-		runInfo["projectId"] = project.ID
+		runInfo["workspaceId"] = workspace.ID
 		taskJSON, err := toJSONMap(runInfo)
 		if err != nil {
 			return nil, errs.B().Code(errs.Internal).Msg("failed to encode task").Err()
@@ -81,18 +81,18 @@ func (s *Service) GetNetlabRuns(ctx context.Context, params *RunnerRunsParams) (
 
 	_ = ctx
 	return &NetlabRunsResponse{
-		ProjectID: project.ID,
-		User:      user.Username,
-		Runs:      runs,
+		WorkspaceID: workspace.ID,
+		User:        user.Username,
+		Runs:        runs,
 	}, nil
 }
 
 func parseRunnerRunsParams(params *RunnerRunsParams) (string, int, error) {
-	projectID := ""
+	workspaceID := ""
 	limit := 10
 	if params != nil {
-		if raw := strings.TrimSpace(params.ProjectID); raw != "" {
-			projectID = raw
+		if raw := strings.TrimSpace(params.WorkspaceID); raw != "" {
+			workspaceID = raw
 		}
 		if raw := strings.TrimSpace(params.Limit); raw != "" {
 			if v, err := strconv.Atoi(raw); err == nil && v > 0 && v <= 25 {
@@ -100,5 +100,5 @@ func parseRunnerRunsParams(params *RunnerRunsParams) (string, int, error) {
 			}
 		}
 	}
-	return projectID, limit, nil
+	return workspaceID, limit, nil
 }

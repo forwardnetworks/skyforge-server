@@ -17,7 +17,7 @@ type LabsRunningParams struct {
 	Provider     string `query:"provider" encore:"optional"`
 	EveServer    string `query:"eve_server" encore:"optional"`
 	NetlabServer string `query:"netlab_server" encore:"optional"`
-	ProjectID    string `query:"project_id" encore:"optional"`
+	WorkspaceID    string `query:"workspace_id" encore:"optional"`
 }
 
 type LabsRunningResponse struct {
@@ -62,7 +62,7 @@ type NetlabServersResponse struct {
 
 type NetlabLabsParams struct {
 	Limit        string `query:"limit" encore:"optional"`
-	ProjectID    string `query:"project_id" encore:"optional"`
+	WorkspaceID    string `query:"workspace_id" encore:"optional"`
 	NetlabServer string `query:"netlab_server" encore:"optional"`
 }
 
@@ -74,7 +74,7 @@ type NetlabLabsResponse struct {
 }
 
 type NetlabLabParams struct {
-	ProjectID    string `query:"project_id" encore:"optional"`
+	WorkspaceID    string `query:"workspace_id" encore:"optional"`
 	NetlabServer string `query:"netlab_server" encore:"optional"`
 }
 
@@ -92,24 +92,24 @@ func (s *Service) GetLabsRunning(ctx context.Context, params *LabsRunningParams)
 	provider := ""
 	eveServer := ""
 	netlabServer := ""
-	projectID := ""
+	workspaceID := ""
 	if params != nil {
 		provider = strings.TrimSpace(strings.ToLower(params.Provider))
 		eveServer = strings.TrimSpace(params.EveServer)
 		netlabServer = strings.TrimSpace(params.NetlabServer)
-		projectID = strings.TrimSpace(params.ProjectID)
+		workspaceID = strings.TrimSpace(params.WorkspaceID)
 	}
-	if projectID != "" && eveServer == "" {
-		if projects, err := s.projectStore.load(); err == nil {
-			if p := findProjectByKey(projects, projectID); p != nil && strings.TrimSpace(p.EveServer) != "" {
-				eveServer = strings.TrimSpace(p.EveServer)
+	if workspaceID != "" && eveServer == "" {
+		if workspaces, err := s.workspaceStore.load(); err == nil {
+			if workspace := findWorkspaceByKey(workspaces, workspaceID); workspace != nil && strings.TrimSpace(workspace.EveServer) != "" {
+				eveServer = strings.TrimSpace(workspace.EveServer)
 			}
 		}
 	}
-	if projectID != "" && netlabServer == "" {
-		if projects, err := s.projectStore.load(); err == nil {
-			if p := findProjectByKey(projects, projectID); p != nil && strings.TrimSpace(p.NetlabServer) != "" {
-				netlabServer = strings.TrimSpace(p.NetlabServer)
+	if workspaceID != "" && netlabServer == "" {
+		if workspaces, err := s.workspaceStore.load(); err == nil {
+			if workspace := findWorkspaceByKey(workspaces, workspaceID); workspace != nil && strings.TrimSpace(workspace.NetlabServer) != "" {
+				netlabServer = strings.TrimSpace(workspace.NetlabServer)
 			}
 		}
 	}
@@ -143,29 +143,29 @@ func (s *Service) GetLabsForUser(ctx context.Context, params *LabsRunningParams)
 	provider := ""
 	eveServer := ""
 	netlabServer := ""
-	projectID := ""
+	workspaceID := ""
 	if params != nil {
 		provider = strings.TrimSpace(strings.ToLower(params.Provider))
 		eveServer = strings.TrimSpace(params.EveServer)
 		netlabServer = strings.TrimSpace(params.NetlabServer)
-		projectID = strings.TrimSpace(params.ProjectID)
+		workspaceID = strings.TrimSpace(params.WorkspaceID)
 	}
 
 	ownerOverride := ""
-	if projectID != "" {
-		if projects, err := s.projectStore.load(); err == nil {
-			if p := findProjectByKey(projects, projectID); p != nil {
-				if eveServer == "" && strings.TrimSpace(p.EveServer) != "" {
-					eveServer = strings.TrimSpace(p.EveServer)
+	if workspaceID != "" {
+		if workspaces, err := s.workspaceStore.load(); err == nil {
+			if workspace := findWorkspaceByKey(workspaces, workspaceID); workspace != nil {
+				if eveServer == "" && strings.TrimSpace(workspace.EveServer) != "" {
+					eveServer = strings.TrimSpace(workspace.EveServer)
 				}
-				if netlabServer == "" && strings.TrimSpace(p.NetlabServer) != "" {
-					netlabServer = strings.TrimSpace(p.NetlabServer)
+				if netlabServer == "" && strings.TrimSpace(workspace.NetlabServer) != "" {
+					netlabServer = strings.TrimSpace(workspace.NetlabServer)
 				}
-				if projectAccessLevelForClaims(s.cfg, *p, claims) == "none" {
+				if workspaceAccessLevelForClaims(s.cfg, *workspace, claims) == "none" {
 					labsErrors.Add(1)
 					return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 				}
-				ownerOverride = projectPrimaryOwner(*p)
+				ownerOverride = workspacePrimaryOwner(*workspace)
 			}
 		}
 	}
@@ -277,24 +277,24 @@ func (s *Service) ListNetlabLabs(ctx context.Context, params *NetlabLabsParams) 
 	claims := claimsFromAuthUser(user)
 	limit := 25
 	serverName := ""
-	projectID := ""
+	workspaceID := ""
 	if params != nil {
 		serverName = strings.TrimSpace(params.NetlabServer)
-		projectID = strings.TrimSpace(params.ProjectID)
+		workspaceID = strings.TrimSpace(params.WorkspaceID)
 		if raw := strings.TrimSpace(params.Limit); raw != "" {
 			if v, err := strconv.Atoi(raw); err == nil && v > 0 && v <= 100 {
 				limit = v
 			}
 		}
 	}
-	if projectID != "" {
-		if projects, err := s.projectStore.load(); err == nil {
-			if p := findProjectByKey(projects, projectID); p != nil {
-				if projectAccessLevelForClaims(s.cfg, *p, claims) == "none" {
+	if workspaceID != "" {
+		if workspaces, err := s.workspaceStore.load(); err == nil {
+			if workspace := findWorkspaceByKey(workspaces, workspaceID); workspace != nil {
+				if workspaceAccessLevelForClaims(s.cfg, *workspace, claims) == "none" {
 					return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 				}
-				if serverName == "" && strings.TrimSpace(p.NetlabServer) != "" {
-					serverName = strings.TrimSpace(p.NetlabServer)
+				if serverName == "" && strings.TrimSpace(workspace.NetlabServer) != "" {
+					serverName = strings.TrimSpace(workspace.NetlabServer)
 				}
 			}
 		}
@@ -364,19 +364,19 @@ func (s *Service) GetNetlabLab(ctx context.Context, id string, params *NetlabLab
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid lab id").Err()
 	}
 	serverName := ""
-	projectID := ""
+	workspaceID := ""
 	if params != nil {
 		serverName = strings.TrimSpace(params.NetlabServer)
-		projectID = strings.TrimSpace(params.ProjectID)
+		workspaceID = strings.TrimSpace(params.WorkspaceID)
 	}
-	if projectID != "" {
-		if projects, err := s.projectStore.load(); err == nil {
-			if p := findProjectByKey(projects, projectID); p != nil {
-				if projectAccessLevelForClaims(s.cfg, *p, claims) == "none" {
+	if workspaceID != "" {
+		if workspaces, err := s.workspaceStore.load(); err == nil {
+			if workspace := findWorkspaceByKey(workspaces, workspaceID); workspace != nil {
+				if workspaceAccessLevelForClaims(s.cfg, *workspace, claims) == "none" {
 					return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 				}
-				if serverName == "" && strings.TrimSpace(p.NetlabServer) != "" {
-					serverName = strings.TrimSpace(p.NetlabServer)
+				if serverName == "" && strings.TrimSpace(workspace.NetlabServer) != "" {
+					serverName = strings.TrimSpace(workspace.NetlabServer)
 				}
 			}
 		}

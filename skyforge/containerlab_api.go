@@ -24,16 +24,16 @@ type containerlabDeployRequest struct {
 	TopologySource  string         `json:"topologySourceUrl,omitempty"`
 }
 
-func containerlabLabName(projectSlug, deploymentName string) string {
-	projectSlug = strings.TrimSpace(projectSlug)
+func containerlabLabName(workspaceSlug, deploymentName string) string {
+	workspaceSlug = strings.TrimSpace(workspaceSlug)
 	deploymentName = strings.TrimSpace(deploymentName)
-	if projectSlug == "" {
+	if workspaceSlug == "" {
 		return deploymentName
 	}
 	if deploymentName == "" {
-		return projectSlug
+		return workspaceSlug
 	}
-	return fmt.Sprintf("%s-%s", projectSlug, deploymentName)
+	return fmt.Sprintf("%s-%s", workspaceSlug, deploymentName)
 }
 
 func containerlabTokenForUser(cfg Config, username string) (string, error) {

@@ -11,46 +11,46 @@ import (
 	"encore.dev/beta/errs"
 )
 
-type ProjectNetlabTemplatesResponse struct {
-	ProjectID string   `json:"projectId"`
+type WorkspaceNetlabTemplatesResponse struct {
+	WorkspaceID string   `json:"workspaceId"`
 	Repo      string   `json:"repo"`
 	Branch    string   `json:"branch"`
 	Dir       string   `json:"dir"`
 	Templates []string `json:"templates"`
 }
 
-type ProjectNetlabTemplatesRequest struct {
+type WorkspaceNetlabTemplatesRequest struct {
 	Dir    string `query:"dir" encore:"optional"`
-	Source string `query:"source" encore:"optional"` // "project" (default), "blueprints", or "custom"
+	Source string `query:"source" encore:"optional"` // "workspace" (default), "blueprints", or "custom"
 	Repo   string `query:"repo" encore:"optional"`   // owner/repo or URL (custom only)
 }
 
-// GetProjectNetlabTemplates lists Netlab templates for a project.
+// GetWorkspaceNetlabTemplates lists Netlab templates for a workspace.
 //
 //encore:api auth method=GET path=/api/workspaces/:id/netlab/templates
-func (s *Service) GetProjectNetlabTemplates(ctx context.Context, id string, req *ProjectNetlabTemplatesRequest) (*ProjectNetlabTemplatesResponse, error) {
+func (s *Service) GetWorkspaceNetlabTemplates(ctx context.Context, id string, req *WorkspaceNetlabTemplatesRequest) (*WorkspaceNetlabTemplatesResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.projectContextForUser(user, id)
+	pc, err := s.workspaceContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
-	source := "project"
+	source := "workspace"
 	if req != nil {
 		if v := strings.ToLower(strings.TrimSpace(req.Source)); v != "" {
 			source = v
 		}
 	}
 
-	owner := pc.project.GiteaOwner
-	repo := pc.project.GiteaRepo
-	branch := strings.TrimSpace(pc.project.DefaultBranch)
+	owner := pc.workspace.GiteaOwner
+	repo := pc.workspace.GiteaRepo
+	branch := strings.TrimSpace(pc.workspace.DefaultBranch)
 
 	switch source {
 	case "blueprints", "blueprint":
-		ref := strings.TrimSpace(pc.project.Blueprint)
+		ref := strings.TrimSpace(pc.workspace.Blueprint)
 		if ref == "" {
 			ref = "skyforge/blueprints"
 		}
@@ -74,12 +74,12 @@ func (s *Service) GetProjectNetlabTemplates(ctx context.Context, id string, req 
 		if err != nil {
 			return nil, err
 		}
-		if !isAdminUser(s.cfg, pc.claims.Username) && customOwner != pc.project.GiteaOwner && customOwner != "skyforge" {
+		if !isAdminUser(s.cfg, pc.claims.Username) && customOwner != pc.workspace.GiteaOwner && customOwner != "skyforge" {
 			return nil, errs.B().Code(errs.PermissionDenied).Msg("custom repo not allowed").Err()
 		}
 		owner, repo = customOwner, customRepo
 		branch = ""
-	case "project":
+	case "workspace":
 		// default already set
 	default:
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown template source").Err()
@@ -123,8 +123,8 @@ func (s *Service) GetProjectNetlabTemplates(ctx context.Context, id string, req 
 	}
 	sort.Strings(templates)
 	_ = ctx
-	return &ProjectNetlabTemplatesResponse{
-		ProjectID: pc.project.ID,
+	return &WorkspaceNetlabTemplatesResponse{
+		WorkspaceID: pc.workspace.ID,
 		Repo:      fmt.Sprintf("%s/%s", owner, repo),
 		Branch:    branch,
 		Dir:       dir,

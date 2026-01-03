@@ -24,15 +24,15 @@ type StatusSummaryResponse struct {
 	Down      int                   `json:"down"`
 	Checks    []StatusCheckResponse `json:"checks,omitempty"`
 
-	ProjectsTotal int `json:"projectsTotal,omitempty"`
+	WorkspacesTotal int `json:"workspacesTotal,omitempty"`
 }
 
-func countProjects(ctx context.Context, db *sql.DB) (int, error) {
+func countWorkspaces(ctx context.Context, db *sql.DB) (int, error) {
 	if db == nil {
 		return 0, nil
 	}
 	var count int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sf_projects`).Scan(&count); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sf_workspaces`).Scan(&count); err != nil {
 		return 0, err
 	}
 	return count, nil
@@ -40,7 +40,7 @@ func countProjects(ctx context.Context, db *sql.DB) (int, error) {
 
 // StatusSummary returns a public, safe platform status summary.
 //
-// This is designed for an unauthenticated landing page and must not leak user/project identifiers.
+// This is designed for an unauthenticated landing page and must not leak user/workspace identifiers.
 //
 //encore:api public method=GET path=/status/summary
 func (s *Service) StatusSummary(ctx context.Context) (*StatusSummaryResponse, error) {
@@ -72,8 +72,8 @@ func (s *Service) StatusSummary(ctx context.Context) (*StatusSummaryResponse, er
 		}
 	}
 
-	if total, err := countProjects(ctx, s.db); err == nil {
-		resp.ProjectsTotal = total
+	if total, err := countWorkspaces(ctx, s.db); err == nil {
+		resp.WorkspacesTotal = total
 	}
 
 	return resp, nil

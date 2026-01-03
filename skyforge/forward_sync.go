@@ -168,13 +168,13 @@ func stripANSICodes(value string) string {
 	return b.String()
 }
 
-func (s *Service) forwardConfigForProject(ctx context.Context, projectID string) (*forwardCredentials, error) {
+func (s *Service) forwardConfigForWorkspace(ctx context.Context, workspaceID string) (*forwardCredentials, error) {
 	if s.db == nil {
 		return nil, fmt.Errorf("database unavailable")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	rec, err := getProjectForwardCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), projectID)
+	rec, err := getWorkspaceForwardCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -190,12 +190,12 @@ func (s *Service) forwardConfigForProject(ctx context.Context, projectID string)
 	return rec, nil
 }
 
-func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *projectContext, dep *ProjectDeployment) (map[string]any, error) {
+func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *workspaceContext, dep *WorkspaceDeployment) (map[string]any, error) {
 	cfgAny, _ := fromJSONMap(dep.Config)
 	if cfgAny == nil {
 		cfgAny = map[string]any{}
 	}
-	forwardCfg, err := s.forwardConfigForProject(ctx, pc.project.ID)
+	forwardCfg, err := s.forwardConfigForWorkspace(ctx, pc.workspace.ID)
 	if err != nil || forwardCfg == nil {
 		return cfgAny, err
 	}
@@ -218,7 +218,7 @@ func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *pro
 	networkID := getString(forwardNetworkIDKey)
 	changed := false
 	if networkID == "" {
-		networkName := fmt.Sprintf("skyforge/%s/%s", pc.project.Slug, dep.Name)
+		networkName := fmt.Sprintf("skyforge/%s/%s", pc.workspace.Slug, dep.Name)
 		network, err := forwardCreateNetwork(ctx, client, networkName)
 		if err != nil {
 			return cfgAny, err
@@ -312,14 +312,14 @@ func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *pro
 	}
 
 	if changed {
-		if err := s.updateDeploymentConfig(ctx, pc.project.ID, dep.ID, cfgAny); err != nil {
+		if err := s.updateDeploymentConfig(ctx, pc.workspace.ID, dep.ID, cfgAny); err != nil {
 			return cfgAny, err
 		}
 	}
 	return cfgAny, nil
 }
 
-func (s *Service) syncForwardNetlabDevices(ctx context.Context, pc *projectContext, dep *ProjectDeployment, logText string) error {
+func (s *Service) syncForwardNetlabDevices(ctx context.Context, pc *workspaceContext, dep *WorkspaceDeployment, logText string) error {
 	cfgAny, _ := fromJSONMap(dep.Config)
 	if cfgAny == nil {
 		cfgAny = map[string]any{}
@@ -329,7 +329,7 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, pc *projectConte
 		return err
 	}
 
-	forwardCfg, err := s.forwardConfigForProject(ctx, pc.project.ID)
+	forwardCfg, err := s.forwardConfigForWorkspace(ctx, pc.workspace.ID)
 	if err != nil || forwardCfg == nil {
 		return err
 	}
@@ -431,14 +431,14 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, pc *projectConte
 	}
 	if changed {
 		cfgAny[forwardCliCredentialMap] = credentialIDsByDevice
-		if err := s.updateDeploymentConfig(ctx, pc.project.ID, dep.ID, cfgAny); err != nil {
+		if err := s.updateDeploymentConfig(ctx, pc.workspace.ID, dep.ID, cfgAny); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *Service) updateDeploymentConfig(ctx context.Context, projectID, deploymentID string, cfgAny map[string]any) error {
+func (s *Service) updateDeploymentConfig(ctx context.Context, workspaceID, deploymentID string, cfgAny map[string]any) error {
 	if s.db == nil {
 		return fmt.Errorf("database unavailable")
 	}
@@ -452,6 +452,6 @@ func (s *Service) updateDeploymentConfig(ctx context.Context, projectID, deploym
 	_, err = s.db.ExecContext(ctx, `UPDATE sf_deployments SET
   config=$1,
   updated_at=now()
-WHERE project_id=$2 AND id=$3`, cfgBytes, projectID, deploymentID)
+WHERE workspace_id=$2 AND id=$3`, cfgBytes, workspaceID, deploymentID)
 	return err
 }

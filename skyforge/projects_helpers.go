@@ -7,56 +7,56 @@ import (
 	"encore.dev/beta/errs"
 )
 
-var errProjectNotFound = errors.New("project not found")
+var errWorkspaceNotFound = errors.New("workspace not found")
 
-func (s *Service) loadProjectByKey(projectKey string) ([]SkyforgeProject, int, SkyforgeProject, error) {
-	projectKey = strings.TrimSpace(projectKey)
-	if projectKey == "" {
-		return nil, -1, SkyforgeProject{}, errors.New("project id is required")
+func (s *Service) loadWorkspaceByKey(workspaceKey string) ([]SkyforgeWorkspace, int, SkyforgeWorkspace, error) {
+	workspaceKey = strings.TrimSpace(workspaceKey)
+	if workspaceKey == "" {
+		return nil, -1, SkyforgeWorkspace{}, errors.New("workspace id is required")
 	}
-	projects, err := s.projectStore.load()
+	workspaces, err := s.workspaceStore.load()
 	if err != nil {
-		return nil, -1, SkyforgeProject{}, err
+		return nil, -1, SkyforgeWorkspace{}, err
 	}
-	for i, p := range projects {
-		if p.ID == projectKey || p.Slug == projectKey {
-			return projects, i, p, nil
+	for i, w := range workspaces {
+		if w.ID == workspaceKey || w.Slug == workspaceKey {
+			return workspaces, i, w, nil
 		}
 	}
-	return projects, -1, SkyforgeProject{}, errProjectNotFound
+	return workspaces, -1, SkyforgeWorkspace{}, errWorkspaceNotFound
 }
 
-type projectContext struct {
-	projects []SkyforgeProject
+type workspaceContext struct {
+	workspaces []SkyforgeWorkspace
 	idx      int
-	project  SkyforgeProject
+	workspace SkyforgeWorkspace
 	access   string
 	claims   *SessionClaims
 }
 
-func (s *Service) projectContextForUser(user *AuthUser, projectKey string) (*projectContext, error) {
+func (s *Service) workspaceContextForUser(user *AuthUser, workspaceKey string) (*workspaceContext, error) {
 	if user == nil {
 		return nil, errs.B().Code(errs.Unauthenticated).Msg("authentication required").Err()
 	}
 	claims := claimsFromAuthUser(user)
-	projects, idx, project, err := s.loadProjectByKey(projectKey)
+	workspaces, idx, workspace, err := s.loadWorkspaceByKey(workspaceKey)
 	if err != nil {
-		if errors.Is(err, errProjectNotFound) {
-			return nil, errs.B().Code(errs.NotFound).Msg("project not found").Err()
+		if errors.Is(err, errWorkspaceNotFound) {
+			return nil, errs.B().Code(errs.NotFound).Msg("workspace not found").Err()
 		}
-		if err.Error() == "project id is required" {
+		if err.Error() == "workspace id is required" {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 		}
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load projects").Err()
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load workspaces").Err()
 	}
-	access := projectAccessLevelForClaims(s.cfg, project, claims)
+	access := workspaceAccessLevelForClaims(s.cfg, workspace, claims)
 	if access == "none" {
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
-	return &projectContext{
-		projects: projects,
+	return &workspaceContext{
+		workspaces: workspaces,
 		idx:      idx,
-		project:  project,
+		workspace:  workspace,
 		access:   access,
 		claims:   claims,
 	}, nil

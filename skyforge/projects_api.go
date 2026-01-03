@@ -12,22 +12,22 @@ import (
 	"encore.app/storage"
 )
 
-type ProjectsListParams struct {
+type WorkspacesListParams struct {
 	All string `query:"all" encore:"optional"`
 }
 
-type ProjectsListResponse struct {
-	User       string            `json:"user"`
-	Workspaces []SkyforgeProject `json:"workspaces"`
+type WorkspacesListResponse struct {
+	User       string              `json:"user"`
+	Workspaces []SkyforgeWorkspace `json:"workspaces"`
 }
 
 const defaultBlueprintCatalog = "skyforge/blueprints"
 
-func nextLegacyProjectID(projects []SkyforgeProject) int {
+func nextLegacyWorkspaceID(workspaces []SkyforgeWorkspace) int {
 	maxID := 0
-	for _, p := range projects {
-		if p.LegacyProjectID > maxID {
-			maxID = p.LegacyProjectID
+	for _, w := range workspaces {
+		if w.LegacyWorkspaceID > maxID {
+			maxID = w.LegacyWorkspaceID
 		}
 	}
 	if maxID < 1 {
@@ -52,59 +52,59 @@ func defaultWorkspaceName(username string) string {
 	return fmt.Sprintf("%s Workspace", normalized)
 }
 
-func (s *Service) ensureDefaultWorkspace(ctx context.Context, user *AuthUser) (*SkyforgeProject, error) {
+func (s *Service) ensureDefaultWorkspace(ctx context.Context, user *AuthUser) (*SkyforgeWorkspace, error) {
 	if user == nil {
 		return nil, nil
 	}
-	projects, err := s.projectStore.load()
+	workspaces, err := s.workspaceStore.load()
 	if err != nil {
 		return nil, err
 	}
 	baseSlug := defaultWorkspaceSlug(user.Username)
 	slug := baseSlug
-	for _, p := range projects {
-		if strings.EqualFold(p.CreatedBy, user.Username) && strings.EqualFold(p.Slug, baseSlug) {
-			return &p, nil
+	for _, w := range workspaces {
+		if strings.EqualFold(w.CreatedBy, user.Username) && strings.EqualFold(w.Slug, baseSlug) {
+			return &w, nil
 		}
-		if strings.EqualFold(p.Slug, slug) && !strings.EqualFold(p.CreatedBy, user.Username) {
+		if strings.EqualFold(w.Slug, slug) && !strings.EqualFold(w.CreatedBy, user.Username) {
 			slug = fmt.Sprintf("%s-%d", baseSlug, time.Now().Unix()%10000)
 		}
 	}
-	req := &ProjectCreateRequest{
+	req := &WorkspaceCreateRequest{
 		Name:      defaultWorkspaceName(user.Username),
 		Slug:      slug,
 		Blueprint: defaultBlueprintCatalog,
 	}
-	created, err := s.CreateProject(ctx, req)
+	created, err := s.CreateWorkspace(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 	return created, nil
 }
 
-func (s *Service) resolveProjectForUser(ctx context.Context, user *AuthUser, projectKey string) (*SkyforgeProject, error) {
-	projectKey = strings.TrimSpace(projectKey)
-	if projectKey == "" {
-		project, err := s.ensureDefaultWorkspace(ctx, user)
+func (s *Service) resolveWorkspaceForUser(ctx context.Context, user *AuthUser, workspaceKey string) (*SkyforgeWorkspace, error) {
+	workspaceKey = strings.TrimSpace(workspaceKey)
+	if workspaceKey == "" {
+		workspace, err := s.ensureDefaultWorkspace(ctx, user)
 		if err != nil {
 			return nil, err
 		}
-		if project == nil {
-			return nil, errs.B().Code(errs.InvalidArgument).Msg("project_id is required").Err()
+		if workspace == nil {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("workspace_id is required").Err()
 		}
-		return project, nil
+		return workspace, nil
 	}
-	pc, err := s.projectContextForUser(user, projectKey)
+	wc, err := s.workspaceContextForUser(user, workspaceKey)
 	if err != nil {
 		return nil, err
 	}
-	return &pc.project, nil
+	return &wc.workspace, nil
 }
 
-// GetProjects returns workspaces visible to the authenticated user.
+// GetWorkspaces returns workspaces visible to the authenticated user.
 //
-//encore:api auth method=GET path=/api/workspaces tag:list-projects
-func (s *Service) GetProjects(ctx context.Context, params *ProjectsListParams) (*ProjectsListResponse, error) {
+//encore:api auth method=GET path=/api/workspaces tag:list-workspaces
+func (s *Service) GetWorkspaces(ctx context.Context, params *WorkspacesListParams) (*WorkspacesListResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -115,50 +115,50 @@ func (s *Service) GetProjects(ctx context.Context, params *ProjectsListParams) (
 	if _, err := s.ensureDefaultWorkspace(ctx, user); err != nil {
 		log.Printf("default workspace ensure: %v", err)
 	}
-	projects, err := s.projectStore.load()
+	workspaces, err := s.workspaceStore.load()
 	if err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load projects").Err()
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load workspaces").Err()
 	}
 	all := params != nil && strings.EqualFold(strings.TrimSpace(params.All), "true")
 	if !isAdmin && all {
-		return nil, errs.B().Code(errs.PermissionDenied).Msg("admin access required for all projects").Err()
+		return nil, errs.B().Code(errs.PermissionDenied).Msg("admin access required for all workspaces").Err()
 	}
 	if !isAdmin && !all {
 		changed := false
-		changedProjects := make([]SkyforgeProject, 0)
-		for i := range projects {
-			if role, ok := syncGroupMembershipForUser(&projects[i], claims); ok {
+		changedWorkspaces := make([]SkyforgeWorkspace, 0)
+		for i := range workspaces {
+			if role, ok := syncGroupMembershipForUser(&workspaces[i], claims); ok {
 				changed = true
-				changedProjects = append(changedProjects, projects[i])
-				log.Printf("project group sync: %s -> %s (%s)", user.Username, projects[i].Slug, role)
+				changedWorkspaces = append(changedWorkspaces, workspaces[i])
+				log.Printf("workspace group sync: %s -> %s (%s)", user.Username, workspaces[i].Slug, role)
 			}
 		}
 		if changed {
-			if err := s.projectStore.save(projects); err != nil {
-				log.Printf("projects save after group sync: %v", err)
+			if err := s.workspaceStore.save(workspaces); err != nil {
+				log.Printf("workspaces save after group sync: %v", err)
 			} else {
-				for _, p := range changedProjects {
-					syncGiteaCollaboratorsForProject(s.cfg, p)
+				for _, w := range changedWorkspaces {
+					syncGiteaCollaboratorsForWorkspace(s.cfg, w)
 				}
 			}
 		}
-		filtered := make([]SkyforgeProject, 0, len(projects))
-		for _, p := range projects {
-			if projectAccessLevelForClaims(s.cfg, p, claims) != "none" {
-				filtered = append(filtered, p)
+		filtered := make([]SkyforgeWorkspace, 0, len(workspaces))
+		for _, w := range workspaces {
+			if workspaceAccessLevelForClaims(s.cfg, w, claims) != "none" {
+				filtered = append(filtered, w)
 			}
 		}
-		projects = filtered
+		workspaces = filtered
 	}
 
 	_ = ctx
-	return &ProjectsListResponse{
+	return &WorkspacesListResponse{
 		User:       user.Username,
-		Workspaces: projects,
+		Workspaces: workspaces,
 	}, nil
 }
 
-type ProjectCreateRequest struct {
+type WorkspaceCreateRequest struct {
 	Name          string   `json:"name"`
 	Slug          string   `json:"slug,omitempty"`
 	Description   string   `json:"description,omitempty"`
@@ -177,10 +177,10 @@ type BlueprintSyncResponse struct {
 	Status string `json:"status"`
 }
 
-// CreateProject provisions a new Skyforge project.
+// CreateWorkspace provisions a new Skyforge workspace.
 //
 //encore:api auth method=POST path=/api/workspaces
-func (s *Service) CreateProject(ctx context.Context, req *ProjectCreateRequest) (*SkyforgeProject, error) {
+func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateRequest) (*SkyforgeWorkspace, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -220,11 +220,11 @@ func (s *Service) CreateProject(ctx context.Context, req *ProjectCreateRequest) 
 	terraformStateKey := fmt.Sprintf("tf-%s/primary.tfstate", slug)
 	artifactsBucket := storage.StorageBucketName
 
-	projects, err := s.projectStore.load()
+	workspaces, err := s.workspaceStore.load()
 	if err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load projects").Err()
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load workspaces").Err()
 	}
-	for _, existing := range projects {
+	for _, existing := range workspaces {
 		if existing.Slug == slug {
 			return &existing, nil
 		}
@@ -263,7 +263,7 @@ func (s *Service) CreateProject(ctx context.Context, req *ProjectCreateRequest) 
 		defaultBranch = "master"
 	}
 
-	storageEndpoint := strings.TrimSpace(s.cfg.Projects.ObjectStorageEndpoint)
+	storageEndpoint := strings.TrimSpace(s.cfg.Workspaces.ObjectStorageEndpoint)
 	if storageEndpoint == "" {
 		storageEndpoint = "minio:9000"
 	}
@@ -414,7 +414,7 @@ variable "TF_VAR_gcp_region" {
 		log.Printf("ensureGiteaFile playbook.yml: %v", err)
 	}
 
-	legacyProjectID := nextLegacyProjectID(projects)
+	legacyWorkspaceID := nextLegacyWorkspaceID(workspaces)
 	tofuInitID := 0
 	tofuPlanID := 0
 	tofuApplyID := 0
@@ -423,7 +423,7 @@ variable "TF_VAR_gcp_region" {
 	labppRunID := 0
 	containerlabRunID := 0
 
-	created := SkyforgeProject{
+	created := SkyforgeWorkspace{
 		ID:                        fmt.Sprintf("%d-%s", time.Now().Unix(), slug),
 		Slug:                      slug,
 		Name:                      name,
@@ -451,17 +451,17 @@ variable "TF_VAR_gcp_region" {
 		ArtifactsBucket:           artifactsBucket,
 		EveServer:                 eveServer,
 		NetlabServer:              netlabServer,
-		LegacyProjectID:           legacyProjectID,
+		LegacyWorkspaceID:         legacyWorkspaceID,
 		GiteaOwner:                owner,
 		GiteaRepo:                 repo,
 	}
 	if created.AWSAuthMethod == "" {
 		created.AWSAuthMethod = "sso"
 	}
-	projects = append(projects, created)
-	if err := s.projectStore.save(projects); err != nil {
-		log.Printf("projects save: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist project").Err()
+	workspaces = append(workspaces, created)
+	if err := s.workspaceStore.save(workspaces); err != nil {
+		log.Printf("workspaces save: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist workspace").Err()
 	}
 	if s.db != nil {
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
@@ -470,14 +470,14 @@ variable "TF_VAR_gcp_region" {
 			ctx,
 			s.db,
 			user.Username,
-			fmt.Sprintf("Project created: %s", created.Name),
-			fmt.Sprintf("Skyforge provisioned project %s (%s).", created.Name, created.Slug),
+			fmt.Sprintf("Workspace created: %s", created.Name),
+			fmt.Sprintf("Skyforge provisioned workspace %s (%s).", created.Name, created.Slug),
 			"SYSTEM",
-			"projects",
+			"workspaces",
 			created.ID,
 			"low",
 		); err != nil {
-			log.Printf("create notification (project): %v", err)
+			log.Printf("create notification (workspace): %v", err)
 		}
 	}
 	{
@@ -490,31 +490,31 @@ variable "TF_VAR_gcp_region" {
 			actor,
 			actorIsAdmin,
 			impersonated,
-			"project.create",
+			"workspace.create",
 			created.ID,
 			fmt.Sprintf("slug=%s repo=%s/%s", created.Slug, created.GiteaOwner, created.GiteaRepo),
 		)
 	}
-	syncGiteaCollaboratorsForProject(giteaCfg, created)
+	syncGiteaCollaboratorsForWorkspace(giteaCfg, created)
 	return &created, nil
 }
 
-// SyncProjectBlueprint syncs a project's blueprint catalog into the repo.
+// SyncWorkspaceBlueprint syncs a workspace's blueprint catalog into the repo.
 //
-//encore:api auth method=POST path=/api/workspaces/:projectID/blueprint/sync
-func (s *Service) SyncProjectBlueprint(ctx context.Context, projectID string) (*BlueprintSyncResponse, error) {
+//encore:api auth method=POST path=/api/workspaces/:workspaceID/blueprint/sync
+func (s *Service) SyncWorkspaceBlueprint(ctx context.Context, workspaceID string) (*BlueprintSyncResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.projectContextForUser(user, projectID)
+	pc, err := s.workspaceContextForUser(user, workspaceID)
 	if err != nil {
 		return nil, err
 	}
 	if pc.access == "viewer" {
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
-	blueprint := strings.TrimSpace(pc.project.Blueprint)
+	blueprint := strings.TrimSpace(pc.workspace.Blueprint)
 	if blueprint == "" {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("no blueprint configured").Err()
 	}
@@ -532,13 +532,13 @@ func (s *Service) SyncProjectBlueprint(ctx context.Context, projectID string) (*
 		log.Printf("ensureGiteaUser: %v", err)
 	}
 	giteaCfg := s.cfg
-	targetBranch := strings.TrimSpace(pc.project.DefaultBranch)
+	targetBranch := strings.TrimSpace(pc.workspace.DefaultBranch)
 	if targetBranch == "" {
 		targetBranch = "main"
 	}
-	if err := syncGiteaRepoFromBlueprintWithSource(s.cfg, giteaCfg, pc.project.GiteaOwner, pc.project.GiteaRepo, blueprint, targetBranch, pc.claims); err != nil {
+	if err := syncGiteaRepoFromBlueprintWithSource(s.cfg, giteaCfg, pc.workspace.GiteaOwner, pc.workspace.GiteaRepo, blueprint, targetBranch, pc.claims); err != nil {
 		log.Printf("syncGiteaRepoFromBlueprint: %v", err)
-		if fallbackErr := syncGiteaRepoFromBlueprintWithSource(s.cfg, s.cfg, pc.project.GiteaOwner, pc.project.GiteaRepo, blueprint, targetBranch, pc.claims); fallbackErr != nil {
+		if fallbackErr := syncGiteaRepoFromBlueprintWithSource(s.cfg, s.cfg, pc.workspace.GiteaOwner, pc.workspace.GiteaRepo, blueprint, targetBranch, pc.claims); fallbackErr != nil {
 			log.Printf("syncGiteaRepoFromBlueprint fallback: %v", fallbackErr)
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to sync blueprint").Err()
 		}

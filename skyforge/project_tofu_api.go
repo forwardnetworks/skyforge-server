@@ -11,46 +11,46 @@ import (
 	"encore.dev/beta/errs"
 )
 
-type ProjectTofuTemplatesResponse struct {
-	ProjectID string   `json:"projectId"`
+type WorkspaceTofuTemplatesResponse struct {
+	WorkspaceID string   `json:"workspaceId"`
 	Repo      string   `json:"repo"`
 	Branch    string   `json:"branch"`
 	Dir       string   `json:"dir"`
 	Templates []string `json:"templates"`
 }
 
-type ProjectTofuTemplatesRequest struct {
+type WorkspaceTofuTemplatesRequest struct {
 	Dir    string `query:"dir" encore:"optional"`
-	Source string `query:"source" encore:"optional"` // "project" (default), "blueprints", or "custom"
+	Source string `query:"source" encore:"optional"` // "workspace" (default), "blueprints", or "custom"
 	Repo   string `query:"repo" encore:"optional"`   // owner/repo or URL (custom only)
 }
 
-// GetProjectTofuTemplates lists Terraform template directories for a project.
+// GetWorkspaceTofuTemplates lists Terraform template directories for a workspace.
 //
 //encore:api auth method=GET path=/api/workspaces/:id/tofu/templates
-func (s *Service) GetProjectTofuTemplates(ctx context.Context, id string, req *ProjectTofuTemplatesRequest) (*ProjectTofuTemplatesResponse, error) {
+func (s *Service) GetWorkspaceTofuTemplates(ctx context.Context, id string, req *WorkspaceTofuTemplatesRequest) (*WorkspaceTofuTemplatesResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.projectContextForUser(user, id)
+	pc, err := s.workspaceContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
-	source := "project"
+	source := "workspace"
 	if req != nil {
 		if v := strings.ToLower(strings.TrimSpace(req.Source)); v != "" {
 			source = v
 		}
 	}
 
-	owner := pc.project.GiteaOwner
-	repo := pc.project.GiteaRepo
-	branch := strings.TrimSpace(pc.project.DefaultBranch)
+	owner := pc.workspace.GiteaOwner
+	repo := pc.workspace.GiteaRepo
+	branch := strings.TrimSpace(pc.workspace.DefaultBranch)
 
 	switch source {
 	case "blueprints", "blueprint":
-		ref := strings.TrimSpace(pc.project.Blueprint)
+		ref := strings.TrimSpace(pc.workspace.Blueprint)
 		if ref == "" {
 			ref = "skyforge/blueprints"
 		}
@@ -74,12 +74,12 @@ func (s *Service) GetProjectTofuTemplates(ctx context.Context, id string, req *P
 		if err != nil {
 			return nil, err
 		}
-		if !isAdminUser(s.cfg, pc.claims.Username) && customOwner != pc.project.GiteaOwner && customOwner != "skyforge" {
+		if !isAdminUser(s.cfg, pc.claims.Username) && customOwner != pc.workspace.GiteaOwner && customOwner != "skyforge" {
 			return nil, errs.B().Code(errs.PermissionDenied).Msg("custom repo not allowed").Err()
 		}
 		owner, repo = customOwner, customRepo
 		branch = ""
-	case "project":
+	case "workspace":
 		// default already set
 	default:
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown template source").Err()
@@ -120,8 +120,8 @@ func (s *Service) GetProjectTofuTemplates(ctx context.Context, id string, req *P
 	}
 	sort.Strings(templates)
 	_ = ctx
-	return &ProjectTofuTemplatesResponse{
-		ProjectID: pc.project.ID,
+	return &WorkspaceTofuTemplatesResponse{
+		WorkspaceID: pc.workspace.ID,
 		Repo:      fmt.Sprintf("%s/%s", owner, repo),
 		Branch:    branch,
 		Dir:       dir,

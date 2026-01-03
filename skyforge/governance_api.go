@@ -14,7 +14,7 @@ import (
 type GovernanceSummary struct {
 	ResourceCount     int                     `json:"resourceCount"`
 	ActiveResources   int                     `json:"activeResources"`
-	ProjectsTracked   int                     `json:"projectsTracked"`
+	WorkspacesTracked int                     `json:"workspacesTracked"`
 	CostLast30Days    float64                 `json:"costLast30Days"`
 	CostCurrency      string                  `json:"costCurrency"`
 	LastCostPeriodEnd string                  `json:"lastCostPeriodEnd,omitempty"`
@@ -30,8 +30,8 @@ type ProviderCostBreakdown struct {
 
 type GovernanceResource struct {
 	ID           string          `json:"id"`
-	ProjectID    string          `json:"projectId,omitempty"`
-	ProjectName  string          `json:"projectName,omitempty"`
+	WorkspaceID  string          `json:"workspaceId,omitempty"`
+	WorkspaceName string          `json:"workspaceName,omitempty"`
 	Provider     string          `json:"provider"`
 	ResourceID   string          `json:"resourceId"`
 	ResourceType string          `json:"resourceType"`
@@ -49,8 +49,8 @@ type GovernanceResource struct {
 
 type GovernanceCostSnapshot struct {
 	ID          string          `json:"id"`
-	ProjectID   string          `json:"projectId,omitempty"`
-	ProjectName string          `json:"projectName,omitempty"`
+	WorkspaceID  string          `json:"workspaceId,omitempty"`
+	WorkspaceName string          `json:"workspaceName,omitempty"`
 	ResourceID  string          `json:"resourceId,omitempty"`
 	Provider    string          `json:"provider"`
 	PeriodStart string          `json:"periodStart"`
@@ -64,8 +64,8 @@ type GovernanceCostSnapshot struct {
 
 type GovernanceUsageSnapshot struct {
 	ID          string          `json:"id"`
-	ProjectID   string          `json:"projectId,omitempty"`
-	ProjectName string          `json:"projectName,omitempty"`
+	WorkspaceID  string          `json:"workspaceId,omitempty"`
+	WorkspaceName string          `json:"workspaceName,omitempty"`
 	Provider    string          `json:"provider"`
 	ScopeType   string          `json:"scopeType"`
 	ScopeID     string          `json:"scopeId,omitempty"`
@@ -83,7 +83,7 @@ type GovernanceResourceIngestRequest struct {
 }
 
 type GovernanceResourceInput struct {
-	ProjectID    string            `json:"projectId,omitempty"`
+	WorkspaceID  string            `json:"workspaceId,omitempty"`
 	Provider     string            `json:"provider"`
 	ResourceID   string            `json:"resourceId"`
 	ResourceType string            `json:"resourceType"`
@@ -102,7 +102,7 @@ type GovernanceCostIngestRequest struct {
 }
 
 type GovernanceCostInput struct {
-	ProjectID   string            `json:"projectId,omitempty"`
+	WorkspaceID  string            `json:"workspaceId,omitempty"`
 	ResourceID  string            `json:"resourceId,omitempty"`
 	Provider    string            `json:"provider"`
 	PeriodStart string            `json:"periodStart"`
@@ -118,7 +118,7 @@ type GovernanceUsageIngestRequest struct {
 }
 
 type GovernanceUsageInput struct {
-	ProjectID string            `json:"projectId,omitempty"`
+	WorkspaceID string            `json:"workspaceId,omitempty"`
 	Provider  string            `json:"provider"`
 	ScopeType string            `json:"scopeType"`
 	ScopeID   string            `json:"scopeId,omitempty"`
@@ -129,7 +129,7 @@ type GovernanceUsageInput struct {
 }
 
 type GovernanceResourceQuery struct {
-	ProjectID string `query:"project_id" encore:"optional"`
+	WorkspaceID string `query:"workspace_id" encore:"optional"`
 	Provider  string `query:"provider" encore:"optional"`
 	Status    string `query:"status" encore:"optional"`
 	Owner     string `query:"owner" encore:"optional"`
@@ -139,13 +139,13 @@ type GovernanceResourceQuery struct {
 }
 
 type GovernanceCostQuery struct {
-	ProjectID string `query:"project_id" encore:"optional"`
+	WorkspaceID string `query:"workspace_id" encore:"optional"`
 	Provider  string `query:"provider" encore:"optional"`
 	Limit     int    `query:"limit" encore:"optional"`
 }
 
 type GovernanceUsageQuery struct {
-	ProjectID string `query:"project_id" encore:"optional"`
+	WorkspaceID string `query:"workspace_id" encore:"optional"`
 	Provider  string `query:"provider" encore:"optional"`
 	Metric    string `query:"metric" encore:"optional"`
 	Limit     int    `query:"limit" encore:"optional"`

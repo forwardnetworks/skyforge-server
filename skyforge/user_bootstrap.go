@@ -141,7 +141,7 @@ func ensureUserHomeWorkspace(cfg Config, username string) error {
 	if !isValidUsername(username) {
 		return fmt.Errorf("invalid username")
 	}
-	base := filepath.Join("/home/openvscode-server/project/users", username)
+	base := filepath.Join("/home/openvscode-server/workspace/users", username)
 	home := filepath.Join(base, "home")
 	filesDir := filepath.Join(home, "files")
 	anonymousDir := filepath.Join(home, "anonymous")
@@ -168,7 +168,7 @@ func ensureUserHomeWorkspace(cfg Config, username string) error {
 			"This folder is your personal \"home\" inside Skyforge's VS Code.\n\n"+
 			"## Git\n"+
 			"- Use this directory for your own clones and branches.\n"+
-			"- Skyforge may also sync project repos elsewhere in the workspace as a read-only mirror.\n\n"+
+			"- Skyforge may also sync workspace repos elsewhere in the workspace as a read-only mirror.\n\n"+
 			"## Files (S3 / MinIO)\n"+
 			"Skyforge exposes an S3-compatible bucket via the same hostname at /files/.\n\n"+
 			"- Upload (example):\n"+
@@ -204,7 +204,7 @@ func ensureLabCatalogRepos(cfg Config) error {
 	labCatalogChecked = true
 	labBootstrapMu.Unlock()
 
-	owner := strings.TrimSpace(cfg.Projects.GiteaUsername)
+	owner := strings.TrimSpace(cfg.Workspaces.GiteaUsername)
 	if owner == "" {
 		return fmt.Errorf("gitea username not configured")
 	}
@@ -218,12 +218,12 @@ func ensureLabCatalogRepos(cfg Config) error {
 }
 
 func ensureUserLabWorkspace(ctx context.Context, cfg Config, username string) error {
-	base := filepath.Join("/home/openvscode-server/project/users", username, "labs")
+	base := filepath.Join("/home/openvscode-server/workspace/users", username, "labs")
 	if err := os.MkdirAll(base, 0o755); err != nil {
 		return err
 	}
-	owner := strings.TrimSpace(cfg.Projects.GiteaUsername)
-	password := strings.TrimSpace(cfg.Projects.GiteaPassword)
+	owner := strings.TrimSpace(cfg.Workspaces.GiteaUsername)
+	password := strings.TrimSpace(cfg.Workspaces.GiteaPassword)
 	if owner == "" || password == "" {
 		return fmt.Errorf("gitea credentials not configured")
 	}

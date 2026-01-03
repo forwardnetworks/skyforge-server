@@ -11,7 +11,7 @@ import (
 
 type TaskRecord struct {
 	ID           int
-	ProjectID    string
+	WorkspaceID    string
 	DeploymentID sql.NullString
 	TaskType     string
 	Status       string
@@ -30,7 +30,7 @@ type TaskLogEntry struct {
 	Stream string `json:"stream,omitempty"`
 }
 
-func createTask(ctx context.Context, db *sql.DB, projectID string, deploymentID *string, taskType string, message string, createdBy string, metadata JSONMap) (*TaskRecord, error) {
+func createTask(ctx context.Context, db *sql.DB, workspaceID string, deploymentID *string, taskType string, message string, createdBy string, metadata JSONMap) (*TaskRecord, error) {
 	if db == nil {
 		return nil, errDBUnavailable
 	}
@@ -50,7 +50,7 @@ func createTask(ctx context.Context, db *sql.DB, projectID string, deploymentID 
 		msg = sql.NullString{String: message, Valid: true}
 	}
 	row := db.QueryRowContext(ctx, `INSERT INTO sf_tasks (
-  project_id,
+  workspace_id,
   deployment_id,
   task_type,
   status,
@@ -58,8 +58,8 @@ func createTask(ctx context.Context, db *sql.DB, projectID string, deploymentID 
   metadata,
   created_by
 ) VALUES ($1,$2,$3,$4,$5,$6,$7)
-RETURNING id, created_at`, projectID, dep, taskType, "queued", msg, metaBytes, createdBy)
-	rec := &TaskRecord{ProjectID: projectID, DeploymentID: dep, TaskType: taskType, Status: "queued", Message: msg, Metadata: metadata, CreatedBy: createdBy}
+RETURNING id, created_at`, workspaceID, dep, taskType, "queued", msg, metaBytes, createdBy)
+	rec := &TaskRecord{WorkspaceID: workspaceID, DeploymentID: dep, TaskType: taskType, Status: "queued", Message: msg, Metadata: metadata, CreatedBy: createdBy}
 	if err := row.Scan(&rec.ID, &rec.CreatedAt); err != nil {
 		return nil, err
 	}
@@ -108,18 +108,18 @@ func appendTaskLog(ctx context.Context, db *sql.DB, taskID int, stream string, o
 	return err
 }
 
-func listTasks(ctx context.Context, db *sql.DB, projectID string, limit int) ([]TaskRecord, error) {
+func listTasks(ctx context.Context, db *sql.DB, workspaceID string, limit int) ([]TaskRecord, error) {
 	if db == nil {
 		return nil, errDBUnavailable
 	}
 	if limit <= 0 {
 		limit = 5
 	}
-	rows, err := db.QueryContext(ctx, `SELECT id, project_id, deployment_id, task_type, status, message, metadata, created_by, created_at, started_at, finished_at, error
+	rows, err := db.QueryContext(ctx, `SELECT id, workspace_id, deployment_id, task_type, status, message, metadata, created_by, created_at, started_at, finished_at, error
 FROM sf_tasks
-WHERE project_id=$1
+WHERE workspace_id=$1
 ORDER BY created_at DESC
-LIMIT $2`, projectID, limit)
+LIMIT $2`, workspaceID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +128,7 @@ LIMIT $2`, projectID, limit)
 	for rows.Next() {
 		rec := TaskRecord{}
 		var metaBytes []byte
-		if err := rows.Scan(&rec.ID, &rec.ProjectID, &rec.DeploymentID, &rec.TaskType, &rec.Status, &rec.Message, &metaBytes, &rec.CreatedBy, &rec.CreatedAt, &rec.StartedAt, &rec.FinishedAt, &rec.Error); err != nil {
+		if err := rows.Scan(&rec.ID, &rec.WorkspaceID, &rec.DeploymentID, &rec.TaskType, &rec.Status, &rec.Message, &metaBytes, &rec.CreatedBy, &rec.CreatedAt, &rec.StartedAt, &rec.FinishedAt, &rec.Error); err != nil {
 			return nil, err
 		}
 		if len(metaBytes) > 0 {
@@ -146,12 +146,12 @@ func getTask(ctx context.Context, db *sql.DB, taskID int) (*TaskRecord, error) {
 	if db == nil {
 		return nil, errDBUnavailable
 	}
-	row := db.QueryRowContext(ctx, `SELECT id, project_id, deployment_id, task_type, status, message, metadata, created_by, created_at, started_at, finished_at, error
+	row := db.QueryRowContext(ctx, `SELECT id, workspace_id, deployment_id, task_type, status, message, metadata, created_by, created_at, started_at, finished_at, error
 FROM sf_tasks
 WHERE id=$1`, taskID)
 	rec := TaskRecord{}
 	var metaBytes []byte
-	if err := row.Scan(&rec.ID, &rec.ProjectID, &rec.DeploymentID, &rec.TaskType, &rec.Status, &rec.Message, &metaBytes, &rec.CreatedBy, &rec.CreatedAt, &rec.StartedAt, &rec.FinishedAt, &rec.Error); err != nil {
+	if err := row.Scan(&rec.ID, &rec.WorkspaceID, &rec.DeploymentID, &rec.TaskType, &rec.Status, &rec.Message, &metaBytes, &rec.CreatedBy, &rec.CreatedAt, &rec.StartedAt, &rec.FinishedAt, &rec.Error); err != nil {
 		return nil, err
 	}
 	if len(metaBytes) > 0 {

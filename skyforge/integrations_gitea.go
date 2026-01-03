@@ -27,11 +27,11 @@ func giteaClientFor(cfg Config) *gitea.Client {
 	defer giteaClientMu.Unlock()
 
 	next := gitea.Config{
-		APIURL:      cfg.Projects.GiteaAPIURL,
-		Username:    cfg.Projects.GiteaUsername,
-		Password:    cfg.Projects.GiteaPassword,
+		APIURL:      cfg.Workspaces.GiteaAPIURL,
+		Username:    cfg.Workspaces.GiteaUsername,
+		Password:    cfg.Workspaces.GiteaPassword,
 		Timeout:     15 * time.Second,
-		RepoPrivate: cfg.Projects.GiteaRepoPrivate,
+		RepoPrivate: cfg.Workspaces.GiteaRepoPrivate,
 	}
 
 	if giteaClient == nil || giteaClientCfg != next {
@@ -43,7 +43,7 @@ func giteaClientFor(cfg Config) *gitea.Client {
 
 func ensureGiteaUser(cfg Config, username, password string) error {
 	base := cfg.GiteaBaseURL
-	apiURL := strings.TrimRight(cfg.Projects.GiteaAPIURL, "/")
+	apiURL := strings.TrimRight(cfg.Workspaces.GiteaAPIURL, "/")
 	if apiURL != "" {
 		if strings.HasSuffix(strings.ToLower(apiURL), "/api/v1") {
 			base = strings.TrimSuffix(apiURL, "/api/v1")
@@ -224,7 +224,7 @@ func ensureBlueprintCatalogRepo(cfg Config, blueprint string) error {
 	if err := ensureGiteaRepo(cfg, owner, repo); err != nil {
 		return err
 	}
-	readme := "# Skyforge Blueprint Catalog\n\nThis repository contains validated deployment blueprints synced into user projects.\n"
+	readme := "# Skyforge Blueprint Catalog\n\nThis repository contains validated deployment blueprints synced into user workspaces.\n"
 	_ = ensureGiteaFile(cfg, owner, repo, "README.md", readme, "docs: add blueprint catalog README", "main", nil)
 	return nil
 }
@@ -306,7 +306,7 @@ func ensureGiteaRepo(cfg Config, owner, repo string) error {
 }
 
 func ensureGiteaRepoFromBlueprint(cfg Config, owner, repo, blueprint string) error {
-	// For Skyforge MVP we avoid copying blueprint content into each project repo.
+	// For Skyforge MVP we avoid copying blueprint content into each workspace repo.
 	// Projects can reference the shared blueprint catalog directly for deployments.
 	// A manual "sync" can be added later if/when users want a forked copy.
 	return giteaClientFor(cfg).EnsureRepo(owner, repo)

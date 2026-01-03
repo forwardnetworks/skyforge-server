@@ -12,7 +12,7 @@ import (
 	"encore.dev/beta/errs"
 )
 
-type ProjectDeleteParams struct {
+type WorkspaceDeleteParams struct {
 	DryRun        string `query:"dry_run" encore:"optional"`
 	DryRunAlt     string `query:"dryRun" encore:"optional"`
 	Force         string `query:"force" encore:"optional"`
@@ -20,7 +20,7 @@ type ProjectDeleteParams struct {
 	InventoryOnly string `query:"inventory_only" encore:"optional"`
 }
 
-type ProjectDeleteResponse struct {
+type WorkspaceDeleteResponse struct {
 	DryRun               bool               `json:"dryRun,omitempty"`
 	DeleteMode           string             `json:"deleteMode,omitempty"`
 	RequireForce         bool               `json:"requireForce,omitempty"`
@@ -29,24 +29,24 @@ type ProjectDeleteResponse struct {
 	TerraformStateKey    string             `json:"terraformStateKey,omitempty"`
 	TerraformStatePrefix string             `json:"terraformStatePrefix,omitempty"`
 	Status               string             `json:"status,omitempty"`
-	Project              *ProjectDeleteItem `json:"project,omitempty"`
+	Workspace            *WorkspaceDeleteItem `json:"workspace,omitempty"`
 }
 
-type ProjectDeleteItem struct {
+type WorkspaceDeleteItem struct {
 	ID   string `json:"id"`
 	Slug string `json:"slug"`
 	Name string `json:"name"`
 }
 
-// DeleteProject deletes a project and its backing resources.
+// DeleteWorkspace deletes a workspace and its backing resources.
 //
 //encore:api auth method=DELETE path=/api/workspaces/:id
-func (s *Service) DeleteProject(ctx context.Context, id string, params *ProjectDeleteParams) (*ProjectDeleteResponse, error) {
+func (s *Service) DeleteWorkspace(ctx context.Context, id string, params *WorkspaceDeleteParams) (*WorkspaceDeleteResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.projectContextForUser(user, id)
+	pc, err := s.workspaceContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -63,24 +63,24 @@ func (s *Service) DeleteProject(ctx context.Context, id string, params *ProjectD
 		confirm = strings.TrimSpace(params.Confirm)
 		inventoryOnly = strings.EqualFold(params.InventoryOnly, "true")
 	}
-	deleteMode := strings.ToLower(strings.TrimSpace(s.cfg.Projects.DeleteMode))
+	deleteMode := strings.ToLower(strings.TrimSpace(s.cfg.Workspaces.DeleteMode))
 	if deleteMode == "dry-run" && !force {
 		dryRun = true
 	}
-	statePrefix := strings.SplitN(pc.project.TerraformStateKey, "/", 2)[0] + "/"
+	statePrefix := strings.SplitN(pc.workspace.TerraformStateKey, "/", 2)[0] + "/"
 	if dryRun {
-		return &ProjectDeleteResponse{
+		return &WorkspaceDeleteResponse{
 			DryRun:               true,
 			DeleteMode:           deleteMode,
 			RequireForce:         deleteMode == "dry-run",
-			GiteaOwner:           pc.project.GiteaOwner,
-			GiteaRepo:            pc.project.GiteaRepo,
-			TerraformStateKey:    pc.project.TerraformStateKey,
+			GiteaOwner:           pc.workspace.GiteaOwner,
+			GiteaRepo:            pc.workspace.GiteaRepo,
+			TerraformStateKey:    pc.workspace.TerraformStateKey,
 			TerraformStatePrefix: statePrefix,
 		}, nil
 	}
-	if confirm == "" || (!strings.EqualFold(confirm, pc.project.Slug) && !strings.EqualFold(confirm, pc.project.ID)) {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("delete requires confirm=<project slug>").Err()
+	if confirm == "" || (!strings.EqualFold(confirm, pc.workspace.Slug) && !strings.EqualFold(confirm, pc.workspace.ID)) {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("delete requires confirm=<workspace slug>").Err()
 	}
 	{
 		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
@@ -92,13 +92,13 @@ func (s *Service) DeleteProject(ctx context.Context, id string, params *ProjectD
 			actor,
 			actorIsAdmin,
 			impersonated,
-			"project.delete",
-			pc.project.ID,
-			fmt.Sprintf("slug=%s repo=%s/%s", pc.project.Slug, pc.project.GiteaOwner, pc.project.GiteaRepo),
+			"workspace.delete",
+			pc.workspace.ID,
+			fmt.Sprintf("slug=%s repo=%s/%s", pc.workspace.Slug, pc.workspace.GiteaOwner, pc.workspace.GiteaRepo),
 		)
 	}
 	if !inventoryOnly {
-		resp, body, err := giteaDo(s.cfg, http.MethodDelete, fmt.Sprintf("/repos/%s/%s", url.PathEscape(pc.project.GiteaOwner), url.PathEscape(pc.project.GiteaRepo)), nil)
+		resp, body, err := giteaDo(s.cfg, http.MethodDelete, fmt.Sprintf("/repos/%s/%s", url.PathEscape(pc.workspace.GiteaOwner), url.PathEscape(pc.workspace.GiteaRepo)), nil)
 		if err != nil {
 			log.Printf("gitea delete repo: %v", err)
 		} else if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
@@ -110,17 +110,17 @@ func (s *Service) DeleteProject(ctx context.Context, id string, params *ProjectD
 			if err := deleteTerraformStatePrefix(ctx, s.cfg, "terraform-state", statePrefix); err != nil {
 				log.Printf("object storage delete state prefix %s: %v", statePrefix, err)
 			}
-			if err := deleteProjectArtifacts(ctx, pc.project.ID); err != nil {
-				log.Printf("delete project artifacts %s: %v", pc.project.ID, err)
+			if err := deleteWorkspaceArtifacts(ctx, pc.workspace.ID); err != nil {
+				log.Printf("delete workspace artifacts %s: %v", pc.workspace.ID, err)
 			}
 		}
 	}
-	pc.projects = append(pc.projects[:pc.idx], pc.projects[pc.idx+1:]...)
-	if err := s.projectStore.save(pc.projects); err != nil {
-		log.Printf("projects save: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist project deletion").Err()
+	pc.workspaces = append(pc.workspaces[:pc.idx], pc.workspaces[pc.idx+1:]...)
+	if err := s.workspaceStore.save(pc.workspaces); err != nil {
+		log.Printf("workspaces save: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist workspace deletion").Err()
 	}
-	return &ProjectDeleteResponse{
+	return &WorkspaceDeleteResponse{
 		DeleteMode: func() string {
 			if inventoryOnly {
 				return "inventory-only"
@@ -128,10 +128,10 @@ func (s *Service) DeleteProject(ctx context.Context, id string, params *ProjectD
 			return "full"
 		}(),
 		Status: "deleted",
-		Project: &ProjectDeleteItem{
-			ID:   pc.project.ID,
-			Slug: pc.project.Slug,
-			Name: pc.project.Name,
+		Workspace: &WorkspaceDeleteItem{
+			ID:   pc.workspace.ID,
+			Slug: pc.workspace.Slug,
+			Name: pc.workspace.Name,
 		},
 	}, nil
 }

@@ -11,50 +11,50 @@ import (
 	"encore.dev/beta/errs"
 )
 
-type ProjectLabppTemplatesResponse struct {
-	ProjectID string   `json:"projectId"`
+type WorkspaceLabppTemplatesResponse struct {
+	WorkspaceID string   `json:"workspaceId"`
 	Repo      string   `json:"repo"`
 	Branch    string   `json:"branch"`
 	Dir       string   `json:"dir"`
 	Templates []string `json:"templates"`
 }
 
-type ProjectLabppTemplatesRequest struct {
+type WorkspaceLabppTemplatesRequest struct {
 	Dir    string `query:"dir" encore:"optional"`
-	Source string `query:"source" encore:"optional"` // "project" (default), "blueprints", or "custom"
+	Source string `query:"source" encore:"optional"` // "workspace" (default), "blueprints", or "custom"
 	Repo   string `query:"repo" encore:"optional"`   // owner/repo or URL (custom only)
 }
 
-// GetProjectLabppTemplates lists LabPP templates for a project.
+// GetWorkspaceLabppTemplates lists LabPP templates for a workspace.
 //
 // Templates are expected to live under a repo directory (default: blueprints/labpp)
 // where each template is a subdirectory (e.g. blueprints/labpp/junos-example/...).
 //
 //encore:api auth method=GET path=/api/workspaces/:id/labpp/templates
-func (s *Service) GetProjectLabppTemplates(ctx context.Context, id string, req *ProjectLabppTemplatesRequest) (*ProjectLabppTemplatesResponse, error) {
+func (s *Service) GetWorkspaceLabppTemplates(ctx context.Context, id string, req *WorkspaceLabppTemplatesRequest) (*WorkspaceLabppTemplatesResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.projectContextForUser(user, id)
+	pc, err := s.workspaceContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
 
-	source := "project"
+	source := "workspace"
 	if req != nil {
 		if v := strings.ToLower(strings.TrimSpace(req.Source)); v != "" {
 			source = v
 		}
 	}
 
-	owner := pc.project.GiteaOwner
-	repo := pc.project.GiteaRepo
-	branch := strings.TrimSpace(pc.project.DefaultBranch)
+	owner := pc.workspace.GiteaOwner
+	repo := pc.workspace.GiteaRepo
+	branch := strings.TrimSpace(pc.workspace.DefaultBranch)
 
 	switch source {
 	case "blueprints", "blueprint":
-		ref := strings.TrimSpace(pc.project.Blueprint)
+		ref := strings.TrimSpace(pc.workspace.Blueprint)
 		if ref == "" {
 			ref = "skyforge/blueprints"
 		}
@@ -78,12 +78,12 @@ func (s *Service) GetProjectLabppTemplates(ctx context.Context, id string, req *
 		if err != nil {
 			return nil, err
 		}
-		if !isAdminUser(s.cfg, pc.claims.Username) && customOwner != pc.project.GiteaOwner && customOwner != "skyforge" {
+		if !isAdminUser(s.cfg, pc.claims.Username) && customOwner != pc.workspace.GiteaOwner && customOwner != "skyforge" {
 			return nil, errs.B().Code(errs.PermissionDenied).Msg("custom repo not allowed").Err()
 		}
 		owner, repo = customOwner, customRepo
 		branch = ""
-	case "project":
+	case "workspace":
 		// default already set
 	default:
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown template source").Err()
@@ -124,8 +124,8 @@ func (s *Service) GetProjectLabppTemplates(ctx context.Context, id string, req *
 	}
 	sort.Strings(templates)
 	_ = ctx
-	return &ProjectLabppTemplatesResponse{
-		ProjectID: pc.project.ID,
+	return &WorkspaceLabppTemplatesResponse{
+		WorkspaceID: pc.workspace.ID,
 		Repo:      fmt.Sprintf("%s/%s", owner, repo),
 		Branch:    branch,
 		Dir:       dir,

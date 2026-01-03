@@ -7,33 +7,33 @@ import (
 	"encore.dev/beta/errs"
 )
 
-type ProjectsSyncResponse struct {
-	Updated   int                 `json:"updated"`
-	Errors    int                 `json:"errors"`
-	Reports   []projectSyncReport `json:"reports"`
-	Timestamp string              `json:"timestamp"`
+type WorkspacesSyncResponse struct {
+	Updated   int                   `json:"updated"`
+	Errors    int                   `json:"errors"`
+	Reports   []workspaceSyncReport `json:"reports"`
+	Timestamp string                `json:"timestamp"`
 }
 
-// SyncProjects syncs all projects from external systems (admin only).
+// SyncWorkspaces syncs all workspaces from external systems (admin only).
 //
-//encore:api auth method=POST path=/api/admin/projects/sync tag:admin
-func (s *Service) SyncProjects(ctx context.Context) (*ProjectsSyncResponse, error) {
-	projectSyncAdminRequests.Add(1)
+//encore:api auth method=POST path=/api/admin/workspaces/sync tag:admin
+func (s *Service) SyncWorkspaces(ctx context.Context) (*WorkspacesSyncResponse, error) {
+	workspaceSyncAdminRequests.Add(1)
 	user, err := requireAuthUser()
 	if err != nil {
-		projectSyncFailures.Add(1)
+		workspaceSyncFailures.Add(1)
 		return nil, err
 	}
 	if !isAdminUser(s.cfg, user.Username) {
-		projectSyncFailures.Add(1)
+		workspaceSyncFailures.Add(1)
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	reports, err := syncProjects(ctx, s.cfg, s.projectStore, s.db)
+	reports, err := syncWorkspaces(ctx, s.cfg, s.workspaceStore, s.db)
 	if err != nil {
-		projectSyncFailures.Add(1)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to sync projects").Err()
+		workspaceSyncFailures.Add(1)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to sync workspaces").Err()
 	}
 	updated := 0
 	withErrors := 0
@@ -46,9 +46,9 @@ func (s *Service) SyncProjects(ctx context.Context) (*ProjectsSyncResponse, erro
 		}
 	}
 	if withErrors > 0 {
-		projectSyncProjectErrors.Add(uint64(withErrors))
+		workspaceSyncErrors.Add(uint64(withErrors))
 	}
-	return &ProjectsSyncResponse{
+	return &WorkspacesSyncResponse{
 		Updated:   updated,
 		Errors:    withErrors,
 		Reports:   reports,

@@ -67,7 +67,7 @@ type Config struct {
 	MaxGroups                 int
 	AdminUsers                []string
 	AdminPassword             string
-	ProjectSyncSeconds        int
+	WorkspaceSyncSeconds      int
 	UI                        UIConfig
 	NotificationsEnabled      bool
 	NotificationsInterval     time.Duration
@@ -94,7 +94,7 @@ type Config struct {
 	LDAP                      LDAPConfig
 	LDAPLookupBindDN          string
 	LDAPLookupBindPassword    string
-	Projects                  ProjectsConfig
+	Workspaces                WorkspacesConfig
 	Redis                     RedisConfig
 	EveServers                []EveServerConfig
 	LabppAPIURL               string
@@ -114,7 +114,7 @@ type Config struct {
 
 type RunRequest struct {
 	TemplateID  int     `json:"templateId"`
-	ProjectID   *string `json:"projectId,omitempty"`
+	WorkspaceID *string `json:"workspaceId,omitempty"`
 	Debug       bool    `json:"debug,omitempty"`
 	DryRun      bool    `json:"dryRun,omitempty"`
 	Diff        bool    `json:"diff,omitempty"`
@@ -131,7 +131,7 @@ type RunRequest struct {
 type TemplateSummary struct {
 	ID          int    `json:"id"`
 	Name        string `json:"name"`
-	ProjectID   string `json:"projectId"`
+	WorkspaceID string `json:"workspaceId"`
 	Repository  string `json:"repository,omitempty"`
 	Playbook    string `json:"playbook,omitempty"`
 	Description string `json:"description,omitempty"`
@@ -221,7 +221,7 @@ type EveServerConfig struct {
 	TmpPath       string `json:"tmpPath,omitempty"`
 }
 
-type ProjectsConfig struct {
+type WorkspacesConfig struct {
 	DataDir                         string
 	GiteaAPIURL                     string
 	GiteaUsername                   string
@@ -243,7 +243,7 @@ type RedisConfig struct {
 	KeyPrefix    string
 }
 
-type SkyforgeProject struct {
+type SkyforgeWorkspace struct {
 	ID                        string    `json:"id"`
 	Slug                      string    `json:"slug"`
 	Name                      string    `json:"name"`
@@ -274,7 +274,7 @@ type SkyforgeProject struct {
 	ArtifactsBucket           string    `json:"artifactsBucket,omitempty"`
 	EveServer                 string    `json:"eveServer,omitempty"`
 	NetlabServer              string    `json:"netlabServer,omitempty"`
-	LegacyProjectID           int       `json:"-"`
+	LegacyWorkspaceID         int       `json:"-"`
 	GiteaOwner                string    `json:"giteaOwner"`
 	GiteaRepo                 string    `json:"giteaRepo"`
 }
@@ -334,7 +334,7 @@ func isSafeRelativePath(path string) bool {
 	return true
 }
 
-func projectPrimaryOwner(p SkyforgeProject) string {
+func workspacePrimaryOwner(p SkyforgeWorkspace) string {
 	if strings.TrimSpace(p.CreatedBy) != "" {
 		return strings.TrimSpace(p.CreatedBy)
 	}
@@ -893,13 +893,13 @@ func loadConfig() Config {
 		}, netlabCfg))
 	}
 
-	projectsCfg := ProjectsConfig{
-		DataDir:                         getenv("SKYFORGE_PROJECTS_DATA_DIR", "/var/lib/skyforge"),
+	workspacesCfg := WorkspacesConfig{
+		DataDir:                         getenv("SKYFORGE_WORKSPACES_DATA_DIR", getenv("SKYFORGE_PROJECTS_DATA_DIR", "/var/lib/skyforge")),
 		GiteaAPIURL:                     strings.TrimRight(getenv("SKYFORGE_GITEA_API_URL", ""), "/"),
 		GiteaUsername:                   getenv("SKYFORGE_GITEA_USERNAME", getenv("GITEA_ADMIN_USER", "skyforge")),
 		GiteaPassword:                   strings.TrimSpace(getOptionalSecret("SKYFORGE_GITEA_PASSWORD")),
 		GiteaRepoPrivate:                getenv("SKYFORGE_GITEA_REPO_PRIVATE", "false") == "true",
-		DeleteMode:                      strings.TrimSpace(getenv("SKYFORGE_PROJECT_DELETE_MODE", "live")),
+		DeleteMode:                      strings.TrimSpace(getenv("SKYFORGE_WORKSPACE_DELETE_MODE", getenv("SKYFORGE_PROJECT_DELETE_MODE", "live"))),
 		ObjectStorageEndpoint:           strings.TrimRight(getenv("SKYFORGE_OBJECT_STORAGE_ENDPOINT", "minio:9000"), "/"),
 		ObjectStorageUseSSL:             getenv("SKYFORGE_OBJECT_STORAGE_USE_SSL", "false") == "true",
 		ObjectStorageTerraformAccessKey: strings.TrimSpace(getOptionalSecret("SKYFORGE_OBJECT_STORAGE_TERRAFORM_ACCESS_KEY")),
@@ -915,12 +915,12 @@ func loadConfig() Config {
 		KeyPrefix:    strings.TrimSpace(getenv("SKYFORGE_REDIS_KEY_PREFIX", "skyforge")),
 	}
 
-	projectSyncSeconds := 0
-	if raw := strings.TrimSpace(getenv("SKYFORGE_PROJECT_SYNC_SECONDS", "0")); raw != "" {
+	workspaceSyncSeconds := 0
+	if raw := strings.TrimSpace(getenv("SKYFORGE_WORKSPACE_SYNC_SECONDS", getenv("SKYFORGE_PROJECT_SYNC_SECONDS", "0"))); raw != "" {
 		if val, err := strconv.Atoi(raw); err == nil {
-			projectSyncSeconds = val
+			workspaceSyncSeconds = val
 		} else {
-			log.Printf("invalid SKYFORGE_PROJECT_SYNC_SECONDS: %s", raw)
+			log.Printf("invalid SKYFORGE_WORKSPACE_SYNC_SECONDS: %s", raw)
 		}
 	}
 	uiCfg := UIConfig{
@@ -968,7 +968,7 @@ func loadConfig() Config {
 		MaxGroups:                 maxGroups,
 		AdminUsers:                adminUsers,
 		AdminPassword:             adminPassword,
-		ProjectSyncSeconds:        projectSyncSeconds,
+		WorkspaceSyncSeconds:      workspaceSyncSeconds,
 		UI:                        uiCfg,
 		NotificationsEnabled:      notificationsEnabled,
 		NotificationsInterval:     notificationsInterval,
@@ -995,7 +995,7 @@ func loadConfig() Config {
 		LDAP:                      ldapCfg,
 		LDAPLookupBindDN:          ldapLookupBindDN,
 		LDAPLookupBindPassword:    ldapLookupBindPassword,
-		Projects:                  projectsCfg,
+		Workspaces:                workspacesCfg,
 		Redis:                     redisCfg,
 		EveServers:                filteredEveServers,
 		LabppAPIURL:               labppAPIURL,
@@ -1014,44 +1014,44 @@ func loadConfig() Config {
 	}
 }
 
-type projectsStore interface {
-	load() ([]SkyforgeProject, error)
-	save(projects []SkyforgeProject) error
+type workspacesStore interface {
+	load() ([]SkyforgeWorkspace, error)
+	save(workspaces []SkyforgeWorkspace) error
 }
 
-type fileProjectsStore struct {
+type fileWorkspacesStore struct {
 	mu   sync.Mutex
 	path string
 }
 
-func newFileProjectsStore(dataDir string) *fileProjectsStore {
-	return &fileProjectsStore{path: filepath.Join(dataDir, "projects.json")}
+func newFileWorkspacesStore(dataDir string) *fileWorkspacesStore {
+	return &fileWorkspacesStore{path: filepath.Join(dataDir, "workspaces.json")}
 }
 
-func (ps *fileProjectsStore) load() ([]SkyforgeProject, error) {
+func (ps *fileWorkspacesStore) load() ([]SkyforgeWorkspace, error) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 	content, err := os.ReadFile(ps.path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return []SkyforgeProject{}, nil
+			return []SkyforgeWorkspace{}, nil
 		}
 		return nil, err
 	}
-	var projects []SkyforgeProject
-	if err := json.Unmarshal(content, &projects); err != nil {
+	var workspaces []SkyforgeWorkspace
+	if err := json.Unmarshal(content, &workspaces); err != nil {
 		return nil, err
 	}
-	return projects, nil
+	return workspaces, nil
 }
 
-func (ps *fileProjectsStore) save(projects []SkyforgeProject) error {
+func (ps *fileWorkspacesStore) save(workspaces []SkyforgeWorkspace) error {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 	if err := os.MkdirAll(filepath.Dir(ps.path), 0o755); err != nil {
 		return err
 	}
-	payload, err := json.MarshalIndent(projects, "", "  ")
+	payload, err := json.MarshalIndent(workspaces, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -1555,12 +1555,12 @@ func (s *pgAWSStore) clear(username string) error {
 	return err
 }
 
-type pgProjectsStore struct {
+type pgWorkspacesStore struct {
 	db *sql.DB
 }
 
-func newPGProjectsStore(db *sql.DB) *pgProjectsStore {
-	return &pgProjectsStore{db: db}
+func newPGWorkspacesStore(db *sql.DB) *pgWorkspacesStore {
+	return &pgWorkspacesStore{db: db}
 }
 
 type awsStaticCredentials struct {
@@ -1591,7 +1591,7 @@ type AuditEvent struct {
 	ActorIsAdmin     bool      `json:"actorIsAdmin"`
 	ImpersonatedUser string    `json:"impersonatedUsername,omitempty"`
 	Action           string    `json:"action"`
-	ProjectID        string    `json:"projectId,omitempty"`
+	WorkspaceID      string    `json:"workspaceId,omitempty"`
 	Details          string    `json:"details,omitempty"`
 }
 
@@ -1638,14 +1638,14 @@ func ensureAuditActor(ctx context.Context, db *sql.DB, username string) {
 	_, _ = db.ExecContext(ctx, `INSERT INTO sf_users (username, created_at) VALUES ($1, now()) ON CONFLICT (username) DO NOTHING`, username)
 }
 
-func writeAuditEvent(ctx context.Context, db *sql.DB, actor string, actorIsAdmin bool, impersonated string, action string, projectID string, details string) {
+func writeAuditEvent(ctx context.Context, db *sql.DB, actor string, actorIsAdmin bool, impersonated string, action string, workspaceID string, details string) {
 	if db == nil {
 		return
 	}
 	actor = strings.ToLower(strings.TrimSpace(actor))
 	impersonated = strings.ToLower(strings.TrimSpace(impersonated))
 	action = strings.TrimSpace(action)
-	projectID = strings.TrimSpace(projectID)
+	workspaceID = strings.TrimSpace(workspaceID)
 	details = strings.TrimSpace(details)
 	if actor == "" || action == "" {
 		return
@@ -1658,27 +1658,27 @@ func writeAuditEvent(ctx context.Context, db *sql.DB, actor string, actorIsAdmin
 		details = details[:4000]
 	}
 	_, err := db.ExecContext(ctx, `INSERT INTO sf_audit_log (
-  actor_username, actor_is_admin, impersonated_username, action, project_id, details
+  actor_username, actor_is_admin, impersonated_username, action, workspace_id, details
 ) VALUES ($1,$2,NULLIF($3,''),$4,NULLIF($5,''),NULLIF($6,''))`,
-		actor, actorIsAdmin, impersonated, action, projectID, details,
+		actor, actorIsAdmin, impersonated, action, workspaceID, details,
 	)
 	if err != nil {
 		log.Printf("audit log insert failed: %v", err)
 	}
 }
 
-func getProjectAWSStaticCredentials(ctx context.Context, db *sql.DB, box *secretBox, projectID string) (*awsStaticCredentials, error) {
+func getWorkspaceAWSStaticCredentials(ctx context.Context, db *sql.DB, box *secretBox, workspaceID string) (*awsStaticCredentials, error) {
 	if db == nil || box == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	projectID = strings.TrimSpace(projectID)
-	if projectID == "" {
-		return nil, fmt.Errorf("project id is required")
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace id is required")
 	}
 	var akid, sak, st sql.NullString
 	var updatedAt sql.NullTime
 	err := db.QueryRowContext(ctx, `SELECT access_key_id, secret_access_key, session_token, updated_at
-FROM sf_project_aws_static_credentials WHERE project_id=$1`, projectID).Scan(&akid, &sak, &st, &updatedAt)
+FROM sf_workspace_aws_static_credentials WHERE workspace_id=$1`, workspaceID).Scan(&akid, &sak, &st, &updatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -1708,16 +1708,16 @@ FROM sf_project_aws_static_credentials WHERE project_id=$1`, projectID).Scan(&ak
 	return rec, nil
 }
 
-func putProjectAWSStaticCredentials(ctx context.Context, db *sql.DB, box *secretBox, projectID string, accessKeyID string, secretAccessKey string, sessionToken string) error {
+func putWorkspaceAWSStaticCredentials(ctx context.Context, db *sql.DB, box *secretBox, workspaceID string, accessKeyID string, secretAccessKey string, sessionToken string) error {
 	if db == nil || box == nil {
 		return fmt.Errorf("db is not configured")
 	}
-	projectID = strings.TrimSpace(projectID)
+	workspaceID = strings.TrimSpace(workspaceID)
 	accessKeyID = strings.TrimSpace(accessKeyID)
 	secretAccessKey = strings.TrimSpace(secretAccessKey)
 	sessionToken = strings.TrimSpace(sessionToken)
-	if projectID == "" {
-		return fmt.Errorf("project id is required")
+	if workspaceID == "" {
+		return fmt.Errorf("workspace id is required")
 	}
 	if accessKeyID == "" || secretAccessKey == "" {
 		return fmt.Errorf("accessKeyId and secretAccessKey are required")
@@ -1734,25 +1734,25 @@ func putProjectAWSStaticCredentials(ctx context.Context, db *sql.DB, box *secret
 	if err != nil {
 		return err
 	}
-	_, err = db.ExecContext(ctx, `INSERT INTO sf_project_aws_static_credentials (project_id, access_key_id, secret_access_key, session_token, updated_at)
+	_, err = db.ExecContext(ctx, `INSERT INTO sf_workspace_aws_static_credentials (workspace_id, access_key_id, secret_access_key, session_token, updated_at)
 VALUES ($1,$2,$3,NULLIF($4,''),now())
-ON CONFLICT (project_id) DO UPDATE SET
+ON CONFLICT (workspace_id) DO UPDATE SET
   access_key_id=excluded.access_key_id,
   secret_access_key=excluded.secret_access_key,
   session_token=excluded.session_token,
-  updated_at=now()`, projectID, encAKID, encSAK, encST)
+  updated_at=now()`, workspaceID, encAKID, encSAK, encST)
 	return err
 }
 
-func deleteProjectAWSStaticCredentials(ctx context.Context, db *sql.DB, projectID string) error {
+func deleteWorkspaceAWSStaticCredentials(ctx context.Context, db *sql.DB, workspaceID string) error {
 	if db == nil {
 		return fmt.Errorf("db is not configured")
 	}
-	projectID = strings.TrimSpace(projectID)
-	if projectID == "" {
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
 		return nil
 	}
-	_, err := db.ExecContext(ctx, `DELETE FROM sf_project_aws_static_credentials WHERE project_id=$1`, projectID)
+	_, err := db.ExecContext(ctx, `DELETE FROM sf_workspace_aws_static_credentials WHERE workspace_id=$1`, workspaceID)
 	return err
 }
 
@@ -1771,13 +1771,13 @@ type forwardCredentials struct {
 	UpdatedAt      time.Time
 }
 
-func getProjectForwardCredentials(ctx context.Context, db *sql.DB, box *secretBox, projectID string) (*forwardCredentials, error) {
+func getWorkspaceForwardCredentials(ctx context.Context, db *sql.DB, box *secretBox, workspaceID string) (*forwardCredentials, error) {
 	if db == nil || box == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	projectID = strings.TrimSpace(projectID)
-	if projectID == "" {
-		return nil, fmt.Errorf("project id is required")
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace id is required")
 	}
 	var baseURL, username, password sql.NullString
 	var collectorID, collectorUser sql.NullString
@@ -1789,7 +1789,7 @@ func getProjectForwardCredentials(ctx context.Context, db *sql.DB, box *secretBo
   COALESCE(device_username, ''), COALESCE(device_password, ''),
   COALESCE(jump_host, ''), COALESCE(jump_username, ''), COALESCE(jump_private_key, ''), COALESCE(jump_cert, ''),
   updated_at
-FROM sf_project_forward_credentials WHERE project_id=$1`, projectID).Scan(
+FROM sf_workspace_forward_credentials WHERE workspace_id=$1`, workspaceID).Scan(
 		&baseURL,
 		&username,
 		&password,
@@ -1872,13 +1872,13 @@ FROM sf_project_forward_credentials WHERE project_id=$1`, projectID).Scan(
 	return rec, nil
 }
 
-func putProjectForwardCredentials(ctx context.Context, db *sql.DB, box *secretBox, projectID string, rec forwardCredentials) error {
+func putWorkspaceForwardCredentials(ctx context.Context, db *sql.DB, box *secretBox, workspaceID string, rec forwardCredentials) error {
 	if db == nil || box == nil {
 		return fmt.Errorf("db is not configured")
 	}
-	projectID = strings.TrimSpace(projectID)
-	if projectID == "" {
-		return fmt.Errorf("project id is required")
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return fmt.Errorf("workspace id is required")
 	}
 	baseURL := strings.TrimSpace(rec.BaseURL)
 	username := strings.TrimSpace(rec.Username)
@@ -1930,14 +1930,14 @@ func putProjectForwardCredentials(ctx context.Context, db *sql.DB, box *secretBo
 	if err != nil {
 		return err
 	}
-	_, err = db.ExecContext(ctx, `INSERT INTO sf_project_forward_credentials (
-  project_id, base_url, username, password,
+	_, err = db.ExecContext(ctx, `INSERT INTO sf_workspace_forward_credentials (
+  workspace_id, base_url, username, password,
   collector_id, collector_username,
   device_username, device_password,
   jump_host, jump_username, jump_private_key, jump_cert,
   updated_at
 ) VALUES ($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),NULLIF($12,''),now())
-ON CONFLICT (project_id) DO UPDATE SET
+ON CONFLICT (workspace_id) DO UPDATE SET
   base_url=excluded.base_url,
   username=excluded.username,
   password=excluded.password,
@@ -1950,7 +1950,7 @@ ON CONFLICT (project_id) DO UPDATE SET
   jump_private_key=excluded.jump_private_key,
   jump_cert=excluded.jump_cert,
   updated_at=now()`,
-		projectID,
+		workspaceID,
 		encBaseURL,
 		encUser,
 		encPass,
@@ -1966,30 +1966,30 @@ ON CONFLICT (project_id) DO UPDATE SET
 	return err
 }
 
-func deleteProjectForwardCredentials(ctx context.Context, db *sql.DB, projectID string) error {
+func deleteWorkspaceForwardCredentials(ctx context.Context, db *sql.DB, workspaceID string) error {
 	if db == nil {
 		return fmt.Errorf("db is not configured")
 	}
-	projectID = strings.TrimSpace(projectID)
-	if projectID == "" {
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
 		return nil
 	}
-	_, err := db.ExecContext(ctx, `DELETE FROM sf_project_forward_credentials WHERE project_id=$1`, projectID)
+	_, err := db.ExecContext(ctx, `DELETE FROM sf_workspace_forward_credentials WHERE workspace_id=$1`, workspaceID)
 	return err
 }
 
-func getProjectAzureCredentials(ctx context.Context, db *sql.DB, box *secretBox, projectID string) (*azureServicePrincipal, error) {
+func getWorkspaceAzureCredentials(ctx context.Context, db *sql.DB, box *secretBox, workspaceID string) (*azureServicePrincipal, error) {
 	if db == nil || box == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	projectID = strings.TrimSpace(projectID)
-	if projectID == "" {
-		return nil, fmt.Errorf("project id is required")
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace id is required")
 	}
 	var tenantID, clientID, clientSecret, subscriptionID sql.NullString
 	var updatedAt sql.NullTime
 	err := db.QueryRowContext(ctx, `SELECT tenant_id, client_id, client_secret, COALESCE(subscription_id, ''), updated_at
-FROM sf_project_azure_credentials WHERE project_id=$1`, projectID).Scan(&tenantID, &clientID, &clientSecret, &subscriptionID, &updatedAt)
+FROM sf_workspace_azure_credentials WHERE workspace_id=$1`, workspaceID).Scan(&tenantID, &clientID, &clientSecret, &subscriptionID, &updatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -2026,13 +2026,13 @@ FROM sf_project_azure_credentials WHERE project_id=$1`, projectID).Scan(&tenantI
 	return rec, nil
 }
 
-func putProjectAzureCredentials(ctx context.Context, db *sql.DB, box *secretBox, projectID string, cred azureServicePrincipal) error {
+func putWorkspaceAzureCredentials(ctx context.Context, db *sql.DB, box *secretBox, workspaceID string, cred azureServicePrincipal) error {
 	if db == nil || box == nil {
 		return fmt.Errorf("db is not configured")
 	}
-	projectID = strings.TrimSpace(projectID)
-	if projectID == "" {
-		return fmt.Errorf("project id is required")
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return fmt.Errorf("workspace id is required")
 	}
 	cred.TenantID = strings.TrimSpace(cred.TenantID)
 	cred.ClientID = strings.TrimSpace(cred.ClientID)
@@ -2060,43 +2060,43 @@ func putProjectAzureCredentials(ctx context.Context, db *sql.DB, box *secretBox,
 			return err
 		}
 	}
-	_, err = db.ExecContext(ctx, `INSERT INTO sf_project_azure_credentials (
-  project_id, tenant_id, client_id, client_secret, subscription_id, updated_at
+	_, err = db.ExecContext(ctx, `INSERT INTO sf_workspace_azure_credentials (
+  workspace_id, tenant_id, client_id, client_secret, subscription_id, updated_at
 ) VALUES ($1,$2,$3,$4,NULLIF($5,''),now())
-ON CONFLICT (project_id) DO UPDATE SET
+ON CONFLICT (workspace_id) DO UPDATE SET
   tenant_id=excluded.tenant_id,
   client_id=excluded.client_id,
   client_secret=excluded.client_secret,
   subscription_id=excluded.subscription_id,
-  updated_at=now()`, projectID, encTenant, encClient, encSecret, encSubscription)
+  updated_at=now()`, workspaceID, encTenant, encClient, encSecret, encSubscription)
 	return err
 }
 
-func deleteProjectAzureCredentials(ctx context.Context, db *sql.DB, projectID string) error {
+func deleteWorkspaceAzureCredentials(ctx context.Context, db *sql.DB, workspaceID string) error {
 	if db == nil {
 		return fmt.Errorf("db is not configured")
 	}
-	projectID = strings.TrimSpace(projectID)
-	if projectID == "" {
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
 		return nil
 	}
-	_, err := db.ExecContext(ctx, `DELETE FROM sf_project_azure_credentials WHERE project_id=$1`, projectID)
+	_, err := db.ExecContext(ctx, `DELETE FROM sf_workspace_azure_credentials WHERE workspace_id=$1`, workspaceID)
 	return err
 }
 
-func getProjectGCPCredentials(ctx context.Context, db *sql.DB, box *secretBox, projectID string) (*gcpServiceAccount, error) {
+func getWorkspaceGCPCredentials(ctx context.Context, db *sql.DB, box *secretBox, workspaceID string) (*gcpServiceAccount, error) {
 	if db == nil || box == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	projectID = strings.TrimSpace(projectID)
-	if projectID == "" {
-		return nil, fmt.Errorf("project id is required")
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace id is required")
 	}
 	var raw sql.NullString
 	var projectOverride sql.NullString
 	var updatedAt sql.NullTime
 	err := db.QueryRowContext(ctx, `SELECT service_account_json, COALESCE(project_id_override, ''), updated_at
-FROM sf_project_gcp_credentials WHERE project_id=$1`, projectID).Scan(&raw, &projectOverride, &updatedAt)
+FROM sf_workspace_gcp_credentials WHERE workspace_id=$1`, workspaceID).Scan(&raw, &projectOverride, &updatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -2114,15 +2114,15 @@ FROM sf_project_gcp_credentials WHERE project_id=$1`, projectID).Scan(&raw, &pro
 	return rec, nil
 }
 
-func putProjectGCPCredentials(ctx context.Context, db *sql.DB, box *secretBox, projectID string, jsonBlob string, projectOverride string) error {
+func putWorkspaceGCPCredentials(ctx context.Context, db *sql.DB, box *secretBox, workspaceID string, jsonBlob string, projectOverride string) error {
 	if db == nil || box == nil {
 		return fmt.Errorf("db is not configured")
 	}
-	projectID = strings.TrimSpace(projectID)
+	workspaceID = strings.TrimSpace(workspaceID)
 	jsonBlob = strings.TrimSpace(jsonBlob)
 	projectOverride = strings.TrimSpace(projectOverride)
-	if projectID == "" {
-		return fmt.Errorf("project id is required")
+	if workspaceID == "" {
+		return fmt.Errorf("workspace id is required")
 	}
 	if jsonBlob == "" {
 		return fmt.Errorf("service account json is required")
@@ -2131,41 +2131,41 @@ func putProjectGCPCredentials(ctx context.Context, db *sql.DB, box *secretBox, p
 	if err != nil {
 		return err
 	}
-	_, err = db.ExecContext(ctx, `INSERT INTO sf_project_gcp_credentials (
-  project_id, service_account_json, project_id_override, updated_at
+	_, err = db.ExecContext(ctx, `INSERT INTO sf_workspace_gcp_credentials (
+  workspace_id, service_account_json, project_id_override, updated_at
 ) VALUES ($1,$2,NULLIF($3,''),now())
-ON CONFLICT (project_id) DO UPDATE SET
+ON CONFLICT (workspace_id) DO UPDATE SET
   service_account_json=excluded.service_account_json,
   project_id_override=excluded.project_id_override,
-  updated_at=now()`, projectID, encJSON, projectOverride)
+  updated_at=now()`, workspaceID, encJSON, projectOverride)
 	return err
 }
 
-func deleteProjectGCPCredentials(ctx context.Context, db *sql.DB, projectID string) error {
+func deleteWorkspaceGCPCredentials(ctx context.Context, db *sql.DB, workspaceID string) error {
 	if db == nil {
 		return fmt.Errorf("db is not configured")
 	}
-	projectID = strings.TrimSpace(projectID)
-	if projectID == "" {
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
 		return nil
 	}
-	_, err := db.ExecContext(ctx, `DELETE FROM sf_project_gcp_credentials WHERE project_id=$1`, projectID)
+	_, err := db.ExecContext(ctx, `DELETE FROM sf_workspace_gcp_credentials WHERE workspace_id=$1`, workspaceID)
 	return err
 }
 
-func (s *pgProjectsStore) load() ([]SkyforgeProject, error) {
+func (s *pgWorkspacesStore) load() ([]SkyforgeWorkspace, error) {
 	rows, err := s.db.Query(`SELECT id, slug, name, description, created_at, created_by,
 		blueprint, default_branch, terraform_state_key, tofu_init_template_id, tofu_plan_template_id, tofu_apply_template_id, ansible_run_template_id, netlab_run_template_id, labpp_run_template_id, containerlab_run_template_id,
 		aws_account_id, aws_role_name, aws_region, aws_auth_method, artifacts_bucket, is_public,
-		eve_server, netlab_server, legacy_project_id, gitea_owner, gitea_repo
-	FROM sf_projects ORDER BY created_at DESC`)
+		eve_server, netlab_server, legacy_workspace_id, gitea_owner, gitea_repo
+	FROM sf_workspaces ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	projects := []SkyforgeProject{}
-	projectByID := map[string]*SkyforgeProject{}
+	workspaces := []SkyforgeWorkspace{}
+	workspaceByID := map[string]*SkyforgeWorkspace{}
 	for rows.Next() {
 		var (
 			id, slug, name, createdBy                                                       string
@@ -2178,17 +2178,17 @@ func (s *pgProjectsStore) load() ([]SkyforgeProject, error) {
 			eveServer                                                                       sql.NullString
 			netlabServer                                                                    sql.NullString
 			createdAt                                                                       time.Time
-			legacyProjectID                                                                 int
+			legacyWorkspaceID                                                                 int
 			giteaOwner, giteaRepo                                                           string
 		)
 		if err := rows.Scan(&id, &slug, &name, &description, &createdAt, &createdBy,
 			&blueprint, &defaultBranch, &terraformStateKey, &tofuInit, &tofuPlan, &tofuApply, &ansibleRun, &netlabRun, &labppRun, &containerlabRun,
 			&awsAccountID, &awsRoleName, &awsRegion, &awsAuthMethod, &artifactsBucket, &isPublic,
-			&eveServer, &netlabServer, &legacyProjectID, &giteaOwner, &giteaRepo,
+			&eveServer, &netlabServer, &legacyWorkspaceID, &giteaOwner, &giteaRepo,
 		); err != nil {
 			return nil, err
 		}
-		p := SkyforgeProject{
+		p := SkyforgeWorkspace{
 			ID:                        id,
 			Slug:                      slug,
 			Name:                      name,
@@ -2213,28 +2213,28 @@ func (s *pgProjectsStore) load() ([]SkyforgeProject, error) {
 			IsPublic:                  isPublic,
 			EveServer:                 eveServer.String,
 			NetlabServer:              netlabServer.String,
-			LegacyProjectID:           legacyProjectID,
+			LegacyWorkspaceID:           legacyWorkspaceID,
 			GiteaOwner:                giteaOwner,
 			GiteaRepo:                 giteaRepo,
 		}
-		projects = append(projects, p)
-		projectByID[id] = &projects[len(projects)-1]
+		workspaces = append(workspaces, p)
+		workspaceByID[id] = &workspaces[len(workspaces)-1]
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
-	memberRows, err := s.db.Query(`SELECT project_id, username, role FROM sf_project_members ORDER BY project_id, username`)
+	memberRows, err := s.db.Query(`SELECT workspace_id, username, role FROM sf_workspace_members ORDER BY workspace_id, username`)
 	if err != nil {
 		return nil, err
 	}
 	defer memberRows.Close()
 	for memberRows.Next() {
-		var projectID, username, role string
-		if err := memberRows.Scan(&projectID, &username, &role); err != nil {
+		var workspaceID, username, role string
+		if err := memberRows.Scan(&workspaceID, &username, &role); err != nil {
 			return nil, err
 		}
-		p := projectByID[projectID]
+		p := workspaceByID[workspaceID]
 		if p == nil {
 			continue
 		}
@@ -2251,17 +2251,17 @@ func (s *pgProjectsStore) load() ([]SkyforgeProject, error) {
 		return nil, err
 	}
 
-	groupRows, err := s.db.Query(`SELECT project_id, group_name, role FROM sf_project_groups ORDER BY project_id, group_name`)
+	groupRows, err := s.db.Query(`SELECT workspace_id, group_name, role FROM sf_workspace_groups ORDER BY workspace_id, group_name`)
 	if err != nil {
 		return nil, err
 	}
 	defer groupRows.Close()
 	for groupRows.Next() {
-		var projectID, groupName, role string
-		if err := groupRows.Scan(&projectID, &groupName, &role); err != nil {
+		var workspaceID, groupName, role string
+		if err := groupRows.Scan(&workspaceID, &groupName, &role); err != nil {
 			return nil, err
 		}
-		p := projectByID[projectID]
+		p := workspaceByID[workspaceID]
 		if p == nil {
 			continue
 		}
@@ -2277,23 +2277,23 @@ func (s *pgProjectsStore) load() ([]SkyforgeProject, error) {
 	if err := groupRows.Err(); err != nil {
 		return nil, err
 	}
-	return projects, nil
+	return workspaces, nil
 }
 
-func (s *pgProjectsStore) save(projects []SkyforgeProject) error {
+func (s *pgWorkspacesStore) save(workspaces []SkyforgeWorkspace) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if _, err := tx.Exec(`DELETE FROM sf_project_members`); err != nil {
+	if _, err := tx.Exec(`DELETE FROM sf_workspace_members`); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM sf_project_groups`); err != nil {
+	if _, err := tx.Exec(`DELETE FROM sf_workspace_groups`); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM sf_projects`); err != nil {
+	if _, err := tx.Exec(`DELETE FROM sf_workspaces`); err != nil {
 		return err
 	}
 
@@ -2306,7 +2306,7 @@ func (s *pgProjectsStore) save(projects []SkyforgeProject) error {
 		return err
 	}
 
-	for _, p := range projects {
+	for _, p := range workspaces {
 		if err := ensureUser(p.CreatedBy); err != nil {
 			return err
 		}
@@ -2317,10 +2317,10 @@ func (s *pgProjectsStore) save(projects []SkyforgeProject) error {
 		}
 	}
 
-	for _, p := range projects {
+	for _, p := range workspaces {
 		id := strings.TrimSpace(p.ID)
 		if id == "" {
-			return fmt.Errorf("project id is required")
+			return fmt.Errorf("workspace id is required")
 		}
 		slug := strings.TrimSpace(p.Slug)
 		if slug == "" {
@@ -2328,13 +2328,13 @@ func (s *pgProjectsStore) save(projects []SkyforgeProject) error {
 		}
 		createdBy := strings.ToLower(strings.TrimSpace(p.CreatedBy))
 		if createdBy == "" {
-			return fmt.Errorf("project createdBy is required")
+			return fmt.Errorf("workspace createdBy is required")
 		}
-		if _, err := tx.Exec(`INSERT INTO sf_projects (
+		if _, err := tx.Exec(`INSERT INTO sf_workspaces (
 		  id, slug, name, description, created_at, created_by,
 		  blueprint, default_branch, terraform_state_key, tofu_init_template_id, tofu_plan_template_id, tofu_apply_template_id, ansible_run_template_id, netlab_run_template_id, labpp_run_template_id, containerlab_run_template_id,
 		  aws_account_id, aws_role_name, aws_region, aws_auth_method, artifacts_bucket, is_public,
-		  eve_server, netlab_server, legacy_project_id, gitea_owner, gitea_repo, updated_at
+		  eve_server, netlab_server, legacy_workspace_id, gitea_owner, gitea_repo, updated_at
 		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,now())`,
 			id, slug, strings.TrimSpace(p.Name), nullIfEmpty(strings.TrimSpace(p.Description)), p.CreatedAt.UTC(), createdBy,
 			nullIfEmpty(strings.TrimSpace(p.Blueprint)), nullIfEmpty(strings.TrimSpace(p.DefaultBranch)),
@@ -2342,7 +2342,7 @@ func (s *pgProjectsStore) save(projects []SkyforgeProject) error {
 			nullIfEmpty(strings.TrimSpace(p.AWSAccountID)), nullIfEmpty(strings.TrimSpace(p.AWSRoleName)), nullIfEmpty(strings.TrimSpace(p.AWSRegion)),
 			nullIfEmpty(strings.TrimSpace(p.AWSAuthMethod)), nullIfEmpty(strings.TrimSpace(p.ArtifactsBucket)), p.IsPublic,
 			nullIfEmpty(strings.TrimSpace(p.EveServer)), nullIfEmpty(strings.TrimSpace(p.NetlabServer)),
-			p.LegacyProjectID, strings.TrimSpace(p.GiteaOwner), strings.TrimSpace(p.GiteaRepo),
+			p.LegacyWorkspaceID, strings.TrimSpace(p.GiteaOwner), strings.TrimSpace(p.GiteaRepo),
 		); err != nil {
 			return err
 		}
@@ -2362,7 +2362,7 @@ func (s *pgProjectsStore) save(projects []SkyforgeProject) error {
 			if username == "" || !isValidUsername(username) {
 				return nil
 			}
-			_, err := tx.Exec(`INSERT INTO sf_project_members (project_id, username, role) VALUES ($1,$2,$3)`, id, username, role)
+			_, err := tx.Exec(`INSERT INTO sf_workspace_members (workspace_id, username, role) VALUES ($1,$2,$3)`, id, username, role)
 			return err
 		}
 		for _, u := range owners {
@@ -2386,7 +2386,7 @@ func (s *pgProjectsStore) save(projects []SkyforgeProject) error {
 			if groupName == "" || len(groupName) > 512 {
 				return nil
 			}
-			_, err := tx.Exec(`INSERT INTO sf_project_groups (project_id, group_name, role) VALUES ($1,$2,$3)`, id, groupName, role)
+			_, err := tx.Exec(`INSERT INTO sf_workspace_groups (workspace_id, group_name, role) VALUES ($1,$2,$3)`, id, groupName, role)
 			return err
 		}
 		for _, g := range ownerGroups {
@@ -2472,7 +2472,7 @@ func openSkyforgeExplicitDB(cfg Config) (*sql.DB, error) {
 
 func isPostgresStateEmpty(ctx context.Context, db *sql.DB) (bool, error) {
 	var count int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sf_projects`).Scan(&count); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sf_workspaces`).Scan(&count); err != nil {
 		return false, err
 	}
 	return count == 0, nil
@@ -2492,12 +2492,18 @@ func renameIfExists(path string) error {
 	return os.Rename(path, fmt.Sprintf("%s.migrated.%s", path, ts))
 }
 
-func migrateFileStateToPostgres(cfg Config, pgProjects *pgProjectsStore, pgUsers *pgUsersStore, pgAWS *pgAWSStore) error {
-	fileProjects := newFileProjectsStore(cfg.Projects.DataDir)
-	fileUsers := newFileUsersStore(cfg.Projects.DataDir)
-	fileAWS := newFileAWSStore(cfg.Projects.DataDir, newSecretBox(cfg.SessionSecret))
+func migrateFileStateToPostgres(cfg Config, pgWorkspaces *pgWorkspacesStore, pgUsers *pgUsersStore, pgAWS *pgAWSStore) error {
+	fileWorkspaces := newFileWorkspacesStore(cfg.Workspaces.DataDir)
+	if _, err := os.Stat(fileWorkspaces.path); errors.Is(err, os.ErrNotExist) {
+		legacyPath := filepath.Join(cfg.Workspaces.DataDir, "projects.json")
+		if _, legacyErr := os.Stat(legacyPath); legacyErr == nil {
+			fileWorkspaces.path = legacyPath
+		}
+	}
+	fileUsers := newFileUsersStore(cfg.Workspaces.DataDir)
+	fileAWS := newFileAWSStore(cfg.Workspaces.DataDir, newSecretBox(cfg.SessionSecret))
 
-	projects, err := fileProjects.load()
+	workspaces, err := fileWorkspaces.load()
 	if err != nil {
 		return err
 	}
@@ -2524,7 +2530,7 @@ func migrateFileStateToPostgres(cfg Config, pgProjects *pgProjectsStore, pgUsers
 	for username := range awsRecords {
 		addUser(username)
 	}
-	for _, p := range projects {
+	for _, p := range workspaces {
 		addUser(p.CreatedBy)
 		for _, u := range append(append([]string{}, p.Owners...), append(p.Editors, p.Viewers...)...) {
 			addUser(u)
@@ -2536,7 +2542,7 @@ func migrateFileStateToPostgres(cfg Config, pgProjects *pgProjectsStore, pgUsers
 			return err
 		}
 	}
-	if err := pgProjects.save(projects); err != nil {
+	if err := pgWorkspaces.save(workspaces); err != nil {
 		return err
 	}
 	for username, rec := range awsRecords {
@@ -2545,13 +2551,13 @@ func migrateFileStateToPostgres(cfg Config, pgProjects *pgProjectsStore, pgUsers
 		}
 	}
 
-	if err := renameIfExists(filepath.Join(cfg.Projects.DataDir, "projects.json")); err != nil {
+	if err := renameIfExists(filepath.Join(cfg.Workspaces.DataDir, "projects.json")); err != nil {
 		return err
 	}
-	if err := renameIfExists(filepath.Join(cfg.Projects.DataDir, "users.json")); err != nil {
+	if err := renameIfExists(filepath.Join(cfg.Workspaces.DataDir, "users.json")); err != nil {
 		return err
 	}
-	if err := renameIfExists(filepath.Join(cfg.Projects.DataDir, "aws_sso.json")); err != nil {
+	if err := renameIfExists(filepath.Join(cfg.Workspaces.DataDir, "aws_sso.json")); err != nil {
 		return err
 	}
 	return nil
@@ -2580,7 +2586,7 @@ func slugify(input string) string {
 	}
 	out := strings.Trim(b.String(), "-")
 	if out == "" {
-		return "project"
+		return "workspace"
 	}
 	return out
 }
@@ -2720,7 +2726,7 @@ func isValidUsername(username string) bool {
 	return true
 }
 
-func projectAccessLevel(cfg Config, p SkyforgeProject, username string) string {
+func workspaceAccessLevel(cfg Config, p SkyforgeWorkspace, username string) string {
 	if isAdminUser(cfg, username) {
 		return "admin"
 	}
@@ -2739,7 +2745,7 @@ func projectAccessLevel(cfg Config, p SkyforgeProject, username string) string {
 	return "none"
 }
 
-func projectAccessLevelForClaims(cfg Config, p SkyforgeProject, claims *SessionClaims) string {
+func workspaceAccessLevelForClaims(cfg Config, p SkyforgeWorkspace, claims *SessionClaims) string {
 	if claims == nil {
 		return "none"
 	}
@@ -2765,7 +2771,7 @@ func projectAccessLevelForClaims(cfg Config, p SkyforgeProject, claims *SessionC
 	return "none"
 }
 
-func syncGroupMembershipForUser(p *SkyforgeProject, claims *SessionClaims) (string, bool) {
+func syncGroupMembershipForUser(p *SkyforgeWorkspace, claims *SessionClaims) (string, bool) {
 	if p == nil || claims == nil {
 		return "", false
 	}
@@ -2791,22 +2797,22 @@ func syncGroupMembershipForUser(p *SkyforgeProject, claims *SessionClaims) (stri
 	return "", false
 }
 
-func findProjectByKey(projects []SkyforgeProject, key string) *SkyforgeProject {
+func findWorkspaceByKey(workspaces []SkyforgeWorkspace, key string) *SkyforgeWorkspace {
 	key = strings.TrimSpace(key)
 	if key == "" {
 		return nil
 	}
-	for i := range projects {
-		if projects[i].ID == key || strings.EqualFold(projects[i].Slug, key) {
-			return &projects[i]
+	for i := range workspaces {
+		if workspaces[i].ID == key || strings.EqualFold(workspaces[i].Slug, key) {
+			return &workspaces[i]
 		}
 	}
 	return nil
 }
 
-func syncGiteaCollaboratorsForProject(cfg Config, project SkyforgeProject) {
-	owner := strings.TrimSpace(project.GiteaOwner)
-	repo := strings.TrimSpace(project.GiteaRepo)
+func syncGiteaCollaboratorsForWorkspace(cfg Config, workspace SkyforgeWorkspace) {
+	owner := strings.TrimSpace(workspace.GiteaOwner)
+	repo := strings.TrimSpace(workspace.GiteaRepo)
 	if owner == "" || repo == "" {
 		return
 	}
@@ -2817,7 +2823,7 @@ func syncGiteaCollaboratorsForProject(cfg Config, project SkyforgeProject) {
 		if !isValidUsername(user) {
 			return
 		}
-		if strings.EqualFold(user, cfg.Projects.GiteaUsername) {
+		if strings.EqualFold(user, cfg.Workspaces.GiteaUsername) {
 			return
 		}
 		if existing, ok := desired[user]; ok {
@@ -2840,14 +2846,14 @@ func syncGiteaCollaboratorsForProject(cfg Config, project SkyforgeProject) {
 		desired[user] = perm
 	}
 
-	add(project.CreatedBy, "admin")
-	for _, u := range project.Owners {
+	add(workspace.CreatedBy, "admin")
+	for _, u := range workspace.Owners {
 		add(u, "admin")
 	}
-	for _, u := range project.Editors {
+	for _, u := range workspace.Editors {
 		add(u, "write")
 	}
-	for _, u := range project.Viewers {
+	for _, u := range workspace.Viewers {
 		add(u, "read")
 	}
 
@@ -2864,7 +2870,7 @@ func syncGiteaCollaboratorsForProject(cfg Config, project SkyforgeProject) {
 	}
 	for _, user := range current {
 		u := strings.ToLower(strings.TrimSpace(user))
-		if u == "" || strings.EqualFold(u, cfg.Projects.GiteaUsername) {
+		if u == "" || strings.EqualFold(u, cfg.Workspaces.GiteaUsername) {
 			continue
 		}
 		if _, ok := desired[u]; ok {
@@ -3111,18 +3117,18 @@ func getAWSRoleCredentials(ctx context.Context, cfg Config, store awsSSOTokenSto
 	})
 }
 
-type projectSyncReport struct {
-	ProjectID string   `json:"projectId"`
-	Slug      string   `json:"slug"`
-	Updated   bool     `json:"updated"`
-	Steps     []string `json:"steps,omitempty"`
-	Errors    []string `json:"errors,omitempty"`
+type workspaceSyncReport struct {
+	WorkspaceID string   `json:"workspaceId"`
+	Slug        string   `json:"slug"`
+	Updated     bool     `json:"updated"`
+	Steps       []string `json:"steps,omitempty"`
+	Errors      []string `json:"errors,omitempty"`
 }
 
-func projectTerraformEnv(cfg Config, project SkyforgeProject) map[string]string {
+func workspaceTerraformEnv(cfg Config, workspace SkyforgeWorkspace) map[string]string {
 	region := "us-east-1"
-	if strings.TrimSpace(project.AWSRegion) != "" {
-		region = strings.TrimSpace(project.AWSRegion)
+	if strings.TrimSpace(workspace.AWSRegion) != "" {
+		region = strings.TrimSpace(workspace.AWSRegion)
 	}
 	env := map[string]string{
 		"TF_IN_AUTOMATION":          "true",
@@ -3132,17 +3138,17 @@ func projectTerraformEnv(cfg Config, project SkyforgeProject) map[string]string 
 		"TF_VAR_ssh_key_name":       "REPLACE_ME",
 		"TF_VAR_artifacts_bucket":   "REPLACE_ME",
 	}
-	if cfg.Projects.ObjectStorageTerraformAccessKey != "" && cfg.Projects.ObjectStorageTerraformSecretKey != "" {
-		env["AWS_ACCESS_KEY_ID"] = cfg.Projects.ObjectStorageTerraformAccessKey
-		env["AWS_SECRET_ACCESS_KEY"] = cfg.Projects.ObjectStorageTerraformSecretKey
+	if cfg.Workspaces.ObjectStorageTerraformAccessKey != "" && cfg.Workspaces.ObjectStorageTerraformSecretKey != "" {
+		env["AWS_ACCESS_KEY_ID"] = cfg.Workspaces.ObjectStorageTerraformAccessKey
+		env["AWS_SECRET_ACCESS_KEY"] = cfg.Workspaces.ObjectStorageTerraformSecretKey
 	}
 	return env
 }
 
-func syncProjectResources(ctx context.Context, cfg Config, project *SkyforgeProject) projectSyncReport {
-	report := projectSyncReport{
-		ProjectID: project.ID,
-		Slug:      project.Slug,
+func syncWorkspaceResources(ctx context.Context, cfg Config, workspace *SkyforgeWorkspace) workspaceSyncReport {
+	report := workspaceSyncReport{
+		WorkspaceID: workspace.ID,
+		Slug:        workspace.Slug,
 	}
 	addStep := func(msg string) {
 		report.Steps = append(report.Steps, msg)
@@ -3155,55 +3161,55 @@ func syncProjectResources(ctx context.Context, cfg Config, project *SkyforgeProj
 		}
 	}
 
-	if strings.TrimSpace(project.GiteaOwner) == "" {
-		project.GiteaOwner = strings.TrimSpace(cfg.Projects.GiteaUsername)
+	if strings.TrimSpace(workspace.GiteaOwner) == "" {
+		workspace.GiteaOwner = strings.TrimSpace(cfg.Workspaces.GiteaUsername)
 		report.Updated = true
 		addStep("set gitea owner")
 	}
-	if strings.TrimSpace(project.GiteaRepo) == "" {
-		project.GiteaRepo = strings.TrimSpace(project.Slug)
+	if strings.TrimSpace(workspace.GiteaRepo) == "" {
+		workspace.GiteaRepo = strings.TrimSpace(workspace.Slug)
 		report.Updated = true
 		addStep("set gitea repo")
 	}
-	if strings.TrimSpace(project.ArtifactsBucket) != storage.StorageBucketName {
-		project.ArtifactsBucket = storage.StorageBucketName
+	if strings.TrimSpace(workspace.ArtifactsBucket) != storage.StorageBucketName {
+		workspace.ArtifactsBucket = storage.StorageBucketName
 		report.Updated = true
 		addStep("set artifacts bucket")
 	}
 
-	if strings.TrimSpace(project.GiteaOwner) != "" && strings.TrimSpace(project.GiteaRepo) != "" {
-		if err := ensureGiteaRepoFromBlueprint(cfg, project.GiteaOwner, project.GiteaRepo, project.Blueprint); err != nil {
+	if strings.TrimSpace(workspace.GiteaOwner) != "" && strings.TrimSpace(workspace.GiteaRepo) != "" {
+		if err := ensureGiteaRepoFromBlueprint(cfg, workspace.GiteaOwner, workspace.GiteaRepo, workspace.Blueprint); err != nil {
 			addErr("gitea repo ensure", err)
 		} else {
 			addStep("gitea repo ok")
-			if branch, err := getGiteaRepoDefaultBranch(cfg, project.GiteaOwner, project.GiteaRepo); err != nil {
+			if branch, err := getGiteaRepoDefaultBranch(cfg, workspace.GiteaOwner, workspace.GiteaRepo); err != nil {
 				addErr("gitea default branch", err)
-			} else if strings.TrimSpace(branch) != "" && branch != project.DefaultBranch {
-				project.DefaultBranch = branch
+			} else if strings.TrimSpace(branch) != "" && branch != workspace.DefaultBranch {
+				workspace.DefaultBranch = branch
 				report.Updated = true
 				addStep("updated default branch")
 			}
 		}
 	}
 
-	if strings.TrimSpace(project.GiteaOwner) != "" && strings.TrimSpace(project.GiteaRepo) != "" {
-		syncGiteaCollaboratorsForProject(cfg, *project)
+	if strings.TrimSpace(workspace.GiteaOwner) != "" && strings.TrimSpace(workspace.GiteaRepo) != "" {
+		syncGiteaCollaboratorsForWorkspace(cfg, *workspace)
 		addStep("gitea collaborators synced")
 	}
 
 	return report
 }
 
-func syncProjects(ctx context.Context, cfg Config, store projectsStore, db *sql.DB) ([]projectSyncReport, error) {
-	projects, err := store.load()
+func syncWorkspaces(ctx context.Context, cfg Config, store workspacesStore, db *sql.DB) ([]workspaceSyncReport, error) {
+	workspaces, err := store.load()
 	if err != nil {
 		return nil, err
 	}
-	reports := make([]projectSyncReport, 0, len(projects))
+	reports := make([]workspaceSyncReport, 0, len(workspaces))
 	changed := false
-	for i := range projects {
-		projectCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-		report := syncProjectResources(projectCtx, cfg, &projects[i])
+	for i := range workspaces {
+		workspaceCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		report := syncWorkspaceResources(workspaceCtx, cfg, &workspaces[i])
 		cancel()
 		if report.Updated {
 			changed = true
@@ -3211,7 +3217,7 @@ func syncProjects(ctx context.Context, cfg Config, store projectsStore, db *sql.
 		reports = append(reports, report)
 	}
 	if changed {
-		if err := store.save(projects); err != nil {
+		if err := store.save(workspaces); err != nil {
 			return reports, err
 		}
 	}
@@ -3222,27 +3228,27 @@ func syncProjects(ctx context.Context, cfg Config, store projectsStore, db *sql.
 			}
 			details := fmt.Sprintf("updated=true errors=%d", len(report.Errors))
 			auditCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
-			writeAuditEvent(auditCtx, db, "system", true, "", "project.sync", report.ProjectID, details)
+			writeAuditEvent(auditCtx, db, "system", true, "", "workspace.sync", report.WorkspaceID, details)
 			cancel()
 		}
 	}
 	return reports, nil
 }
 
-func runProjectSync(cfg Config, store projectsStore, db *sql.DB) {
-	projectSyncBackgroundRuns.Add(1)
+func runWorkspaceSync(cfg Config, store workspacesStore, db *sql.DB) {
+	workspaceSyncBackgroundRuns.Add(1)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	reports, err := syncProjects(ctx, cfg, store, db)
+	reports, err := syncWorkspaces(ctx, cfg, store, db)
 	if err != nil {
-		projectSyncFailures.Add(1)
-		log.Printf("project sync failed: %v", err)
+		workspaceSyncFailures.Add(1)
+		log.Printf("workspace sync failed: %v", err)
 		return
 	}
 	for _, report := range reports {
 		if len(report.Errors) > 0 {
-			projectSyncProjectErrors.Add(1)
-			log.Printf("project sync %s errors: %v", report.Slug, report.Errors)
+			workspaceSyncErrors.Add(1)
+			log.Printf("workspace sync %s errors: %v", report.Slug, report.Errors)
 		}
 	}
 }
@@ -3306,15 +3312,15 @@ func initService() (*Service, error) {
 		}
 	}
 	var (
-		projectStore projectsStore
+		workspaceStore workspacesStore
 		awsStore     awsSSOTokenStore
 		userStore    usersStore
 		db           *sql.DB
 	)
 
-	fileProjectStore := newFileProjectsStore(cfg.Projects.DataDir)
-	fileAWSStore := newFileAWSStore(cfg.Projects.DataDir, box)
-	fileUserStore := newFileUsersStore(cfg.Projects.DataDir)
+	fileWorkspaceStore := newFileWorkspacesStore(cfg.Workspaces.DataDir)
+	fileAWSStore := newFileAWSStore(cfg.Workspaces.DataDir, box)
+	fileUserStore := newFileUsersStore(cfg.Workspaces.DataDir)
 
 	if strings.EqualFold(strings.TrimSpace(cfg.StateBackend), "postgres") {
 		var err error
@@ -3329,7 +3335,7 @@ func initService() (*Service, error) {
 			return nil, fmt.Errorf("postgres ping failed: %w", err)
 		}
 
-		pgProjects := newPGProjectsStore(db)
+		pgWorkspaces := newPGWorkspacesStore(db)
 		pgUsers := newPGUsersStore(db)
 		pgAWS := newPGAWSStore(db, box)
 		empty, err := isPostgresStateEmpty(ctx, db)
@@ -3338,31 +3344,31 @@ func initService() (*Service, error) {
 			return nil, fmt.Errorf("postgres state check failed: %w", err)
 		}
 		if empty {
-			if err := migrateFileStateToPostgres(cfg, pgProjects, pgUsers, pgAWS); err != nil {
+			if err := migrateFileStateToPostgres(cfg, pgWorkspaces, pgUsers, pgAWS); err != nil {
 				log.Printf("postgres state migration skipped/failed: %v", err)
 			} else {
 				log.Printf("postgres state migration complete")
 			}
 		}
 
-		projectStore = pgProjects
+		workspaceStore = pgWorkspaces
 		awsStore = pgAWS
 		userStore = pgUsers
 	} else {
-		projectStore = fileProjectStore
+		workspaceStore = fileWorkspaceStore
 		awsStore = fileAWSStore
 		userStore = fileUserStore
 	}
 
-	if cfg.ProjectSyncSeconds > 0 {
-		interval := time.Duration(cfg.ProjectSyncSeconds) * time.Second
+	if cfg.WorkspaceSyncSeconds > 0 {
+		interval := time.Duration(cfg.WorkspaceSyncSeconds) * time.Second
 		go func() {
-			log.Printf("project sync enabled: every %s", interval)
-			runProjectSync(cfg, projectStore, db)
+			log.Printf("workspace sync enabled: every %s", interval)
+			runWorkspaceSync(cfg, workspaceStore, db)
 			ticker := time.NewTicker(interval)
 			defer ticker.Stop()
 			for range ticker.C {
-				runProjectSync(cfg, projectStore, db)
+				runWorkspaceSync(cfg, workspaceStore, db)
 			}
 		}()
 	}
@@ -3373,11 +3379,11 @@ func initService() (*Service, error) {
 		}
 		go func() {
 			log.Printf("cloud credential checks enabled: every %s", interval)
-			runCloudCredentialChecks(cfg, projectStore, awsStore, db)
+			runCloudCredentialChecks(cfg, workspaceStore, awsStore, db)
 			ticker := time.NewTicker(interval)
 			defer ticker.Stop()
 			for range ticker.C {
-				runCloudCredentialChecks(cfg, projectStore, awsStore, db)
+				runCloudCredentialChecks(cfg, workspaceStore, awsStore, db)
 			}
 		}()
 	}
@@ -3386,7 +3392,7 @@ func initService() (*Service, error) {
 		cfg:            cfg,
 		auth:           auth,
 		sessionManager: sessionManager,
-		projectStore:   projectStore,
+		workspaceStore:   workspaceStore,
 		awsStore:       awsStore,
 		userStore:      userStore,
 		box:            box,
@@ -3434,7 +3440,7 @@ type Service struct {
 	cfg            Config
 	auth           *LDAPAuthenticator
 	sessionManager *SessionManager
-	projectStore   projectsStore
+	workspaceStore   workspacesStore
 	awsStore       awsSSOTokenStore
 	userStore      usersStore
 	box            *secretBox
@@ -4171,7 +4177,7 @@ func shouldNotifyCloudCredential(key string, ok bool) bool {
 	return prev && !ok
 }
 
-func projectNotificationRecipients(project SkyforgeProject) []string {
+func workspaceNotificationRecipients(workspace SkyforgeWorkspace) []string {
 	recipients := map[string]struct{}{}
 	add := func(value string) {
 		value = strings.ToLower(strings.TrimSpace(value))
@@ -4180,8 +4186,8 @@ func projectNotificationRecipients(project SkyforgeProject) []string {
 		}
 		recipients[value] = struct{}{}
 	}
-	add(project.CreatedBy)
-	for _, owner := range project.Owners {
+	add(workspace.CreatedBy)
+	for _, owner := range workspace.Owners {
 		add(owner)
 	}
 	out := make([]string, 0, len(recipients))
@@ -4210,7 +4216,7 @@ func validateAWSStaticCredentials(ctx context.Context, region string, creds *aws
 	return err
 }
 
-func runCloudCredentialChecks(cfg Config, projectStore projectsStore, awsStore awsSSOTokenStore, db *sql.DB) {
+func runCloudCredentialChecks(cfg Config, workspaceStore workspacesStore, awsStore awsSSOTokenStore, db *sql.DB) {
 	if db == nil {
 		return
 	}
@@ -4231,8 +4237,8 @@ func runCloudCredentialChecks(cfg Config, projectStore projectsStore, awsStore a
 				if !record.RefreshTokenExpiresAt.IsZero() && now.After(record.RefreshTokenExpiresAt) {
 					if shouldNotifyCloudCredential("aws-sso:"+username, false) {
 						_, _ = createNotification(ctx, db, username, "AWS SSO session expired",
-							"Your AWS SSO session expired. Re-authenticate in Projects → New Project → AWS.",
-							"warning", "cloud-credentials", "/projects/new", "high")
+							"Your AWS SSO session expired. Re-authenticate in Workspaces → New Workspace → AWS.",
+							"warning", "cloud-credentials", "/workspaces/new", "high")
 					}
 				} else {
 					shouldNotifyCloudCredential("aws-sso:"+username, true)
@@ -4241,39 +4247,39 @@ func runCloudCredentialChecks(cfg Config, projectStore projectsStore, awsStore a
 		}
 	}
 
-	projects, err := projectStore.load()
+	workspaces, err := workspaceStore.load()
 	if err != nil {
-		log.Printf("cloud credential check: project load failed: %v", err)
+		log.Printf("cloud credential check: workspace load failed: %v", err)
 		return
 	}
 	box := newSecretBox(cfg.SessionSecret)
-	for _, project := range projects {
-		recipients := projectNotificationRecipients(project)
+	for _, workspace := range workspaces {
+		recipients := workspaceNotificationRecipients(workspace)
 		if len(recipients) == 0 {
 			continue
 		}
 
-		if strings.EqualFold(strings.TrimSpace(project.AWSAuthMethod), "static") {
-			creds, err := getProjectAWSStaticCredentials(ctx, db, box, project.ID)
-			key := "aws-static:" + project.ID
+		if strings.EqualFold(strings.TrimSpace(workspace.AWSAuthMethod), "static") {
+			creds, err := getWorkspaceAWSStaticCredentials(ctx, db, box, workspace.ID)
+			key := "aws-static:" + workspace.ID
 			if err != nil || creds == nil || creds.AccessKeyID == "" || creds.SecretAccessKey == "" {
 				if shouldNotifyCloudCredential(key, false) {
 					for _, username := range recipients {
 						_, _ = createNotification(ctx, db, username, "AWS static credentials missing",
-							fmt.Sprintf("Project %s is missing AWS static credentials. Update them in Project Settings.", project.Name),
-							"warning", "cloud-credentials", fmt.Sprintf("/projects/%s/settings", project.ID), "high")
+							fmt.Sprintf("Workspace %s is missing AWS static credentials. Update them in Workspace Settings.", workspace.Name),
+							"warning", "cloud-credentials", fmt.Sprintf("/workspaces/%s/settings", workspace.ID), "high")
 					}
 				}
 			} else {
 				validateCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-				validateErr := validateAWSStaticCredentials(validateCtx, project.AWSRegion, creds)
+				validateErr := validateAWSStaticCredentials(validateCtx, workspace.AWSRegion, creds)
 				cancel()
 				if validateErr != nil {
 					if shouldNotifyCloudCredential(key, false) {
 						for _, username := range recipients {
 							_, _ = createNotification(ctx, db, username, "AWS static credentials invalid",
-								fmt.Sprintf("Project %s failed AWS static validation. Re-enter credentials in Project Settings.", project.Name),
-								"warning", "cloud-credentials", fmt.Sprintf("/projects/%s/settings", project.ID), "high")
+								fmt.Sprintf("Workspace %s failed AWS static validation. Re-enter credentials in Workspace Settings.", workspace.Name),
+								"warning", "cloud-credentials", fmt.Sprintf("/workspaces/%s/settings", workspace.ID), "high")
 						}
 					}
 				} else {
@@ -4282,15 +4288,15 @@ func runCloudCredentialChecks(cfg Config, projectStore projectsStore, awsStore a
 			}
 		}
 
-		azureCreds, err := getProjectAzureCredentials(ctx, db, box, project.ID)
+		azureCreds, err := getWorkspaceAzureCredentials(ctx, db, box, workspace.ID)
 		if azureCreds != nil {
-			key := "azure:" + project.ID
+			key := "azure:" + workspace.ID
 			if err != nil || azureCreds.ClientID == "" || azureCreds.ClientSecret == "" {
 				if shouldNotifyCloudCredential(key, false) {
 					for _, username := range recipients {
 						_, _ = createNotification(ctx, db, username, "Azure credentials missing",
-							fmt.Sprintf("Project %s is missing Azure credentials. Re-enter them in Project Settings.", project.Name),
-							"warning", "cloud-credentials", fmt.Sprintf("/projects/%s/settings", project.ID), "high")
+							fmt.Sprintf("Workspace %s is missing Azure credentials. Re-enter them in Workspace Settings.", workspace.Name),
+							"warning", "cloud-credentials", fmt.Sprintf("/workspaces/%s/settings", workspace.ID), "high")
 					}
 				}
 			} else {
@@ -4301,8 +4307,8 @@ func runCloudCredentialChecks(cfg Config, projectStore projectsStore, awsStore a
 					if shouldNotifyCloudCredential(key, false) {
 						for _, username := range recipients {
 							_, _ = createNotification(ctx, db, username, "Azure credentials invalid",
-								fmt.Sprintf("Project %s failed Azure validation. Re-enter credentials in Project Settings.", project.Name),
-								"warning", "cloud-credentials", fmt.Sprintf("/projects/%s/settings", project.ID), "high")
+								fmt.Sprintf("Workspace %s failed Azure validation. Re-enter credentials in Workspace Settings.", workspace.Name),
+								"warning", "cloud-credentials", fmt.Sprintf("/workspaces/%s/settings", workspace.ID), "high")
 						}
 					}
 				} else {
@@ -4311,15 +4317,15 @@ func runCloudCredentialChecks(cfg Config, projectStore projectsStore, awsStore a
 			}
 		}
 
-		gcpCreds, err := getProjectGCPCredentials(ctx, db, box, project.ID)
+		gcpCreds, err := getWorkspaceGCPCredentials(ctx, db, box, workspace.ID)
 		if gcpCreds != nil {
-			key := "gcp:" + project.ID
+			key := "gcp:" + workspace.ID
 			if err != nil || gcpCreds.ServiceAccountJSON == "" {
 				if shouldNotifyCloudCredential(key, false) {
 					for _, username := range recipients {
 						_, _ = createNotification(ctx, db, username, "GCP credentials missing",
-							fmt.Sprintf("Project %s is missing GCP credentials. Re-enter them in Project Settings.", project.Name),
-							"warning", "cloud-credentials", fmt.Sprintf("/projects/%s/settings", project.ID), "high")
+							fmt.Sprintf("Workspace %s is missing GCP credentials. Re-enter them in Workspace Settings.", workspace.Name),
+							"warning", "cloud-credentials", fmt.Sprintf("/workspaces/%s/settings", workspace.ID), "high")
 					}
 				}
 			} else {
@@ -4328,8 +4334,8 @@ func runCloudCredentialChecks(cfg Config, projectStore projectsStore, awsStore a
 					if shouldNotifyCloudCredential(key, false) {
 						for _, username := range recipients {
 							_, _ = createNotification(ctx, db, username, "GCP credentials invalid",
-								fmt.Sprintf("Project %s has invalid GCP credentials. Re-upload JSON in Project Settings.", project.Name),
-								"warning", "cloud-credentials", fmt.Sprintf("/projects/%s/settings", project.ID), "high")
+								fmt.Sprintf("Workspace %s has invalid GCP credentials. Re-upload JSON in Workspace Settings.", workspace.Name),
+								"warning", "cloud-credentials", fmt.Sprintf("/workspaces/%s/settings", workspace.ID), "high")
 						}
 					}
 				} else {
@@ -4340,8 +4346,8 @@ func runCloudCredentialChecks(cfg Config, projectStore projectsStore, awsStore a
 						if shouldNotifyCloudCredential(key, false) {
 							for _, username := range recipients {
 								_, _ = createNotification(ctx, db, username, "GCP credentials invalid",
-									fmt.Sprintf("Project %s failed GCP validation. Re-upload JSON in Project Settings.", project.Name),
-									"warning", "cloud-credentials", fmt.Sprintf("/projects/%s/settings", project.ID), "high")
+									fmt.Sprintf("Workspace %s failed GCP validation. Re-upload JSON in Workspace Settings.", workspace.Name),
+									"warning", "cloud-credentials", fmt.Sprintf("/workspaces/%s/settings", workspace.ID), "high")
 							}
 						}
 					} else {

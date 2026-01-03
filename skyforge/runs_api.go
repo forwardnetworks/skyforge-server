@@ -10,9 +10,9 @@ import (
 )
 
 type RunsListParams struct {
-	ProjectID string `query:"project_id" encore:"optional"`
-	Limit     string `query:"limit" encore:"optional"`
-	Owner     string `query:"owner" encore:"optional"`
+	WorkspaceID string `query:"workspace_id" encore:"optional"`
+	Limit       string `query:"limit" encore:"optional"`
+	Owner       string `query:"owner" encore:"optional"`
 }
 
 type RunsListResponse struct {
@@ -36,12 +36,12 @@ func (s *Service) GetRuns(ctx context.Context, params *RunsListParams) (*RunsLis
 		}
 	}
 
-	project, err := s.resolveProjectForUser(ctx, user, "")
+	workspace, err := s.resolveWorkspaceForUser(ctx, user, "")
 	if err != nil {
 		return nil, err
 	}
-	if params != nil && strings.TrimSpace(params.ProjectID) != "" {
-		project, err = s.resolveProjectForUser(ctx, user, params.ProjectID)
+	if params != nil && strings.TrimSpace(params.WorkspaceID) != "" {
+		workspace, err = s.resolveWorkspaceForUser(ctx, user, params.WorkspaceID)
 		if err != nil {
 			return nil, err
 		}
@@ -49,7 +49,7 @@ func (s *Service) GetRuns(ctx context.Context, params *RunsListParams) (*RunsLis
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	tasks, err := listTasks(ctx, s.db, project.ID, limit)
+	tasks, err := listTasks(ctx, s.db, workspace.ID, limit)
 	if err != nil {
 		runErrors.Add(1)
 		log.Printf("listTasks: %v", err)
@@ -71,7 +71,7 @@ func (s *Service) GetRuns(ctx context.Context, params *RunsListParams) (*RunsLis
 	runItems := make([]map[string]any, 0, len(tasks))
 	for _, task := range tasks {
 		run := taskToRunInfo(task)
-		run["projectId"] = project.ID
+		run["workspaceId"] = workspace.ID
 		runItems = append(runItems, run)
 	}
 	tasksJSON, err := toJSONMapSlice(runItems)
@@ -87,9 +87,9 @@ func (s *Service) GetRuns(ctx context.Context, params *RunsListParams) (*RunsLis
 }
 
 type RunsCreateResponse struct {
-	ProjectID string  `json:"projectId"`
-	Task      JSONMap `json:"task"`
-	User      string  `json:"user"`
+	WorkspaceID string  `json:"workspaceId"`
+	Task        JSONMap `json:"task"`
+	User        string  `json:"user"`
 }
 
 // CreateRun is a reserved endpoint for admin-triggered native tasks.
@@ -102,33 +102,33 @@ func (s *Service) CreateRun(ctx context.Context, req *RunRequest) (*RunsCreateRe
 		return nil, err
 	}
 	if !isAdminUser(s.cfg, user.Username) {
-		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden (use project run endpoints)").Err()
+		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden (use workspace run endpoints)").Err()
 	}
 	if req == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid payload").Err()
 	}
-	projectKey := ""
-	if req.ProjectID != nil {
-		projectKey = *req.ProjectID
+	workspaceKey := ""
+	if req.WorkspaceID != nil {
+		workspaceKey = *req.WorkspaceID
 	}
-	if projectKey == "" {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("project_id is required").Err()
+	if workspaceKey == "" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("workspace_id is required").Err()
 	}
-	if _, err := s.resolveProjectForUser(ctx, user, projectKey); err != nil {
+	if _, err := s.resolveWorkspaceForUser(ctx, user, workspaceKey); err != nil {
 		return nil, err
 	}
 	return nil, errs.B().Code(errs.Unimplemented).Msg("direct run creation is not supported in native mode").Err()
 }
 
 type RunsOutputParams struct {
-	ProjectID string `query:"project_id" encore:"optional"`
+	WorkspaceID string `query:"workspace_id" encore:"optional"`
 }
 
 type RunsOutputResponse struct {
-	TaskID    int       `json:"task_id"`
-	ProjectID string    `json:"projectId"`
-	Output    []JSONMap `json:"output"`
-	User      string    `json:"user"`
+	TaskID      int       `json:"task_id"`
+	WorkspaceID string    `json:"workspaceId"`
+	Output      []JSONMap `json:"output"`
+	User        string    `json:"user"`
 }
 
 // GetRunOutput returns output for a specific native task.
@@ -143,11 +143,11 @@ func (s *Service) GetRunOutput(ctx context.Context, id int, params *RunsOutputPa
 	if id <= 0 {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid task id").Err()
 	}
-	projectKey := ""
+	workspaceKey := ""
 	if params != nil {
-		projectKey = strings.TrimSpace(params.ProjectID)
+		workspaceKey = strings.TrimSpace(params.WorkspaceID)
 	}
-	project, err := s.resolveProjectForUser(ctx, user, projectKey)
+	workspace, err := s.resolveWorkspaceForUser(ctx, user, workspaceKey)
 	if err != nil {
 		return nil, err
 	}
@@ -176,9 +176,9 @@ func (s *Service) GetRunOutput(ctx context.Context, id int, params *RunsOutputPa
 	}
 	_ = ctx
 	return &RunsOutputResponse{
-		TaskID:    id,
-		ProjectID: project.ID,
-		Output:    outputJSON,
-		User:      user.Username,
+		TaskID:      id,
+		WorkspaceID: workspace.ID,
+		Output:      outputJSON,
+		User:        user.Username,
 	}, nil
 }

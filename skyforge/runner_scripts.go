@@ -32,7 +32,7 @@ def parse_args(argv):
   p.add_argument("--api-insecure", dest="NETLAB_API_INSECURE")
   p.add_argument("--action", dest="NETLAB_ACTION")
   p.add_argument("--user", dest="NETLAB_USER")
-  p.add_argument("--project", dest="NETLAB_PROJECT")
+  p.add_argument("--workspace", dest="NETLAB_WORKSPACE")
   p.add_argument("--deployment", dest="NETLAB_DEPLOYMENT")
   p.add_argument("--workspace-root", dest="NETLAB_WORKSPACE_ROOT")
   p.add_argument("--plugin", dest="NETLAB_PLUGIN")
@@ -68,14 +68,16 @@ def apply_env_assignments(args):
 
 def build_payload():
   user = getenv("NETLAB_USER") or getenv("NETLAB_SSH_USER") or getenv("USER") or "netlab"
-  project = getenv("NETLAB_PROJECT") or getenv("NETLAB_PROJECT_SLUG") or getenv("NETLAB_PROJECT_ID") or "project"
+  workspace = getenv("NETLAB_WORKSPACE") or getenv("NETLAB_WORKSPACE_SLUG") or getenv("NETLAB_WORKSPACE_ID")
+  if not workspace:
+    workspace = getenv("NETLAB_PROJECT") or getenv("NETLAB_PROJECT_SLUG") or getenv("NETLAB_PROJECT_ID") or "workspace"
   deployment = getenv("NETLAB_DEPLOYMENT") or getenv("NETLAB_DEPLOYMENT_ID") or getenv("NETLAB_MULTILAB_ID") or "deployment"
   workspace_root = getenv("NETLAB_WORKSPACE_ROOT") or f"/home/{user}/netlab"
   action = (getenv("NETLAB_ACTION") or "up").lower()
   payload = {
     "action": action,
     "user": user,
-    "project": project,
+    "workspace": workspace,
     "deployment": deployment,
     "workspaceRoot": workspace_root,
   }
@@ -201,7 +203,7 @@ def parse_args(argv):
   p.add_argument("--api-url", dest="LABPP_API_URL")
   p.add_argument("--api-insecure", dest="LABPP_API_INSECURE")
   p.add_argument("--action", dest="LABPP_ACTION")
-  p.add_argument("--project", dest="LABPP_PROJECT")
+  p.add_argument("--workspace", dest="LABPP_WORKSPACE")
   p.add_argument("--deployment", dest="LABPP_DEPLOYMENT")
   p.add_argument("--templates-root", dest="LABPP_TEMPLATES_ROOT")
   p.add_argument("--template", dest="LABPP_TEMPLATE")
@@ -262,7 +264,8 @@ def build_payload():
     lab_path = "/" + lab_path
   payload = {
     "action": action,
-    "project": getenv("LABPP_PROJECT", "").strip(),
+    "workspace": (getenv("LABPP_WORKSPACE", "").strip()
+                   or getenv("LABPP_PROJECT", "").strip()),
     "deployment": getenv("LABPP_DEPLOYMENT", "").strip(),
     "templatesRoot": getenv("LABPP_TEMPLATES_ROOT", "").strip(),
     "template": getenv("LABPP_TEMPLATE", "").strip(),
@@ -309,7 +312,7 @@ def main():
   insecure = getenv("LABPP_API_INSECURE", "false").lower() == "true"
 
   payload = build_payload()
-  for key in ("project", "deployment", "templatesRoot", "template"):
+  for key in ("workspace", "deployment", "templatesRoot", "template"):
     if not str(payload.get(key, "")).strip():
       sys.stderr.write(f"ERROR: LABPP_{key.upper()} is required\n")
       sys.exit(2)

@@ -21,19 +21,19 @@ func artifactsBucket() artifactsBucketPerms {
 	return objects.BucketRef[artifactsBucketPerms](storage.StorageFilesBucket)
 }
 
-func artifactBasePrefix(projectID string) string {
-	projectID = strings.TrimSpace(projectID)
-	if projectID == "" {
+func artifactBasePrefix(workspaceID string) string {
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
 		return "artifacts/"
 	}
-	return fmt.Sprintf("artifacts/%s/", projectID)
+	return fmt.Sprintf("artifacts/%s/", workspaceID)
 }
 
-func listArtifactEntries(ctx context.Context, projectID, prefix string, limit int) ([]storageObjectSummary, error) {
+func listArtifactEntries(ctx context.Context, workspaceID, prefix string, limit int) ([]storageObjectSummary, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 200
 	}
-	basePrefix := artifactBasePrefix(projectID)
+	basePrefix := artifactBasePrefix(workspaceID)
 	fullPrefix := basePrefix + strings.TrimPrefix(prefix, "/")
 	query := &objects.Query{
 		Prefix: fullPrefix,
@@ -54,8 +54,8 @@ func listArtifactEntries(ctx context.Context, projectID, prefix string, limit in
 	return items, nil
 }
 
-func artifactAttrs(ctx context.Context, projectID, key string) (*objects.ObjectAttrs, error) {
-	objectName := artifactObjectName(projectID, key)
+func artifactAttrs(ctx context.Context, workspaceID, key string) (*objects.ObjectAttrs, error) {
+	objectName := artifactObjectName(workspaceID, key)
 	bucket := artifactsBucket()
 	attrs, err := bucket.Attrs(ctx, objectName)
 	if err != nil {
@@ -67,8 +67,8 @@ func artifactAttrs(ctx context.Context, projectID, key string) (*objects.ObjectA
 	return attrs, nil
 }
 
-func deleteProjectArtifacts(ctx context.Context, projectID string) error {
-	prefix := artifactBasePrefix(projectID)
+func deleteWorkspaceArtifacts(ctx context.Context, workspaceID string) error {
+	prefix := artifactBasePrefix(workspaceID)
 	query := &objects.Query{Prefix: prefix}
 	bucket := artifactsBucket()
 	for entry, err := range bucket.List(ctx, query) {

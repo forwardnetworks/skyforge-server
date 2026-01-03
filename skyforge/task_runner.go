@@ -53,7 +53,7 @@ func (s *Service) queueTask(task *TaskRecord, runner func(ctx context.Context, l
 		}
 		if task.DeploymentID.Valid {
 			finishedAt := time.Now().UTC()
-			if err := s.updateDeploymentStatus(ctx, task.ProjectID, task.DeploymentID.String, status, &finishedAt); err != nil {
+			if err := s.updateDeploymentStatus(ctx, task.WorkspaceID, task.DeploymentID.String, status, &finishedAt); err != nil {
 				log.Printf("deployment status update failed: %v", err)
 			}
 		}
@@ -61,8 +61,8 @@ func (s *Service) queueTask(task *TaskRecord, runner func(ctx context.Context, l
 }
 
 type netlabRunSpec struct {
-	ProjectCtx      *projectContext
-	ProjectSlug     string
+	WorkspaceCtx      *workspaceContext
+	WorkspaceSlug     string
 	Username        string
 	Action          string
 	Deployment      string
@@ -71,7 +71,7 @@ type netlabRunSpec struct {
 	TemplateRepo    string
 	TemplatesDir    string
 	Template        string
-	ProjectDir      string
+	WorkspaceDir      string
 	MultilabNumeric int
 	StateRoot       string
 	Cleanup         bool
@@ -81,10 +81,10 @@ type netlabRunSpec struct {
 func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *taskLogger) error {
 	if spec.Template != "" {
 		log.Infof("Syncing netlab template %s", spec.Template)
-		if spec.ProjectCtx == nil {
-			return fmt.Errorf("project context unavailable")
+		if spec.WorkspaceCtx == nil {
+			return fmt.Errorf("workspace context unavailable")
 		}
-		if err := s.syncNetlabTopologyFile(ctx, spec.ProjectCtx, &spec.Server, spec.TemplateSource, spec.TemplateRepo, spec.TemplatesDir, spec.Template, spec.ProjectDir, spec.Username); err != nil {
+		if err := s.syncNetlabTopologyFile(ctx, spec.WorkspaceCtx, &spec.Server, spec.TemplateSource, spec.TemplateRepo, spec.TemplatesDir, spec.Template, spec.WorkspaceDir, spec.Username); err != nil {
 			return err
 		}
 	}
@@ -93,7 +93,7 @@ func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *ta
 	payload := map[string]any{
 		"action":        spec.Action,
 		"user":          spec.Username,
-		"project":       spec.ProjectSlug,
+		"workspace":     spec.WorkspaceSlug,
 		"deployment":    spec.Deployment,
 		"workspaceRoot": spec.WorkspaceRoot,
 		"plugin":        "multilab",
@@ -167,7 +167,7 @@ type labppRunSpec struct {
 	APIURL        string
 	Insecure      bool
 	Action        string
-	ProjectSlug   string
+	WorkspaceSlug   string
 	Deployment    string
 	TemplatesRoot string
 	Template      string
@@ -260,7 +260,7 @@ func normalizeLabppLog(raw string) string {
 func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *taskLogger) error {
 	payload := map[string]any{
 		"action":        strings.ToUpper(spec.Action),
-		"project":       spec.ProjectSlug,
+		"workspace":     spec.WorkspaceSlug,
 		"deployment":    spec.Deployment,
 		"templatesRoot": spec.TemplatesRoot,
 		"template":      spec.Template,
@@ -382,8 +382,8 @@ func (s *Service) runContainerlabTask(ctx context.Context, spec containerlabRunS
 }
 
 type tofuRunSpec struct {
-	ProjectCtx     *projectContext
-	ProjectSlug    string
+	WorkspaceCtx     *workspaceContext
+	WorkspaceSlug    string
 	Username       string
 	Cloud          string
 	Action         string
@@ -398,10 +398,10 @@ func (s *Service) runTofuTask(ctx context.Context, spec tofuRunSpec, log *taskLo
 	if spec.Template == "" {
 		return fmt.Errorf("template is required")
 	}
-	if spec.ProjectCtx == nil {
-		return fmt.Errorf("project context unavailable")
+	if spec.WorkspaceCtx == nil {
+		return fmt.Errorf("workspace context unavailable")
 	}
-	ref, err := resolveTemplateRepoForProject(s.cfg, spec.ProjectCtx, spec.TemplateSource, spec.TemplateRepo)
+	ref, err := resolveTemplateRepoForProject(s.cfg, spec.WorkspaceCtx, spec.TemplateSource, spec.TemplateRepo)
 	if err != nil {
 		return err
 	}
@@ -414,11 +414,11 @@ func (s *Service) runTofuTask(ctx context.Context, spec tofuRunSpec, log *taskLo
 		return fmt.Errorf("templatesDir must be a safe repo-relative path")
 	}
 
-	workRoot := s.cfg.Projects.DataDir
+	workRoot := s.cfg.Workspaces.DataDir
 	if strings.TrimSpace(workRoot) == "" {
 		workRoot = os.TempDir()
 	}
-	workDir := filepath.Join(workRoot, "tofu-workspaces", spec.ProjectSlug, spec.Username, spec.Template)
+	workDir := filepath.Join(workRoot, "tofu-workspaces", spec.WorkspaceSlug, spec.Username, spec.Template)
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		return err
 	}
@@ -464,10 +464,10 @@ func (s *Service) runTofuTask(ctx context.Context, spec tofuRunSpec, log *taskLo
 }
 
 func (s *Service) syncTofuState(ctx context.Context, spec tofuRunSpec, workDir string, log *taskLogger) {
-	if spec.ProjectCtx == nil {
+	if spec.WorkspaceCtx == nil {
 		return
 	}
-	stateKey := strings.TrimSpace(spec.ProjectCtx.project.TerraformStateKey)
+	stateKey := strings.TrimSpace(spec.WorkspaceCtx.workspace.TerraformStateKey)
 	if stateKey == "" {
 		log.Infof("Terraform state key not configured; skipping state upload.")
 		return

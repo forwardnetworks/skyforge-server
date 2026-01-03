@@ -24,7 +24,7 @@ func giteaDefaultBranch(cfg Config, owner, repo string) string {
 	return branch
 }
 
-func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *projectContext, server *NetlabServerConfig, templateSource, templateRepo, templatesDir, templateFile, workdir, owner string) error {
+func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceContext, server *NetlabServerConfig, templateSource, templateRepo, templatesDir, templateFile, workdir, owner string) error {
 	if server == nil {
 		return fmt.Errorf("netlab runner not configured")
 	}
@@ -78,16 +78,16 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *projectContext
 	return nil
 }
 
-func resolveTemplateRepoForProject(cfg Config, pc *projectContext, source string, customRepo string) (templateRepoRef, error) {
-	owner := pc.project.GiteaOwner
-	repo := pc.project.GiteaRepo
-	branch := strings.TrimSpace(pc.project.DefaultBranch)
+func resolveTemplateRepoForProject(cfg Config, pc *workspaceContext, source string, customRepo string) (templateRepoRef, error) {
+	owner := pc.workspace.GiteaOwner
+	repo := pc.workspace.GiteaRepo
+	branch := strings.TrimSpace(pc.workspace.DefaultBranch)
 
 	switch strings.ToLower(strings.TrimSpace(source)) {
-	case "", "project":
+	case "", "workspace", "project":
 		// default
 	case "blueprints", "blueprint":
-		ref := strings.TrimSpace(pc.project.Blueprint)
+		ref := strings.TrimSpace(pc.workspace.Blueprint)
 		if ref == "" {
 			ref = "skyforge/blueprints"
 		}
@@ -107,7 +107,7 @@ func resolveTemplateRepoForProject(cfg Config, pc *projectContext, source string
 		if err != nil {
 			return templateRepoRef{}, err
 		}
-		if !isAdminUser(cfg, pc.claims.Username) && customOwner != pc.project.GiteaOwner && customOwner != "skyforge" {
+		if !isAdminUser(cfg, pc.claims.Username) && customOwner != pc.workspace.GiteaOwner && customOwner != "skyforge" {
 			return templateRepoRef{}, fmt.Errorf("custom repo not allowed")
 		}
 		owner, repo = customOwner, customName
@@ -122,7 +122,7 @@ func resolveTemplateRepoForProject(cfg Config, pc *projectContext, source string
 	return templateRepoRef{Owner: owner, Repo: repo, Branch: branch}, nil
 }
 
-func (s *Service) syncLabppTemplateDir(ctx context.Context, pc *projectContext, eveServer *EveServerConfig, templateSource, templateRepo, templatesDir, templateName, destRoot string) (string, error) {
+func (s *Service) syncLabppTemplateDir(ctx context.Context, pc *workspaceContext, eveServer *EveServerConfig, templateSource, templateRepo, templatesDir, templateName, destRoot string) (string, error) {
 	templateName = strings.TrimSpace(templateName)
 	if templateName == "" {
 		return "", fmt.Errorf("template is required")

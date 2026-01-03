@@ -1,4 +1,4 @@
-h1:6UYYvxSb2k4WwLXsSteLBL8t3ro1Mx4deT07RvcS9xM=
+h1:nqWn7DE54iXj2hZip+ElPdQyTumkD1N+uoKlGCI1Tr0=
 20251220000100_init.up.sql h1:8ITR02T74XZfpZ3rcL70w9DZISnVDzQsaLj6TnOwQ28=
 20251221000100_cloud_credentials.up.sql h1:PtQvgzP7HJE4TZ7gqiW01zBEIxo0mvxEdimTl6YTA3U=
 20251222000100_project_visibility.up.sql h1:FaGsv7P4dJFB/Ydno13XedpXBprWY/kZ3yrwGprbfxo=
@@ -16,3 +16,4 @@ h1:6UYYvxSb2k4WwLXsSteLBL8t3ro1Mx4deT07RvcS9xM=
 20260102000400_forward_credentials.up.sql h1:vpnAvuigesLx2ibNZT9RE8kBtgP/TZGyTOMCKF04XAw=
 20260102000500_forward_collectors.up.sql h1:Eusgazs8hGJkj4fBHwb9UYkGJt2BPUFh4ERtGA2Jqc0=
 20260102000600_pki_ssh_certs.up.sql h1:JRwUbPfPVTvWCkHzCciGlbaxV8avCoCTI6yrg3PfKdQ=
+20260103000100_workspace_rename.up.sql h1:rFQ8aHlvJF9VFsbayzosuXeuX1H65ouYLXO5ZIW3GMs=

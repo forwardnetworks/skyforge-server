@@ -44,10 +44,10 @@ func (s *Service) AdminMiddleware(req middleware.Request, next middleware.Next) 
 	return next(req)
 }
 
-// ProjectListMiddleware enforces authentication for project list endpoints.
+// WorkspaceListMiddleware enforces authentication for workspace list endpoints.
 //
-//encore:middleware target=tag:list-projects
-func (s *Service) ProjectListMiddleware(req middleware.Request, next middleware.Next) middleware.Response {
+//encore:middleware target=tag:list-workspaces
+func (s *Service) WorkspaceListMiddleware(req middleware.Request, next middleware.Next) middleware.Response {
 	if auth.Data() == nil {
 		return middleware.Response{
 			Err: &errs.Error{

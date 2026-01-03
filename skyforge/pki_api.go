@@ -32,7 +32,7 @@ type PKIRootResponse struct {
 type PKIIssueRequest struct {
 	CommonName string   `json:"commonName"`
 	SANs       []string `json:"sans,omitempty"`
-	ProjectID  string   `json:"projectId,omitempty"`
+	WorkspaceID  string   `json:"workspaceId,omitempty"`
 	TTLDays    int      `json:"ttlDays,omitempty"`
 }
 
@@ -44,7 +44,7 @@ type PKIIssueResponse struct {
 	BundlePEM   string `json:"bundlePem"`
 	IssuedAt    string `json:"issuedAt"`
 	ExpiresAt   string `json:"expiresAt"`
-	ProjectID   string `json:"projectId,omitempty"`
+	WorkspaceID   string `json:"workspaceId,omitempty"`
 	Fingerprint string `json:"fingerprint"`
 }
 
@@ -52,7 +52,7 @@ type PKICertSummary struct {
 	ID          string   `json:"id"`
 	CommonName  string   `json:"commonName"`
 	SANs        []string `json:"sans,omitempty"`
-	ProjectID   string   `json:"projectId,omitempty"`
+	WorkspaceID   string   `json:"workspaceId,omitempty"`
 	IssuedAt    string   `json:"issuedAt"`
 	ExpiresAt   string   `json:"expiresAt"`
 	RevokedAt   string   `json:"revokedAt,omitempty"`
@@ -78,7 +78,7 @@ type PKISSHRootResponse struct {
 
 type PKISSHIssueRequest struct {
 	Principals []string `json:"principals,omitempty"`
-	ProjectID  string   `json:"projectId,omitempty"`
+	WorkspaceID  string   `json:"workspaceId,omitempty"`
 	TTLDays    int      `json:"ttlDays,omitempty"`
 }
 
@@ -90,14 +90,14 @@ type PKISSHIssueResponse struct {
 	Certificate string   `json:"certificate"`
 	IssuedAt    string   `json:"issuedAt"`
 	ExpiresAt   string   `json:"expiresAt"`
-	ProjectID   string   `json:"projectId,omitempty"`
+	WorkspaceID   string   `json:"workspaceId,omitempty"`
 	Fingerprint string   `json:"fingerprint"`
 }
 
 type PKISSHCertSummary struct {
 	ID          string   `json:"id"`
 	Principals  []string `json:"principals"`
-	ProjectID   string   `json:"projectId,omitempty"`
+	WorkspaceID   string   `json:"workspaceId,omitempty"`
 	IssuedAt    string   `json:"issuedAt"`
 	ExpiresAt   string   `json:"expiresAt"`
 	RevokedAt   string   `json:"revokedAt,omitempty"`
@@ -159,9 +159,9 @@ func (s *Service) IssuePKICert(ctx context.Context, req *PKIIssueRequest) (*PKII
 	if commonName == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("commonName is required").Err()
 	}
-	projectID := strings.TrimSpace(req.ProjectID)
-	if projectID != "" {
-		if _, err := s.projectContextForUser(user, projectID); err != nil {
+	workspaceID := strings.TrimSpace(req.WorkspaceID)
+	if workspaceID != "" {
+		if _, err := s.workspaceContextForUser(user, workspaceID); err != nil {
 			return nil, err
 		}
 	}
@@ -239,9 +239,9 @@ func (s *Service) IssuePKICert(ctx context.Context, req *PKIIssueRequest) (*PKII
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	_, err = s.db.ExecContext(ctx, `INSERT INTO sf_pki_certs (
-  id, username, project_id, common_name, sans, cert_pem, key_pem, expires_at
+  id, username, workspace_id, common_name, sans, cert_pem, key_pem, expires_at
 ) VALUES ($1,$2,NULLIF($3,''),$4,$5,$6,$7,$8)`,
-		certID, strings.ToLower(strings.TrimSpace(user.Username)), projectID, commonName, sansJSON, string(certPEM), encKey, notAfter)
+		certID, strings.ToLower(strings.TrimSpace(user.Username)), workspaceID, commonName, sansJSON, string(certPEM), encKey, notAfter)
 	if err != nil {
 		log.Printf("pki cert insert: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to store certificate").Err()
@@ -255,7 +255,7 @@ func (s *Service) IssuePKICert(ctx context.Context, req *PKIIssueRequest) (*PKII
 		BundlePEM:   bundle,
 		IssuedAt:    now.Format(time.RFC3339),
 		ExpiresAt:   notAfter.Format(time.RFC3339),
-		ProjectID:   projectID,
+		WorkspaceID:   workspaceID,
 		Fingerprint: base64.StdEncoding.EncodeToString(fingerprint[:]),
 	}, nil
 }
@@ -272,7 +272,7 @@ func (s *Service) ListPKICerts(ctx context.Context) (*PKICertsResponse, error) {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 	username := strings.ToLower(strings.TrimSpace(user.Username))
-	rows, err := s.db.QueryContext(ctx, `SELECT id, common_name, sans, project_id, issued_at, expires_at, revoked_at, cert_pem
+	rows, err := s.db.QueryContext(ctx, `SELECT id, common_name, sans, workspace_id, issued_at, expires_at, revoked_at, cert_pem
 FROM sf_pki_certs
 WHERE username=$1
 ORDER BY issued_at DESC`, username)
@@ -287,12 +287,12 @@ ORDER BY issued_at DESC`, username)
 		var (
 			id, commonName, certPEM string
 			sansRaw                 []byte
-			projectID               sql.NullString
+			workspaceID               sql.NullString
 			issuedAt                time.Time
 			expiresAt               time.Time
 			revokedAt               sql.NullTime
 		)
-		if err := rows.Scan(&id, &commonName, &sansRaw, &projectID, &issuedAt, &expiresAt, &revokedAt, &certPEM); err != nil {
+		if err := rows.Scan(&id, &commonName, &sansRaw, &workspaceID, &issuedAt, &expiresAt, &revokedAt, &certPEM); err != nil {
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to decode certificates").Err()
 		}
 		var sans []string
@@ -306,7 +306,7 @@ ORDER BY issued_at DESC`, username)
 			ID:          id,
 			CommonName:  commonName,
 			SANs:        sans,
-			ProjectID:   projectID.String,
+			WorkspaceID:   workspaceID.String,
 			IssuedAt:    issuedAt.UTC().Format(time.RFC3339),
 			ExpiresAt:   expiresAt.UTC().Format(time.RFC3339),
 			Fingerprint: fingerprint,
@@ -375,16 +375,16 @@ func (s *Service) RevokePKICert(ctx context.Context, id string) (*PKICertSummary
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("id is required").Err()
 	}
 	username := strings.ToLower(strings.TrimSpace(user.Username))
-	row := s.db.QueryRowContext(ctx, `SELECT common_name, sans, project_id, issued_at, expires_at, revoked_at, cert_pem, username FROM sf_pki_certs WHERE id=$1`, id)
+	row := s.db.QueryRowContext(ctx, `SELECT common_name, sans, workspace_id, issued_at, expires_at, revoked_at, cert_pem, username FROM sf_pki_certs WHERE id=$1`, id)
 	var (
 		commonName, certPEM, owner string
 		sansRaw                    []byte
-		projectID                  sql.NullString
+		workspaceID                  sql.NullString
 		issuedAt                   time.Time
 		expiresAt                  time.Time
 		revokedAt                  sql.NullTime
 	)
-	if err := row.Scan(&commonName, &sansRaw, &projectID, &issuedAt, &expiresAt, &revokedAt, &certPEM, &owner); err != nil {
+	if err := row.Scan(&commonName, &sansRaw, &workspaceID, &issuedAt, &expiresAt, &revokedAt, &certPEM, &owner); err != nil {
 		return nil, errs.B().Code(errs.NotFound).Msg("certificate not found").Err()
 	}
 	if !isAdminUser(s.cfg, username) && !strings.EqualFold(owner, username) {
@@ -411,7 +411,7 @@ func (s *Service) RevokePKICert(ctx context.Context, id string) (*PKICertSummary
 		ID:          id,
 		CommonName:  commonName,
 		SANs:        sans,
-		ProjectID:   projectID.String,
+		WorkspaceID:   workspaceID.String,
 		IssuedAt:    issuedAt.UTC().Format(time.RFC3339),
 		ExpiresAt:   expiresAt.UTC().Format(time.RFC3339),
 		Fingerprint: fingerprint,
@@ -453,9 +453,9 @@ func (s *Service) IssuePKISSHCert(ctx context.Context, req *PKISSHIssueRequest) 
 	if req == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid payload").Err()
 	}
-	projectID := strings.TrimSpace(req.ProjectID)
-	if projectID != "" {
-		if _, err := s.projectContextForUser(user, projectID); err != nil {
+	workspaceID := strings.TrimSpace(req.WorkspaceID)
+	if workspaceID != "" {
+		if _, err := s.workspaceContextForUser(user, workspaceID); err != nil {
 			return nil, err
 		}
 	}
@@ -532,9 +532,9 @@ func (s *Service) IssuePKISSHCert(ctx context.Context, req *PKISSHIssueRequest) 
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	_, err = s.db.ExecContext(ctx, `INSERT INTO sf_pki_ssh_certs (
-  id, username, project_id, principals, public_key, cert, key_pem, expires_at
+  id, username, workspace_id, principals, public_key, cert, key_pem, expires_at
 ) VALUES ($1,$2,NULLIF($3,''),$4,$5,$6,$7,$8)`,
-		certID, strings.ToLower(strings.TrimSpace(user.Username)), projectID, principalsJSON, publicKey, certText, encKey, notAfter)
+		certID, strings.ToLower(strings.TrimSpace(user.Username)), workspaceID, principalsJSON, publicKey, certText, encKey, notAfter)
 	if err != nil {
 		log.Printf("pki ssh cert insert: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to store SSH certificate").Err()
@@ -548,7 +548,7 @@ func (s *Service) IssuePKISSHCert(ctx context.Context, req *PKISSHIssueRequest) 
 		Certificate: certText,
 		IssuedAt:    now.Format(time.RFC3339),
 		ExpiresAt:   notAfter.Format(time.RFC3339),
-		ProjectID:   projectID,
+		WorkspaceID:   workspaceID,
 		Fingerprint: ssh.FingerprintSHA256(cert),
 	}, nil
 }
@@ -565,7 +565,7 @@ func (s *Service) ListPKISSHCerts(ctx context.Context) (*PKISSHCertsResponse, er
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 	username := strings.ToLower(strings.TrimSpace(user.Username))
-	rows, err := s.db.QueryContext(ctx, `SELECT id, principals, project_id, issued_at, expires_at, revoked_at, cert
+	rows, err := s.db.QueryContext(ctx, `SELECT id, principals, workspace_id, issued_at, expires_at, revoked_at, cert
 FROM sf_pki_ssh_certs
 WHERE username=$1
 ORDER BY issued_at DESC`, username)
@@ -580,12 +580,12 @@ ORDER BY issued_at DESC`, username)
 		var (
 			id, certText string
 			principalsRaw []byte
-			projectID     sql.NullString
+			workspaceID     sql.NullString
 			issuedAt      time.Time
 			expiresAt     time.Time
 			revokedAt     sql.NullTime
 		)
-		if err := rows.Scan(&id, &principalsRaw, &projectID, &issuedAt, &expiresAt, &revokedAt, &certText); err != nil {
+		if err := rows.Scan(&id, &principalsRaw, &workspaceID, &issuedAt, &expiresAt, &revokedAt, &certText); err != nil {
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to decode SSH certificates").Err()
 		}
 		var principals []string
@@ -597,7 +597,7 @@ ORDER BY issued_at DESC`, username)
 		entry := PKISSHCertSummary{
 			ID:          id,
 			Principals:  principals,
-			ProjectID:   projectID.String,
+			WorkspaceID:   workspaceID.String,
 			IssuedAt:    issuedAt.UTC().Format(time.RFC3339),
 			ExpiresAt:   expiresAt.UTC().Format(time.RFC3339),
 			Fingerprint: fingerprint,
@@ -665,17 +665,17 @@ func (s *Service) RevokePKISSHCert(ctx context.Context, id string) (*PKISSHCertS
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("id is required").Err()
 	}
 	username := strings.ToLower(strings.TrimSpace(user.Username))
-	row := s.db.QueryRowContext(ctx, `SELECT principals, project_id, issued_at, expires_at, revoked_at, cert, username FROM sf_pki_ssh_certs WHERE id=$1`, id)
+	row := s.db.QueryRowContext(ctx, `SELECT principals, workspace_id, issued_at, expires_at, revoked_at, cert, username FROM sf_pki_ssh_certs WHERE id=$1`, id)
 	var (
 		principalsRaw []byte
-		projectID     sql.NullString
+		workspaceID     sql.NullString
 		issuedAt      time.Time
 		expiresAt     time.Time
 		revokedAt     sql.NullTime
 		certText      string
 		owner         string
 	)
-	if err := row.Scan(&principalsRaw, &projectID, &issuedAt, &expiresAt, &revokedAt, &certText, &owner); err != nil {
+	if err := row.Scan(&principalsRaw, &workspaceID, &issuedAt, &expiresAt, &revokedAt, &certText, &owner); err != nil {
 		return nil, errs.B().Code(errs.NotFound).Msg("SSH certificate not found").Err()
 	}
 	if !isAdminUser(s.cfg, username) && !strings.EqualFold(owner, username) {
@@ -700,7 +700,7 @@ func (s *Service) RevokePKISSHCert(ctx context.Context, id string) (*PKISSHCertS
 	resp := &PKISSHCertSummary{
 		ID:          id,
 		Principals:  principals,
-		ProjectID:   projectID.String,
+		WorkspaceID:   workspaceID.String,
 		IssuedAt:    issuedAt.UTC().Format(time.RFC3339),
 		ExpiresAt:   expiresAt.UTC().Format(time.RFC3339),
 		Fingerprint: fingerprint,

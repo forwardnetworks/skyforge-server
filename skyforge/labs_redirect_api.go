@@ -10,7 +10,7 @@ import (
 
 type LabsRedirectParams struct {
 	EveServer string
-	ProjectID string
+	WorkspaceID string
 }
 
 // LabsRedirect resolves the configured labs UI redirect.
@@ -30,7 +30,7 @@ func (s *Service) LabsRedirectAny(w http.ResponseWriter, req *http.Request) {
 func (s *Service) labsRedirect(w http.ResponseWriter, req *http.Request) {
 	params := &LabsRedirectParams{
 		EveServer: strings.TrimSpace(req.URL.Query().Get("eve_server")),
-		ProjectID: strings.TrimSpace(req.URL.Query().Get("project_id")),
+		WorkspaceID: strings.TrimSpace(req.URL.Query().Get("workspace_id")),
 	}
 	location, err := s.resolveLabsRedirect(params)
 	if err != nil {
@@ -42,12 +42,12 @@ func (s *Service) labsRedirect(w http.ResponseWriter, req *http.Request) {
 
 func (s *Service) resolveLabsRedirect(params *LabsRedirectParams) (string, error) {
 	targetName := ""
-	projectID := ""
+	workspaceID := ""
 	if params != nil {
 		targetName = strings.TrimSpace(params.EveServer)
-		projectID = strings.TrimSpace(params.ProjectID)
+		workspaceID = strings.TrimSpace(params.WorkspaceID)
 	}
-	server, err := s.selectEveServer(targetName, projectID)
+	server, err := s.selectEveServer(targetName, workspaceID)
 	if err != nil {
 		return "", err
 	}
@@ -58,13 +58,13 @@ func (s *Service) resolveLabsRedirect(params *LabsRedirectParams) (string, error
 	return "/api/skyforge/api/eve/sso?server=" + url.QueryEscape(target), nil
 }
 
-func (s *Service) selectEveServer(targetName, projectID string) (*EveServerConfig, error) {
+func (s *Service) selectEveServer(targetName, workspaceID string) (*EveServerConfig, error) {
 	targetName = strings.TrimSpace(targetName)
-	projectID = strings.TrimSpace(projectID)
-	if targetName == "" && projectID != "" {
-		if projects, err := s.projectStore.load(); err == nil {
-			if p := findProjectByKey(projects, projectID); p != nil && strings.TrimSpace(p.EveServer) != "" {
-				targetName = strings.TrimSpace(p.EveServer)
+	workspaceID = strings.TrimSpace(workspaceID)
+	if targetName == "" && workspaceID != "" {
+		if workspaces, err := s.workspaceStore.load(); err == nil {
+			if workspace := findWorkspaceByKey(workspaces, workspaceID); workspace != nil && strings.TrimSpace(workspace.EveServer) != "" {
+				targetName = strings.TrimSpace(workspace.EveServer)
 			}
 		}
 	}

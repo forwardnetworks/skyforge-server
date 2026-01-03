@@ -83,7 +83,7 @@
           "impersonatedUsername": {
             "type": "string"
           },
-          "projectId": {
+          "workspaceId": {
             "type": "string"
           }
         },
@@ -94,7 +94,7 @@
           "actorIsAdmin",
           "impersonatedUsername",
           "action",
-          "projectId",
+          "workspaceId",
           "details"
         ],
         "type": "object"
@@ -335,9 +335,6 @@
           "periodStart": {
             "type": "string"
           },
-          "projectId": {
-            "type": "string"
-          },
           "provider": {
             "type": "string"
           },
@@ -346,10 +343,13 @@
           },
           "source": {
             "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
           }
         },
         "required": [
-          "projectId",
+          "workspaceId",
           "resourceId",
           "provider",
           "periodStart",
@@ -385,12 +385,6 @@
           "periodStart": {
             "type": "string"
           },
-          "projectId": {
-            "type": "string"
-          },
-          "projectName": {
-            "type": "string"
-          },
           "provider": {
             "type": "string"
           },
@@ -399,12 +393,18 @@
           },
           "source": {
             "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "workspaceName": {
+            "type": "string"
           }
         },
         "required": [
           "id",
-          "projectId",
-          "projectName",
+          "workspaceId",
+          "workspaceName",
           "resourceId",
           "provider",
           "periodStart",
@@ -442,12 +442,6 @@
           "owner": {
             "type": "string"
           },
-          "projectId": {
-            "type": "string"
-          },
-          "projectName": {
-            "type": "string"
-          },
           "provider": {
             "type": "string"
           },
@@ -469,12 +463,18 @@
           "updatedAt": {
             "format": "date-time",
             "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "workspaceName": {
+            "type": "string"
           }
         },
         "required": [
           "id",
-          "projectId",
-          "projectName",
+          "workspaceId",
+          "workspaceName",
           "provider",
           "resourceId",
           "resourceType",
@@ -511,9 +511,6 @@
           "owner": {
             "type": "string"
           },
-          "projectId": {
-            "type": "string"
-          },
           "provider": {
             "type": "string"
           },
@@ -534,10 +531,13 @@
               "type": "string"
             },
             "type": "object"
+          },
+          "workspaceId": {
+            "type": "string"
           }
         },
         "required": [
-          "projectId",
+          "workspaceId",
           "provider",
           "resourceId",
           "resourceType",
@@ -563,9 +563,6 @@
           "metric": {
             "type": "string"
           },
-          "projectId": {
-            "type": "string"
-          },
           "provider": {
             "type": "string"
           },
@@ -580,10 +577,13 @@
           },
           "value": {
             "type": "number"
+          },
+          "workspaceId": {
+            "type": "string"
           }
         },
         "required": [
-          "projectId",
+          "workspaceId",
           "provider",
           "scopeType",
           "scopeId",
@@ -609,12 +609,6 @@
           "metric": {
             "type": "string"
           },
-          "projectId": {
-            "type": "string"
-          },
-          "projectName": {
-            "type": "string"
-          },
           "provider": {
             "type": "string"
           },
@@ -629,12 +623,18 @@
           },
           "value": {
             "type": "number"
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "workspaceName": {
+            "type": "string"
           }
         },
         "required": [
           "id",
-          "projectId",
-          "projectName",
+          "workspaceId",
+          "workspaceName",
           "provider",
           "scopeType",
           "scopeId",
@@ -913,9 +913,6 @@
           "issuedAt": {
             "type": "string"
           },
-          "projectId": {
-            "type": "string"
-          },
           "revokedAt": {
             "type": "string"
           },
@@ -924,13 +921,16 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "workspaceId": {
+            "type": "string"
           }
         },
         "required": [
           "id",
           "commonName",
           "sans",
-          "projectId",
+          "workspaceId",
           "issuedAt",
           "expiresAt",
           "revokedAt",
@@ -958,143 +958,21 @@
             },
             "type": "array"
           },
-          "projectId": {
+          "revokedAt": {
             "type": "string"
           },
-          "revokedAt": {
+          "workspaceId": {
             "type": "string"
           }
         },
         "required": [
           "id",
           "principals",
-          "projectId",
+          "workspaceId",
           "issuedAt",
           "expiresAt",
           "revokedAt",
           "fingerprint"
-        ],
-        "type": "object"
-      },
-      "skyforge.ProjectDeleteItem": {
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "slug": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "slug",
-          "name"
-        ],
-        "type": "object"
-      },
-      "skyforge.ProjectDeployment": {
-        "properties": {
-          "config": {
-            "$ref": "#/components/schemas/skyforge.JSONMap"
-          },
-          "createdAt": {
-            "type": "string"
-          },
-          "createdBy": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "lastFinishedAt": {
-            "type": "string"
-          },
-          "lastStartedAt": {
-            "type": "string"
-          },
-          "lastStatus": {
-            "type": "string"
-          },
-          "lastTaskId": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "lastTaskProjectId": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "name": {
-            "type": "string"
-          },
-          "projectId": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string"
-          },
-          "updatedAt": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "projectId",
-          "name",
-          "type",
-          "config",
-          "createdBy",
-          "createdAt",
-          "updatedAt",
-          "lastTaskProjectId",
-          "lastTaskId",
-          "lastStatus",
-          "lastStartedAt",
-          "lastFinishedAt"
-        ],
-        "type": "object"
-      },
-      "skyforge.ProjectForwardCollector": {
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "username": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "username"
-        ],
-        "type": "object"
-      },
-      "skyforge.ProjectVariableGroup": {
-        "properties": {
-          "id": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "name": {
-            "type": "string"
-          },
-          "variables": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "type": "object"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "variables"
         ],
         "type": "object"
       },
@@ -1122,7 +1000,7 @@
         ],
         "type": "object"
       },
-      "skyforge.SkyforgeProject": {
+      "skyforge.SkyforgeWorkspace": {
         "properties": {
           "ansibleRunTemplateId": {
             "format": "int64",
@@ -1429,17 +1307,17 @@
           "playbook": {
             "type": "string"
           },
-          "projectId": {
+          "repository": {
             "type": "string"
           },
-          "repository": {
+          "workspaceId": {
             "type": "string"
           }
         },
         "required": [
           "id",
           "name",
-          "projectId",
+          "workspaceId",
           "repository",
           "playbook",
           "description",
@@ -1514,36 +1392,125 @@
         ],
         "type": "object"
       },
-      "skyforge.projectSyncReport": {
+      "skyforge.WorkspaceDeleteItem": {
         "properties": {
-          "errors": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
+          "id": {
+            "type": "string"
           },
-          "projectId": {
+          "name": {
             "type": "string"
           },
           "slug": {
             "type": "string"
-          },
-          "steps": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "updated": {
-            "type": "boolean"
           }
         },
         "required": [
-          "projectId",
+          "id",
           "slug",
-          "updated",
-          "steps",
-          "errors"
+          "name"
+        ],
+        "type": "object"
+      },
+      "skyforge.WorkspaceDeployment": {
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/skyforge.JSONMap"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastFinishedAt": {
+            "type": "string"
+          },
+          "lastStartedAt": {
+            "type": "string"
+          },
+          "lastStatus": {
+            "type": "string"
+          },
+          "lastTaskId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "lastTaskWorkspaceId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspaceId",
+          "name",
+          "type",
+          "config",
+          "createdBy",
+          "createdAt",
+          "updatedAt",
+          "lastTaskWorkspaceId",
+          "lastTaskId",
+          "lastStatus",
+          "lastStartedAt",
+          "lastFinishedAt"
+        ],
+        "type": "object"
+      },
+      "skyforge.WorkspaceForwardCollector": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "username"
+        ],
+        "type": "object"
+      },
+      "skyforge.WorkspaceVariableGroup": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "variables": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "variables"
         ],
         "type": "object"
       },
@@ -1568,6 +1535,39 @@
           "size",
           "lastModified",
           "contentType"
+        ],
+        "type": "object"
+      },
+      "skyforge.workspaceSyncReport": {
+        "properties": {
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "updated": {
+            "type": "boolean"
+          },
+          "workspaceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspaceId",
+          "slug",
+          "updated",
+          "steps",
+          "errors"
         ],
         "type": "object"
       }
@@ -1646,7 +1646,7 @@
             "allowEmptyValue": true,
             "explode": true,
             "in": "query",
-            "name": "project_id",
+            "name": "workspace_id",
             "schema": {
               "type": "string"
             },
@@ -1763,7 +1763,7 @@
             "allowEmptyValue": true,
             "explode": true,
             "in": "query",
-            "name": "project_id",
+            "name": "workspace_id",
             "schema": {
               "type": "string"
             },
@@ -1942,10 +1942,6 @@
                     "lastCostPeriodEnd": {
                       "type": "string"
                     },
-                    "projectsTracked": {
-                      "format": "int64",
-                      "type": "integer"
-                    },
                     "providerBreakdown": {
                       "items": {
                         "$ref": "#/components/schemas/skyforge.ProviderCostBreakdown"
@@ -1955,12 +1951,16 @@
                     "resourceCount": {
                       "format": "int64",
                       "type": "integer"
+                    },
+                    "workspacesTracked": {
+                      "format": "int64",
+                      "type": "integer"
                     }
                   },
                   "required": [
                     "resourceCount",
                     "activeResources",
-                    "projectsTracked",
+                    "workspacesTracked",
                     "costLast30Days",
                     "costCurrency",
                     "lastCostPeriodEnd",
@@ -2029,7 +2029,7 @@
             "allowEmptyValue": true,
             "explode": true,
             "in": "query",
-            "name": "project_id",
+            "name": "workspace_id",
             "schema": {
               "type": "string"
             },
@@ -2315,9 +2315,9 @@
         "summary": "ListNodeMetrics returns a lightweight, live view of node metrics (admin only).\n"
       }
     },
-    "/api/admin/projects/sync": {
+    "/api/admin/workspaces/sync": {
       "post": {
-        "operationId": "POST:skyforge.SyncProjects",
+        "operationId": "POST:skyforge.SyncWorkspaces",
         "responses": {
           "200": {
             "content": {
@@ -2330,7 +2330,7 @@
                     },
                     "reports": {
                       "items": {
-                        "$ref": "#/components/schemas/skyforge.projectSyncReport"
+                        "$ref": "#/components/schemas/skyforge.workspaceSyncReport"
                       },
                       "type": "array"
                     },
@@ -2358,7 +2358,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "SyncProjects syncs all projects from external systems (admin only).\n"
+        "summary": "SyncWorkspaces syncs all workspaces from external systems (admin only).\n"
       }
     },
     "/api/aws/sso/accounts": {
@@ -3362,9 +3362,9 @@
         "summary": "GetLDAPHealth checks LDAP connectivity.\n"
       }
     },
-    "/api/internal/projects-export": {
+    "/api/internal/workspaces-export": {
       "get": {
-        "operationId": "GET:skyforge.ExportProjects",
+        "operationId": "GET:skyforge.ExportWorkspaces",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -3384,12 +3384,6 @@
               "application/json": {
                 "schema": {
                   "properties": {
-                    "projects": {
-                      "items": {
-                        "$ref": "#/components/schemas/skyforge.SkyforgeProject"
-                      },
-                      "type": "array"
-                    },
                     "stateStore": {
                       "type": "string"
                     },
@@ -3401,10 +3395,16 @@
                         "type": "string"
                       },
                       "type": "array"
+                    },
+                    "workspaces": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.SkyforgeWorkspace"
+                      },
+                      "type": "array"
                     }
                   },
                   "required": [
-                    "projects",
+                    "workspaces",
                     "users",
                     "timestamp",
                     "stateStore"
@@ -3419,7 +3419,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "ExportProjects returns project and user state for internal tooling.\n"
+        "summary": "ExportWorkspaces returns workspace and user state for internal tooling.\n"
       }
     },
     "/api/labs/running": {
@@ -3460,7 +3460,7 @@
             "allowEmptyValue": true,
             "explode": true,
             "in": "query",
-            "name": "project_id",
+            "name": "workspace_id",
             "schema": {
               "type": "string"
             },
@@ -3549,7 +3549,7 @@
             "allowEmptyValue": true,
             "explode": true,
             "in": "query",
-            "name": "project_id",
+            "name": "workspace_id",
             "schema": {
               "type": "string"
             },
@@ -3712,7 +3712,7 @@
             "allowEmptyValue": true,
             "explode": true,
             "in": "query",
-            "name": "project_id",
+            "name": "workspace_id",
             "schema": {
               "type": "string"
             },
@@ -3789,7 +3789,7 @@
             "allowEmptyValue": true,
             "explode": true,
             "in": "query",
-            "name": "project_id",
+            "name": "workspace_id",
             "schema": {
               "type": "string"
             },
@@ -3848,7 +3848,7 @@
             "allowEmptyValue": true,
             "explode": true,
             "in": "query",
-            "name": "project_id",
+            "name": "workspace_id",
             "schema": {
               "type": "string"
             },
@@ -3871,9 +3871,6 @@
               "application/json": {
                 "schema": {
                   "properties": {
-                    "projectId": {
-                      "type": "string"
-                    },
                     "runs": {
                       "items": {
                         "$ref": "#/components/schemas/skyforge.NetlabRun"
@@ -3882,10 +3879,13 @@
                     },
                     "user": {
                       "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
+                    "workspaceId",
                     "user",
                     "runs"
                   ],
@@ -3899,7 +3899,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "GetNetlabRuns returns recent Netlab runs for a project.\n"
+        "summary": "GetNetlabRuns returns recent Netlab runs for a workspace.\n"
       }
     },
     "/api/netlab/servers": {
@@ -4061,9 +4061,6 @@
                     "issuedAt": {
                       "type": "string"
                     },
-                    "projectId": {
-                      "type": "string"
-                    },
                     "revokedAt": {
                       "type": "string"
                     },
@@ -4072,13 +4069,16 @@
                         "type": "string"
                       },
                       "type": "array"
+                    },
+                    "workspaceId": {
+                      "type": "string"
                     }
                   },
                   "required": [
                     "id",
                     "commonName",
                     "sans",
-                    "projectId",
+                    "workspaceId",
                     "issuedAt",
                     "expiresAt",
                     "revokedAt",
@@ -4108,9 +4108,6 @@
                   "commonName": {
                     "type": "string"
                   },
-                  "projectId": {
-                    "type": "string"
-                  },
                   "sans": {
                     "items": {
                       "type": "string"
@@ -4120,12 +4117,15 @@
                   "ttlDays": {
                     "format": "int64",
                     "type": "integer"
+                  },
+                  "workspaceId": {
+                    "type": "string"
                   }
                 },
                 "required": [
                   "commonName",
                   "sans",
-                  "projectId",
+                  "workspaceId",
                   "ttlDays"
                 ],
                 "type": "object"
@@ -4163,7 +4163,7 @@
                     "pem": {
                       "type": "string"
                     },
-                    "projectId": {
+                    "workspaceId": {
                       "type": "string"
                     }
                   },
@@ -4175,7 +4175,7 @@
                     "bundlePem",
                     "issuedAt",
                     "expiresAt",
-                    "projectId",
+                    "workspaceId",
                     "fingerprint"
                   ],
                   "type": "object"
@@ -4358,17 +4358,17 @@
                       },
                       "type": "array"
                     },
-                    "projectId": {
+                    "revokedAt": {
                       "type": "string"
                     },
-                    "revokedAt": {
+                    "workspaceId": {
                       "type": "string"
                     }
                   },
                   "required": [
                     "id",
                     "principals",
-                    "projectId",
+                    "workspaceId",
                     "issuedAt",
                     "expiresAt",
                     "revokedAt",
@@ -4401,17 +4401,17 @@
                     },
                     "type": "array"
                   },
-                  "projectId": {
-                    "type": "string"
-                  },
                   "ttlDays": {
                     "format": "int64",
                     "type": "integer"
+                  },
+                  "workspaceId": {
+                    "type": "string"
                   }
                 },
                 "required": [
                   "principals",
-                  "projectId",
+                  "workspaceId",
                   "ttlDays"
                 ],
                 "type": "object"
@@ -4449,10 +4449,10 @@
                     "privateKey": {
                       "type": "string"
                     },
-                    "projectId": {
+                    "publicKey": {
                       "type": "string"
                     },
-                    "publicKey": {
+                    "workspaceId": {
                       "type": "string"
                     }
                   },
@@ -4464,7 +4464,7 @@
                     "certificate",
                     "issuedAt",
                     "expiresAt",
-                    "projectId",
+                    "workspaceId",
                     "fingerprint"
                   ],
                   "type": "object"
@@ -4554,7 +4554,7 @@
             "allowEmptyValue": true,
             "explode": true,
             "in": "query",
-            "name": "project_id",
+            "name": "workspace_id",
             "schema": {
               "type": "string"
             },
@@ -4654,17 +4654,17 @@
                   "playbook": {
                     "type": "string"
                   },
-                  "projectId": {
-                    "type": "string"
-                  },
                   "templateId": {
                     "format": "int64",
                     "type": "integer"
+                  },
+                  "workspaceId": {
+                    "type": "string"
                   }
                 },
                 "required": [
                   "templateId",
-                  "projectId",
+                  "workspaceId",
                   "debug",
                   "dryRun",
                   "diff",
@@ -4688,18 +4688,18 @@
               "application/json": {
                 "schema": {
                   "properties": {
-                    "projectId": {
-                      "type": "string"
-                    },
                     "task": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
                     },
                     "user": {
                       "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
+                    "workspaceId",
                     "task",
                     "user"
                   ],
@@ -4736,7 +4736,7 @@
             "allowEmptyValue": true,
             "explode": true,
             "in": "query",
-            "name": "project_id",
+            "name": "workspace_id",
             "schema": {
               "type": "string"
             },
@@ -4755,20 +4755,20 @@
                       },
                       "type": "array"
                     },
-                    "projectId": {
-                      "type": "string"
-                    },
                     "task_id": {
                       "format": "int64",
                       "type": "integer"
                     },
                     "user": {
                       "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
                     }
                   },
                   "required": [
                     "task_id",
-                    "projectId",
+                    "workspaceId",
                     "output",
                     "user"
                   ],
@@ -5235,7 +5235,7 @@
             "allowEmptyValue": true,
             "explode": true,
             "in": "query",
-            "name": "project_id",
+            "name": "workspace_id",
             "schema": {
               "type": "string"
             },
@@ -5248,9 +5248,6 @@
               "application/json": {
                 "schema": {
                   "properties": {
-                    "projectId": {
-                      "type": "string"
-                    },
                     "templates": {
                       "items": {
                         "$ref": "#/components/schemas/skyforge.TemplateSummary"
@@ -5259,11 +5256,14 @@
                     },
                     "user": {
                       "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
                     }
                   },
                   "required": [
                     "user",
-                    "projectId",
+                    "workspaceId",
                     "templates"
                   ],
                   "type": "object"
@@ -5276,7 +5276,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "GetTemplates returns available templates for a project.\n"
+        "summary": "GetTemplates returns available templates for a workspace.\n"
       }
     },
     "/api/tooling/services": {
@@ -5557,7 +5557,7 @@
     },
     "/api/workspaces": {
       "get": {
-        "operationId": "GET:skyforge.GetProjects",
+        "operationId": "GET:skyforge.GetWorkspaces",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -5581,7 +5581,7 @@
                     },
                     "workspaces": {
                       "items": {
-                        "$ref": "#/components/schemas/skyforge.SkyforgeProject"
+                        "$ref": "#/components/schemas/skyforge.SkyforgeWorkspace"
                       },
                       "type": "array"
                     }
@@ -5600,10 +5600,10 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "GetProjects returns workspaces visible to the authenticated user.\n"
+        "summary": "GetWorkspaces returns workspaces visible to the authenticated user.\n"
       },
       "post": {
-        "operationId": "POST:skyforge.CreateProject",
+        "operationId": "POST:skyforge.CreateWorkspace",
         "requestBody": {
           "content": {
             "application/json": {
@@ -5841,12 +5841,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "CreateProject provisions a new Skyforge project.\n"
+        "summary": "CreateWorkspace provisions a new Skyforge workspace.\n"
       }
     },
     "/api/workspaces/{id}": {
       "delete": {
-        "operationId": "DELETE:skyforge.DeleteProject",
+        "operationId": "DELETE:skyforge.DeleteWorkspace",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -5928,9 +5928,6 @@
                     "giteaRepo": {
                       "type": "string"
                     },
-                    "project": {
-                      "$ref": "#/components/schemas/skyforge.ProjectDeleteItem"
-                    },
                     "requireForce": {
                       "type": "boolean"
                     },
@@ -5942,6 +5939,9 @@
                     },
                     "terraformStatePrefix": {
                       "type": "string"
+                    },
+                    "workspace": {
+                      "$ref": "#/components/schemas/skyforge.WorkspaceDeleteItem"
                     }
                   },
                   "required": [
@@ -5953,7 +5953,7 @@
                     "terraformStateKey",
                     "terraformStatePrefix",
                     "status",
-                    "project"
+                    "workspace"
                   ],
                   "type": "object"
                 }
@@ -5965,12 +5965,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "DeleteProject deletes a project and its backing resources.\n"
+        "summary": "DeleteWorkspace deletes a workspace and its backing resources.\n"
       }
     },
     "/api/workspaces/{id}/artifacts": {
       "get": {
-        "operationId": "GET:skyforge.ListProjectArtifacts",
+        "operationId": "GET:skyforge.ListWorkspaceArtifacts",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -6022,16 +6022,16 @@
                     "prefix": {
                       "type": "string"
                     },
-                    "projectId": {
+                    "workspaceId": {
                       "type": "string"
                     },
-                    "projectSlug": {
+                    "workspaceSlug": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
-                    "projectSlug",
+                    "workspaceId",
+                    "workspaceSlug",
                     "artifactsBucket",
                     "prefix",
                     "items"
@@ -6046,12 +6046,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "ListProjectArtifacts lists artifact objects for a project.\n"
+        "summary": "ListWorkspaceArtifacts lists artifact objects for a workspace.\n"
       }
     },
     "/api/workspaces/{id}/artifacts/download": {
       "get": {
-        "operationId": "GET:skyforge.DownloadProjectArtifact",
+        "operationId": "GET:skyforge.DownloadWorkspaceArtifact",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -6111,12 +6111,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "DownloadProjectArtifact returns a presigned download redirect for the artifact.\n"
+        "summary": "DownloadWorkspaceArtifact returns a presigned download redirect for the\nartifact.\n"
       }
     },
     "/api/workspaces/{id}/artifacts/upload": {
       "post": {
-        "operationId": "POST:skyforge.UploadProjectArtifact",
+        "operationId": "POST:skyforge.UploadWorkspaceArtifact",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -6163,12 +6163,6 @@
                     "key": {
                       "type": "string"
                     },
-                    "projectId": {
-                      "type": "string"
-                    },
-                    "projectSlug": {
-                      "type": "string"
-                    },
                     "status": {
                       "type": "string"
                     },
@@ -6177,14 +6171,20 @@
                     },
                     "uploadedBy": {
                       "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    },
+                    "workspaceSlug": {
+                      "type": "string"
                     }
                   },
                   "required": [
                     "status",
                     "bucket",
                     "key",
-                    "projectId",
-                    "projectSlug",
+                    "workspaceId",
+                    "workspaceSlug",
                     "uploadedBy",
                     "uploadedAtUtc"
                   ],
@@ -6198,12 +6198,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "UploadProjectArtifact uploads or presigns an artifact to the project's bucket.\n"
+        "summary": "UploadWorkspaceArtifact uploads or presigns an artifact to the workspace's\nbucket.\n"
       }
     },
     "/api/workspaces/{id}/cloud/aws-sso": {
       "put": {
-        "operationId": "PUT:skyforge.PutProjectAWSSSOConfig",
+        "operationId": "PUT:skyforge.PutWorkspaceAWSSSOConfig",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -6277,12 +6277,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "PutProjectAWSSSOConfig stores the AWS SSO account/role for the project.\n"
+        "summary": "PutWorkspaceAWSSSOConfig stores the AWS SSO account/role for the workspace.\n"
       }
     },
     "/api/workspaces/{id}/cloud/aws-static": {
       "delete": {
-        "operationId": "DELETE:skyforge.DeleteProjectAWSStatic",
+        "operationId": "DELETE:skyforge.DeleteWorkspaceAWSStatic",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -6319,10 +6319,10 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "DeleteProjectAWSStatic clears AWS static credentials.\n"
+        "summary": "DeleteWorkspaceAWSStatic clears AWS static credentials.\n"
       },
       "get": {
-        "operationId": "GET:skyforge.GetProjectAWSStatic",
+        "operationId": "GET:skyforge.GetWorkspaceAWSStatic",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -6367,10 +6367,10 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "GetProjectAWSStatic returns AWS static credential status.\n"
+        "summary": "GetWorkspaceAWSStatic returns AWS static credential status.\n"
       },
       "put": {
-        "operationId": "PUT:skyforge.PutProjectAWSStatic",
+        "operationId": "PUT:skyforge.PutWorkspaceAWSStatic",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -6432,12 +6432,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "PutProjectAWSStatic stores AWS static credentials.\n"
+        "summary": "PutWorkspaceAWSStatic stores AWS static credentials.\n"
       }
     },
     "/api/workspaces/{id}/cloud/azure": {
       "delete": {
-        "operationId": "DELETE:skyforge.DeleteProjectAzureCredentials",
+        "operationId": "DELETE:skyforge.DeleteWorkspaceAzureCredentials",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -6474,10 +6474,10 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "DeleteProjectAzureCredentials clears Azure credentials.\n"
+        "summary": "DeleteWorkspaceAzureCredentials clears Azure credentials.\n"
       },
       "get": {
-        "operationId": "GET:skyforge.GetProjectAzureCredentials",
+        "operationId": "GET:skyforge.GetWorkspaceAzureCredentials",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -6530,10 +6530,10 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "GetProjectAzureCredentials returns Azure service principal status.\n"
+        "summary": "GetWorkspaceAzureCredentials returns Azure service principal status.\n"
       },
       "put": {
-        "operationId": "PUT:skyforge.PutProjectAzureCredentials",
+        "operationId": "PUT:skyforge.PutWorkspaceAzureCredentials",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -6599,12 +6599,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "PutProjectAzureCredentials stores Azure service principal credentials.\n"
+        "summary": "PutWorkspaceAzureCredentials stores Azure service principal credentials.\n"
       }
     },
     "/api/workspaces/{id}/cloud/gcp": {
       "delete": {
-        "operationId": "DELETE:skyforge.DeleteProjectGCPCredentials",
+        "operationId": "DELETE:skyforge.DeleteWorkspaceGCPCredentials",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -6641,10 +6641,10 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "DeleteProjectGCPCredentials clears GCP credentials.\n"
+        "summary": "DeleteWorkspaceGCPCredentials clears GCP credentials.\n"
       },
       "get": {
-        "operationId": "GET:skyforge.GetProjectGCPCredentials",
+        "operationId": "GET:skyforge.GetWorkspaceGCPCredentials",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -6670,21 +6670,21 @@
                     "configured": {
                       "type": "boolean"
                     },
-                    "projectId": {
-                      "type": "string"
-                    },
-                    "selectedProjectId": {
+                    "selectedWorkspaceId": {
                       "type": "string"
                     },
                     "updatedAt": {
+                      "type": "string"
+                    },
+                    "workspaceId": {
                       "type": "string"
                     }
                   },
                   "required": [
                     "configured",
                     "clientEmail",
-                    "projectId",
-                    "selectedProjectId",
+                    "workspaceId",
+                    "selectedWorkspaceId",
                     "updatedAt"
                   ],
                   "type": "object"
@@ -6697,10 +6697,10 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "GetProjectGCPCredentials returns GCP service account status.\n"
+        "summary": "GetWorkspaceGCPCredentials returns GCP service account status.\n"
       },
       "put": {
-        "operationId": "PUT:skyforge.PutProjectGCPCredentials",
+        "operationId": "PUT:skyforge.PutWorkspaceGCPCredentials",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -6719,16 +6719,16 @@
             "application/json": {
               "schema": {
                 "properties": {
-                  "projectId": {
+                  "serviceAccountJson": {
                     "type": "string"
                   },
-                  "serviceAccountJson": {
+                  "workspaceId": {
                     "type": "string"
                   }
                 },
                 "required": [
                   "serviceAccountJson",
-                  "projectId"
+                  "workspaceId"
                 ],
                 "type": "object"
               }
@@ -6758,12 +6758,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "PutProjectGCPCredentials stores GCP service account JSON.\n"
+        "summary": "PutWorkspaceGCPCredentials stores GCP service account JSON.\n"
       }
     },
     "/api/workspaces/{id}/containerlab/templates": {
       "get": {
-        "operationId": "GET:skyforge.GetProjectContainerlabTemplates",
+        "operationId": "GET:skyforge.GetWorkspaceContainerlabTemplates",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -6788,7 +6788,7 @@
           },
           {
             "allowEmptyValue": true,
-            "description": "\"project\" (default), \"blueprints\", or \"custom\"\n",
+            "description": "\"workspace\" (default), \"blueprints\", or \"custom\"\n",
             "explode": true,
             "in": "query",
             "name": "source",
@@ -6821,9 +6821,6 @@
                     "dir": {
                       "type": "string"
                     },
-                    "projectId": {
-                      "type": "string"
-                    },
                     "repo": {
                       "type": "string"
                     },
@@ -6832,10 +6829,13 @@
                         "type": "string"
                       },
                       "type": "array"
+                    },
+                    "workspaceId": {
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
+                    "workspaceId",
                     "repo",
                     "branch",
                     "dir",
@@ -6851,12 +6851,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "GetProjectContainerlabTemplates lists Containerlab templates for a project.\n"
+        "summary": "GetWorkspaceContainerlabTemplates lists Containerlab templates for a workspace.\n"
       }
     },
     "/api/workspaces/{id}/deployments": {
       "get": {
-        "operationId": "GET:skyforge.ListProjectDeployments",
+        "operationId": "GET:skyforge.ListWorkspaceDeployments",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -6878,16 +6878,16 @@
                   "properties": {
                     "deployments": {
                       "items": {
-                        "$ref": "#/components/schemas/skyforge.ProjectDeployment"
+                        "$ref": "#/components/schemas/skyforge.WorkspaceDeployment"
                       },
                       "type": "array"
                     },
-                    "projectId": {
+                    "workspaceId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
+                    "workspaceId",
                     "deployments"
                   ],
                   "type": "object"
@@ -6900,10 +6900,10 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "ListProjectDeployments lists deployment definitions for a project.\n"
+        "summary": "ListWorkspaceDeployments lists deployment definitions for a workspace.\n"
       },
       "post": {
-        "operationId": "POST:skyforge.CreateProjectDeployment",
+        "operationId": "POST:skyforge.CreateWorkspaceDeployment",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -6973,14 +6973,11 @@
                       "format": "int64",
                       "type": "integer"
                     },
-                    "lastTaskProjectId": {
+                    "lastTaskWorkspaceId": {
                       "format": "int64",
                       "type": "integer"
                     },
                     "name": {
-                      "type": "string"
-                    },
-                    "projectId": {
                       "type": "string"
                     },
                     "type": {
@@ -6988,18 +6985,21 @@
                     },
                     "updatedAt": {
                       "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
                     }
                   },
                   "required": [
                     "id",
-                    "projectId",
+                    "workspaceId",
                     "name",
                     "type",
                     "config",
                     "createdBy",
                     "createdAt",
                     "updatedAt",
-                    "lastTaskProjectId",
+                    "lastTaskWorkspaceId",
                     "lastTaskId",
                     "lastStatus",
                     "lastStartedAt",
@@ -7015,12 +7015,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "CreateProjectDeployment creates a deployment definition for a project.\n"
+        "summary": "CreateWorkspaceDeployment creates a deployment definition for a workspace.\n"
       }
     },
     "/api/workspaces/{id}/deployments/{deploymentID}": {
       "delete": {
-        "operationId": "DELETE:skyforge.DeleteProjectDeployment",
+        "operationId": "DELETE:skyforge.DeleteWorkspaceDeployment",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -7062,17 +7062,17 @@
                 "schema": {
                   "properties": {
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.ProjectDeployment"
-                    },
-                    "projectId": {
-                      "type": "string"
+                      "$ref": "#/components/schemas/skyforge.WorkspaceDeployment"
                     },
                     "run": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
+                    },
+                    "workspaceId": {
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
+                    "workspaceId",
                     "deployment",
                     "run"
                   ],
@@ -7086,10 +7086,10 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "DeleteProjectDeployment removes a deployment definition from Skyforge.\n"
+        "summary": "DeleteWorkspaceDeployment removes a deployment definition from Skyforge.\n"
       },
       "put": {
-        "operationId": "PUT:skyforge.UpdateProjectDeployment",
+        "operationId": "PUT:skyforge.UpdateWorkspaceDeployment",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -7166,14 +7166,11 @@
                       "format": "int64",
                       "type": "integer"
                     },
-                    "lastTaskProjectId": {
+                    "lastTaskWorkspaceId": {
                       "format": "int64",
                       "type": "integer"
                     },
                     "name": {
-                      "type": "string"
-                    },
-                    "projectId": {
                       "type": "string"
                     },
                     "type": {
@@ -7181,18 +7178,21 @@
                     },
                     "updatedAt": {
                       "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
                     }
                   },
                   "required": [
                     "id",
-                    "projectId",
+                    "workspaceId",
                     "name",
                     "type",
                     "config",
                     "createdBy",
                     "createdAt",
                     "updatedAt",
-                    "lastTaskProjectId",
+                    "lastTaskWorkspaceId",
                     "lastTaskId",
                     "lastStatus",
                     "lastStartedAt",
@@ -7208,12 +7208,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "UpdateProjectDeployment updates an existing deployment definition.\n"
+        "summary": "UpdateWorkspaceDeployment updates an existing deployment definition.\n"
       }
     },
     "/api/workspaces/{id}/deployments/{deploymentID}/action": {
       "post": {
-        "operationId": "POST:skyforge.RunProjectDeploymentAction",
+        "operationId": "POST:skyforge.RunWorkspaceDeploymentAction",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -7263,17 +7263,17 @@
                 "schema": {
                   "properties": {
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.ProjectDeployment"
-                    },
-                    "projectId": {
-                      "type": "string"
+                      "$ref": "#/components/schemas/skyforge.WorkspaceDeployment"
                     },
                     "run": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
+                    },
+                    "workspaceId": {
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
+                    "workspaceId",
                     "deployment",
                     "run"
                   ],
@@ -7287,12 +7287,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "RunProjectDeploymentAction runs a deployment operation with consistent UX verbs.\n"
+        "summary": "RunWorkspaceDeploymentAction runs a deployment operation with consistent UX\nverbs.\n"
       }
     },
     "/api/workspaces/{id}/deployments/{deploymentID}/destroy": {
       "post": {
-        "operationId": "POST:skyforge.DestroyProjectDeployment",
+        "operationId": "POST:skyforge.DestroyWorkspaceDeployment",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -7324,17 +7324,17 @@
                 "schema": {
                   "properties": {
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.ProjectDeployment"
-                    },
-                    "projectId": {
-                      "type": "string"
+                      "$ref": "#/components/schemas/skyforge.WorkspaceDeployment"
                     },
                     "run": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
+                    },
+                    "workspaceId": {
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
+                    "workspaceId",
                     "deployment",
                     "run"
                   ],
@@ -7348,13 +7348,13 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "DestroyProjectDeployment triggers a destructive run (destroy) for a deployment.\n"
+        "summary": "DestroyWorkspaceDeployment triggers a destructive run (destroy) for a\ndeployment.\n"
       }
     },
     "/api/workspaces/{id}/deployments/{deploymentID}/info": {
       "get": {
         "description": "For Netlab deployments, this executes \\`netlab status\\` against the associated Netlab API and returns the output.\n",
-        "operationId": "GET:skyforge.GetProjectDeploymentInfo",
+        "operationId": "GET:skyforge.GetWorkspaceDeploymentInfo",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -7389,7 +7389,7 @@
                       "$ref": "#/components/schemas/skyforge.ContainerlabInfo"
                     },
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.ProjectDeployment"
+                      "$ref": "#/components/schemas/skyforge.WorkspaceDeployment"
                     },
                     "forwardNetworkId": {
                       "type": "string"
@@ -7409,9 +7409,6 @@
                     "note": {
                       "type": "string"
                     },
-                    "projectId": {
-                      "type": "string"
-                    },
                     "provider": {
                       "type": "string"
                     },
@@ -7420,10 +7417,13 @@
                     },
                     "status": {
                       "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
+                    "workspaceId",
                     "deployment",
                     "provider",
                     "retrievedAt",
@@ -7446,12 +7446,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "GetProjectDeploymentInfo returns provider-specific info for a deployment.\n"
+        "summary": "GetWorkspaceDeploymentInfo returns provider-specific info for a deployment.\n"
       }
     },
     "/api/workspaces/{id}/deployments/{deploymentID}/start": {
       "post": {
-        "operationId": "POST:skyforge.StartProjectDeployment",
+        "operationId": "POST:skyforge.StartWorkspaceDeployment",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -7501,17 +7501,17 @@
                 "schema": {
                   "properties": {
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.ProjectDeployment"
-                    },
-                    "projectId": {
-                      "type": "string"
+                      "$ref": "#/components/schemas/skyforge.WorkspaceDeployment"
                     },
                     "run": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
+                    },
+                    "workspaceId": {
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
+                    "workspaceId",
                     "deployment",
                     "run"
                   ],
@@ -7525,12 +7525,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "StartProjectDeployment starts a deployment run.\n"
+        "summary": "StartWorkspaceDeployment starts a deployment run.\n"
       }
     },
     "/api/workspaces/{id}/deployments/{deploymentID}/stop": {
       "post": {
-        "operationId": "POST:skyforge.StopProjectDeployment",
+        "operationId": "POST:skyforge.StopWorkspaceDeployment",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -7562,17 +7562,17 @@
                 "schema": {
                   "properties": {
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.ProjectDeployment"
-                    },
-                    "projectId": {
-                      "type": "string"
+                      "$ref": "#/components/schemas/skyforge.WorkspaceDeployment"
                     },
                     "run": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
+                    },
+                    "workspaceId": {
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
+                    "workspaceId",
                     "deployment",
                     "run"
                   ],
@@ -7586,12 +7586,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "StopProjectDeployment attempts to stop the most recent task for this deployment.\n"
+        "summary": "StopWorkspaceDeployment attempts to stop the most recent task for this\ndeployment.\n"
       }
     },
     "/api/workspaces/{id}/eve": {
       "get": {
-        "operationId": "GET:skyforge.GetProjectEve",
+        "operationId": "GET:skyforge.GetWorkspaceEve",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -7620,12 +7620,12 @@
                       },
                       "type": "array"
                     },
-                    "projectId": {
+                    "workspaceId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
+                    "workspaceId",
                     "eveServer",
                     "eveServers"
                   ],
@@ -7639,10 +7639,10 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "GetProjectEve returns the project's EVE server selection.\n"
+        "summary": "GetWorkspaceEve returns the workspace's EVE server selection.\n"
       },
       "put": {
-        "operationId": "PUT:skyforge.UpdateProjectEve",
+        "operationId": "PUT:skyforge.UpdateWorkspaceEve",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -7846,12 +7846,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "UpdateProjectEve updates the project's EVE server selection.\n"
+        "summary": "UpdateWorkspaceEve updates the workspace's EVE server selection.\n"
       }
     },
     "/api/workspaces/{id}/eve/lab": {
       "get": {
-        "operationId": "GET:skyforge.GetProjectEveLab",
+        "operationId": "GET:skyforge.GetWorkspaceEveLab",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -7886,16 +7886,16 @@
                     "owner": {
                       "type": "string"
                     },
-                    "projectId": {
+                    "workspaceId": {
                       "type": "string"
                     },
-                    "projectSlug": {
+                    "workspaceSlug": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
-                    "projectSlug",
+                    "workspaceId",
+                    "workspaceSlug",
                     "owner",
                     "eveServer",
                     "labPath",
@@ -7912,10 +7912,10 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "GetProjectEveLab returns EVE lab state for the project.\n"
+        "summary": "GetWorkspaceEveLab returns EVE lab state for the workspace.\n"
       },
       "post": {
-        "operationId": "POST:skyforge.CreateProjectEveLab",
+        "operationId": "POST:skyforge.CreateWorkspaceEveLab",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -7950,16 +7950,16 @@
                     "owner": {
                       "type": "string"
                     },
-                    "projectId": {
+                    "workspaceId": {
                       "type": "string"
                     },
-                    "projectSlug": {
+                    "workspaceSlug": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
-                    "projectSlug",
+                    "workspaceId",
+                    "workspaceSlug",
                     "owner",
                     "eveServer",
                     "labPath",
@@ -7976,12 +7976,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "CreateProjectEveLab creates an EVE lab for the project.\n"
+        "summary": "CreateWorkspaceEveLab creates an EVE lab for the workspace.\n"
       }
     },
     "/api/workspaces/{id}/integrations/forward": {
       "delete": {
-        "operationId": "DELETE:skyforge.DeleteProjectForwardConfig",
+        "operationId": "DELETE:skyforge.DeleteWorkspaceForwardConfig",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -8046,10 +8046,10 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "DeleteProjectForwardConfig removes Forward Networks credentials for a workspace.\n"
+        "summary": "DeleteWorkspaceForwardConfig removes Forward Networks credentials for a\nworkspace.\n"
       },
       "get": {
-        "operationId": "GET:skyforge.GetProjectForwardConfig",
+        "operationId": "GET:skyforge.GetWorkspaceForwardConfig",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -8114,10 +8114,10 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "GetProjectForwardConfig returns Forward Networks credentials for a workspace.\n"
+        "summary": "GetWorkspaceForwardConfig returns Forward Networks credentials for a workspace.\n"
       },
       "post": {
-        "operationId": "POST:skyforge.PostProjectForwardConfig",
+        "operationId": "POST:skyforge.PostWorkspaceForwardConfig",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -8223,10 +8223,10 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "PostProjectForwardConfig stores Forward Networks credentials for a workspace\n(POST fallback).\n"
+        "summary": "PostWorkspaceForwardConfig stores Forward Networks credentials for a workspace\n(POST fallback).\n"
       },
       "put": {
-        "operationId": "PUT:skyforge.PutProjectForwardConfig",
+        "operationId": "PUT:skyforge.PutWorkspaceForwardConfig",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -8332,12 +8332,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "PutProjectForwardConfig stores Forward Networks credentials for a workspace.\n"
+        "summary": "PutWorkspaceForwardConfig stores Forward Networks credentials for a workspace.\n"
       }
     },
     "/api/workspaces/{id}/integrations/forward/collectors": {
       "get": {
-        "operationId": "GET:skyforge.GetProjectForwardCollectors",
+        "operationId": "GET:skyforge.GetWorkspaceForwardCollectors",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -8359,7 +8359,7 @@
                   "properties": {
                     "collectors": {
                       "items": {
-                        "$ref": "#/components/schemas/skyforge.ProjectForwardCollector"
+                        "$ref": "#/components/schemas/skyforge.WorkspaceForwardCollector"
                       },
                       "type": "array"
                     }
@@ -8377,10 +8377,10 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "GetProjectForwardCollectors lists available Forward collectors for the\nworkspace.\n"
+        "summary": "GetWorkspaceForwardCollectors lists available Forward collectors for the\nworkspace.\n"
       },
       "post": {
-        "operationId": "POST:skyforge.CreateProjectForwardCollector",
+        "operationId": "POST:skyforge.CreateWorkspaceForwardCollector",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -8429,13 +8429,13 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "CreateProjectForwardCollector creates a Forward collector for the workspace.\n"
+        "summary": "CreateWorkspaceForwardCollector creates a Forward collector for the workspace.\n"
       }
     },
     "/api/workspaces/{id}/labpp/templates": {
       "get": {
         "description": "Templates are expected to live under a repo directory (default: blueprints/labpp) where each template is a subdirectory (e.g. blueprints/labpp/junos-example/...).\n",
-        "operationId": "GET:skyforge.GetProjectLabppTemplates",
+        "operationId": "GET:skyforge.GetWorkspaceLabppTemplates",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -8460,7 +8460,7 @@
           },
           {
             "allowEmptyValue": true,
-            "description": "\"project\" (default), \"blueprints\", or \"custom\"\n",
+            "description": "\"workspace\" (default), \"blueprints\", or \"custom\"\n",
             "explode": true,
             "in": "query",
             "name": "source",
@@ -8493,9 +8493,6 @@
                     "dir": {
                       "type": "string"
                     },
-                    "projectId": {
-                      "type": "string"
-                    },
                     "repo": {
                       "type": "string"
                     },
@@ -8504,10 +8501,13 @@
                         "type": "string"
                       },
                       "type": "array"
+                    },
+                    "workspaceId": {
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
+                    "workspaceId",
                     "repo",
                     "branch",
                     "dir",
@@ -8523,12 +8523,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "GetProjectLabppTemplates lists LabPP templates for a project.\n"
+        "summary": "GetWorkspaceLabppTemplates lists LabPP templates for a workspace.\n"
       }
     },
     "/api/workspaces/{id}/members": {
       "put": {
-        "operationId": "PUT:skyforge.UpdateProjectMembers",
+        "operationId": "PUT:skyforge.UpdateWorkspaceMembers",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -8774,12 +8774,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "UpdateProjectMembers updates project membership.\n"
+        "summary": "UpdateWorkspaceMembers updates workspace membership.\n"
       }
     },
     "/api/workspaces/{id}/netlab": {
       "get": {
-        "operationId": "GET:skyforge.GetProjectNetlab",
+        "operationId": "GET:skyforge.GetWorkspaceNetlab",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -8808,12 +8808,12 @@
                       },
                       "type": "array"
                     },
-                    "projectId": {
+                    "workspaceId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
+                    "workspaceId",
                     "netlabServer",
                     "netlabServers"
                   ],
@@ -8827,10 +8827,10 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "GetProjectNetlab returns the project's netlab server selection.\n"
+        "summary": "GetWorkspaceNetlab returns the workspace's netlab server selection.\n"
       },
       "put": {
-        "operationId": "PUT:skyforge.UpdateProjectNetlab",
+        "operationId": "PUT:skyforge.UpdateWorkspaceNetlab",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -9034,12 +9034,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "UpdateProjectNetlab updates the project's netlab server selection.\n"
+        "summary": "UpdateWorkspaceNetlab updates the workspace's netlab server selection.\n"
       }
     },
     "/api/workspaces/{id}/netlab/templates": {
       "get": {
-        "operationId": "GET:skyforge.GetProjectNetlabTemplates",
+        "operationId": "GET:skyforge.GetWorkspaceNetlabTemplates",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -9064,7 +9064,7 @@
           },
           {
             "allowEmptyValue": true,
-            "description": "\"project\" (default), \"blueprints\", or \"custom\"\n",
+            "description": "\"workspace\" (default), \"blueprints\", or \"custom\"\n",
             "explode": true,
             "in": "query",
             "name": "source",
@@ -9097,9 +9097,6 @@
                     "dir": {
                       "type": "string"
                     },
-                    "projectId": {
-                      "type": "string"
-                    },
                     "repo": {
                       "type": "string"
                     },
@@ -9108,10 +9105,13 @@
                         "type": "string"
                       },
                       "type": "array"
+                    },
+                    "workspaceId": {
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
+                    "workspaceId",
                     "repo",
                     "branch",
                     "dir",
@@ -9127,12 +9127,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "GetProjectNetlabTemplates lists Netlab templates for a project.\n"
+        "summary": "GetWorkspaceNetlabTemplates lists Netlab templates for a workspace.\n"
       }
     },
     "/api/workspaces/{id}/runs/ansible-run": {
       "post": {
-        "operationId": "POST:skyforge.RunProjectAnsible",
+        "operationId": "POST:skyforge.RunWorkspaceAnsible",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -9152,18 +9152,18 @@
               "application/json": {
                 "schema": {
                   "properties": {
-                    "projectId": {
-                      "type": "string"
-                    },
                     "task": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
                     },
                     "user": {
                       "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
+                    "workspaceId",
                     "task",
                     "user"
                   ],
@@ -9177,12 +9177,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "RunProjectAnsible triggers an ansible run for a project.\n"
+        "summary": "RunWorkspaceAnsible triggers an ansible run for a workspace.\n"
       }
     },
     "/api/workspaces/{id}/runs/containerlab-run": {
       "post": {
-        "operationId": "POST:skyforge.RunProjectContainerlab",
+        "operationId": "POST:skyforge.RunWorkspaceContainerlab",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -9233,7 +9233,7 @@
                     "type": "string"
                   },
                   "templateSource": {
-                    "title": "project (default), blueprints, or custom\n",
+                    "title": "workspace (default), blueprints, or custom\n",
                     "type": "string"
                   },
                   "templatesDir": {
@@ -9265,18 +9265,18 @@
               "application/json": {
                 "schema": {
                   "properties": {
-                    "projectId": {
-                      "type": "string"
-                    },
                     "task": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
                     },
                     "user": {
                       "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
+                    "workspaceId",
                     "task",
                     "user"
                   ],
@@ -9290,12 +9290,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "RunProjectContainerlab triggers a Containerlab run for a project.\n"
+        "summary": "RunWorkspaceContainerlab triggers a Containerlab run for a workspace.\n"
       }
     },
     "/api/workspaces/{id}/runs/labpp-run": {
       "post": {
-        "operationId": "POST:skyforge.RunProjectLabpp",
+        "operationId": "POST:skyforge.RunWorkspaceLabpp",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -9344,7 +9344,7 @@
                     "type": "string"
                   },
                   "templateSource": {
-                    "title": "project (default), blueprints, or custom\n",
+                    "title": "workspace (default), blueprints, or custom\n",
                     "type": "string"
                   },
                   "templatesDestRoot": {
@@ -9390,18 +9390,18 @@
               "application/json": {
                 "schema": {
                   "properties": {
-                    "projectId": {
-                      "type": "string"
-                    },
                     "task": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
                     },
                     "user": {
                       "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
+                    "workspaceId",
                     "task",
                     "user"
                   ],
@@ -9415,12 +9415,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "RunProjectLabpp triggers a LabPP run for a project.\n"
+        "summary": "RunWorkspaceLabpp triggers a LabPP run for a workspace.\n"
       }
     },
     "/api/workspaces/{id}/runs/netlab-run": {
       "post": {
-        "operationId": "POST:skyforge.RunProjectNetlab",
+        "operationId": "POST:skyforge.RunWorkspaceNetlab",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -9465,10 +9465,10 @@
                   "netlabPassword": {
                     "type": "string"
                   },
-                  "netlabProjectDir": {
+                  "netlabServer": {
                     "type": "string"
                   },
-                  "netlabServer": {
+                  "netlabWorkspaceDir": {
                     "type": "string"
                   },
                   "template": {
@@ -9480,7 +9480,7 @@
                     "type": "string"
                   },
                   "templateSource": {
-                    "title": "project (default), blueprints, or custom\n",
+                    "title": "workspace (default), blueprints, or custom\n",
                     "type": "string"
                   },
                   "templatesDir": {
@@ -9496,7 +9496,7 @@
                   "cleanup",
                   "netlabServer",
                   "netlabPassword",
-                  "netlabProjectDir",
+                  "netlabWorkspaceDir",
                   "netlabMultilabId",
                   "netlabDeployment",
                   "templateSource",
@@ -9515,18 +9515,18 @@
               "application/json": {
                 "schema": {
                   "properties": {
-                    "projectId": {
-                      "type": "string"
-                    },
                     "task": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
                     },
                     "user": {
                       "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
+                    "workspaceId",
                     "task",
                     "user"
                   ],
@@ -9540,12 +9540,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "RunProjectNetlab triggers a netlab run for a project.\n"
+        "summary": "RunWorkspaceNetlab triggers a netlab run for a workspace.\n"
       }
     },
     "/api/workspaces/{id}/runs/tofu-apply": {
       "post": {
-        "operationId": "POST:skyforge.RunProjectTofuApply",
+        "operationId": "POST:skyforge.RunWorkspaceTofuApply",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -9635,18 +9635,18 @@
               "application/json": {
                 "schema": {
                   "properties": {
-                    "projectId": {
-                      "type": "string"
-                    },
                     "task": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
                     },
                     "user": {
                       "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
+                    "workspaceId",
                     "task",
                     "user"
                   ],
@@ -9660,12 +9660,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "RunProjectTofuApply triggers a tofu apply run for a project.\n"
+        "summary": "RunWorkspaceTofuApply triggers a tofu apply run for a workspace.\n"
       }
     },
     "/api/workspaces/{id}/runs/tofu-plan": {
       "post": {
-        "operationId": "POST:skyforge.RunProjectTofuPlan",
+        "operationId": "POST:skyforge.RunWorkspaceTofuPlan",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -9685,18 +9685,18 @@
               "application/json": {
                 "schema": {
                   "properties": {
-                    "projectId": {
-                      "type": "string"
-                    },
                     "task": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
                     },
                     "user": {
                       "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
+                    "workspaceId",
                     "task",
                     "user"
                   ],
@@ -9710,12 +9710,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "RunProjectTofuPlan triggers a tofu plan run for a project.\n"
+        "summary": "RunWorkspaceTofuPlan triggers a tofu plan run for a workspace.\n"
       }
     },
     "/api/workspaces/{id}/sync": {
       "post": {
-        "operationId": "POST:skyforge.SyncProject",
+        "operationId": "POST:skyforge.SyncWorkspace",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -9741,9 +9741,6 @@
                       },
                       "type": "array"
                     },
-                    "projectId": {
-                      "type": "string"
-                    },
                     "slug": {
                       "type": "string"
                     },
@@ -9755,10 +9752,13 @@
                     },
                     "updated": {
                       "type": "boolean"
+                    },
+                    "workspaceId": {
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
+                    "workspaceId",
                     "slug",
                     "updated",
                     "steps",
@@ -9774,12 +9774,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "SyncProject syncs resources for a single project.\n"
+        "summary": "SyncWorkspace syncs resources for a single workspace.\n"
       }
     },
     "/api/workspaces/{id}/tofu/templates": {
       "get": {
-        "operationId": "GET:skyforge.GetProjectTofuTemplates",
+        "operationId": "GET:skyforge.GetWorkspaceTofuTemplates",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -9804,7 +9804,7 @@
           },
           {
             "allowEmptyValue": true,
-            "description": "\"project\" (default), \"blueprints\", or \"custom\"\n",
+            "description": "\"workspace\" (default), \"blueprints\", or \"custom\"\n",
             "explode": true,
             "in": "query",
             "name": "source",
@@ -9837,9 +9837,6 @@
                     "dir": {
                       "type": "string"
                     },
-                    "projectId": {
-                      "type": "string"
-                    },
                     "repo": {
                       "type": "string"
                     },
@@ -9848,10 +9845,13 @@
                         "type": "string"
                       },
                       "type": "array"
+                    },
+                    "workspaceId": {
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
+                    "workspaceId",
                     "repo",
                     "branch",
                     "dir",
@@ -9867,12 +9867,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "GetProjectTofuTemplates lists Terraform template directories for a project.\n"
+        "summary": "GetWorkspaceTofuTemplates lists Terraform template directories for a workspace.\n"
       }
     },
     "/api/workspaces/{id}/variable-groups": {
       "get": {
-        "operationId": "GET:skyforge.ListProjectVariableGroups",
+        "operationId": "GET:skyforge.ListWorkspaceVariableGroups",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -9894,16 +9894,16 @@
                   "properties": {
                     "groups": {
                       "items": {
-                        "$ref": "#/components/schemas/skyforge.ProjectVariableGroup"
+                        "$ref": "#/components/schemas/skyforge.WorkspaceVariableGroup"
                       },
                       "type": "array"
                     },
-                    "projectId": {
+                    "workspaceId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
+                    "workspaceId",
                     "groups"
                   ],
                   "type": "object"
@@ -9916,10 +9916,10 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "ListProjectVariableGroups lists variable groups for a project.\n"
+        "summary": "ListWorkspaceVariableGroups lists variable groups for a workspace.\n"
       },
       "post": {
-        "operationId": "POST:skyforge.CreateProjectVariableGroup",
+        "operationId": "POST:skyforge.CreateWorkspaceVariableGroup",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -9992,12 +9992,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "CreateProjectVariableGroup creates a variable group for a project.\n"
+        "summary": "CreateWorkspaceVariableGroup creates a variable group for a workspace.\n"
       }
     },
     "/api/workspaces/{id}/variable-groups/{groupID}": {
       "delete": {
-        "operationId": "DELETE:skyforge.DeleteProjectVariableGroup",
+        "operationId": "DELETE:skyforge.DeleteWorkspaceVariableGroup",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -10031,16 +10031,16 @@
                   "properties": {
                     "groups": {
                       "items": {
-                        "$ref": "#/components/schemas/skyforge.ProjectVariableGroup"
+                        "$ref": "#/components/schemas/skyforge.WorkspaceVariableGroup"
                       },
                       "type": "array"
                     },
-                    "projectId": {
+                    "workspaceId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "projectId",
+                    "workspaceId",
                     "groups"
                   ],
                   "type": "object"
@@ -10053,10 +10053,10 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "DeleteProjectVariableGroup deletes a variable group for a project.\n"
+        "summary": "DeleteWorkspaceVariableGroup deletes a variable group for a workspace.\n"
       },
       "put": {
-        "operationId": "PUT:skyforge.UpdateProjectVariableGroup",
+        "operationId": "PUT:skyforge.UpdateWorkspaceVariableGroup",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -10141,18 +10141,18 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "UpdateProjectVariableGroup updates a variable group for a project.\n"
+        "summary": "UpdateWorkspaceVariableGroup updates a variable group for a workspace.\n"
       }
     },
-    "/api/workspaces/{projectID}/blueprint/sync": {
+    "/api/workspaces/{workspaceID}/blueprint/sync": {
       "post": {
-        "operationId": "POST:skyforge.SyncProjectBlueprint",
+        "operationId": "POST:skyforge.SyncWorkspaceBlueprint",
         "parameters": [
           {
             "allowEmptyValue": true,
             "explode": false,
             "in": "path",
-            "name": "projectID",
+            "name": "workspaceID",
             "required": true,
             "schema": {
               "type": "string"
@@ -10183,7 +10183,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "SyncProjectBlueprint syncs a project's blueprint catalog into the repo.\n"
+        "summary": "SyncWorkspaceBlueprint syncs a workspace's blueprint catalog into the repo.\n"
       }
     },
     "/auth/login": {
@@ -10928,7 +10928,7 @@
     },
     "/status/summary": {
       "get": {
-        "description": "This is designed for an unauthenticated landing page and must not leak user/project identifiers.\n",
+        "description": "This is designed for an unauthenticated landing page and must not leak user/workspace identifiers.\n",
         "operationId": "GET:skyforge.StatusSummary",
         "responses": {
           "200": {
@@ -10946,10 +10946,6 @@
                       "format": "int64",
                       "type": "integer"
                     },
-                    "projectsTotal": {
-                      "format": "int64",
-                      "type": "integer"
-                    },
                     "status": {
                       "title": "ok|degraded|unknown\n",
                       "type": "string"
@@ -10960,6 +10956,10 @@
                     "up": {
                       "format": "int64",
                       "type": "integer"
+                    },
+                    "workspacesTotal": {
+                      "format": "int64",
+                      "type": "integer"
                     }
                   },
                   "required": [
@@ -10968,7 +10968,7 @@
                     "up",
                     "down",
                     "checks",
-                    "projectsTotal"
+                    "workspacesTotal"
                   ],
                   "type": "object"
                 }
@@ -11453,7 +11453,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "ListAssignableUsers lists users that can be shared on projects.\n"
+        "summary": "ListAssignableUsers lists users that can be shared on workspaces.\n"
       }
     },
     "/users/search": {

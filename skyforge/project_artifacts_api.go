@@ -12,28 +12,28 @@ import (
 	"encore.app/storage"
 )
 
-type ProjectArtifactsListParams struct {
+type WorkspaceArtifactsListParams struct {
 	Prefix string `query:"prefix" encore:"optional"`
 	Limit  string `query:"limit" encore:"optional"`
 }
 
-type ProjectArtifactsListResponse struct {
-	ProjectID       string                 `json:"projectId"`
-	ProjectSlug     string                 `json:"projectSlug"`
+type WorkspaceArtifactsListResponse struct {
+	WorkspaceID     string                 `json:"workspaceId"`
+	WorkspaceSlug   string                 `json:"workspaceSlug"`
 	ArtifactsBucket string                 `json:"artifactsBucket"`
 	Prefix          string                 `json:"prefix"`
 	Items           []storageObjectSummary `json:"items"`
 }
 
-// ListProjectArtifacts lists artifact objects for a project.
+// ListWorkspaceArtifacts lists artifact objects for a workspace.
 //
 //encore:api auth method=GET path=/api/workspaces/:id/artifacts
-func (s *Service) ListProjectArtifacts(ctx context.Context, id string, params *ProjectArtifactsListParams) (*ProjectArtifactsListResponse, error) {
+func (s *Service) ListWorkspaceArtifacts(ctx context.Context, id string, params *WorkspaceArtifactsListParams) (*WorkspaceArtifactsListResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.projectContextForUser(user, id)
+	pc, err := s.workspaceContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -49,20 +49,20 @@ func (s *Service) ListProjectArtifacts(ctx context.Context, id string, params *P
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	items, err := listStorageArtifacts(ctx, pc.project.ID, prefix, limit)
+	items, err := listStorageArtifacts(ctx, pc.workspace.ID, prefix, limit)
 	if err != nil {
 		log.Printf("list artifacts: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to list artifacts").Err()
 	}
-	return &ProjectArtifactsListResponse{
-		ProjectID:       pc.project.ID,
-		ProjectSlug:     pc.project.Slug,
+	return &WorkspaceArtifactsListResponse{
+		WorkspaceID:       pc.workspace.ID,
+		WorkspaceSlug:     pc.workspace.Slug,
 		ArtifactsBucket: storage.StorageBucketName,
 		Prefix:          prefix,
 		Items:           items,
 	}, nil
 }
 
-func listStorageArtifacts(ctx context.Context, projectID, prefix string, limit int) ([]storageObjectSummary, error) {
-	return listArtifactEntries(ctx, projectID, prefix, limit)
+func listStorageArtifacts(ctx context.Context, workspaceID, prefix string, limit int) ([]storageObjectSummary, error) {
+	return listArtifactEntries(ctx, workspaceID, prefix, limit)
 }
