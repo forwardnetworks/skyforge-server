@@ -99,6 +99,36 @@
         ],
         "type": "object"
       },
+      "skyforge.AwsSSOAccount": {
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId",
+          "name",
+          "email"
+        ],
+        "type": "object"
+      },
+      "skyforge.AwsSSORole": {
+        "properties": {
+          "roleName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "roleName"
+        ],
+        "type": "object"
+      },
       "skyforge.AzureSubscription": {
         "properties": {
           "displayName": {
@@ -115,6 +145,21 @@
           "subscriptionId",
           "displayName",
           "state"
+        ],
+        "type": "object"
+      },
+      "skyforge.ContainerlabInfo": {
+        "properties": {
+          "apiUrl": {
+            "type": "string"
+          },
+          "labName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "labName",
+          "apiUrl"
         ],
         "type": "object"
       },
@@ -669,6 +714,49 @@
         ],
         "type": "object"
       },
+      "skyforge.LabppInfo": {
+        "properties": {
+          "endpoint": {
+            "type": "string"
+          },
+          "eveServer": {
+            "type": "string"
+          },
+          "eveUrl": {
+            "type": "string"
+          },
+          "labPath": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "eveServer",
+          "eveUrl",
+          "labPath",
+          "endpoint"
+        ],
+        "type": "object"
+      },
+      "skyforge.NetlabInfo": {
+        "properties": {
+          "apiUrl": {
+            "type": "string"
+          },
+          "jobId": {
+            "type": "string"
+          },
+          "multilabId": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "jobId",
+          "multilabId",
+          "apiUrl"
+        ],
+        "type": "object"
+      },
       "skyforge.NetlabRun": {
         "properties": {
           "artifacts": {
@@ -718,6 +806,40 @@
           "sshHost",
           "sshUser",
           "stateRoot"
+        ],
+        "type": "object"
+      },
+      "skyforge.NodeMetricSnapshot": {
+        "properties": {
+          "cpuActive": {
+            "type": "number"
+          },
+          "diskUsed": {
+            "type": "number"
+          },
+          "memUsed": {
+            "type": "number"
+          },
+          "node": {
+            "type": "string"
+          },
+          "raw": {
+            "additionalProperties": {
+              "type": "object"
+            },
+            "type": "object"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "node",
+          "updatedAt",
+          "cpuActive",
+          "memUsed",
+          "diskUsed",
+          "raw"
         ],
         "type": "object"
       },
@@ -771,6 +893,86 @@
           "is_read",
           "created_at",
           "updated_at"
+        ],
+        "type": "object"
+      },
+      "skyforge.PKICertSummary": {
+        "properties": {
+          "commonName": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "issuedAt": {
+            "type": "string"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "revokedAt": {
+            "type": "string"
+          },
+          "sans": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "commonName",
+          "sans",
+          "projectId",
+          "issuedAt",
+          "expiresAt",
+          "revokedAt",
+          "fingerprint"
+        ],
+        "type": "object"
+      },
+      "skyforge.PKISSHCertSummary": {
+        "properties": {
+          "expiresAt": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "issuedAt": {
+            "type": "string"
+          },
+          "principals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "revokedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "principals",
+          "projectId",
+          "issuedAt",
+          "expiresAt",
+          "revokedAt",
+          "fingerprint"
         ],
         "type": "object"
       },
@@ -854,6 +1056,25 @@
         ],
         "type": "object"
       },
+      "skyforge.ProjectForwardCollector": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "username"
+        ],
+        "type": "object"
+      },
       "skyforge.ProjectVariableGroup": {
         "properties": {
           "id": {
@@ -925,6 +1146,10 @@
           "blueprint": {
             "type": "string"
           },
+          "containerlabRunTemplateId": {
+            "format": "int64",
+            "type": "integer"
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -964,6 +1189,10 @@
           },
           "isPublic": {
             "type": "boolean"
+          },
+          "labppRunTemplateId": {
+            "format": "int64",
+            "type": "integer"
           },
           "name": {
             "type": "string"
@@ -1040,6 +1269,8 @@
           "tofuApplyTemplateId",
           "ansibleRunTemplateId",
           "netlabRunTemplateId",
+          "labppRunTemplateId",
+          "containerlabRunTemplateId",
           "awsAccountId",
           "awsRoleName",
           "awsRegion",
@@ -1049,6 +1280,35 @@
           "netlabServer",
           "giteaOwner",
           "giteaRepo"
+        ],
+        "type": "object"
+      },
+      "skyforge.SnmpTrapEvent": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "oid": {
+            "type": "string"
+          },
+          "receivedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "sourceIp": {
+            "type": "string"
+          },
+          "varsJson": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "receivedAt",
+          "sourceIp",
+          "oid",
+          "varsJson"
         ],
         "type": "object"
       },
@@ -1072,6 +1332,81 @@
           "icon",
           "status",
           "detail"
+        ],
+        "type": "object"
+      },
+      "skyforge.SyslogEvent": {
+        "properties": {
+          "appName": {
+            "type": "string"
+          },
+          "facility": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "hostname": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "receivedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "routeCidr": {
+            "type": "string"
+          },
+          "severity": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sourceIp": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "receivedAt",
+          "sourceIp",
+          "hostname",
+          "appName",
+          "facility",
+          "severity",
+          "message",
+          "owner",
+          "routeCidr"
+        ],
+        "type": "object"
+      },
+      "skyforge.SyslogRoute": {
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "sourceCidr": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sourceCidr",
+          "owner",
+          "label",
+          "updatedAt"
         ],
         "type": "object"
       },
@@ -1143,6 +1478,39 @@
           "mode",
           "desiredReplicas",
           "availableReplicas"
+        ],
+        "type": "object"
+      },
+      "skyforge.WebhookEvent": {
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "method": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "receivedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "sourceIp": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "receivedAt",
+          "method",
+          "path",
+          "sourceIp",
+          "body"
         ],
         "type": "object"
       },
@@ -1914,6 +2282,39 @@
         }
       }
     },
+    "/api/admin/node-metrics": {
+      "get": {
+        "description": "Data is a short-lived snapshot stored in Redis by Telegraf.\n",
+        "operationId": "GET:skyforge.ListNodeMetrics",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "nodes": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.NodeMetricSnapshot"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "nodes"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ListNodeMetrics returns a lightweight, live view of node metrics (admin only).\n"
+      }
+    },
     "/api/admin/projects/sync": {
       "post": {
         "operationId": "POST:skyforge.SyncProjects",
@@ -1958,6 +2359,83 @@
           }
         },
         "summary": "SyncProjects syncs all projects from external systems (admin only).\n"
+      }
+    },
+    "/api/aws/sso/accounts": {
+      "get": {
+        "operationId": "GET:skyforge.ListAwsSSOAccounts",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "accounts": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.AwsSSOAccount"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "accounts"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ListAwsSSOAccounts returns accounts available for the current SSO session.\n"
+      }
+    },
+    "/api/aws/sso/accounts/{accountID}/roles": {
+      "get": {
+        "operationId": "GET:skyforge.ListAwsSSORoles",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "accountID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "roles": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.AwsSSORole"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "roles"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ListAwsSSORoles returns roles for a selected AWS account.\n"
       }
     },
     "/api/aws/sso/config": {
@@ -2479,6 +2957,106 @@
         "summary": "ValidateGCPServiceAccount verifies GCP service account JSON by minting a token.\n"
       }
     },
+    "/api/dns/bootstrap": {
+      "post": {
+        "description": "This enables \"SSO\" without needing to store or reuse the user's password.\n",
+        "operationId": "POST:skyforge.DNSBootstrap",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "password": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "password"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "token": {
+                      "type": "string"
+                    },
+                    "zone": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "token",
+                    "zone"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "DNSBootstrap provisions a per-user Technitium account + zone and stores a\nlong-lived API token in Skyforge.\n"
+      }
+    },
+    "/api/dns/sso": {
+      "get": {
+        "description": "NOTE: Technitium uses localStorage tokens (not cookies). This endpoint serves a tiny HTML page that:\n\n 1. fetches a token from Skyforge Server\n 2. stores it in localStorage\n 3. redirects to /dns/\n",
+        "operationId": "GET:skyforge.DNSSSO",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "DNSSSO bridges Skyforge auth into Technitium DNS by storing a minted token in\nlocalStorage and redirecting.\n"
+      }
+    },
+    "/api/dns/token": {
+      "get": {
+        "description": "The token is stored client-side (localStorage) by the DNS SSO bridge.\n",
+        "operationId": "GET:skyforge.DNSToken",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "token": {
+                      "type": "string"
+                    },
+                    "zone": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "token",
+                    "zone"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "DNSToken mints a Technitium session token for the current Skyforge user session.\n"
+      }
+    },
     "/api/eve/servers": {
       "get": {
         "operationId": "GET:skyforge.ListEveServers",
@@ -2513,6 +3091,21 @@
           }
         },
         "summary": "ListEveServers returns configured EVE-NG servers.\n"
+      }
+    },
+    "/api/eve/sso": {
+      "get": {
+        "description": "and redirects to the proxied /labs/\\\u003cserver\u003e/ path.\n",
+        "operationId": "GET:skyforge.EveSSO",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "EveSSO logs into the selected EVE-NG server using the cached LDAP password\n"
       }
     },
     "/api/eve/stats": {
@@ -2791,7 +3384,7 @@
               "application/json": {
                 "schema": {
                   "properties": {
-                    "workspaces": {
+                    "projects": {
                       "items": {
                         "$ref": "#/components/schemas/skyforge.SkyforgeProject"
                       },
@@ -3278,9 +3871,8 @@
               "application/json": {
                 "schema": {
                   "properties": {
-                    "project_id": {
-                      "format": "int64",
-                      "type": "integer"
+                    "projectId": {
+                      "type": "string"
                     },
                     "runs": {
                       "items": {
@@ -3293,7 +3885,7 @@
                     }
                   },
                   "required": [
-                    "project_id",
+                    "projectId",
                     "user",
                     "runs"
                   ],
@@ -3346,6 +3938,1623 @@
         "summary": "ListNetlabServers returns configured Netlab runners.\n"
       }
     },
+    "/api/pki/certs": {
+      "get": {
+        "operationId": "GET:skyforge.ListPKICerts",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "certs": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.PKICertSummary"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "certs"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ListPKICerts lists issued certificates for the current user.\n"
+      }
+    },
+    "/api/pki/certs/{id}/download": {
+      "get": {
+        "operationId": "GET:skyforge.DownloadPKICert",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "bundlePem": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "keyPem": {
+                      "type": "string"
+                    },
+                    "pem": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "pem",
+                    "keyPem",
+                    "bundlePem"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "DownloadPKICert returns the certificate + key bundle for a specific cert.\n"
+      }
+    },
+    "/api/pki/certs/{id}/revoke": {
+      "post": {
+        "operationId": "POST:skyforge.RevokePKICert",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "commonName": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string"
+                    },
+                    "fingerprint": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "issuedAt": {
+                      "type": "string"
+                    },
+                    "projectId": {
+                      "type": "string"
+                    },
+                    "revokedAt": {
+                      "type": "string"
+                    },
+                    "sans": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "commonName",
+                    "sans",
+                    "projectId",
+                    "issuedAt",
+                    "expiresAt",
+                    "revokedAt",
+                    "fingerprint"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "RevokePKICert marks a certificate revoked.\n"
+      }
+    },
+    "/api/pki/issue": {
+      "post": {
+        "operationId": "POST:skyforge.IssuePKICert",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "commonName": {
+                    "type": "string"
+                  },
+                  "projectId": {
+                    "type": "string"
+                  },
+                  "sans": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "ttlDays": {
+                    "format": "int64",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "commonName",
+                  "sans",
+                  "projectId",
+                  "ttlDays"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "bundlePem": {
+                      "type": "string"
+                    },
+                    "commonName": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string"
+                    },
+                    "fingerprint": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "issuedAt": {
+                      "type": "string"
+                    },
+                    "keyPem": {
+                      "type": "string"
+                    },
+                    "pem": {
+                      "type": "string"
+                    },
+                    "projectId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "commonName",
+                    "pem",
+                    "keyPem",
+                    "bundlePem",
+                    "issuedAt",
+                    "expiresAt",
+                    "projectId",
+                    "fingerprint"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "IssuePKICert issues a TLS certificate signed by the Skyforge CA.\n"
+      }
+    },
+    "/api/pki/root": {
+      "get": {
+        "operationId": "GET:skyforge.GetPKIRoot",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "fingerprint": {
+                      "type": "string"
+                    },
+                    "notAfter": {
+                      "type": "string"
+                    },
+                    "pem": {
+                      "type": "string"
+                    },
+                    "subject": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "pem",
+                    "fingerprint",
+                    "subject",
+                    "notAfter"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetPKIRoot returns the root CA certificate.\n"
+      }
+    },
+    "/api/pki/ssh/certs": {
+      "get": {
+        "operationId": "GET:skyforge.ListPKISSHCerts",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "certs": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.PKISSHCertSummary"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "certs"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ListPKISSHCerts lists issued SSH certificates for the current user.\n"
+      }
+    },
+    "/api/pki/ssh/certs/{id}/download": {
+      "get": {
+        "operationId": "GET:skyforge.DownloadPKISSHCert",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "certificate": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "privateKey": {
+                      "type": "string"
+                    },
+                    "publicKey": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "publicKey",
+                    "privateKey",
+                    "certificate"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "DownloadPKISSHCert returns the SSH certificate + key bundle for a specific cert.\n"
+      }
+    },
+    "/api/pki/ssh/certs/{id}/revoke": {
+      "post": {
+        "operationId": "POST:skyforge.RevokePKISSHCert",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "expiresAt": {
+                      "type": "string"
+                    },
+                    "fingerprint": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "issuedAt": {
+                      "type": "string"
+                    },
+                    "principals": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "projectId": {
+                      "type": "string"
+                    },
+                    "revokedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "principals",
+                    "projectId",
+                    "issuedAt",
+                    "expiresAt",
+                    "revokedAt",
+                    "fingerprint"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "RevokePKISSHCert marks an SSH certificate revoked.\n"
+      }
+    },
+    "/api/pki/ssh/issue": {
+      "post": {
+        "operationId": "POST:skyforge.IssuePKISSHCert",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "principals": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "projectId": {
+                    "type": "string"
+                  },
+                  "ttlDays": {
+                    "format": "int64",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "principals",
+                  "projectId",
+                  "ttlDays"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "certificate": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string"
+                    },
+                    "fingerprint": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "issuedAt": {
+                      "type": "string"
+                    },
+                    "principals": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "privateKey": {
+                      "type": "string"
+                    },
+                    "projectId": {
+                      "type": "string"
+                    },
+                    "publicKey": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "principals",
+                    "publicKey",
+                    "privateKey",
+                    "certificate",
+                    "issuedAt",
+                    "expiresAt",
+                    "projectId",
+                    "fingerprint"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "IssuePKISSHCert issues an SSH user certificate signed by the Skyforge SSH CA.\n"
+      }
+    },
+    "/api/pki/ssh/root": {
+      "get": {
+        "operationId": "GET:skyforge.GetPKISSHRoot",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "fingerprint": {
+                      "type": "string"
+                    },
+                    "keyType": {
+                      "type": "string"
+                    },
+                    "publicKey": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "publicKey",
+                    "fingerprint",
+                    "keyType"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetPKISSHRoot returns the SSH CA public key.\n"
+      }
+    },
+    "/api/public/config": {
+      "get": {
+        "operationId": "GET:skyforge.PublicConfig",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "PublicConfig exposes non-sensitive public UI configuration.\n"
+      }
+    },
+    "/api/reauth": {
+      "get": {
+        "description": "back to the Skyforge login page, preserving the requested next hop.\n",
+        "operationId": "GET:skyforge.Reauth",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "Reauth clears the current session cookie (and any cached LDAP password) and\nredirects\n"
+      }
+    },
+    "/api/runs": {
+      "get": {
+        "operationId": "GET:skyforge.GetRuns",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "project_id",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "owner",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "tasks": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.JSONMap"
+                      },
+                      "type": "array"
+                    },
+                    "user": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "user",
+                    "tasks"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetRuns returns recent runs from native Skyforge tasks.\n"
+      },
+      "post": {
+        "operationId": "POST:skyforge.CreateRun",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "arguments": {
+                    "type": "string"
+                  },
+                  "debug": {
+                    "type": "boolean"
+                  },
+                  "diff": {
+                    "type": "boolean"
+                  },
+                  "dryRun": {
+                    "type": "boolean"
+                  },
+                  "environment": {
+                    "$ref": "#/components/schemas/skyforge.JSONMap"
+                  },
+                  "extra": {
+                    "$ref": "#/components/schemas/skyforge.JSONMap"
+                  },
+                  "gitBranch": {
+                    "type": "string"
+                  },
+                  "inventoryId": {
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "limit": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "playbook": {
+                    "type": "string"
+                  },
+                  "projectId": {
+                    "type": "string"
+                  },
+                  "templateId": {
+                    "format": "int64",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "templateId",
+                  "projectId",
+                  "debug",
+                  "dryRun",
+                  "diff",
+                  "playbook",
+                  "environment",
+                  "limit",
+                  "gitBranch",
+                  "message",
+                  "arguments",
+                  "inventoryId",
+                  "extra"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "projectId": {
+                      "type": "string"
+                    },
+                    "task": {
+                      "$ref": "#/components/schemas/skyforge.JSONMap"
+                    },
+                    "user": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "task",
+                    "user"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "CreateRun is a reserved endpoint for admin-triggered native tasks.\n"
+      }
+    },
+    "/api/runs/{id}/output": {
+      "get": {
+        "operationId": "GET:skyforge.GetRunOutput",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "project_id",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "output": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.JSONMap"
+                      },
+                      "type": "array"
+                    },
+                    "projectId": {
+                      "type": "string"
+                    },
+                    "task_id": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "user": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "task_id",
+                    "projectId",
+                    "output",
+                    "user"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetRunOutput returns output for a specific native task.\n"
+      }
+    },
+    "/api/session": {
+      "get": {
+        "operationId": "GET:skyforge.Session",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "actorUsername": {
+                      "type": "string"
+                    },
+                    "authenticated": {
+                      "type": "boolean"
+                    },
+                    "displayName": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": "string"
+                    },
+                    "groups": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "impersonating": {
+                      "type": "boolean"
+                    },
+                    "isAdmin": {
+                      "type": "boolean"
+                    },
+                    "username": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "authenticated",
+                    "username",
+                    "displayName",
+                    "email",
+                    "groups",
+                    "isAdmin",
+                    "actorUsername",
+                    "impersonating"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        }
+      },
+      "head": {
+        "operationId": "HEAD:skyforge.SessionHead",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        }
+      }
+    },
+    "/api/session/traefik": {
+      "get": {
+        "operationId": "GET:skyforge.SessionTraefik",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "SessionTraefik is a Skyforge SSO gate compatible endpoint.\n"
+      },
+      "head": {
+        "operationId": "HEAD:skyforge.SessionTraefikHead",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "SessionTraefikHead is a Skyforge SSO gate compatible endpoint (HEAD).\n"
+      }
+    },
+    "/api/snmp/traps/events": {
+      "get": {
+        "operationId": "GET:skyforge.ListSnmpTrapEvents",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "before_id",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "events": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.SnmpTrapEvent"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "events"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ListSnmpTrapEvents returns the current user's trap inbox.\n"
+      }
+    },
+    "/api/snmp/traps/token": {
+      "get": {
+        "operationId": "GET:skyforge.GetSnmpTrapToken",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "community": {
+                      "type": "string"
+                    },
+                    "listenHost": {
+                      "type": "string"
+                    },
+                    "listenPort": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "updatedAtUtc": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "community",
+                    "listenHost",
+                    "listenPort",
+                    "updatedAtUtc"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetSnmpTrapToken returns the per-user SNMPv2c community string used for trap\nrouting.\n"
+      }
+    },
+    "/api/snmp/traps/token/rotate": {
+      "post": {
+        "operationId": "POST:skyforge.RotateSnmpTrapToken",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "community": {
+                      "type": "string"
+                    },
+                    "listenHost": {
+                      "type": "string"
+                    },
+                    "listenPort": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "updatedAtUtc": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "community",
+                    "listenHost",
+                    "listenPort",
+                    "updatedAtUtc"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "RotateSnmpTrapToken rotates the per-user community string.\n"
+      }
+    },
+    "/api/syslog/events": {
+      "get": {
+        "description": "By default it returns only events mapped to the current user via \\`sf\\_syslog\\_routes\\`. Admins can request unassigned events to help claim sources.\n",
+        "operationId": "GET:skyforge.ListSyslogEvents",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "before_id",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "source_ip",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "unassigned",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "events": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.SyslogEvent"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "events"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ListSyslogEvents returns the syslog inbox for the current user.\n"
+      }
+    },
+    "/api/syslog/routes": {
+      "delete": {
+        "operationId": "DELETE:skyforge.DeleteSyslogRoute",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "sourceCidr",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "DeleteSyslogRoute deletes a syslog route (admin only).\n"
+      },
+      "get": {
+        "operationId": "GET:skyforge.ListSyslogRoutes",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "routes": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.SyslogRoute"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "routes"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ListSyslogRoutes lists configured source-\u003euser mappings (admin only).\n"
+      },
+      "put": {
+        "operationId": "PUT:skyforge.UpsertSyslogRoute",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  },
+                  "owner": {
+                    "type": "string"
+                  },
+                  "sourceCidr": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "sourceCidr",
+                  "owner",
+                  "label"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "label": {
+                      "type": "string"
+                    },
+                    "owner": {
+                      "type": "string"
+                    },
+                    "sourceCidr": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "sourceCidr",
+                    "owner",
+                    "label",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "UpsertSyslogRoute creates/updates a syslog route (admin only).\n"
+      }
+    },
+    "/api/templates": {
+      "get": {
+        "operationId": "GET:skyforge.GetTemplates",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "header",
+            "name": "cookie",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "project_id",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "projectId": {
+                      "type": "string"
+                    },
+                    "templates": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.TemplateSummary"
+                      },
+                      "type": "array"
+                    },
+                    "user": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "user",
+                    "projectId",
+                    "templates"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetTemplates returns available templates for a project.\n"
+      }
+    },
+    "/api/tooling/services": {
+      "get": {
+        "operationId": "GET:skyforge.GetToolServicesStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "services": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.ToolServiceStatus"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "services"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetToolServicesStatus returns start/stop state for personal toolchain services.\n"
+      }
+    },
+    "/api/tooling/services/{id}/replicas": {
+      "post": {
+        "operationId": "POST:skyforge.SetToolServiceReplicas",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "replicas": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "replicas"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "status": {
+                      "$ref": "#/components/schemas/skyforge.ToolServiceStatus"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "SetToolServiceReplicas sets the replica count for a personal toolchain service.\n"
+      }
+    },
+    "/api/ui/config": {
+      "get": {
+        "operationId": "GET:skyforge.GetUIConfig",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "headerBackground": {
+                      "type": "string"
+                    },
+                    "logoAlt": {
+                      "type": "string"
+                    },
+                    "logoUrl": {
+                      "type": "string"
+                    },
+                    "productName": {
+                      "type": "string"
+                    },
+                    "productSubtitle": {
+                      "type": "string"
+                    },
+                    "supportText": {
+                      "type": "string"
+                    },
+                    "supportUrl": {
+                      "type": "string"
+                    },
+                    "themeDefault": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "productName",
+                    "productSubtitle",
+                    "logoUrl",
+                    "logoAlt",
+                    "headerBackground",
+                    "supportText",
+                    "supportUrl",
+                    "themeDefault"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetUIConfig returns UI configuration values.\n"
+      }
+    },
+    "/api/webhooks/events": {
+      "get": {
+        "operationId": "GET:skyforge.ListWebhookEvents",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "before_id",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "events": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.WebhookEvent"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "events"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ListWebhookEvents returns the current user's webhook inbox.\n"
+      }
+    },
+    "/api/webhooks/token": {
+      "get": {
+        "operationId": "GET:skyforge.GetWebhookToken",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "ingestBaseUrl": {
+                      "type": "string"
+                    },
+                    "token": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "token",
+                    "ingestBaseUrl",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWebhookToken returns the per-user webhook ingest token.\n"
+      }
+    },
+    "/api/webhooks/token/rotate": {
+      "post": {
+        "operationId": "POST:skyforge.RotateWebhookToken",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "ingestBaseUrl": {
+                      "type": "string"
+                    },
+                    "token": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "token",
+                    "ingestBaseUrl",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "RotateWebhookToken rotates the per-user webhook ingest token (invalidates the\nold one).\n"
+      }
+    },
     "/api/workspaces": {
       "get": {
         "operationId": "GET:skyforge.GetProjects",
@@ -3367,14 +5576,14 @@
               "application/json": {
                 "schema": {
                   "properties": {
-                    "projects": {
+                    "user": {
+                      "type": "string"
+                    },
+                    "workspaces": {
                       "items": {
                         "$ref": "#/components/schemas/skyforge.SkyforgeProject"
                       },
                       "type": "array"
-                    },
-                    "user": {
-                      "type": "string"
                     }
                   },
                   "required": [
@@ -3487,6 +5696,10 @@
                     "blueprint": {
                       "type": "string"
                     },
+                    "containerlabRunTemplateId": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
                     "createdAt": {
                       "format": "date-time",
                       "type": "string"
@@ -3526,6 +5739,10 @@
                     },
                     "isPublic": {
                       "type": "boolean"
+                    },
+                    "labppRunTemplateId": {
+                      "format": "int64",
+                      "type": "integer"
                     },
                     "name": {
                       "type": "string"
@@ -3602,6 +5819,8 @@
                     "tofuApplyTemplateId",
                     "ansibleRunTemplateId",
                     "netlabRunTemplateId",
+                    "labppRunTemplateId",
+                    "containerlabRunTemplateId",
                     "awsAccountId",
                     "awsRoleName",
                     "awsRegion",
@@ -3980,6 +6199,85 @@
           }
         },
         "summary": "UploadProjectArtifact uploads or presigns an artifact to the project's bucket.\n"
+      }
+    },
+    "/api/workspaces/{id}/cloud/aws-sso": {
+      "put": {
+        "operationId": "PUT:skyforge.PutProjectAWSSSOConfig",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "accountId": {
+                    "type": "string"
+                  },
+                  "region": {
+                    "type": "string"
+                  },
+                  "roleName": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "accountId",
+                  "roleName",
+                  "region"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "accountId": {
+                      "type": "string"
+                    },
+                    "region": {
+                      "type": "string"
+                    },
+                    "roleName": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "accountId",
+                    "roleName",
+                    "region"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "PutProjectAWSSSOConfig stores the AWS SSO account/role for the project.\n"
       }
     },
     "/api/workspaces/{id}/cloud/aws-static": {
@@ -4463,6 +6761,99 @@
         "summary": "PutProjectGCPCredentials stores GCP service account JSON.\n"
       }
     },
+    "/api/workspaces/{id}/containerlab/templates": {
+      "get": {
+        "operationId": "GET:skyforge.GetProjectContainerlabTemplates",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "dir",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "description": "\"project\" (default), \"blueprints\", or \"custom\"\n",
+            "explode": true,
+            "in": "query",
+            "name": "source",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "description": "owner/repo or URL (custom only)\n",
+            "explode": true,
+            "in": "query",
+            "name": "repo",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "branch": {
+                      "type": "string"
+                    },
+                    "dir": {
+                      "type": "string"
+                    },
+                    "projectId": {
+                      "type": "string"
+                    },
+                    "repo": {
+                      "type": "string"
+                    },
+                    "templates": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "repo",
+                    "branch",
+                    "dir",
+                    "templates"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetProjectContainerlabTemplates lists Containerlab templates for a project.\n"
+      }
+    },
     "/api/workspaces/{id}/deployments": {
       "get": {
         "operationId": "GET:skyforge.ListProjectDeployments",
@@ -4652,6 +7043,16 @@
               "type": "string"
             },
             "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "forward_delete",
+            "schema": {
+              "type": "boolean"
+            },
+            "style": "form"
           }
         ],
         "responses": {
@@ -4810,6 +7211,85 @@
         "summary": "UpdateProjectDeployment updates an existing deployment definition.\n"
       }
     },
+    "/api/workspaces/{id}/deployments/{deploymentID}/action": {
+      "post": {
+        "operationId": "POST:skyforge.RunProjectDeploymentAction",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "deploymentID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "action": {
+                    "title": "create, start, stop, destroy\n",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "action"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "deployment": {
+                      "$ref": "#/components/schemas/skyforge.ProjectDeployment"
+                    },
+                    "projectId": {
+                      "type": "string"
+                    },
+                    "run": {
+                      "$ref": "#/components/schemas/skyforge.JSONMap"
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "deployment",
+                    "run"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "RunProjectDeploymentAction runs a deployment operation with consistent UX verbs.\n"
+      }
+    },
     "/api/workspaces/{id}/deployments/{deploymentID}/destroy": {
       "post": {
         "operationId": "POST:skyforge.DestroyProjectDeployment",
@@ -4869,6 +7349,104 @@
           }
         },
         "summary": "DestroyProjectDeployment triggers a destructive run (destroy) for a deployment.\n"
+      }
+    },
+    "/api/workspaces/{id}/deployments/{deploymentID}/info": {
+      "get": {
+        "description": "For Netlab deployments, this executes \\`netlab status\\` against the associated Netlab API and returns the output.\n",
+        "operationId": "GET:skyforge.GetProjectDeploymentInfo",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "deploymentID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "containerlab": {
+                      "$ref": "#/components/schemas/skyforge.ContainerlabInfo"
+                    },
+                    "deployment": {
+                      "$ref": "#/components/schemas/skyforge.ProjectDeployment"
+                    },
+                    "forwardNetworkId": {
+                      "type": "string"
+                    },
+                    "forwardSnapshotUrl": {
+                      "type": "string"
+                    },
+                    "labpp": {
+                      "$ref": "#/components/schemas/skyforge.LabppInfo"
+                    },
+                    "log": {
+                      "type": "string"
+                    },
+                    "netlab": {
+                      "$ref": "#/components/schemas/skyforge.NetlabInfo"
+                    },
+                    "note": {
+                      "type": "string"
+                    },
+                    "projectId": {
+                      "type": "string"
+                    },
+                    "provider": {
+                      "type": "string"
+                    },
+                    "retrievedAt": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "deployment",
+                    "provider",
+                    "retrievedAt",
+                    "status",
+                    "log",
+                    "note",
+                    "forwardNetworkId",
+                    "forwardSnapshotUrl",
+                    "netlab",
+                    "labpp",
+                    "containerlab"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetProjectDeploymentInfo returns provider-specific info for a deployment.\n"
       }
     },
     "/api/workspaces/{id}/deployments/{deploymentID}/start": {
@@ -4947,7 +7525,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "StartProjectDeployment starts a deployment run in Skyforge.\n"
+        "summary": "StartProjectDeployment starts a deployment run.\n"
       }
     },
     "/api/workspaces/{id}/deployments/{deploymentID}/stop": {
@@ -5123,6 +7701,10 @@
                     "blueprint": {
                       "type": "string"
                     },
+                    "containerlabRunTemplateId": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
                     "createdAt": {
                       "format": "date-time",
                       "type": "string"
@@ -5162,6 +7744,10 @@
                     },
                     "isPublic": {
                       "type": "boolean"
+                    },
+                    "labppRunTemplateId": {
+                      "format": "int64",
+                      "type": "integer"
                     },
                     "name": {
                       "type": "string"
@@ -5238,6 +7824,8 @@
                     "tofuApplyTemplateId",
                     "ansibleRunTemplateId",
                     "netlabRunTemplateId",
+                    "labppRunTemplateId",
+                    "containerlabRunTemplateId",
                     "awsAccountId",
                     "awsRoleName",
                     "awsRegion",
@@ -5391,6 +7979,553 @@
         "summary": "CreateProjectEveLab creates an EVE lab for the project.\n"
       }
     },
+    "/api/workspaces/{id}/integrations/forward": {
+      "delete": {
+        "operationId": "DELETE:skyforge.DeleteProjectForwardConfig",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "baseUrl": {
+                      "type": "string"
+                    },
+                    "collectorId": {
+                      "type": "string"
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "hasJumpCert": {
+                      "type": "boolean"
+                    },
+                    "hasJumpPrivateKey": {
+                      "type": "boolean"
+                    },
+                    "hasPassword": {
+                      "type": "boolean"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "username": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "configured",
+                    "baseUrl",
+                    "username",
+                    "collectorId",
+                    "hasPassword",
+                    "hasJumpPrivateKey",
+                    "hasJumpCert",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "DeleteProjectForwardConfig removes Forward Networks credentials for a workspace.\n"
+      },
+      "get": {
+        "operationId": "GET:skyforge.GetProjectForwardConfig",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "baseUrl": {
+                      "type": "string"
+                    },
+                    "collectorId": {
+                      "type": "string"
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "hasJumpCert": {
+                      "type": "boolean"
+                    },
+                    "hasJumpPrivateKey": {
+                      "type": "boolean"
+                    },
+                    "hasPassword": {
+                      "type": "boolean"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "username": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "configured",
+                    "baseUrl",
+                    "username",
+                    "collectorId",
+                    "hasPassword",
+                    "hasJumpPrivateKey",
+                    "hasJumpCert",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetProjectForwardConfig returns Forward Networks credentials for a workspace.\n"
+      },
+      "post": {
+        "operationId": "POST:skyforge.PostProjectForwardConfig",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "baseUrl": {
+                    "type": "string"
+                  },
+                  "collectorId": {
+                    "type": "string"
+                  },
+                  "collectorUsername": {
+                    "type": "string"
+                  },
+                  "jumpCert": {
+                    "type": "string"
+                  },
+                  "jumpPrivateKey": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  },
+                  "username": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "baseUrl",
+                  "username",
+                  "password",
+                  "collectorId",
+                  "collectorUsername",
+                  "jumpPrivateKey",
+                  "jumpCert"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "baseUrl": {
+                      "type": "string"
+                    },
+                    "collectorId": {
+                      "type": "string"
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "hasJumpCert": {
+                      "type": "boolean"
+                    },
+                    "hasJumpPrivateKey": {
+                      "type": "boolean"
+                    },
+                    "hasPassword": {
+                      "type": "boolean"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "username": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "configured",
+                    "baseUrl",
+                    "username",
+                    "collectorId",
+                    "hasPassword",
+                    "hasJumpPrivateKey",
+                    "hasJumpCert",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "PostProjectForwardConfig stores Forward Networks credentials for a workspace\n(POST fallback).\n"
+      },
+      "put": {
+        "operationId": "PUT:skyforge.PutProjectForwardConfig",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "baseUrl": {
+                    "type": "string"
+                  },
+                  "collectorId": {
+                    "type": "string"
+                  },
+                  "collectorUsername": {
+                    "type": "string"
+                  },
+                  "jumpCert": {
+                    "type": "string"
+                  },
+                  "jumpPrivateKey": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  },
+                  "username": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "baseUrl",
+                  "username",
+                  "password",
+                  "collectorId",
+                  "collectorUsername",
+                  "jumpPrivateKey",
+                  "jumpCert"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "baseUrl": {
+                      "type": "string"
+                    },
+                    "collectorId": {
+                      "type": "string"
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "hasJumpCert": {
+                      "type": "boolean"
+                    },
+                    "hasJumpPrivateKey": {
+                      "type": "boolean"
+                    },
+                    "hasPassword": {
+                      "type": "boolean"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "username": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "configured",
+                    "baseUrl",
+                    "username",
+                    "collectorId",
+                    "hasPassword",
+                    "hasJumpPrivateKey",
+                    "hasJumpCert",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "PutProjectForwardConfig stores Forward Networks credentials for a workspace.\n"
+      }
+    },
+    "/api/workspaces/{id}/integrations/forward/collectors": {
+      "get": {
+        "operationId": "GET:skyforge.GetProjectForwardCollectors",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "collectors": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.ProjectForwardCollector"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "collectors"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetProjectForwardCollectors lists available Forward collectors for the\nworkspace.\n"
+      },
+      "post": {
+        "operationId": "POST:skyforge.CreateProjectForwardCollector",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "authorizationKey": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "username": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "username",
+                    "authorizationKey"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "CreateProjectForwardCollector creates a Forward collector for the workspace.\n"
+      }
+    },
+    "/api/workspaces/{id}/labpp/templates": {
+      "get": {
+        "description": "Templates are expected to live under a repo directory (default: blueprints/labpp) where each template is a subdirectory (e.g. blueprints/labpp/junos-example/...).\n",
+        "operationId": "GET:skyforge.GetProjectLabppTemplates",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "dir",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "description": "\"project\" (default), \"blueprints\", or \"custom\"\n",
+            "explode": true,
+            "in": "query",
+            "name": "source",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "description": "owner/repo or URL (custom only)\n",
+            "explode": true,
+            "in": "query",
+            "name": "repo",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "branch": {
+                      "type": "string"
+                    },
+                    "dir": {
+                      "type": "string"
+                    },
+                    "projectId": {
+                      "type": "string"
+                    },
+                    "repo": {
+                      "type": "string"
+                    },
+                    "templates": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "repo",
+                    "branch",
+                    "dir",
+                    "templates"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetProjectLabppTemplates lists LabPP templates for a project.\n"
+      }
+    },
     "/api/workspaces/{id}/members": {
       "put": {
         "operationId": "PUT:skyforge.UpdateProjectMembers",
@@ -5494,6 +8629,10 @@
                     "blueprint": {
                       "type": "string"
                     },
+                    "containerlabRunTemplateId": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
                     "createdAt": {
                       "format": "date-time",
                       "type": "string"
@@ -5533,6 +8672,10 @@
                     },
                     "isPublic": {
                       "type": "boolean"
+                    },
+                    "labppRunTemplateId": {
+                      "format": "int64",
+                      "type": "integer"
                     },
                     "name": {
                       "type": "string"
@@ -5609,6 +8752,8 @@
                     "tofuApplyTemplateId",
                     "ansibleRunTemplateId",
                     "netlabRunTemplateId",
+                    "labppRunTemplateId",
+                    "containerlabRunTemplateId",
                     "awsAccountId",
                     "awsRoleName",
                     "awsRegion",
@@ -5744,6 +8889,10 @@
                     "blueprint": {
                       "type": "string"
                     },
+                    "containerlabRunTemplateId": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
                     "createdAt": {
                       "format": "date-time",
                       "type": "string"
@@ -5783,6 +8932,10 @@
                     },
                     "isPublic": {
                       "type": "boolean"
+                    },
+                    "labppRunTemplateId": {
+                      "format": "int64",
+                      "type": "integer"
                     },
                     "name": {
                       "type": "string"
@@ -5859,6 +9012,8 @@
                     "tofuApplyTemplateId",
                     "ansibleRunTemplateId",
                     "netlabRunTemplateId",
+                    "labppRunTemplateId",
+                    "containerlabRunTemplateId",
                     "awsAccountId",
                     "awsRoleName",
                     "awsRegion",
@@ -5997,9 +9152,8 @@
               "application/json": {
                 "schema": {
                   "properties": {
-                    "project_id": {
-                      "format": "int64",
-                      "type": "integer"
+                    "projectId": {
+                      "type": "string"
                     },
                     "task": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
@@ -6009,7 +9163,7 @@
                     }
                   },
                   "required": [
-                    "project_id",
+                    "projectId",
                     "task",
                     "user"
                   ],
@@ -6024,6 +9178,244 @@
           }
         },
         "summary": "RunProjectAnsible triggers an ansible run for a project.\n"
+      }
+    },
+    "/api/workspaces/{id}/runs/containerlab-run": {
+      "post": {
+        "operationId": "POST:skyforge.RunProjectContainerlab",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "action": {
+                    "title": "deploy, destroy\n",
+                    "type": "string"
+                  },
+                  "deployment": {
+                    "title": "deployment name for lab naming\n",
+                    "type": "string"
+                  },
+                  "environment": {
+                    "$ref": "#/components/schemas/skyforge.JSONMap"
+                  },
+                  "gitBranch": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "netlabServer": {
+                    "type": "string"
+                  },
+                  "reconfigure": {
+                    "type": "boolean"
+                  },
+                  "template": {
+                    "title": "filename (e.g. lab.yml)\n",
+                    "type": "string"
+                  },
+                  "templateRepo": {
+                    "title": "owner/repo or URL (custom only)\n",
+                    "type": "string"
+                  },
+                  "templateSource": {
+                    "title": "project (default), blueprints, or custom\n",
+                    "type": "string"
+                  },
+                  "templatesDir": {
+                    "title": "repo-relative directory (default: blueprints/containerlab)\n",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "message",
+                  "gitBranch",
+                  "environment",
+                  "action",
+                  "netlabServer",
+                  "templateSource",
+                  "templateRepo",
+                  "templatesDir",
+                  "template",
+                  "deployment",
+                  "reconfigure"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "projectId": {
+                      "type": "string"
+                    },
+                    "task": {
+                      "$ref": "#/components/schemas/skyforge.JSONMap"
+                    },
+                    "user": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "task",
+                    "user"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "RunProjectContainerlab triggers a Containerlab run for a project.\n"
+      }
+    },
+    "/api/workspaces/{id}/runs/labpp-run": {
+      "post": {
+        "operationId": "POST:skyforge.RunProjectLabpp",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "action": {
+                    "title": "e2e, upload, start, stop, delete, configure\n",
+                    "type": "string"
+                  },
+                  "deployment": {
+                    "type": "string"
+                  },
+                  "environment": {
+                    "$ref": "#/components/schemas/skyforge.JSONMap"
+                  },
+                  "eveServer": {
+                    "type": "string"
+                  },
+                  "gitBranch": {
+                    "type": "string"
+                  },
+                  "labPath": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "template": {
+                    "type": "string"
+                  },
+                  "templateRepo": {
+                    "title": "owner/repo or URL (custom only)\n",
+                    "type": "string"
+                  },
+                  "templateSource": {
+                    "title": "project (default), blueprints, or custom\n",
+                    "type": "string"
+                  },
+                  "templatesDestRoot": {
+                    "title": "host path for synced templates (default: /var/lib/skyforge/labpp-templates)\n",
+                    "type": "string"
+                  },
+                  "templatesDir": {
+                    "title": "repo-relative directory (default: blueprints/labpp)\n",
+                    "type": "string"
+                  },
+                  "templatesRoot": {
+                    "type": "string"
+                  },
+                  "threadCount": {
+                    "format": "int64",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "message",
+                  "gitBranch",
+                  "environment",
+                  "action",
+                  "eveServer",
+                  "templatesRoot",
+                  "template",
+                  "templateSource",
+                  "templateRepo",
+                  "templatesDir",
+                  "templatesDestRoot",
+                  "labPath",
+                  "threadCount",
+                  "deployment"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "projectId": {
+                      "type": "string"
+                    },
+                    "task": {
+                      "$ref": "#/components/schemas/skyforge.JSONMap"
+                    },
+                    "user": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "task",
+                    "user"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "RunProjectLabpp triggers a LabPP run for a project.\n"
       }
     },
     "/api/workspaces/{id}/runs/netlab-run": {
@@ -6047,6 +9439,14 @@
             "application/json": {
               "schema": {
                 "properties": {
+                  "action": {
+                    "title": "up, create, restart, collect, status, down\n",
+                    "type": "string"
+                  },
+                  "cleanup": {
+                    "title": "for down/restart, remove workdir when true\n",
+                    "type": "boolean"
+                  },
                   "environment": {
                     "$ref": "#/components/schemas/skyforge.JSONMap"
                   },
@@ -6054,6 +9454,9 @@
                     "type": "string"
                   },
                   "message": {
+                    "type": "string"
+                  },
+                  "netlabDeployment": {
                     "type": "string"
                   },
                   "netlabMultilabId": {
@@ -6064,15 +9467,42 @@
                   },
                   "netlabProjectDir": {
                     "type": "string"
+                  },
+                  "netlabServer": {
+                    "type": "string"
+                  },
+                  "template": {
+                    "title": "filename (e.g. spine-leaf.yml)\n",
+                    "type": "string"
+                  },
+                  "templateRepo": {
+                    "title": "owner/repo or URL (custom only)\n",
+                    "type": "string"
+                  },
+                  "templateSource": {
+                    "title": "project (default), blueprints, or custom\n",
+                    "type": "string"
+                  },
+                  "templatesDir": {
+                    "title": "repo-relative directory (default: blueprints/netlab)\n",
+                    "type": "string"
                   }
                 },
                 "required": [
                   "message",
                   "gitBranch",
                   "environment",
+                  "action",
+                  "cleanup",
+                  "netlabServer",
                   "netlabPassword",
                   "netlabProjectDir",
-                  "netlabMultilabId"
+                  "netlabMultilabId",
+                  "netlabDeployment",
+                  "templateSource",
+                  "templateRepo",
+                  "templatesDir",
+                  "template"
                 ],
                 "type": "object"
               }
@@ -6085,9 +9515,8 @@
               "application/json": {
                 "schema": {
                   "properties": {
-                    "project_id": {
-                      "format": "int64",
-                      "type": "integer"
+                    "projectId": {
+                      "type": "string"
                     },
                     "task": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
@@ -6097,7 +9526,7 @@
                     }
                   },
                   "required": [
-                    "project_id",
+                    "projectId",
                     "task",
                     "user"
                   ],
@@ -6158,6 +9587,46 @@
               "type": "string"
             },
             "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "templateSource",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "templateRepo",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "templatesDir",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "template",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
           }
         ],
         "responses": {
@@ -6166,9 +9635,8 @@
               "application/json": {
                 "schema": {
                   "properties": {
-                    "project_id": {
-                      "format": "int64",
-                      "type": "integer"
+                    "projectId": {
+                      "type": "string"
                     },
                     "task": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
@@ -6178,7 +9646,7 @@
                     }
                   },
                   "required": [
-                    "project_id",
+                    "projectId",
                     "task",
                     "user"
                   ],
@@ -6217,9 +9685,8 @@
               "application/json": {
                 "schema": {
                   "properties": {
-                    "project_id": {
-                      "format": "int64",
-                      "type": "integer"
+                    "projectId": {
+                      "type": "string"
                     },
                     "task": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
@@ -6229,7 +9696,7 @@
                     }
                   },
                   "required": [
-                    "project_id",
+                    "projectId",
                     "task",
                     "user"
                   ],
@@ -6310,6 +9777,99 @@
         "summary": "SyncProject syncs resources for a single project.\n"
       }
     },
+    "/api/workspaces/{id}/tofu/templates": {
+      "get": {
+        "operationId": "GET:skyforge.GetProjectTofuTemplates",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "dir",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "description": "\"project\" (default), \"blueprints\", or \"custom\"\n",
+            "explode": true,
+            "in": "query",
+            "name": "source",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "description": "owner/repo or URL (custom only)\n",
+            "explode": true,
+            "in": "query",
+            "name": "repo",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "branch": {
+                      "type": "string"
+                    },
+                    "dir": {
+                      "type": "string"
+                    },
+                    "projectId": {
+                      "type": "string"
+                    },
+                    "repo": {
+                      "type": "string"
+                    },
+                    "templates": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "repo",
+                    "branch",
+                    "dir",
+                    "templates"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetProjectTofuTemplates lists Terraform template directories for a project.\n"
+      }
+    },
     "/api/workspaces/{id}/variable-groups": {
       "get": {
         "operationId": "GET:skyforge.ListProjectVariableGroups",
@@ -6356,7 +9916,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "ListProjectVariableGroups lists Skyforge environments for a project.\n"
+        "summary": "ListProjectVariableGroups lists variable groups for a project.\n"
       },
       "post": {
         "operationId": "POST:skyforge.CreateProjectVariableGroup",
@@ -6432,7 +9992,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "CreateProjectVariableGroup creates a Skyforge environment for a project.\n"
+        "summary": "CreateProjectVariableGroup creates a variable group for a project.\n"
       }
     },
     "/api/workspaces/{id}/variable-groups/{groupID}": {
@@ -6493,7 +10053,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "DeleteProjectVariableGroup deletes a Skyforge environment for a project.\n"
+        "summary": "DeleteProjectVariableGroup deletes a variable group for a project.\n"
       },
       "put": {
         "operationId": "PUT:skyforge.UpdateProjectVariableGroup",
@@ -6581,7 +10141,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "UpdateProjectVariableGroup updates a Skyforge environment for a project.\n"
+        "summary": "UpdateProjectVariableGroup updates a variable group for a project.\n"
       }
     },
     "/api/workspaces/{projectID}/blueprint/sync": {
@@ -6624,570 +10184,6 @@
           }
         },
         "summary": "SyncProjectBlueprint syncs a project's blueprint catalog into the repo.\n"
-      }
-    },
-    "/api/public/config": {
-      "get": {
-        "operationId": "GET:skyforge.PublicConfig",
-        "responses": {
-          "200": {
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "PublicConfig exposes non-sensitive public UI configuration.\n"
-      }
-    },
-    "/api/runs": {
-      "get": {
-        "operationId": "GET:skyforge.GetRuns",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": true,
-            "in": "query",
-            "name": "project_id",
-            "schema": {
-              "type": "string"
-            },
-            "style": "form"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": true,
-            "in": "query",
-            "name": "limit",
-            "schema": {
-              "type": "string"
-            },
-            "style": "form"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": true,
-            "in": "query",
-            "name": "owner",
-            "schema": {
-              "type": "string"
-            },
-            "style": "form"
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "tasks": {
-                      "items": {
-                        "$ref": "#/components/schemas/skyforge.JSONMap"
-                      },
-                      "type": "array"
-                    },
-                    "user": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "user",
-                    "tasks"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GetRuns returns recent runs from Skyforge.\n"
-      },
-      "post": {
-        "operationId": "POST:skyforge.CreateRun",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "arguments": {
-                    "type": "string"
-                  },
-                  "debug": {
-                    "type": "boolean"
-                  },
-                  "diff": {
-                    "type": "boolean"
-                  },
-                  "dryRun": {
-                    "type": "boolean"
-                  },
-                  "environment": {
-                    "$ref": "#/components/schemas/skyforge.JSONMap"
-                  },
-                  "extra": {
-                    "$ref": "#/components/schemas/skyforge.JSONMap"
-                  },
-                  "gitBranch": {
-                    "type": "string"
-                  },
-                  "inventoryId": {
-                    "format": "int64",
-                    "type": "integer"
-                  },
-                  "limit": {
-                    "type": "string"
-                  },
-                  "message": {
-                    "type": "string"
-                  },
-                  "playbook": {
-                    "type": "string"
-                  },
-                  "projectId": {
-                    "format": "int64",
-                    "type": "integer"
-                  },
-                  "templateId": {
-                    "format": "int64",
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "templateId",
-                  "projectId",
-                  "debug",
-                  "dryRun",
-                  "diff",
-                  "playbook",
-                  "environment",
-                  "limit",
-                  "gitBranch",
-                  "message",
-                  "arguments",
-                  "inventoryId",
-                  "extra"
-                ],
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "project_id": {
-                      "format": "int64",
-                      "type": "integer"
-                    },
-                    "task": {
-                      "$ref": "#/components/schemas/skyforge.JSONMap"
-                    },
-                    "user": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "project_id",
-                    "task",
-                    "user"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "CreateRun launches a task in Skyforge (admin only).\n"
-      }
-    },
-    "/api/runs/{id}/output": {
-      "get": {
-        "operationId": "GET:skyforge.GetRunOutput",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "format": "int64",
-              "type": "integer"
-            },
-            "style": "simple"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": true,
-            "in": "query",
-            "name": "project_id",
-            "schema": {
-              "type": "string"
-            },
-            "style": "form"
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "output": {
-                      "items": {
-                        "$ref": "#/components/schemas/skyforge.JSONMap"
-                      },
-                      "type": "array"
-                    },
-                    "project_id": {
-                      "format": "int64",
-                      "type": "integer"
-                    },
-                    "task_id": {
-                      "format": "int64",
-                      "type": "integer"
-                    },
-                    "user": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "task_id",
-                    "project_id",
-                    "output",
-                    "user"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GetRunOutput returns output for a specific Skyforge task.\n"
-      }
-    },
-    "/api/session": {
-      "get": {
-        "operationId": "GET:skyforge.Session",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "actorUsername": {
-                      "type": "string"
-                    },
-                    "authenticated": {
-                      "type": "boolean"
-                    },
-                    "displayName": {
-                      "type": "string"
-                    },
-                    "email": {
-                      "type": "string"
-                    },
-                    "groups": {
-                      "items": {
-                        "type": "string"
-                      },
-                      "type": "array"
-                    },
-                    "impersonating": {
-                      "type": "boolean"
-                    },
-                    "isAdmin": {
-                      "type": "boolean"
-                    },
-                    "username": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "authenticated",
-                    "username",
-                    "displayName",
-                    "email",
-                    "groups",
-                    "isAdmin",
-                    "actorUsername",
-                    "impersonating"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        }
-      },
-      "head": {
-        "operationId": "HEAD:skyforge.SessionHead",
-        "responses": {
-          "200": {
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        }
-      }
-    },
-    "/api/session/traefik": {
-      "get": {
-        "operationId": "GET:skyforge.SessionTraefik",
-        "responses": {
-          "200": {
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "SessionTraefik is a Skyforge SSO gate compatible endpoint.\n"
-      },
-      "head": {
-        "operationId": "HEAD:skyforge.SessionTraefikHead",
-        "responses": {
-          "200": {
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "SessionTraefikHead is a Skyforge SSO gate compatible endpoint (HEAD).\n"
-      }
-    },
-    "/api/templates": {
-      "get": {
-        "operationId": "GET:skyforge.GetTemplates",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": true,
-            "in": "header",
-            "name": "cookie",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": true,
-            "in": "query",
-            "name": "project_id",
-            "schema": {
-              "type": "string"
-            },
-            "style": "form"
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "project_id": {
-                      "format": "int64",
-                      "type": "integer"
-                    },
-                    "templates": {
-                      "items": {
-                        "$ref": "#/components/schemas/skyforge.TemplateSummary"
-                      },
-                      "type": "array"
-                    },
-                    "user": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "user",
-                    "project_id",
-                    "templates"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GetTemplates returns available templates for a project.\n"
-      }
-    },
-    "/api/tooling/services": {
-      "get": {
-        "operationId": "GET:skyforge.GetToolServicesStatus",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "services": {
-                      "items": {
-                        "$ref": "#/components/schemas/skyforge.ToolServiceStatus"
-                      },
-                      "type": "array"
-                    }
-                  },
-                  "required": [
-                    "services"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GetToolServicesStatus returns start/stop state for personal toolchain services.\n"
-      }
-    },
-    "/api/tooling/services/{id}/replicas": {
-      "post": {
-        "operationId": "POST:skyforge.SetToolServiceReplicas",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "replicas": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "replicas"
-                ],
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "status": {
-                      "$ref": "#/components/schemas/skyforge.ToolServiceStatus"
-                    }
-                  },
-                  "required": [
-                    "status"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "SetToolServiceReplicas sets the replica count for a personal toolchain service.\n"
-      }
-    },
-    "/api/ui/config": {
-      "get": {
-        "operationId": "GET:skyforge.GetUIConfig",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "headerBackground": {
-                      "type": "string"
-                    },
-                    "logoAlt": {
-                      "type": "string"
-                    },
-                    "logoUrl": {
-                      "type": "string"
-                    },
-                    "productName": {
-                      "type": "string"
-                    },
-                    "productSubtitle": {
-                      "type": "string"
-                    },
-                    "supportText": {
-                      "type": "string"
-                    },
-                    "supportUrl": {
-                      "type": "string"
-                    },
-                    "themeDefault": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "productName",
-                    "productSubtitle",
-                    "logoUrl",
-                    "logoAlt",
-                    "headerBackground",
-                    "supportText",
-                    "supportUrl",
-                    "themeDefault"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GetUIConfig returns UI configuration values.\n"
       }
     },
     "/auth/login": {
@@ -7422,6 +10418,206 @@
           }
         },
         "summary": "Check is a simple health check helper that verifies the application is running.\n"
+      }
+    },
+    "/hooks/{rest}": {
+      "post": {
+        "description": "Example:\n\n\tPOST https://\u003chostname\u003e/hooks/\u003ctoken\u003e/github\n",
+        "operationId": "POST:skyforge.WebhookIngestAny",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "rest",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "WebhookIngestAny receives webhook events via tokenized URLs.\n"
+      }
+    },
+    "/ingest/metrics/node": {
+      "post": {
+        "description": "This is used to build a lightweight \"live node metrics\" view without deploying a full monitoring stack. Data is stored as a short-lived snapshot in Redis.\n",
+        "operationId": "POST:skyforge.IngestNodeMetric",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "fields": {
+                    "additionalProperties": {
+                      "type": "object"
+                    },
+                    "type": "object"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "tags": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "timestamp": {
+                    "format": "int64",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "name",
+                  "tags",
+                  "fields",
+                  "timestamp"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "IngestNodeMetric accepts host/node metrics from in-cluster collectors\n(Telegraf).\n"
+      }
+    },
+    "/ingest/snmp/trap": {
+      "post": {
+        "description": "Expected payload is Telegraf JSON serializer output for \\`inputs.snmp\\_trap\\`.\n",
+        "operationId": "POST:skyforge.IngestSNMPTrap",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "fields": {
+                    "additionalProperties": {
+                      "type": "object"
+                    },
+                    "type": "object"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "tags": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "timestamp": {
+                    "format": "int64",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "name",
+                  "tags",
+                  "fields",
+                  "timestamp"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "IngestSNMPTrap accepts SNMP trap events from in-cluster collectors (Telegraf).\n"
+      }
+    },
+    "/ingest/syslog": {
+      "post": {
+        "description": "This endpoint is intentionally unauthenticated (SSO) and guarded by an internal token header.\n",
+        "operationId": "POST:skyforge.IngestSyslog",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "app_name": {
+                    "type": "string"
+                  },
+                  "facility": {
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "hostname": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "msg_id": {
+                    "type": "string"
+                  },
+                  "proc_id": {
+                    "type": "string"
+                  },
+                  "raw": {
+                    "type": "string"
+                  },
+                  "received_at": {
+                    "type": "string"
+                  },
+                  "severity": {
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "source_ip": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "source_ip",
+                  "hostname",
+                  "app_name",
+                  "proc_id",
+                  "msg_id",
+                  "facility",
+                  "severity",
+                  "message",
+                  "raw",
+                  "received_at"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "IngestSyslog accepts syslog events from in-cluster collectors (Vector/Fluent\nBit/etc).\n"
       }
     },
     "/labs": {
@@ -8339,10 +11535,6 @@
     }
   },
   "servers": [
-    {
-      "description": "Skyforge (deployed behind Traefik)",
-      "url": "/api/skyforge"
-    },
     {
       "description": "Encore local dev environment",
       "url": "http://localhost:4000"
