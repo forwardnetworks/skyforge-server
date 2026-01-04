@@ -426,8 +426,16 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, pc *workspaceCon
 	if err := forwardPutClassicDevices(ctx, client, networkID, devices); err != nil {
 		return err
 	}
-	if err := forwardStartCollection(ctx, client, networkID); err != nil {
-		log.Printf("forward start collection: %v", err)
+	for attempt := 1; attempt <= 3; attempt++ {
+		if err := forwardStartCollection(ctx, client, networkID); err != nil {
+			if strings.Contains(err.Error(), "No valid devices") && attempt < 3 {
+				time.Sleep(time.Duration(attempt) * time.Second)
+				continue
+			}
+			log.Printf("forward start collection: %v", err)
+			break
+		}
+		break
 	}
 	if changed {
 		cfgAny[forwardCliCredentialMap] = credentialIDsByDevice
