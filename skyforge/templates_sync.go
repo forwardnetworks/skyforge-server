@@ -68,10 +68,15 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 		return err
 	}
 
-	rootPath := strings.TrimPrefix(path.Join(templatesDir, path.Dir(templateFile)), "/")
+	rootPath := strings.TrimPrefix(templatesDir, "/")
+	if strings.HasPrefix(rootPath, "netlab/") || rootPath == "netlab" {
+		rootPath = "netlab"
+	} else if idx := strings.Index(rootPath, "/netlab/"); idx >= 0 {
+		rootPath = rootPath[:idx+len("/netlab")]
+	}
 	rootPath = strings.TrimSuffix(rootPath, "/")
 	if rootPath == "" || rootPath == "." {
-		rootPath = templatesDir
+		rootPath = strings.TrimPrefix(templatesDir, "/")
 	}
 
 	var syncDir func(repoPath string) error
