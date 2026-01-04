@@ -44,12 +44,6 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 		return err
 	}
 
-	filePath := path.Join(templatesDir, templateFile)
-	body, err := readGiteaFileBytes(s.cfg, ref.Owner, ref.Repo, filePath, ref.Branch)
-	if err != nil {
-		return fmt.Errorf("failed to read template %s: %w", filePath, err)
-	}
-
 	sshCfg := NetlabConfig{
 		SSHHost:    strings.TrimSpace(server.SSHHost),
 		SSHUser:    strings.TrimSpace(server.SSHUser),
@@ -62,16 +56,61 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 	}
 	defer client.Close()
 
-	topologyPath := path.Join(workdir, "netlab", "topology.yml")
-	mkdirCmd := fmt.Sprintf("install -d -m 0755 %q", path.Dir(topologyPath))
-	if _, err := runSSHCommand(client, mkdirCmd, 10*time.Second); err != nil {
+	destRoot := path.Join(workdir, "netlab")
+	if _, err := runSSHCommand(client, fmt.Sprintf("install -d -m 0755 %q", destRoot), 10*time.Second); err != nil {
 		return err
 	}
-	writeCmd := fmt.Sprintf("cat > %q", topologyPath)
-	if _, err := runSSHCommandWithInput(client, writeCmd, body, 15*time.Second); err != nil {
+
+	rootPath := strings.TrimPrefix(path.Join(templatesDir, path.Dir(templateFile)), "/")
+	rootPath = strings.TrimSuffix(rootPath, "/")
+	if rootPath == "" || rootPath == "." {
+		rootPath = templatesDir
+	}
+
+	var syncDir func(repoPath string) error
+	syncDir = func(repoPath string) error {
+		entries, err := listGiteaDirectory(s.cfg, ref.Owner, ref.Repo, repoPath, ref.Branch)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			name := strings.TrimSpace(entry.Name)
+			if name == "" || strings.HasPrefix(name, ".") {
+				continue
+			}
+			entryPath := strings.TrimPrefix(strings.TrimSpace(entry.Path), "/")
+			rel := strings.TrimPrefix(entryPath, rootPath)
+			rel = strings.TrimPrefix(rel, "/")
+			dest := path.Join(destRoot, rel)
+			switch entry.Type {
+			case "dir":
+				if _, err := runSSHCommand(client, fmt.Sprintf("install -d -m 0755 %q", dest), 10*time.Second); err != nil {
+					return err
+				}
+				if err := syncDir(entryPath); err != nil {
+					return err
+				}
+			case "file":
+				body, err := readGiteaFileBytes(s.cfg, ref.Owner, ref.Repo, entryPath, ref.Branch)
+				if err != nil {
+					return fmt.Errorf("failed to read template %s: %w", entryPath, err)
+				}
+				if _, err := runSSHCommand(client, fmt.Sprintf("install -d -m 0755 %q", path.Dir(dest)), 10*time.Second); err != nil {
+					return err
+				}
+				writeCmd := fmt.Sprintf("cat > %q", dest)
+				if _, err := runSSHCommandWithInput(client, writeCmd, body, 15*time.Second); err != nil {
+					return err
+				}
+				_, _ = runSSHCommand(client, fmt.Sprintf("chmod 0644 %q >/dev/null 2>&1 || true", dest), 5*time.Second)
+			}
+		}
+		return nil
+	}
+
+	if err := syncDir(rootPath); err != nil {
 		return err
 	}
-	_, _ = runSSHCommand(client, fmt.Sprintf("chmod 0644 %q >/dev/null 2>&1 || true", topologyPath), 5*time.Second)
 	if owner != "" {
 		_, _ = runSSHCommand(client, fmt.Sprintf("chown -R %q:%q %q >/dev/null 2>&1 || true", owner, owner, workdir), 8*time.Second)
 	}
