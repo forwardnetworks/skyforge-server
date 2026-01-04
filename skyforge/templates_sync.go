@@ -36,6 +36,12 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 		templatesDir = "blueprints/netlab"
 	}
 	templatesDir = strings.Trim(strings.TrimSpace(templatesDir), "/")
+	if strings.HasSuffix(templatesDir, ".yml") || strings.HasSuffix(templatesDir, ".yaml") {
+		if templateFile == "" {
+			templateFile = path.Base(templatesDir)
+		}
+		templatesDir = strings.Trim(strings.TrimSpace(path.Dir(templatesDir)), "/")
+	}
 	if !isSafeRelativePath(templatesDir) {
 		return fmt.Errorf("templatesDir must be a safe repo-relative path")
 	}
