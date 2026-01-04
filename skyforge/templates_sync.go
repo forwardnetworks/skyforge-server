@@ -37,8 +37,9 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 	}
 	templatesDir = strings.Trim(strings.TrimSpace(templatesDir), "/")
 	if strings.HasSuffix(templatesDir, ".yml") || strings.HasSuffix(templatesDir, ".yaml") {
-		if templateFile == "" {
-			templateFile = path.Base(templatesDir)
+		base := path.Base(templatesDir)
+		if templateFile == "" || templateFile == base {
+			templateFile = base
 		}
 		templatesDir = strings.Trim(strings.TrimSpace(path.Dir(templatesDir)), "/")
 	}
