@@ -123,6 +123,19 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 	if err := syncDir(rootPath); err != nil {
 		return err
 	}
+	templatePath := strings.TrimPrefix(path.Join(templatesDir, templateFile), "/")
+	if templatePath != "" {
+		body, err := readGiteaFileBytes(s.cfg, ref.Owner, ref.Repo, templatePath, ref.Branch)
+		if err != nil {
+			return fmt.Errorf("failed to read template %s: %w", templatePath, err)
+		}
+		dest := path.Join(destRoot, "topology.yml")
+		writeCmd := fmt.Sprintf("cat > %q", dest)
+		if _, err := runSSHCommandWithInput(client, writeCmd, body, 15*time.Second); err != nil {
+			return err
+		}
+		_, _ = runSSHCommand(client, fmt.Sprintf("chmod 0644 %q >/dev/null 2>&1 || true", dest), 5*time.Second)
+	}
 	if owner != "" {
 		_, _ = runSSHCommand(client, fmt.Sprintf("chown -R %q:%q %q >/dev/null 2>&1 || true", owner, owner, workdir), 8*time.Second)
 	}
