@@ -743,6 +743,18 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 		if (op == "start" || op == "stop") && !infraCreated {
 			return nil, errs.B().Code(errs.FailedPrecondition).Msg("labpp deployment must be created before start/stop").Err()
 		}
+		labPath = strings.TrimSpace(labPath)
+		if labPath == "" {
+			labPath = fmt.Sprintf(
+				"/Users/%s/%s/%s/%s.unl",
+				pc.claims.Username,
+				pc.workspace.Slug,
+				dep.Name,
+				labppLabFilename(template),
+			)
+		}
+		labPath = "/" + strings.TrimPrefix(labPath, "/")
+		cfgAny["labPath"] = labPath
 
 		labppAction := "e2e"
 		switch op {
@@ -767,7 +779,7 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 			TemplateRepo:      strings.TrimSpace(templateRepo),
 			TemplatesDir:      strings.TrimSpace(templatesDir),
 			TemplatesDestRoot: strings.TrimSpace(templatesDestRoot),
-			LabPath:           strings.TrimSpace(labPath),
+			LabPath:           labPath,
 			ThreadCount:       int(threadCount),
 			Deployment:        dep.Name,
 		})
