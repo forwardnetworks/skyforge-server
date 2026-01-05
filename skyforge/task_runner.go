@@ -407,10 +407,12 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 	if labPath != "" {
 		payload["labPath"] = labPath
 		payload["lab_path"] = labPath
+		payload["labpath"] = labPath
 	}
 	if labDir != "" {
 		payload["labDir"] = labDir
 		payload["lab_dir"] = labDir
+		payload["labdir"] = labDir
 	}
 	if strings.TrimSpace(spec.Template) != "" {
 		templatesRoot := strings.TrimSpace(spec.TemplatesRoot)
@@ -419,6 +421,8 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 			payload["templatesRoot"] = templatesRoot
 			payload["templates_root"] = templatesRoot
 		}
+		payload["templateDir"] = path.Join(templatesRoot, strings.TrimSpace(spec.Template))
+		payload["template_dir"] = path.Join(templatesRoot, strings.TrimSpace(spec.Template))
 	}
 	if spec.ThreadCount > 0 {
 		payload["threadCount"] = spec.ThreadCount
