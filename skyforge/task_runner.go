@@ -249,6 +249,7 @@ type labppRunSpec struct {
 	Insecure      bool
 	Action        string
 	WorkspaceSlug string
+	Username      string
 	Deployment    string
 	Environment   map[string]string
 	TemplatesRoot string
@@ -358,6 +359,19 @@ func labppPayloadPreview(payload map[string]any) string {
 }
 
 func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *taskLogger) error {
+	labPath := strings.TrimSpace(spec.LabPath)
+	if labPath == "" && strings.TrimSpace(spec.Username) != "" && strings.TrimSpace(spec.Template) != "" {
+		labPath = fmt.Sprintf(
+			"/Users/%s/%s/%s/%s.unl",
+			strings.TrimSpace(spec.Username),
+			strings.TrimSpace(spec.WorkspaceSlug),
+			strings.TrimSpace(spec.Deployment),
+			labppLabFilename(spec.Template),
+		)
+	}
+	if labPath != "" {
+		labPath = "/" + strings.TrimPrefix(labPath, "/")
+	}
 	payload := map[string]any{
 		"action":        strings.ToUpper(spec.Action),
 		"project":       spec.WorkspaceSlug,
@@ -371,11 +385,11 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 			"password": spec.EvePassword,
 		},
 	}
-	if spec.LabPath != "" {
-		labDir := path.Dir(spec.LabPath)
-		payload["labPath"] = spec.LabPath
+	if labPath != "" {
+		labDir := path.Dir(labPath)
+		payload["labPath"] = labPath
 		payload["labDir"] = labDir
-		payload["lab_path"] = spec.LabPath
+		payload["lab_path"] = labPath
 		payload["lab_dir"] = labDir
 	}
 	if strings.TrimSpace(spec.Template) != "" {
@@ -399,8 +413,8 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 	stdlog.Printf(
 		"labpp payload context: action=%s labPath=%s labDir=%s templatesRoot=%s template=%s templateDir=%s",
 		spec.Action,
-		spec.LabPath,
-		path.Dir(spec.LabPath),
+		labPath,
+		path.Dir(labPath),
 		spec.TemplatesRoot,
 		spec.Template,
 		path.Join(spec.TemplatesRoot, spec.Template),
@@ -408,8 +422,8 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 	log.Infof(
 		"LabPP payload context: action=%s labPath=%s labDir=%s templatesRoot=%s template=%s",
 		spec.Action,
-		spec.LabPath,
-		path.Dir(spec.LabPath),
+		labPath,
+		path.Dir(labPath),
 		spec.TemplatesRoot,
 		spec.Template,
 	)

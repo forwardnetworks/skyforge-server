@@ -727,6 +727,7 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 		Insecure:      apiInsecure,
 		Action:        action,
 		WorkspaceSlug: strings.TrimSpace(pc.workspace.Slug),
+		Username:      pc.claims.Username,
 		Deployment:    deployment,
 		Environment:   envMap,
 		TemplatesRoot: templatesRoot,
