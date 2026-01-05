@@ -339,6 +339,24 @@ func normalizeLabppLog(raw string) string {
 	return raw
 }
 
+func labppPayloadPreview(payload map[string]any) string {
+	preview := map[string]any{}
+	for key, value := range payload {
+		preview[key] = value
+	}
+	if eve, ok := preview["eve"].(map[string]any); ok {
+		if _, has := eve["password"]; has {
+			eve["password"] = "[redacted]"
+		}
+		preview["eve"] = eve
+	}
+	data, err := json.Marshal(preview)
+	if err != nil {
+		return "<unavailable>"
+	}
+	return string(data)
+}
+
 func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *taskLogger) error {
 	payload := map[string]any{
 		"action":        strings.ToUpper(spec.Action),
@@ -360,8 +378,13 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		payload["lab_path"] = spec.LabPath
 		payload["lab_dir"] = labDir
 	}
-	if spec.TemplatesRoot != "" && spec.Template != "" {
-		templateDir := path.Join(spec.TemplatesRoot, spec.Template)
+	if strings.TrimSpace(spec.Template) != "" {
+		templatesRoot := strings.TrimSpace(spec.TemplatesRoot)
+		if templatesRoot == "" {
+			templatesRoot = "/var/lib/skyforge/labpp-templates"
+			payload["templatesRoot"] = templatesRoot
+		}
+		templateDir := path.Join(templatesRoot, spec.Template)
 		if _, ok := payload["labDir"]; !ok {
 			payload["labDir"] = templateDir
 			payload["lab_dir"] = templateDir
@@ -390,6 +413,7 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		spec.TemplatesRoot,
 		spec.Template,
 	)
+	log.Infof("LabPP payload preview: %s", labppPayloadPreview(payload))
 	log.Infof("Starting labpp job (%s)", spec.Action)
 	resp, body, err := labppAPIDo(ctx, spec.APIURL+"/jobs", payload, spec.Insecure)
 	if err != nil {
