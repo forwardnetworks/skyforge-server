@@ -342,6 +342,7 @@ func normalizeLabppLog(raw string) string {
 func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *taskLogger) error {
 	payload := map[string]any{
 		"action":        strings.ToUpper(spec.Action),
+		"project":       spec.WorkspaceSlug,
 		"workspace":     spec.WorkspaceSlug,
 		"deployment":    spec.Deployment,
 		"templatesRoot": spec.TemplatesRoot,
