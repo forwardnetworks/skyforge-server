@@ -386,7 +386,6 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 	payload := map[string]any{
 		"action":        strings.ToUpper(spec.Action),
 		"project":       project,
-		"workspace":     project,
 		"deployment":    deployment,
 		"templatesRoot": spec.TemplatesRoot,
 		"templates_root": spec.TemplatesRoot,
@@ -398,11 +397,8 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		},
 	}
 	if labPath != "" {
-		labDir := path.Dir(labPath)
 		payload["labPath"] = labPath
-		payload["labDir"] = labDir
 		payload["lab_path"] = labPath
-		payload["lab_dir"] = labDir
 	}
 	if strings.TrimSpace(spec.Template) != "" {
 		templatesRoot := strings.TrimSpace(spec.TemplatesRoot)
@@ -411,32 +407,22 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 			payload["templatesRoot"] = templatesRoot
 			payload["templates_root"] = templatesRoot
 		}
-		templateDir := path.Join(templatesRoot, spec.Template)
-		if _, ok := payload["labDir"]; !ok {
-			payload["labDir"] = templateDir
-			payload["lab_dir"] = templateDir
-		}
-		payload["templateDir"] = templateDir
-		payload["template_dir"] = templateDir
 	}
 	if spec.ThreadCount > 0 {
 		payload["threadCount"] = spec.ThreadCount
 	}
 
 	stdlog.Printf(
-		"labpp payload context: action=%s labPath=%s labDir=%s templatesRoot=%s template=%s templateDir=%s",
+		"labpp payload context: action=%s labPath=%s templatesRoot=%s template=%s",
 		spec.Action,
 		labPath,
-		path.Dir(labPath),
 		spec.TemplatesRoot,
 		spec.Template,
-		path.Join(spec.TemplatesRoot, spec.Template),
 	)
 	log.Infof(
-		"LabPP payload context: action=%s labPath=%s labDir=%s templatesRoot=%s template=%s",
+		"LabPP payload context: action=%s labPath=%s templatesRoot=%s template=%s",
 		spec.Action,
 		labPath,
-		path.Dir(labPath),
 		spec.TemplatesRoot,
 		spec.Template,
 	)
