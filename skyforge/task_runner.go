@@ -359,6 +359,15 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		payload["lab_path"] = spec.LabPath
 		payload["lab_dir"] = labDir
 	}
+	if spec.TemplatesRoot != "" && spec.Template != "" {
+		templateDir := path.Join(spec.TemplatesRoot, spec.Template)
+		if _, ok := payload["labDir"]; !ok {
+			payload["labDir"] = templateDir
+			payload["lab_dir"] = templateDir
+		}
+		payload["templateDir"] = templateDir
+		payload["template_dir"] = templateDir
+	}
 	if spec.ThreadCount > 0 {
 		payload["threadCount"] = spec.ThreadCount
 	}
