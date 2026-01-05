@@ -353,8 +353,11 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		},
 	}
 	if spec.LabPath != "" {
+		labDir := path.Dir(spec.LabPath)
 		payload["labPath"] = spec.LabPath
-		payload["labDir"] = path.Dir(spec.LabPath)
+		payload["labDir"] = labDir
+		payload["lab_path"] = spec.LabPath
+		payload["lab_dir"] = labDir
 	}
 	if spec.ThreadCount > 0 {
 		payload["threadCount"] = spec.ThreadCount
