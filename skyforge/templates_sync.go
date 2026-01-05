@@ -16,6 +16,27 @@ type templateRepoRef struct {
 	Branch string
 }
 
+func defaultLabppTemplatesDir(source string) string {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "blueprints", "blueprint":
+		return "labpp"
+	default:
+		return "blueprints/labpp"
+	}
+}
+
+func normalizeLabppTemplatesDir(source, dir string) string {
+	dir = strings.Trim(strings.TrimSpace(dir), "/")
+	if dir == "" {
+		dir = defaultLabppTemplatesDir(source)
+	}
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "blueprints", "blueprint":
+		dir = strings.TrimPrefix(dir, "blueprints/")
+	}
+	return strings.Trim(strings.TrimSpace(dir), "/")
+}
+
 func giteaDefaultBranch(cfg Config, owner, repo string) string {
 	branch := "master"
 	if b, err := getGiteaRepoDefaultBranch(cfg, owner, repo); err == nil && strings.TrimSpace(b) != "" {
@@ -97,6 +118,9 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 		entries, err := listGiteaDirectory(s.cfg, ref.Owner, ref.Repo, repoPath, ref.Branch)
 		if err != nil {
 			return err
+		}
+		if len(entries) == 0 {
+			return fmt.Errorf("labpp template directory is empty: %s", repoPath)
 		}
 		for _, entry := range entries {
 			name := strings.TrimSpace(entry.Name)
@@ -197,10 +221,7 @@ func (s *Service) syncLabppTemplateDir(ctx context.Context, pc *workspaceContext
 	if templateName == "" {
 		return "", fmt.Errorf("template is required")
 	}
-	if templatesDir == "" {
-		templatesDir = "blueprints/labpp"
-	}
-	templatesDir = strings.Trim(strings.TrimSpace(templatesDir), "/")
+	templatesDir = normalizeLabppTemplatesDir(templateSource, templatesDir)
 	if !isSafeRelativePath(templatesDir) {
 		return "", fmt.Errorf("templatesDir must be a safe repo-relative path")
 	}
@@ -238,6 +259,12 @@ func (s *Service) syncLabppTemplateDir(ctx context.Context, pc *workspaceContext
 		return "", fmt.Errorf("missing SKYFORGE_EVE_SSH_KEY_FILE")
 	}
 
+	rootPath := path.Join(templatesDir, templateName)
+	labJSONPath := path.Join(rootPath, "lab.json")
+	if _, err := readGiteaFileBytes(s.cfg, ref.Owner, ref.Repo, labJSONPath, ref.Branch); err != nil {
+		return "", fmt.Errorf("labpp template %q missing lab.json", templateName)
+	}
+
 	sshCfg := NetlabConfig{SSHHost: host, SSHUser: user, SSHKeyFile: keyFile, StateRoot: "/"}
 	client, err := dialSSH(sshCfg)
 	if err != nil {
@@ -245,7 +272,6 @@ func (s *Service) syncLabppTemplateDir(ctx context.Context, pc *workspaceContext
 	}
 	defer client.Close()
 
-	rootPath := path.Join(templatesDir, templateName)
 	if _, err := runSSHCommand(client, fmt.Sprintf("rm -rf %q && install -d -m 0755 %q", destTemplateDir, destTemplateDir), 15*time.Second); err != nil {
 		return "", err
 	}
