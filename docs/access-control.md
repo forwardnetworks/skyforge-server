@@ -8,32 +8,32 @@ This document captures the Skyforge access-control conventions for Skyforge’s 
 - The portal may send `X-Current-Role` for UI role switching; it must not use Bearer tokens for Skyforge.
 - Server code should use `requireAuthUser()` and derive `SessionClaims` from the authenticated user.
 
-## Project-scoped endpoints
+## Workspace-scoped endpoints
 
-Skyforge has two “project identity” shapes:
+Skyforge has two “workspace identity” shapes:
 
-1) **Skyforge project key** (string): slug/ID used in routes like `/api/projects/:id/...`  
-2) **Legacy project id** (int): `project_id` used in query params for run/task endpoints like `/api/runs?project_id=...`
+1) **Skyforge workspace key** (string): slug/ID used in routes like `/api/workspaces/:id/...`  
+2) **Legacy workspace id** (int): `project_id` used in query params for run/task endpoints like `/api/runs?project_id=...`
 
 Use the correct guard for each.
 
-### A) Skyforge project key endpoints (preferred)
+### A) Skyforge workspace key endpoints (preferred)
 
-If an endpoint is routed by Skyforge project key (slug/ID), use:
-- `s.projectContextForUser(user, projectKey)`
+If an endpoint is routed by Skyforge workspace key (slug/ID), use:
+- `s.workspaceContextForUser(user, workspaceKey)`
 
 This enforces:
 - authentication required
-- project exists
+- workspace exists
 - membership/role access is not `"none"`
 
-### B) Legacy project id endpoints
+### B) Legacy workspace id endpoints
 
-If an endpoint is scoped by `project_id` (legacy project id), call:
+If an endpoint is scoped by `project_id` (legacy workspace id), call:
 
 This enforces:
 - authentication required
-- the project exists in Skyforge project state and the user has access, or the user is admin/default-project access applies
+- the workspace exists in Skyforge state and the user has access, or the user is admin/default-workspace access applies
 
 ## Impersonation
 

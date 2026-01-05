@@ -75,6 +75,16 @@
       "image_prefix": "ceos"
     },
     {
+      "device": "eos",
+      "credentials": [
+        {
+          "username": "admin",
+          "password": "admin"
+        }
+      ],
+      "image_prefix": "ceos64"
+    },
+    {
       "device": "fortios",
       "credentials": [
         {

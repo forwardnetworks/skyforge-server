@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"path"
 	"sort"
 	"strings"
 
@@ -13,10 +14,10 @@ import (
 
 type WorkspaceNetlabTemplatesResponse struct {
 	WorkspaceID string   `json:"workspaceId"`
-	Repo      string   `json:"repo"`
-	Branch    string   `json:"branch"`
-	Dir       string   `json:"dir"`
-	Templates []string `json:"templates"`
+	Repo        string   `json:"repo"`
+	Branch      string   `json:"branch"`
+	Dir         string   `json:"dir"`
+	Templates   []string `json:"templates"`
 }
 
 type WorkspaceNetlabTemplatesRequest struct {
@@ -102,34 +103,61 @@ func (s *Service) GetWorkspaceNetlabTemplates(ctx context.Context, id string, re
 		}
 	}
 
-	entries, err := listGiteaDirectory(s.cfg, owner, repo, dir, branch)
+	templates, err := listNetlabTemplatesRecursive(s.cfg, owner, repo, branch, dir, "", 4, false)
 	if err != nil {
 		log.Printf("netlab templates list: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to query templates").Err()
-	}
-	templates := make([]string, 0, len(entries))
-	for _, e := range entries {
-		if e.Type != "file" {
-			continue
-		}
-		name := strings.TrimSpace(e.Name)
-		if name == "" || strings.HasPrefix(name, ".") {
-			continue
-		}
-		if !strings.HasSuffix(name, ".yml") && !strings.HasSuffix(name, ".yaml") {
-			continue
-		}
-		templates = append(templates, name)
 	}
 	sort.Strings(templates)
 	_ = ctx
 	return &WorkspaceNetlabTemplatesResponse{
 		WorkspaceID: pc.workspace.ID,
-		Repo:      fmt.Sprintf("%s/%s", owner, repo),
-		Branch:    branch,
-		Dir:       dir,
-		Templates: templates,
+		Repo:        fmt.Sprintf("%s/%s", owner, repo),
+		Branch:      branch,
+		Dir:         dir,
+		Templates:   templates,
 	}, nil
+}
+
+func listNetlabTemplatesRecursive(cfg Config, owner, repo, branch, repoPath, relBase string, depth int, nested bool) ([]string, error) {
+	if depth < 0 {
+		return nil, nil
+	}
+	entries, err := listGiteaDirectory(cfg, owner, repo, repoPath, branch)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		name := strings.TrimSpace(entry.Name)
+		if name == "" || strings.HasPrefix(name, ".") {
+			continue
+		}
+		entryPath := strings.TrimPrefix(strings.TrimSpace(entry.Path), "/")
+		rel := path.Join(relBase, name)
+		switch entry.Type {
+		case "file":
+			if nested {
+				if name == "topology.yml" || name == "topology.yaml" {
+					results = append(results, rel)
+				}
+				continue
+			}
+			if strings.HasSuffix(name, ".yml") || strings.HasSuffix(name, ".yaml") {
+				results = append(results, rel)
+			}
+		case "dir":
+			if depth == 0 {
+				continue
+			}
+			child, err := listNetlabTemplatesRecursive(cfg, owner, repo, branch, entryPath, rel, depth-1, true)
+			if err != nil {
+				return nil, err
+			}
+			results = append(results, child...)
+		}
+	}
+	return results, nil
 }
 
 func parseGiteaRepoRef(input string) (string, string, error) {

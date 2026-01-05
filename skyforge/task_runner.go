@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +19,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"encore.app/storage"
 )
 
 type taskLogger struct {
@@ -61,9 +64,10 @@ func (s *Service) queueTask(task *TaskRecord, runner func(ctx context.Context, l
 }
 
 type netlabRunSpec struct {
-	WorkspaceCtx      *workspaceContext
-	WorkspaceSlug     string
+	WorkspaceCtx    *workspaceContext
+	WorkspaceSlug   string
 	Username        string
+	Environment     map[string]string
 	Action          string
 	Deployment      string
 	WorkspaceRoot   string
@@ -71,11 +75,15 @@ type netlabRunSpec struct {
 	TemplateRepo    string
 	TemplatesDir    string
 	Template        string
-	WorkspaceDir      string
+	WorkspaceDir    string
 	MultilabNumeric int
 	StateRoot       string
 	Cleanup         bool
 	Server          NetlabServerConfig
+	TopologyPath    string
+	ClabTarball     string
+	ClabConfigDir   string
+	ClabCleanup     bool
 }
 
 func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *taskLogger) error {
@@ -84,9 +92,11 @@ func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *ta
 		if spec.WorkspaceCtx == nil {
 			return fmt.Errorf("workspace context unavailable")
 		}
-		if err := s.syncNetlabTopologyFile(ctx, spec.WorkspaceCtx, &spec.Server, spec.TemplateSource, spec.TemplateRepo, spec.TemplatesDir, spec.Template, spec.WorkspaceDir, spec.Username); err != nil {
+		topologyPath, err := s.syncNetlabTopologyFile(ctx, spec.WorkspaceCtx, &spec.Server, spec.TemplateSource, spec.TemplateRepo, spec.TemplatesDir, spec.Template, spec.WorkspaceDir, spec.Username)
+		if err != nil {
 			return err
 		}
+		spec.TopologyPath = topologyPath
 	}
 
 	apiURL := strings.TrimRight(fmt.Sprintf("https://%s/netlab", strings.TrimSpace(spec.Server.SSHHost)), "/")
@@ -101,8 +111,23 @@ func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *ta
 		"instance":      strconv.Itoa(spec.MultilabNumeric),
 		"stateRoot":     strings.TrimSpace(spec.StateRoot),
 	}
+	if strings.TrimSpace(spec.TopologyPath) != "" {
+		payload["topologyPath"] = strings.TrimSpace(spec.TopologyPath)
+	}
+	if strings.TrimSpace(spec.ClabTarball) != "" {
+		payload["clabTarball"] = strings.TrimSpace(spec.ClabTarball)
+	}
+	if strings.TrimSpace(spec.ClabConfigDir) != "" {
+		payload["clabConfigDir"] = strings.TrimSpace(spec.ClabConfigDir)
+	}
+	if spec.ClabCleanup {
+		payload["clabCleanup"] = true
+	}
 	if spec.Cleanup {
 		payload["cleanup"] = true
+	}
+	if len(spec.Environment) > 0 {
+		payload["environment"] = spec.Environment
 	}
 
 	log.Infof("Starting netlab job (%s)", spec.Action)
@@ -156,6 +181,11 @@ func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *ta
 				}
 				return fmt.Errorf("netlab job %s", state)
 			}
+			if strings.EqualFold(spec.Action, "clab-tarball") {
+				if err := s.publishNetlabClabTarball(ctx, spec, log); err != nil {
+					return err
+				}
+			}
 			return nil
 		}
 
@@ -163,12 +193,64 @@ func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *ta
 	}
 }
 
+func (s *Service) publishNetlabClabTarball(ctx context.Context, spec netlabRunSpec, log *taskLogger) error {
+	if spec.WorkspaceCtx == nil {
+		return fmt.Errorf("workspace context unavailable")
+	}
+	tarball := strings.TrimSpace(spec.ClabTarball)
+	if tarball == "" {
+		return nil
+	}
+	remotePath := tarball
+	if !strings.HasPrefix(remotePath, "/") {
+		remotePath = path.Join(spec.WorkspaceDir, remotePath)
+	}
+
+	sshCfg := NetlabConfig{
+		SSHHost:    strings.TrimSpace(spec.Server.SSHHost),
+		SSHUser:    strings.TrimSpace(spec.Server.SSHUser),
+		SSHKeyFile: strings.TrimSpace(spec.Server.SSHKeyFile),
+		StateRoot:  "/",
+	}
+	client, err := dialSSH(sshCfg)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	out, err := runSSHCommand(client, fmt.Sprintf("base64 %q", remotePath), 2*time.Minute)
+	if err != nil {
+		return fmt.Errorf("failed to read clab tarball: %w", err)
+	}
+	compact := strings.Map(func(r rune) rune {
+		switch r {
+		case '\n', '\r', '\t', ' ':
+			return -1
+		default:
+			return r
+		}
+	}, out)
+	payload, err := base64.StdEncoding.DecodeString(compact)
+	if err != nil {
+		return fmt.Errorf("failed to decode clab tarball: %w", err)
+	}
+
+	key := path.Join("netlab", spec.Deployment, path.Base(remotePath))
+	objectName := artifactObjectName(spec.WorkspaceCtx.workspace.ID, key)
+	if err := storage.Write(ctx, &storage.WriteRequest{ObjectName: objectName, Data: payload}); err != nil {
+		return fmt.Errorf("failed to upload clab tarball: %w", err)
+	}
+	log.Infof("SKYFORGE_ARTIFACT clab_tarball=%s", key)
+	return nil
+}
+
 type labppRunSpec struct {
 	APIURL        string
 	Insecure      bool
 	Action        string
-	WorkspaceSlug   string
+	WorkspaceSlug string
 	Deployment    string
+	Environment   map[string]string
 	TemplatesRoot string
 	Template      string
 	LabPath       string
@@ -341,6 +423,7 @@ type containerlabRunSpec struct {
 	Token       string
 	Action      string
 	LabName     string
+	Environment map[string]string
 	Topology    map[string]any
 	Reconfigure bool
 	SkipTLS     bool
@@ -382,8 +465,8 @@ func (s *Service) runContainerlabTask(ctx context.Context, spec containerlabRunS
 }
 
 type tofuRunSpec struct {
-	WorkspaceCtx     *workspaceContext
-	WorkspaceSlug    string
+	WorkspaceCtx   *workspaceContext
+	WorkspaceSlug  string
 	Username       string
 	Cloud          string
 	Action         string

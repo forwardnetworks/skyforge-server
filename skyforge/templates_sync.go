@@ -24,18 +24,12 @@ func giteaDefaultBranch(cfg Config, owner, repo string) string {
 	return branch
 }
 
-func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceContext, server *NetlabServerConfig, templateSource, templateRepo, templatesDir, templateFile, workdir, owner string) error {
-	if server == nil {
-		return fmt.Errorf("netlab runner not configured")
-	}
+func normalizeNetlabTemplateSelection(templatesDir, templateFile string) (string, string, string, string) {
+	templatesDir = strings.Trim(strings.TrimSpace(templatesDir), "/")
 	templateFile = strings.TrimSpace(templateFile)
-	if templateFile == "" {
-		return nil
-	}
 	if templatesDir == "" {
 		templatesDir = "blueprints/netlab"
 	}
-	templatesDir = strings.Trim(strings.TrimSpace(templatesDir), "/")
 	if strings.HasSuffix(templatesDir, ".yml") || strings.HasSuffix(templatesDir, ".yaml") {
 		base := path.Base(templatesDir)
 		if templateFile == "" || templateFile == base {
@@ -43,12 +37,42 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 		}
 		templatesDir = strings.Trim(strings.TrimSpace(path.Dir(templatesDir)), "/")
 	}
+	rootPath := strings.TrimPrefix(templatesDir, "/")
+	if strings.HasPrefix(rootPath, "netlab/") || rootPath == "netlab" {
+		rootPath = "netlab"
+	} else if idx := strings.Index(rootPath, "/netlab/"); idx >= 0 {
+		rootPath = rootPath[:idx+len("/netlab")]
+	}
+	rootPath = strings.TrimSuffix(rootPath, "/")
+	if rootPath == "" || rootPath == "." {
+		rootPath = strings.TrimPrefix(templatesDir, "/")
+	}
+	topologyPath := ""
+	if templateFile != "" {
+		templatePath := strings.TrimPrefix(path.Join(templatesDir, templateFile), "/")
+		rel := strings.TrimPrefix(templatePath, rootPath)
+		rel = strings.TrimPrefix(rel, "/")
+		if rel != "" {
+			topologyPath = path.Join("netlab", rel)
+		}
+	}
+	return templatesDir, templateFile, rootPath, topologyPath
+}
+
+func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceContext, server *NetlabServerConfig, templateSource, templateRepo, templatesDir, templateFile, workdir, owner string) (string, error) {
+	if server == nil {
+		return "", fmt.Errorf("netlab runner not configured")
+	}
+	templatesDir, templateFile, rootPath, topologyPath := normalizeNetlabTemplateSelection(templatesDir, templateFile)
+	if templateFile == "" {
+		return "", nil
+	}
 	if !isSafeRelativePath(templatesDir) {
-		return fmt.Errorf("templatesDir must be a safe repo-relative path")
+		return "", fmt.Errorf("templatesDir must be a safe repo-relative path")
 	}
 	ref, err := resolveTemplateRepoForProject(s.cfg, pc, templateSource, templateRepo)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	sshCfg := NetlabConfig{
@@ -59,24 +83,13 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 	}
 	client, err := dialSSH(sshCfg)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer client.Close()
 
 	destRoot := path.Join(workdir, "netlab")
 	if _, err := runSSHCommand(client, fmt.Sprintf("install -d -m 0755 %q", destRoot), 10*time.Second); err != nil {
-		return err
-	}
-
-	rootPath := strings.TrimPrefix(templatesDir, "/")
-	if strings.HasPrefix(rootPath, "netlab/") || rootPath == "netlab" {
-		rootPath = "netlab"
-	} else if idx := strings.Index(rootPath, "/netlab/"); idx >= 0 {
-		rootPath = rootPath[:idx+len("/netlab")]
-	}
-	rootPath = strings.TrimSuffix(rootPath, "/")
-	if rootPath == "" || rootPath == "." {
-		rootPath = strings.TrimPrefix(templatesDir, "/")
+		return "", err
 	}
 
 	var syncDir func(repoPath string) error
@@ -121,25 +134,18 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 	}
 
 	if err := syncDir(rootPath); err != nil {
-		return err
+		return "", err
 	}
 	templatePath := strings.TrimPrefix(path.Join(templatesDir, templateFile), "/")
 	if templatePath != "" {
-		body, err := readGiteaFileBytes(s.cfg, ref.Owner, ref.Repo, templatePath, ref.Branch)
-		if err != nil {
-			return fmt.Errorf("failed to read template %s: %w", templatePath, err)
+		if _, err := readGiteaFileBytes(s.cfg, ref.Owner, ref.Repo, templatePath, ref.Branch); err != nil {
+			return "", fmt.Errorf("failed to read template %s: %w", templatePath, err)
 		}
-		dest := path.Join(destRoot, "topology.yml")
-		writeCmd := fmt.Sprintf("cat > %q", dest)
-		if _, err := runSSHCommandWithInput(client, writeCmd, body, 15*time.Second); err != nil {
-			return err
-		}
-		_, _ = runSSHCommand(client, fmt.Sprintf("chmod 0644 %q >/dev/null 2>&1 || true", dest), 5*time.Second)
 	}
 	if owner != "" {
 		_, _ = runSSHCommand(client, fmt.Sprintf("chown -R %q:%q %q >/dev/null 2>&1 || true", owner, owner, workdir), 8*time.Second)
 	}
-	return nil
+	return topologyPath, nil
 }
 
 func resolveTemplateRepoForProject(cfg Config, pc *workspaceContext, source string, customRepo string) (templateRepoRef, error) {

@@ -85,6 +85,17 @@ func netlabCredentialForDevice(device, image string) (netlabDeviceCredential, bo
 			return netlabDeviceCredential{}, false
 		}
 	}
+	for _, cred := range netlabDefaults.Fallback {
+		if isValid(cred) {
+			return cred, true
+		}
+	}
+	if defaultNetlabDeviceUsername != "" && defaultNetlabDevicePassword != "" {
+		return netlabDeviceCredential{
+			Username: defaultNetlabDeviceUsername,
+			Password: defaultNetlabDevicePassword,
+		}, true
+	}
 	return netlabDeviceCredential{}, false
 }
 

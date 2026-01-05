@@ -559,7 +559,7 @@ type WorkspaceDeploymentStartRequest struct {
 }
 
 type WorkspaceDeploymentOpRequest struct {
-	Action string `json:"action,omitempty"` // create, start, stop, destroy
+	Action string `json:"action,omitempty"` // create, start, stop, destroy, export
 }
 
 // RunWorkspaceDeploymentAction runs a deployment operation with consistent UX verbs.
@@ -589,9 +589,9 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 		op = "start"
 	}
 	switch op {
-	case "create", "start", "stop", "destroy":
+	case "create", "start", "stop", "destroy", "export":
 	default:
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid deployment action (use create, start, stop, destroy)").Err()
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid deployment action (use create, start, stop, destroy, export)").Err()
 	}
 
 	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
@@ -602,6 +602,22 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 	cfgAny, _ := fromJSONMap(dep.Config)
 	if cfgAny == nil {
 		cfgAny = map[string]any{}
+	}
+	envMap, err := s.mergeDeploymentEnvironment(ctx, pc.workspace.ID, cfgAny)
+	if err != nil {
+		return nil, err
+	}
+	envJSON := JSONMap{}
+	if len(envMap) > 0 {
+		envAny := map[string]any{}
+		for k, v := range envMap {
+			envAny[k] = v
+		}
+		if converted, err := toJSONMap(envAny); err == nil {
+			envJSON = converted
+		} else {
+			return nil, errs.B().Code(errs.Internal).Msg("failed to encode environment overrides").Err()
+		}
 	}
 	infraCreated := false
 	if v, ok := cfgAny["infraCreated"].(bool); ok {
@@ -634,6 +650,7 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 				TemplateRepo:   templateRepo,
 				TemplatesDir:   templatesDir,
 				Template:       template,
+				DeploymentID:   dep.ID,
 			})
 		case "destroy":
 			run, err = s.RunWorkspaceTofuApply(ctx, id, &WorkspaceTofuApplyParams{
@@ -644,6 +661,7 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 				TemplateRepo:   templateRepo,
 				TemplatesDir:   templatesDir,
 				Template:       template,
+				DeploymentID:   dep.ID,
 			})
 		default:
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("unsupported tofu action (use create or destroy)").Err()
@@ -667,8 +685,8 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 		if strings.TrimSpace(template) == "" {
 			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab template is required").Err()
 		}
-		if (op == "start" || op == "stop") && !infraCreated {
-			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab deployment must be created before start/stop").Err()
+		if (op == "start" || op == "stop" || op == "export") && !infraCreated {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab deployment must be created before start/stop/export").Err()
 		}
 
 		netlabAction := "up"
@@ -680,6 +698,8 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 			netlabAction = "up"
 		case "stop":
 			netlabAction = "down"
+		case "export":
+			netlabAction = "clab-tarball"
 		case "destroy":
 			netlabAction = "down"
 			cleanup = true
@@ -688,11 +708,13 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 		run, err = s.RunWorkspaceNetlab(ctx, id, &WorkspaceNetlabRunRequest{
 			Message:          message,
 			GitBranch:        branch,
+			Environment:      envJSON,
 			Action:           netlabAction,
 			Cleanup:          cleanup,
 			NetlabServer:     netlabServer,
 			NetlabMultilabID: dep.ID,
 			NetlabDeployment: dep.Name,
+			ClabCleanup:      false,
 			TemplateSource:   strings.TrimSpace(templateSource),
 			TemplateRepo:     strings.TrimSpace(templateRepo),
 			TemplatesDir:     strings.TrimSpace(templatesDir),
@@ -736,6 +758,7 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 
 		run, err = s.RunWorkspaceLabpp(ctx, id, &WorkspaceLabppRunRequest{
 			Message:           strings.TrimSpace(fmt.Sprintf("Skyforge labpp run (%s)", pc.claims.Username)),
+			Environment:       envJSON,
 			Action:            labppAction,
 			EveServer:         eveServer,
 			Template:          strings.TrimSpace(template),
@@ -786,6 +809,7 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 
 		run, err = s.RunWorkspaceContainerlab(ctx, id, &WorkspaceContainerlabRunRequest{
 			Message:        strings.TrimSpace(fmt.Sprintf("Skyforge containerlab run (%s)", pc.claims.Username)),
+			Environment:    envJSON,
 			Action:         containerlabAction,
 			NetlabServer:   netlabServer,
 			TemplateSource: strings.TrimSpace(templateSource),
@@ -956,6 +980,8 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 	switch dep.Type {
 	case "netlab":
 		netlabServer := getString("netlabServer")
+		templatesDir := getString("templatesDir")
+		template := getString("template")
 		if netlabServer == "" {
 			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
 		}
@@ -983,6 +1009,9 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 			"multilabId":    strconv.Itoa(multilabNumericID),
 			"instance":      strconv.Itoa(multilabNumericID),
 			"stateRoot":     strings.TrimSpace(server.StateRoot),
+		}
+		if _, _, _, topologyPath := normalizeNetlabTemplateSelection(templatesDir, template); strings.TrimSpace(topologyPath) != "" {
+			payload["topologyPath"] = strings.TrimSpace(topologyPath)
 		}
 
 		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -1239,6 +1268,8 @@ func (s *Service) GetWorkspaceDeploymentNetlabGraph(ctx context.Context, id, dep
 	}
 
 	netlabServer := getString("netlabServer")
+	templatesDir := getString("templatesDir")
+	template := getString("template")
 	if netlabServer == "" {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
 	}
@@ -1264,6 +1295,9 @@ func (s *Service) GetWorkspaceDeploymentNetlabGraph(ctx context.Context, id, dep
 		"multilabId":    strconv.Itoa(multilabNumericID),
 		"instance":      strconv.Itoa(multilabNumericID),
 		"stateRoot":     strings.TrimSpace(server.StateRoot),
+	}
+	if _, _, _, topologyPath := normalizeNetlabTemplateSelection(templatesDir, template); strings.TrimSpace(topologyPath) != "" {
+		payload["topologyPath"] = strings.TrimSpace(topologyPath)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -1408,6 +1442,26 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 	if err != nil {
 		return nil, err
 	}
+	cfgAny, _ := fromJSONMap(dep.Config)
+	if cfgAny == nil {
+		cfgAny = map[string]any{}
+	}
+	envMap, err := s.mergeDeploymentEnvironment(ctx, pc.workspace.ID, cfgAny)
+	if err != nil {
+		return nil, err
+	}
+	envJSON := JSONMap{}
+	if len(envMap) > 0 {
+		envAny := map[string]any{}
+		for k, v := range envMap {
+			envAny[k] = v
+		}
+		if converted, err := toJSONMap(envAny); err == nil {
+			envJSON = converted
+		} else {
+			return nil, errs.B().Code(errs.Internal).Msg("failed to encode environment overrides").Err()
+		}
+	}
 	action := strings.ToLower(strings.TrimSpace(req.Action))
 	if action == "" {
 		action = "apply"
@@ -1420,12 +1474,11 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 
 	switch dep.Type {
 	case "tofu":
-		cfg, _ := fromJSONMap(dep.Config)
-		cloud, _ := cfg["cloud"].(string)
-		templateSource, _ := cfg["templateSource"].(string)
-		templateRepo, _ := cfg["templateRepo"].(string)
-		templatesDir, _ := cfg["templatesDir"].(string)
-		template, _ := cfg["template"].(string)
+		cloud, _ := cfgAny["cloud"].(string)
+		templateSource, _ := cfgAny["templateSource"].(string)
+		templateRepo, _ := cfgAny["templateRepo"].(string)
+		templatesDir, _ := cfgAny["templatesDir"].(string)
+		template, _ := cfgAny["template"].(string)
 		cloud = strings.ToLower(strings.TrimSpace(cloud))
 		if cloud == "" {
 			cloud = "aws"
@@ -1438,19 +1491,19 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 			TemplateRepo:   strings.TrimSpace(templateRepo),
 			TemplatesDir:   strings.TrimSpace(templatesDir),
 			Template:       strings.TrimSpace(template),
+			DeploymentID:   dep.ID,
 		})
 		if err != nil {
 			return nil, err
 		}
 	case "netlab":
-		cfg, _ := fromJSONMap(dep.Config)
-		branch, _ := cfg["gitBranch"].(string)
-		message, _ := cfg["message"].(string)
-		netlabServer, _ := cfg["netlabServer"].(string)
-		templateSource, _ := cfg["templateSource"].(string)
-		templateRepo, _ := cfg["templateRepo"].(string)
-		templatesDir, _ := cfg["templatesDir"].(string)
-		template, _ := cfg["template"].(string)
+		branch, _ := cfgAny["gitBranch"].(string)
+		message, _ := cfgAny["message"].(string)
+		netlabServer, _ := cfgAny["netlabServer"].(string)
+		templateSource, _ := cfgAny["templateSource"].(string)
+		templateRepo, _ := cfgAny["templateRepo"].(string)
+		templatesDir, _ := cfgAny["templatesDir"].(string)
+		template, _ := cfgAny["template"].(string)
 		netlabAction := "up"
 		cleanup := false
 		if mode == "destroy" {
@@ -1460,6 +1513,7 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 		run, err = s.RunWorkspaceNetlab(ctx, id, &WorkspaceNetlabRunRequest{
 			Message:          message,
 			GitBranch:        branch,
+			Environment:      envJSON,
 			Action:           netlabAction,
 			Cleanup:          cleanup,
 			NetlabServer:     strings.TrimSpace(netlabServer),
@@ -1474,15 +1528,14 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 			return nil, err
 		}
 	case "labpp":
-		cfg, _ := fromJSONMap(dep.Config)
-		template, _ := cfg["template"].(string)
-		eveServer, _ := cfg["eveServer"].(string)
-		templateSource, _ := cfg["templateSource"].(string)
-		templateRepo, _ := cfg["templateRepo"].(string)
-		templatesDir, _ := cfg["templatesDir"].(string)
-		templatesDestRoot, _ := cfg["templatesDestRoot"].(string)
-		labPath, _ := cfg["labPath"].(string)
-		threadCount, _ := cfg["threadCount"].(float64)
+		template, _ := cfgAny["template"].(string)
+		eveServer, _ := cfgAny["eveServer"].(string)
+		templateSource, _ := cfgAny["templateSource"].(string)
+		templateRepo, _ := cfgAny["templateRepo"].(string)
+		templatesDir, _ := cfgAny["templatesDir"].(string)
+		templatesDestRoot, _ := cfgAny["templatesDestRoot"].(string)
+		labPath, _ := cfgAny["labPath"].(string)
+		threadCount, _ := cfgAny["threadCount"].(float64)
 
 		labppAction := "e2e"
 		switch mode {
@@ -1494,6 +1547,7 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 
 		run, err = s.RunWorkspaceLabpp(ctx, id, &WorkspaceLabppRunRequest{
 			Message:           strings.TrimSpace(fmt.Sprintf("Skyforge labpp run (%s)", pc.claims.Username)),
+			Environment:       envJSON,
 			Action:            labppAction,
 			EveServer:         strings.TrimSpace(eveServer),
 			Template:          strings.TrimSpace(template),
@@ -1510,13 +1564,12 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 			return nil, err
 		}
 	case "containerlab":
-		cfg, _ := fromJSONMap(dep.Config)
-		netlabServer, _ := cfg["netlabServer"].(string)
-		templateSource, _ := cfg["templateSource"].(string)
-		templateRepo, _ := cfg["templateRepo"].(string)
-		templatesDir, _ := cfg["templatesDir"].(string)
-		template, _ := cfg["template"].(string)
-		labName, _ := cfg["labName"].(string)
+		netlabServer, _ := cfgAny["netlabServer"].(string)
+		templateSource, _ := cfgAny["templateSource"].(string)
+		templateRepo, _ := cfgAny["templateRepo"].(string)
+		templatesDir, _ := cfgAny["templatesDir"].(string)
+		template, _ := cfgAny["template"].(string)
+		labName, _ := cfgAny["labName"].(string)
 		containerlabAction := "deploy"
 		reconfigure := false
 		if mode == "destroy" {
@@ -1527,6 +1580,7 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 		}
 		run, err = s.RunWorkspaceContainerlab(ctx, id, &WorkspaceContainerlabRunRequest{
 			Message:        strings.TrimSpace(fmt.Sprintf("Skyforge containerlab run (%s)", pc.claims.Username)),
+			Environment:    envJSON,
 			Action:         containerlabAction,
 			NetlabServer:   strings.TrimSpace(netlabServer),
 			TemplateSource: strings.TrimSpace(templateSource),
@@ -1540,7 +1594,7 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 			return nil, err
 		}
 		if strings.TrimSpace(labName) == "" {
-			cfg["labName"] = containerlabLabName(pc.workspace.Slug, dep.Name)
+			cfgAny["labName"] = containerlabLabName(pc.workspace.Slug, dep.Name)
 		}
 	default:
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown deployment type").Err()

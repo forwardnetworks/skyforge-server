@@ -17,7 +17,7 @@ type LabsRunningParams struct {
 	Provider     string `query:"provider" encore:"optional"`
 	EveServer    string `query:"eve_server" encore:"optional"`
 	NetlabServer string `query:"netlab_server" encore:"optional"`
-	WorkspaceID    string `query:"workspace_id" encore:"optional"`
+	WorkspaceID  string `query:"workspace_id" encore:"optional"`
 }
 
 type LabsRunningResponse struct {
@@ -62,7 +62,7 @@ type NetlabServersResponse struct {
 
 type NetlabLabsParams struct {
 	Limit        string `query:"limit" encore:"optional"`
-	WorkspaceID    string `query:"workspace_id" encore:"optional"`
+	WorkspaceID  string `query:"workspace_id" encore:"optional"`
 	NetlabServer string `query:"netlab_server" encore:"optional"`
 }
 
@@ -74,7 +74,7 @@ type NetlabLabsResponse struct {
 }
 
 type NetlabLabParams struct {
-	WorkspaceID    string `query:"workspace_id" encore:"optional"`
+	WorkspaceID  string `query:"workspace_id" encore:"optional"`
 	NetlabServer string `query:"netlab_server" encore:"optional"`
 }
 
@@ -82,6 +82,17 @@ type NetlabLabResponse struct {
 	User   string  `json:"user"`
 	Runner string  `json:"runner"`
 	Lab    JSONMap `json:"lab"`
+}
+
+type NetlabDefaultsParams struct {
+	WorkspaceID  string `query:"workspace_id" encore:"optional"`
+	NetlabServer string `query:"netlab_server" encore:"optional"`
+}
+
+type NetlabDefaultsResponse struct {
+	User   string `json:"user"`
+	Runner string `json:"runner"`
+	Output string `json:"output"`
 }
 
 // GetLabsRunning returns running labs across providers (public).
@@ -263,6 +274,52 @@ func (s *Service) ListNetlabServers(ctx context.Context) (*NetlabServersResponse
 	return &NetlabServersResponse{
 		Servers: out,
 		User:    user.Username,
+	}, nil
+}
+
+// GetNetlabDefaults returns the current netlab defaults from a runner.
+//
+//encore:api auth method=GET path=/api/netlab/defaults
+func (s *Service) GetNetlabDefaults(ctx context.Context, params *NetlabDefaultsParams) (*NetlabDefaultsResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	serverName := ""
+	workspaceID := ""
+	if params != nil {
+		serverName = strings.TrimSpace(params.NetlabServer)
+		workspaceID = strings.TrimSpace(params.WorkspaceID)
+	}
+	if workspaceID != "" && serverName == "" {
+		if workspaces, err := s.workspaceStore.load(); err == nil {
+			if workspace := findWorkspaceByKey(workspaces, workspaceID); workspace != nil && strings.TrimSpace(workspace.NetlabServer) != "" {
+				serverName = strings.TrimSpace(workspace.NetlabServer)
+			}
+		}
+	}
+	server, resolvedName := resolveNetlabServer(s.cfg, serverName)
+	if server == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("netlab runner is not configured").Err()
+	}
+	netlabCfg := netlabConfigFromServer(*server, s.cfg.Netlab)
+	client, err := dialSSH(netlabCfg)
+	if err != nil {
+		log.Printf("netlab defaults ssh dial: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to reach netlab runner").Err()
+	}
+	defer client.Close()
+
+	output, err := runSSHCommand(client, "netlab show defaults", 15*time.Second)
+	if err != nil {
+		log.Printf("netlab defaults cmd: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to read netlab defaults").Err()
+	}
+
+	return &NetlabDefaultsResponse{
+		User:   user.Username,
+		Runner: resolvedName,
+		Output: strings.TrimSpace(output),
 	}, nil
 }
 

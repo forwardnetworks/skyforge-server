@@ -33,6 +33,7 @@ type WorkspaceTofuApplyParams struct {
 	TemplateRepo   string `query:"templateRepo" encore:"optional"`
 	TemplatesDir   string `query:"templatesDir" encore:"optional"`
 	Template       string `query:"template" encore:"optional"`
+	DeploymentID   string `query:"deployment_id" encore:"optional"`
 }
 
 // RunWorkspaceTofuPlan triggers a tofu plan run for a workspace.
@@ -92,7 +93,6 @@ func (s *Service) RunWorkspaceTofuPlan(ctx context.Context, id string) (*Workspa
 		return nil, err
 	}
 
-	envMap := env
 	{
 		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 		defer cancel()
@@ -118,6 +118,15 @@ func (s *Service) RunWorkspaceTofuPlan(ctx context.Context, id string) (*Workspa
 		cloud = "aws"
 	}
 
+	deploymentEnv, err := s.mergeDeploymentEnvironment(ctx, pc.workspace.ID, cfgAny)
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range deploymentEnv {
+		env[k] = v
+	}
+	envMap := env
+
 	meta, err := toJSONMap(map[string]any{
 		"deployment": dep.Name,
 		"cloud":      cloud,
@@ -132,8 +141,8 @@ func (s *Service) RunWorkspaceTofuPlan(ctx context.Context, id string) (*Workspa
 		return nil, err
 	}
 	spec := tofuRunSpec{
-		WorkspaceCtx:     pc,
-		WorkspaceSlug:    pc.workspace.Slug,
+		WorkspaceCtx:   pc,
+		WorkspaceSlug:  pc.workspace.Slug,
 		Username:       pc.claims.Username,
 		Cloud:          strings.ToLower(strings.TrimSpace(cloud)),
 		Action:         "plan",
@@ -154,8 +163,8 @@ func (s *Service) RunWorkspaceTofuPlan(ctx context.Context, id string) (*Workspa
 	}
 	return &WorkspaceRunResponse{
 		WorkspaceID: pc.workspace.ID,
-		Task:      taskJSON,
-		User:      pc.claims.Username,
+		Task:        taskJSON,
+		User:        pc.claims.Username,
 	}, nil
 }
 
@@ -184,6 +193,7 @@ func (s *Service) RunWorkspaceTofuApply(ctx context.Context, id string, params *
 	templateRepo := ""
 	templatesDir := ""
 	templateName := ""
+	deploymentID := ""
 	if params != nil {
 		confirm = strings.TrimSpace(params.Confirm)
 		if raw := strings.TrimSpace(params.Cloud); raw != "" {
@@ -198,6 +208,7 @@ func (s *Service) RunWorkspaceTofuApply(ctx context.Context, id string, params *
 		templateRepo = strings.TrimSpace(params.TemplateRepo)
 		templatesDir = strings.TrimSpace(params.TemplatesDir)
 		templateName = strings.TrimSpace(params.Template)
+		deploymentID = strings.TrimSpace(params.DeploymentID)
 	}
 	if !strings.EqualFold(confirm, "true") {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("apply requires ?confirm=true").Err()
@@ -261,6 +272,21 @@ func (s *Service) RunWorkspaceTofuApply(ctx context.Context, id string, params *
 		}
 	}
 
+	if deploymentID != "" {
+		dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+		if err != nil {
+			return nil, err
+		}
+		cfgAny, _ := fromJSONMap(dep.Config)
+		deploymentEnv, err := s.mergeDeploymentEnvironment(ctx, pc.workspace.ID, cfgAny)
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range deploymentEnv {
+			env[k] = v
+		}
+	}
+
 	envMap := env
 	{
 		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
@@ -291,8 +317,8 @@ func (s *Service) RunWorkspaceTofuApply(ctx context.Context, id string, params *
 		return nil, err
 	}
 	spec := tofuRunSpec{
-		WorkspaceCtx:     pc,
-		WorkspaceSlug:    pc.workspace.Slug,
+		WorkspaceCtx:   pc,
+		WorkspaceSlug:  pc.workspace.Slug,
 		Username:       pc.claims.Username,
 		Cloud:          strings.ToLower(strings.TrimSpace(cloud)),
 		Action:         action,
@@ -313,8 +339,8 @@ func (s *Service) RunWorkspaceTofuApply(ctx context.Context, id string, params *
 	}
 	return &WorkspaceRunResponse{
 		WorkspaceID: pc.workspace.ID,
-		Task:      taskJSON,
-		User:      pc.claims.Username,
+		Task:        taskJSON,
+		User:        pc.claims.Username,
 	}, nil
 }
 
@@ -328,20 +354,23 @@ func (s *Service) RunWorkspaceAnsible(ctx context.Context, id string) (*Workspac
 }
 
 type WorkspaceNetlabRunRequest struct {
-	Message          string  `json:"message,omitempty"`
-	GitBranch        string  `json:"gitBranch,omitempty"`
-	Environment      JSONMap `json:"environment,omitempty"`
-	Action           string  `json:"action,omitempty"`  // up, create, restart, collect, status, down
-	Cleanup          bool    `json:"cleanup,omitempty"` // for down/restart, remove workdir when true
-	NetlabServer     string  `json:"netlabServer,omitempty"`
-	NetlabPassword   string  `json:"netlabPassword,omitempty"`
+	Message            string  `json:"message,omitempty"`
+	GitBranch          string  `json:"gitBranch,omitempty"`
+	Environment        JSONMap `json:"environment,omitempty"`
+	Action             string  `json:"action,omitempty"`  // up, create, restart, collect, status, down, clab-tarball
+	Cleanup            bool    `json:"cleanup,omitempty"` // for down/restart, remove workdir when true
+	NetlabServer       string  `json:"netlabServer,omitempty"`
+	NetlabPassword     string  `json:"netlabPassword,omitempty"`
 	NetlabWorkspaceDir string  `json:"netlabWorkspaceDir,omitempty"`
-	NetlabMultilabID string  `json:"netlabMultilabId,omitempty"`
-	NetlabDeployment string  `json:"netlabDeployment,omitempty"`
-	TemplateSource   string  `json:"templateSource,omitempty"` // workspace (default), blueprints, or custom
-	TemplateRepo     string  `json:"templateRepo,omitempty"`   // owner/repo or URL (custom only)
-	TemplatesDir     string  `json:"templatesDir,omitempty"`   // repo-relative directory (default: blueprints/netlab)
-	Template         string  `json:"template,omitempty"`       // filename (e.g. spine-leaf.yml)
+	NetlabMultilabID   string  `json:"netlabMultilabId,omitempty"`
+	NetlabDeployment   string  `json:"netlabDeployment,omitempty"`
+	TemplateSource     string  `json:"templateSource,omitempty"` // workspace (default), blueprints, or custom
+	TemplateRepo       string  `json:"templateRepo,omitempty"`   // owner/repo or URL (custom only)
+	TemplatesDir       string  `json:"templatesDir,omitempty"`   // repo-relative directory (default: blueprints/netlab)
+	Template           string  `json:"template,omitempty"`       // filename (e.g. spine-leaf.yml)
+	ClabTarball        string  `json:"clabTarball,omitempty"`
+	ClabConfigDir      string  `json:"clabConfigDir,omitempty"`
+	ClabCleanup        bool    `json:"clabCleanup,omitempty"`
 }
 
 type WorkspaceLabppRunRequest struct {
@@ -413,9 +442,9 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 		action = "up"
 	}
 	switch action {
-	case "up", "create", "restart", "collect", "status", "down":
+	case "up", "create", "restart", "collect", "status", "down", "clab-tarball":
 	default:
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid netlab action (use up, create, restart, collect, status, down)").Err()
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid netlab action (use up, create, restart, collect, status, down, clab-tarball)").Err()
 	}
 
 	multilabID := strings.TrimSpace(req.NetlabMultilabID)
@@ -447,6 +476,10 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 	workspaceDir := strings.TrimSpace(req.NetlabWorkspaceDir)
 	if workspaceDir == "" {
 		workspaceDir = fmt.Sprintf("%s/%s/%s", workspaceRoot, strings.TrimSpace(pc.workspace.Slug), deploymentName)
+	}
+	clabTarball := strings.TrimSpace(req.ClabTarball)
+	if action == "clab-tarball" && clabTarball == "" {
+		clabTarball = fmt.Sprintf("containerlab-%s.tar.gz", deploymentName)
 	}
 
 	message := strings.TrimSpace(req.Message)
@@ -484,10 +517,13 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 	if err != nil {
 		return nil, err
 	}
+	envAny, _ := fromJSONMap(req.Environment)
+	envMap := parseEnvMap(envAny)
 	spec := netlabRunSpec{
-		WorkspaceCtx:      pc,
-		WorkspaceSlug:     pc.workspace.Slug,
+		WorkspaceCtx:    pc,
+		WorkspaceSlug:   pc.workspace.Slug,
 		Username:        strings.TrimSpace(pc.claims.Username),
+		Environment:     envMap,
 		Action:          action,
 		Deployment:      deploymentName,
 		WorkspaceRoot:   workspaceRoot,
@@ -495,11 +531,14 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 		TemplateRepo:    strings.TrimSpace(req.TemplateRepo),
 		TemplatesDir:    strings.TrimSpace(req.TemplatesDir),
 		Template:        strings.TrimSpace(req.Template),
-		WorkspaceDir:     workspaceDir,
+		WorkspaceDir:    workspaceDir,
 		MultilabNumeric: multilabNumericID,
 		StateRoot:       strings.TrimSpace(server.StateRoot),
 		Cleanup:         req.Cleanup,
 		Server:          *server,
+		ClabTarball:     clabTarball,
+		ClabConfigDir:   strings.TrimSpace(req.ClabConfigDir),
+		ClabCleanup:     req.ClabCleanup,
 	}
 	s.queueTask(task, func(ctx context.Context, log *taskLogger) error {
 		return s.runNetlabTask(ctx, spec, log)
@@ -512,8 +551,8 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 	}
 	return &WorkspaceRunResponse{
 		WorkspaceID: pc.workspace.ID,
-		Task:      taskJSON,
-		User:      pc.claims.Username,
+		Task:        taskJSON,
+		User:        pc.claims.Username,
 	}, nil
 }
 
@@ -681,12 +720,15 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 	if err != nil {
 		return nil, err
 	}
+	envAny, _ := fromJSONMap(req.Environment)
+	envMap := parseEnvMap(envAny)
 	spec := labppRunSpec{
 		APIURL:        apiURL,
 		Insecure:      apiInsecure,
 		Action:        action,
-		WorkspaceSlug:   strings.TrimSpace(pc.workspace.Slug),
+		WorkspaceSlug: strings.TrimSpace(pc.workspace.Slug),
 		Deployment:    deployment,
+		Environment:   envMap,
 		TemplatesRoot: templatesRoot,
 		Template:      template,
 		LabPath:       labPath,
@@ -707,8 +749,8 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 	}
 	return &WorkspaceRunResponse{
 		WorkspaceID: pc.workspace.ID,
-		Task:      taskJSON,
-		User:      pc.claims.Username,
+		Task:        taskJSON,
+		User:        pc.claims.Username,
 	}, nil
 }
 
@@ -859,11 +901,14 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 			return nil, errs.B().Code(errs.Internal).Msg("failed to decode topology").Err()
 		}
 	}
+	envAny, _ := fromJSONMap(req.Environment)
+	envMap := parseEnvMap(envAny)
 	spec := containerlabRunSpec{
 		APIURL:      apiURL,
 		Token:       token,
 		Action:      action,
 		LabName:     labName,
+		Environment: envMap,
 		Topology:    topo,
 		Reconfigure: reconfigure,
 		SkipTLS:     containerlabSkipTLS(s.cfg, *server),
@@ -879,8 +924,8 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 	}
 	return &WorkspaceRunResponse{
 		WorkspaceID: pc.workspace.ID,
-		Task:      taskJSON,
-		User:      pc.claims.Username,
+		Task:        taskJSON,
+		User:        pc.claims.Username,
 	}, nil
 }
 
