@@ -414,6 +414,9 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		spec.Template,
 	)
 	log.Infof("LabPP payload preview: %s", labppPayloadPreview(payload))
+	if payloadJSON, err := json.Marshal(payload); err == nil {
+		stdlog.Printf("labpp payload json: %s", payloadJSON)
+	}
 	log.Infof("Starting labpp job (%s)", spec.Action)
 	resp, body, err := labppAPIDo(ctx, spec.APIURL+"/jobs", payload, spec.Insecure)
 	if err != nil {
