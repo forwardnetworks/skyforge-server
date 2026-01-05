@@ -378,6 +378,7 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		"workspace":     spec.WorkspaceSlug,
 		"deployment":    spec.Deployment,
 		"templatesRoot": spec.TemplatesRoot,
+		"templates_root": spec.TemplatesRoot,
 		"template":      spec.Template,
 		"eve": map[string]any{
 			"url":      spec.EveURL,
@@ -397,6 +398,7 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		if templatesRoot == "" {
 			templatesRoot = "/var/lib/skyforge/labpp-templates"
 			payload["templatesRoot"] = templatesRoot
+			payload["templates_root"] = templatesRoot
 		}
 		templateDir := path.Join(templatesRoot, spec.Template)
 		if _, ok := payload["labDir"]; !ok {
