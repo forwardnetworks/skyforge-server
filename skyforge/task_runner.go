@@ -363,6 +363,14 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		payload["threadCount"] = spec.ThreadCount
 	}
 
+	log.Infof(
+		"LabPP payload context: action=%s labPath=%s labDir=%s templatesRoot=%s template=%s",
+		spec.Action,
+		spec.LabPath,
+		path.Dir(spec.LabPath),
+		spec.TemplatesRoot,
+		spec.Template,
+	)
 	log.Infof("Starting labpp job (%s)", spec.Action)
 	resp, body, err := labppAPIDo(ctx, spec.APIURL+"/jobs", payload, spec.Insecure)
 	if err != nil {
