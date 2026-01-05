@@ -359,6 +359,17 @@ func labppPayloadPreview(payload map[string]any) string {
 }
 
 func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *taskLogger) error {
+	project := strings.TrimSpace(spec.WorkspaceSlug)
+	if project == "" {
+		project = strings.TrimSpace(spec.Username)
+	}
+	if project == "" {
+		project = "default"
+	}
+	deployment := strings.TrimSpace(spec.Deployment)
+	if deployment == "" {
+		deployment = strings.TrimSpace(spec.Template)
+	}
 	labPath := strings.TrimSpace(spec.LabPath)
 	if labPath == "" && strings.TrimSpace(spec.Username) != "" && strings.TrimSpace(spec.Template) != "" {
 		labPath = fmt.Sprintf(
@@ -374,9 +385,9 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 	}
 	payload := map[string]any{
 		"action":        strings.ToUpper(spec.Action),
-		"project":       spec.WorkspaceSlug,
-		"workspace":     spec.WorkspaceSlug,
-		"deployment":    spec.Deployment,
+		"project":       project,
+		"workspace":     project,
+		"deployment":    deployment,
 		"templatesRoot": spec.TemplatesRoot,
 		"templates_root": spec.TemplatesRoot,
 		"template":      spec.Template,
@@ -429,6 +440,7 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		spec.TemplatesRoot,
 		spec.Template,
 	)
+	log.Infof("LabPP payload fields: project=%s deployment=%s template=%s templatesRoot=%s", project, deployment, spec.Template, spec.TemplatesRoot)
 	log.Infof("LabPP payload preview: %s", labppPayloadPreview(payload))
 	if payloadJSON, err := json.Marshal(payload); err == nil {
 		stdlog.Printf("labpp payload json: %s", payloadJSON)
