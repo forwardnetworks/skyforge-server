@@ -414,6 +414,13 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		payload["lab_dir"] = labDir
 		payload["labdir"] = labDir
 	}
+	if labDir != "" || labPath != "" {
+		payload["lab"] = map[string]any{
+			"dir":  labDir,
+			"path": labPath,
+			"name": path.Base(labPath),
+		}
+	}
 	if strings.TrimSpace(spec.Template) != "" {
 		templatesRoot := strings.TrimSpace(spec.TemplatesRoot)
 		if templatesRoot == "" {
