@@ -383,9 +383,17 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 	if labPath != "" {
 		labPath = "/" + strings.TrimPrefix(labPath, "/")
 	}
+	labDir := ""
+	if labPath != "" {
+		labDir = path.Dir(labPath)
+		if labDir == "." {
+			labDir = ""
+		}
+	}
 	payload := map[string]any{
 		"action":        strings.ToUpper(spec.Action),
 		"project":       project,
+		"workspace":     project,
 		"deployment":    deployment,
 		"templatesRoot": spec.TemplatesRoot,
 		"templates_root": spec.TemplatesRoot,
@@ -400,6 +408,10 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		payload["labPath"] = labPath
 		payload["lab_path"] = labPath
 	}
+	if labDir != "" {
+		payload["labDir"] = labDir
+		payload["lab_dir"] = labDir
+	}
 	if strings.TrimSpace(spec.Template) != "" {
 		templatesRoot := strings.TrimSpace(spec.TemplatesRoot)
 		if templatesRoot == "" {
@@ -413,16 +425,18 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 	}
 
 	stdlog.Printf(
-		"labpp payload context: action=%s labPath=%s templatesRoot=%s template=%s",
+		"labpp payload context: action=%s labPath=%s labDir=%s templatesRoot=%s template=%s",
 		spec.Action,
 		labPath,
+		labDir,
 		spec.TemplatesRoot,
 		spec.Template,
 	)
 	log.Infof(
-		"LabPP payload context: action=%s labPath=%s templatesRoot=%s template=%s",
+		"LabPP payload context: action=%s labPath=%s labDir=%s templatesRoot=%s template=%s",
 		spec.Action,
 		labPath,
+		labDir,
 		spec.TemplatesRoot,
 		spec.Template,
 	)
