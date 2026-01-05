@@ -9,7 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	stdlog "log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -40,7 +40,7 @@ func (s *Service) queueTask(task *TaskRecord, runner func(ctx context.Context, l
 	go func() {
 		ctx := context.Background()
 		if err := markTaskStarted(ctx, s.db, task.ID); err != nil {
-			log.Printf("task start update failed: %v", err)
+			stdlog.Printf("task start update failed: %v", err)
 		}
 		logger := &taskLogger{svc: s, taskID: task.ID}
 		err := runner(ctx, logger)
@@ -52,12 +52,12 @@ func (s *Service) queueTask(task *TaskRecord, runner func(ctx context.Context, l
 			logger.Errorf("ERROR: %s", errMsg)
 		}
 		if err := finishTask(ctx, s.db, task.ID, status, errMsg); err != nil {
-			log.Printf("task finish update failed: %v", err)
+			stdlog.Printf("task finish update failed: %v", err)
 		}
 		if task.DeploymentID.Valid {
 			finishedAt := time.Now().UTC()
 			if err := s.updateDeploymentStatus(ctx, task.WorkspaceID, task.DeploymentID.String, status, &finishedAt); err != nil {
-				log.Printf("deployment status update failed: %v", err)
+				stdlog.Printf("deployment status update failed: %v", err)
 			}
 		}
 	}()
@@ -372,6 +372,15 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		payload["threadCount"] = spec.ThreadCount
 	}
 
+	stdlog.Printf(
+		"labpp payload context: action=%s labPath=%s labDir=%s templatesRoot=%s template=%s templateDir=%s",
+		spec.Action,
+		spec.LabPath,
+		path.Dir(spec.LabPath),
+		spec.TemplatesRoot,
+		spec.Template,
+		path.Join(spec.TemplatesRoot, spec.Template),
+	)
 	log.Infof(
 		"LabPP payload context: action=%s labPath=%s labDir=%s templatesRoot=%s template=%s",
 		spec.Action,
