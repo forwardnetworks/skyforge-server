@@ -151,15 +151,11 @@ func kubePatchDeploymentReplicas(ctx context.Context, name string, replicas int3
 }
 
 func toolDefinitions() []ToolServiceStatus {
-	return []ToolServiceStatus{
-		{ID: "vscode", Label: "VS Code", Mode: "personal"},
-	}
+	return []ToolServiceStatus{}
 }
 
 func deploymentNameForTool(id string) (string, bool) {
 	switch id {
-	case "vscode":
-		return "code-server", true
 	default:
 		return "", false
 	}

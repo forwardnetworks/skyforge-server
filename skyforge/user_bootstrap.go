@@ -141,7 +141,7 @@ func ensureUserHomeWorkspace(cfg Config, username string) error {
 	if !isValidUsername(username) {
 		return fmt.Errorf("invalid username")
 	}
-	base := filepath.Join("/home/openvscode-server/workspace/users", username)
+	base := filepath.Join(cfg.Workspaces.DataDir, "users", username)
 	home := filepath.Join(base, "home")
 	filesDir := filepath.Join(home, "files")
 	anonymousDir := filepath.Join(home, "anonymous")
@@ -165,7 +165,7 @@ func ensureUserHomeWorkspace(cfg Config, username string) error {
 	}
 	content := fmt.Sprintf(
 		"# Skyforge Workspace (user: %s)\n\n"+
-			"This folder is your personal \"home\" inside Skyforge's VS Code.\n\n"+
+			"This folder is your personal \"home\" inside Skyforge's Coder workspace.\n\n"+
 			"## Git\n"+
 			"- Use this directory for your own clones and branches.\n"+
 			"- Skyforge may also sync workspace repos elsewhere in the workspace as a read-only mirror.\n\n"+
@@ -180,7 +180,7 @@ func ensureUserHomeWorkspace(cfg Config, username string) error {
 			"  mc ls skyforge/skyforge-files/files/users/%s/\n"+
 			"  mc cp skyforge/skyforge-files/files/users/%s/file.txt ./s3/\n\n"+
 			"Notes:\n"+
-			"- Files from S3 are mirrored into /workspace/users/%s/s3 (download-only).\n"+
+			"- Files from S3 are mirrored into /var/lib/skyforge/users/%s/s3 (download-only).\n"+
 			"- Do not edit files inside the mirror; upload to S3 instead.\n"+
 			"- Anonymous file drop lands in the same bucket; place shared artifacts under \"anonymous/\" or \"files/\" as needed.\n",
 		username,
@@ -218,7 +218,7 @@ func ensureLabCatalogRepos(cfg Config) error {
 }
 
 func ensureUserLabWorkspace(ctx context.Context, cfg Config, username string) error {
-	base := filepath.Join("/home/openvscode-server/workspace/users", username, "labs")
+	base := filepath.Join(cfg.Workspaces.DataDir, "users", username, "labs")
 	if err := os.MkdirAll(base, 0o755); err != nil {
 		return err
 	}
