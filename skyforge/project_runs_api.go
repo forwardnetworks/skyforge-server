@@ -141,6 +141,7 @@ func (s *Service) RunWorkspaceTofuPlan(ctx context.Context, id string) (*Workspa
 		return nil, err
 	}
 	spec := tofuRunSpec{
+		TaskID:         task.ID,
 		WorkspaceCtx:   pc,
 		WorkspaceSlug:  pc.workspace.Slug,
 		Username:       pc.claims.Username,
@@ -317,6 +318,7 @@ func (s *Service) RunWorkspaceTofuApply(ctx context.Context, id string, params *
 		return nil, err
 	}
 	spec := tofuRunSpec{
+		TaskID:         task.ID,
 		WorkspaceCtx:   pc,
 		WorkspaceSlug:  pc.workspace.Slug,
 		Username:       pc.claims.Username,
@@ -388,6 +390,7 @@ type WorkspaceLabppRunRequest struct {
 	LabPath           string  `json:"labPath,omitempty"`
 	ThreadCount       int     `json:"threadCount,omitempty"`
 	Deployment        string  `json:"deployment,omitempty"`
+	DeploymentID      string  `json:"deploymentId,omitempty"`
 }
 
 type WorkspaceContainerlabRunRequest struct {
@@ -513,13 +516,20 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 		log.Printf("netlab meta encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode metadata").Err()
 	}
-	task, err := createTask(ctx, s.db, pc.workspace.ID, nil, "netlab-run", message, pc.claims.Username, meta)
+	allowActive := action == "down"
+	var task *TaskRecord
+	if allowActive {
+		task, err = createTaskAllowActive(ctx, s.db, pc.workspace.ID, nil, "netlab-run", message, pc.claims.Username, meta)
+	} else {
+		task, err = createTask(ctx, s.db, pc.workspace.ID, nil, "netlab-run", message, pc.claims.Username, meta)
+	}
 	if err != nil {
 		return nil, err
 	}
 	envAny, _ := fromJSONMap(req.Environment)
 	envMap := parseEnvMap(envAny)
 	spec := netlabRunSpec{
+		TaskID:          task.ID,
 		WorkspaceCtx:    pc,
 		WorkspaceSlug:   pc.workspace.Slug,
 		Username:        strings.TrimSpace(pc.claims.Username),
@@ -633,11 +643,7 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 	}
 
 	// The LabPP API uses this to parallelize per-node setup/configuration.
-	// Default to 1 to reduce load and avoid brittle console races on slower labs.
 	threadCount := req.ThreadCount
-	if threadCount <= 0 && (action == "e2e" || action == "start" || action == "configure") {
-		threadCount = 1
-	}
 
 	deployment := strings.TrimSpace(req.Deployment)
 	if deployment == "" {
@@ -648,41 +654,46 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 	if template == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("template is required").Err()
 	}
-	if templatesRoot == "" {
-		destRoot := strings.TrimSpace(req.TemplatesDestRoot)
-		source := strings.TrimSpace(req.TemplateSource)
-		repo := strings.TrimSpace(req.TemplateRepo)
-		dir := strings.TrimSpace(req.TemplatesDir)
-		if source == "" {
-			source = "workspace"
-		}
-		syncedRoot, err := s.syncLabppTemplateDir(ctx, pc, eveServer, source, repo, dir, template, destRoot)
-		if err != nil {
-			log.Printf("labpp template sync: %v", err)
-			return nil, errs.B().Code(errs.Unavailable).Msg("failed to sync labpp template").Err()
-		}
-		templatesRoot = strings.TrimSpace(syncedRoot)
+	destRoot := strings.TrimSpace(req.TemplatesDestRoot)
+	if destRoot == "" {
+		destRoot = templatesRoot
 	}
+	source := strings.TrimSpace(req.TemplateSource)
+	repo := strings.TrimSpace(req.TemplateRepo)
+	dir := strings.TrimSpace(req.TemplatesDir)
+	if source == "" {
+		source = "blueprints"
+	}
+	syncedRoot, err := s.syncLabppTemplateDir(ctx, pc, eveServer, source, repo, dir, template, destRoot)
+	if err != nil {
+		log.Printf("labpp template sync: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to sync labpp template").Err()
+	}
+	templatesRoot = strings.TrimSpace(syncedRoot)
 	labPath := strings.TrimSpace(req.LabPath)
+	if labPath == "" && strings.TrimSpace(req.DeploymentID) != "" {
+		if dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, strings.TrimSpace(req.DeploymentID)); err == nil && dep != nil {
+			if raw, ok := dep.Config["labPath"]; ok {
+				var v string
+				if err := json.Unmarshal(raw, &v); err == nil {
+					labPath = strings.TrimSpace(v)
+				}
+			}
+		}
+	}
 	if labPath == "" {
-		// Keep LabPP labs in a deterministic, per-deployment folder to avoid collisions
-		// when the same template is used multiple times.
-		// Note: the LabPP API decides the final lab filename; we still include the template
-		// in the path so "folder + filename" stays unique and predictable across actions.
-		//
-		// The LabPP API normalizes the lab filename (e.g. replacing '-' with '_'), so
-		// match that behavior to keep Skyforge's EVE-NG links stable.
+		stamp := time.Now().UTC().Format("20060102-1504")
 		labPath = fmt.Sprintf(
-			"/Users/%s/%s/%s/%s.unl",
-			pc.claims.Username,
-			pc.workspace.Slug,
-			deployment,
+			"/%s-%s/%s.unl",
+			labppSafeFilename.ReplaceAllString(deployment, "-"),
+			stamp,
 			labppLabFilename(template),
 		)
 	}
 	if labPath != "" {
 		labPath = "/" + strings.TrimPrefix(labPath, "/")
 	}
+	log.Printf("labpp run config: template=%s templatesRoot=%s labPath=%s action=%s", template, templatesRoot, labPath, action)
 
 	message := strings.TrimSpace(req.Message)
 	if message == "" {
@@ -716,13 +727,23 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 		log.Printf("labpp meta encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode metadata").Err()
 	}
-	task, err := createTask(ctx, s.db, pc.workspace.ID, nil, "labpp-run", message, pc.claims.Username, meta)
+	deploymentID := strings.TrimSpace(req.DeploymentID)
+	allowActive := action == "stop" || action == "delete"
+	var task *TaskRecord
+	if allowActive {
+		task, err = createTaskAllowActive(ctx, s.db, pc.workspace.ID, &deploymentID, "labpp-run", message, pc.claims.Username, meta)
+	} else {
+		task, err = createTask(ctx, s.db, pc.workspace.ID, &deploymentID, "labpp-run", message, pc.claims.Username, meta)
+	}
 	if err != nil {
 		return nil, err
 	}
 	envAny, _ := fromJSONMap(req.Environment)
 	envMap := parseEnvMap(envAny)
 	spec := labppRunSpec{
+		TaskID:        task.ID,
+		WorkspaceCtx:  pc,
+		DeploymentID:  deploymentID,
 		APIURL:        apiURL,
 		Insecure:      apiInsecure,
 		Action:        action,
@@ -738,6 +759,7 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 		EveUsername:   eveUsername,
 		EvePassword:   evePassword,
 		MaxSeconds:    1200,
+		Metadata:      meta,
 	}
 	s.queueTask(task, func(ctx context.Context, log *taskLogger) error {
 		return s.runLabppTask(ctx, spec, log)
@@ -892,7 +914,13 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 		log.Printf("containerlab meta encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode metadata").Err()
 	}
-	task, err := createTask(ctx, s.db, pc.workspace.ID, nil, "containerlab-run", message, pc.claims.Username, meta)
+	allowActive := action == "destroy"
+	var task *TaskRecord
+	if allowActive {
+		task, err = createTaskAllowActive(ctx, s.db, pc.workspace.ID, nil, "containerlab-run", message, pc.claims.Username, meta)
+	} else {
+		task, err = createTask(ctx, s.db, pc.workspace.ID, nil, "containerlab-run", message, pc.claims.Username, meta)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -905,6 +933,7 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 	envAny, _ := fromJSONMap(req.Environment)
 	envMap := parseEnvMap(envAny)
 	spec := containerlabRunSpec{
+		TaskID:      task.ID,
 		APIURL:      apiURL,
 		Token:       token,
 		Action:      action,

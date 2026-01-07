@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -240,6 +241,9 @@ func forwardDeleteNetwork(ctx context.Context, c *forwardClient, networkID strin
 	if err != nil {
 		return err
 	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("forward delete network failed: %s", strings.TrimSpace(string(body)))
 	}
@@ -247,9 +251,17 @@ func forwardDeleteNetwork(ctx context.Context, c *forwardClient, networkID strin
 }
 
 func forwardCreateCliCredential(ctx context.Context, c *forwardClient, networkID string, username string, password string) (*forwardCliCredential, error) {
+	return forwardCreateCliCredentialNamed(ctx, c, networkID, "", username, password)
+}
+
+func forwardCreateCliCredentialNamed(ctx context.Context, c *forwardClient, networkID string, name string, username string, password string) (*forwardCliCredential, error) {
+	credentialName := strings.TrimSpace(name)
+	if credentialName == "" {
+		credentialName = fmt.Sprintf("Skyforge default (%s) %d", strings.TrimSpace(username), time.Now().UTC().UnixNano())
+	}
 	payload := map[string]any{
 		"type":          "LOGIN",
-		"name":          fmt.Sprintf("Skyforge default (%s)", strings.TrimSpace(username)),
+		"name":          credentialName,
 		"username":      strings.TrimSpace(username),
 		"password":      strings.TrimSpace(password),
 		"autoAssociate": true,
@@ -259,7 +271,11 @@ func forwardCreateCliCredential(ctx context.Context, c *forwardClient, networkID
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("forward create cli credential failed: %s", strings.TrimSpace(string(body)))
+		bodyText := strings.TrimSpace(string(body))
+		if id := parseForwardCredentialID(bodyText); id != "" {
+			return &forwardCliCredential{ID: id}, nil
+		}
+		return nil, fmt.Errorf("forward create cli credential failed: %s", bodyText)
 	}
 	var out forwardCliCredential
 	if err := json.Unmarshal(body, &out); err != nil {
@@ -269,6 +285,16 @@ func forwardCreateCliCredential(ctx context.Context, c *forwardClient, networkID
 		return nil, fmt.Errorf("forward cli credential returned empty id")
 	}
 	return &out, nil
+}
+
+func parseForwardCredentialID(body string) string {
+	if body == "" {
+		return ""
+	}
+	if match := regexp.MustCompile(`credential\s+(L-\d+)`).FindStringSubmatch(body); len(match) > 1 {
+		return match[1]
+	}
+	return ""
 }
 
 func forwardCreateJumpServer(ctx context.Context, c *forwardClient, networkID string, host string, username string, privateKey string, cert string) (*forwardJumpServer, error) {

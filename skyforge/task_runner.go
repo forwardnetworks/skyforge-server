@@ -3,6 +3,7 @@ package skyforge
 import (
 	"archive/zip"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
@@ -20,6 +21,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
 	"encore.app/storage"
 )
 
@@ -34,6 +37,79 @@ func (l *taskLogger) Infof(format string, args ...any) {
 
 func (l *taskLogger) Errorf(format string, args ...any) {
 	_ = appendTaskLog(context.Background(), l.svc.db, l.taskID, "stderr", fmt.Sprintf(format, args...))
+}
+
+func (s *Service) taskCanceled(ctx context.Context, taskID int) (bool, map[string]any) {
+	if taskID <= 0 || s.db == nil {
+		return false, nil
+	}
+	rec, err := getTask(ctx, s.db, taskID)
+	if err != nil || rec == nil {
+		return false, nil
+	}
+	meta, _ := fromJSONMap(rec.Metadata)
+	if strings.EqualFold(rec.Status, "canceled") {
+		return true, meta
+	}
+	return false, meta
+}
+
+func labppMetaString(meta map[string]any, key string) string {
+	if meta == nil {
+		return ""
+	}
+	raw, ok := meta[key]
+	if !ok {
+		return ""
+	}
+	if v, ok := raw.(string); ok {
+		return strings.TrimSpace(v)
+	}
+	return strings.TrimSpace(fmt.Sprintf("%v", raw))
+}
+
+func (s *Service) cancelLabppJob(ctx context.Context, apiURL, jobID string, insecure bool, log *taskLogger) {
+	if strings.TrimSpace(jobID) == "" {
+		return
+	}
+	ctxReq, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	resp, body, err := labppAPICancel(ctxReq, fmt.Sprintf("%s/jobs/%s/cancel", strings.TrimRight(apiURL, "/"), jobID), insecure)
+	if err != nil {
+		log.Errorf("LabPP cancel failed: %v", err)
+		return
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		log.Infof("LabPP cancel: job not found (treated as canceled).")
+		return
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		log.Errorf("LabPP cancel rejected: %s", strings.TrimSpace(string(body)))
+		return
+	}
+	log.Infof("LabPP cancel requested for job %s", jobID)
+}
+
+func (s *Service) cancelNetlabJob(ctx context.Context, apiURL, jobID string, log *taskLogger) {
+	if strings.TrimSpace(jobID) == "" {
+		return
+	}
+	ctxReq, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	resp, body, err := netlabAPIDo(ctxReq, fmt.Sprintf("%s/jobs/%s/cancel", strings.TrimRight(apiURL, "/"), jobID), nil)
+	if err != nil {
+		log.Errorf("Netlab cancel failed: %v", err)
+		return
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		log.Infof("Netlab cancel: job not found (treated as canceled).")
+		return
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		log.Errorf("Netlab cancel rejected: %s", strings.TrimSpace(string(body)))
+		return
+	}
+	log.Infof("Netlab cancel requested for job %s", jobID)
 }
 
 func (s *Service) queueTask(task *TaskRecord, runner func(ctx context.Context, log *taskLogger) error) {
@@ -51,8 +127,14 @@ func (s *Service) queueTask(task *TaskRecord, runner func(ctx context.Context, l
 			errMsg = err.Error()
 			logger.Errorf("ERROR: %s", errMsg)
 		}
-		if err := finishTask(ctx, s.db, task.ID, status, errMsg); err != nil {
-			stdlog.Printf("task finish update failed: %v", err)
+		if rec, recErr := getTask(ctx, s.db, task.ID); recErr == nil && rec != nil && strings.EqualFold(rec.Status, "canceled") {
+			status = "canceled"
+			errMsg = ""
+		}
+		if status != "canceled" {
+			if err := finishTask(ctx, s.db, task.ID, status, errMsg); err != nil {
+				stdlog.Printf("task finish update failed: %v", err)
+			}
 		}
 		if task.DeploymentID.Valid {
 			finishedAt := time.Now().UTC()
@@ -64,6 +146,7 @@ func (s *Service) queueTask(task *TaskRecord, runner func(ctx context.Context, l
 }
 
 type netlabRunSpec struct {
+	TaskID          int
 	WorkspaceCtx    *workspaceContext
 	WorkspaceSlug   string
 	Username        string
@@ -144,10 +227,30 @@ func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *ta
 	if err := json.Unmarshal(body, &job); err != nil || strings.TrimSpace(job.ID) == "" {
 		return fmt.Errorf("netlab API returned invalid response")
 	}
+	if spec.TaskID > 0 {
+		metaAny := map[string]any{"netlabJobId": job.ID}
+		metaJSON, err := toJSONMap(metaAny)
+		if err != nil {
+			stdlog.Printf("netlab metadata encode: %v", err)
+		} else {
+			metaCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			if err := updateTaskMetadata(metaCtx, s.db, spec.TaskID, metaJSON); err != nil {
+				stdlog.Printf("netlab metadata update: %v", err)
+			}
+			cancel()
+		}
+	}
 
 	lastLog := ""
 	deadline := time.Now().Add(30 * time.Minute)
 	for {
+		if spec.TaskID > 0 {
+			canceled, _ := s.taskCanceled(ctx, spec.TaskID)
+			if canceled {
+				s.cancelNetlabJob(ctx, apiURL, job.ID, log)
+				return fmt.Errorf("netlab job canceled")
+			}
+		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("netlab job timed out")
 		}
@@ -176,8 +279,16 @@ func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *ta
 		}
 		if state == "success" || state == "failed" || state == "canceled" {
 			if state != "success" {
-				if job.Error != nil && strings.TrimSpace(*job.Error) != "" {
-					return errors.New(*job.Error)
+				errText := ""
+				if job.Error != nil {
+					errText = strings.TrimSpace(*job.Error)
+				}
+				if isNetlabBenignFailure(spec.Action, errText, lastLog) {
+					log.Infof("Netlab action treated as success: %s", errText)
+					return nil
+				}
+				if errText != "" {
+					return errors.New(errText)
 				}
 				return fmt.Errorf("netlab job %s", state)
 			}
@@ -191,6 +302,30 @@ func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *ta
 
 		time.Sleep(2 * time.Second)
 	}
+}
+
+func isNetlabBenignFailure(action string, errText string, logs string) bool {
+	action = strings.ToLower(strings.TrimSpace(action))
+	if action != "down" && action != "cleanup" {
+		return false
+	}
+	candidate := strings.ToLower(strings.TrimSpace(errText))
+	if candidate == "" {
+		candidate = strings.ToLower(strings.TrimSpace(logs))
+	}
+	if candidate == "" {
+		return false
+	}
+	for _, marker := range []string{
+		"no netlab-managed labs",
+		"lab is not started",
+		"cannot display node/tool status",
+	} {
+		if strings.Contains(candidate, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) publishNetlabClabTarball(ctx context.Context, spec netlabRunSpec, log *taskLogger) error {
@@ -245,6 +380,9 @@ func (s *Service) publishNetlabClabTarball(ctx context.Context, spec netlabRunSp
 }
 
 type labppRunSpec struct {
+	TaskID        int
+	WorkspaceCtx  *workspaceContext
+	DeploymentID  string
 	APIURL        string
 	Insecure      bool
 	Action        string
@@ -260,6 +398,7 @@ type labppRunSpec struct {
 	EveUsername   string
 	EvePassword   string
 	MaxSeconds    int
+	Metadata      JSONMap
 }
 
 type labppJob struct {
@@ -320,6 +459,24 @@ func labppAPIGet(ctx context.Context, url string, insecure bool) (*http.Response
 	return resp, data, nil
 }
 
+func labppAPICancel(ctx context.Context, url string, insecure bool) (*http.Response, []byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	client := &http.Client{Timeout: 30 * time.Second}
+	if insecure && strings.HasPrefix(url, "https") {
+		client.Transport = insecureTransport()
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	return resp, data, nil
+}
+
 func normalizeLabppLog(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -346,10 +503,14 @@ func labppPayloadPreview(payload map[string]any) string {
 		preview[key] = value
 	}
 	if eve, ok := preview["eve"].(map[string]any); ok {
-		if _, has := eve["password"]; has {
-			eve["password"] = "[redacted]"
+		evePreview := map[string]any{}
+		for key, value := range eve {
+			evePreview[key] = value
 		}
-		preview["eve"] = eve
+		if _, has := evePreview["password"]; has {
+			evePreview["password"] = "[redacted]"
+		}
+		preview["eve"] = evePreview
 	}
 	data, err := json.Marshal(preview)
 	if err != nil {
@@ -371,34 +532,36 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		deployment = strings.TrimSpace(spec.Template)
 	}
 	labPath := strings.TrimSpace(spec.LabPath)
-	if labPath == "" && strings.TrimSpace(spec.Username) != "" && strings.TrimSpace(spec.Template) != "" {
+	if labPath == "" && strings.TrimSpace(spec.Template) != "" {
+		stamp := time.Now().UTC().Format("20060102-1504")
 		labPath = fmt.Sprintf(
-			"/Users/%s/%s/%s/%s.unl",
-			strings.TrimSpace(spec.Username),
-			strings.TrimSpace(spec.WorkspaceSlug),
-			strings.TrimSpace(spec.Deployment),
+			"/%s-%s/%s.unl",
+			labppSafeFilename.ReplaceAllString(deployment, "-"),
+			stamp,
 			labppLabFilename(spec.Template),
 		)
 	}
 	if labPath != "" {
 		labPath = "/" + strings.TrimPrefix(labPath, "/")
 	}
-	labOutputDir := ""
-	if labPath != "" {
-		labOutputDir = path.Dir(labPath)
-		if labOutputDir == "." {
-			labOutputDir = ""
-		}
+	templatesRoot := strings.TrimSpace(spec.TemplatesRoot)
+	if templatesRoot == "" {
+		templatesRoot = "/var/lib/skyforge/labpp-templates"
 	}
-	templateDir := ""
+	debugID := uuid.NewString()
+	debugFingerprint := ""
+	if spec.EvePassword != "" {
+		sum := sha256.Sum256([]byte(spec.EvePassword))
+		debugFingerprint = fmt.Sprintf("%x", sum)
+	}
 	payload := map[string]any{
-		"action":        strings.ToUpper(spec.Action),
-		"project":       project,
-		"workspace":     project,
-		"deployment":    deployment,
-		"templatesRoot": spec.TemplatesRoot,
-		"templates_root": spec.TemplatesRoot,
-		"template":      spec.Template,
+		"action":           strings.ToUpper(spec.Action),
+		"project":          project,
+		"deployment":       deployment,
+		"templatesRoot":    templatesRoot,
+		"template":         spec.Template,
+		"debugId":          debugID,
+		"debugFingerprint": debugFingerprint,
 		"eve": map[string]any{
 			"url":      spec.EveURL,
 			"username": spec.EveUsername,
@@ -407,58 +570,30 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 	}
 	if labPath != "" {
 		payload["labPath"] = labPath
-		payload["lab_path"] = labPath
-		payload["labpath"] = labPath
-	}
-	if labOutputDir != "" || labPath != "" {
-		payload["lab"] = map[string]any{
-			"dir":  labOutputDir,
-			"path": labPath,
-			"name": path.Base(labPath),
-		}
-	}
-	if strings.TrimSpace(spec.Template) != "" {
-		templatesRoot := strings.TrimSpace(spec.TemplatesRoot)
-		if templatesRoot == "" {
-			templatesRoot = "/var/lib/skyforge/labpp-templates"
-			payload["templatesRoot"] = templatesRoot
-			payload["templates_root"] = templatesRoot
-		}
-		templateDir = path.Join(templatesRoot, strings.TrimSpace(spec.Template))
-		payload["templateDir"] = templateDir
-		payload["template_dir"] = templateDir
-	}
-	labDir := ""
-	if templateDir != "" {
-		labDir = templateDir
-	} else if labOutputDir != "" {
-		labDir = labOutputDir
-	}
-	if labDir != "" {
-		payload["labDir"] = labDir
-		payload["lab_dir"] = labDir
-		payload["labdir"] = labDir
 	}
 	if spec.ThreadCount > 0 {
 		payload["threadCount"] = spec.ThreadCount
 	}
 
 	stdlog.Printf(
-		"labpp payload context: action=%s labPath=%s labDir=%s templatesRoot=%s template=%s",
+		"labpp payload context: action=%s labPath=%s templatesRoot=%s template=%s",
 		spec.Action,
 		labPath,
-		labDir,
 		spec.TemplatesRoot,
 		spec.Template,
 	)
 	log.Infof(
-		"LabPP payload context: action=%s labPath=%s labDir=%s templatesRoot=%s template=%s",
+		"LabPP payload context: action=%s labPath=%s templatesRoot=%s template=%s",
 		spec.Action,
 		labPath,
-		labDir,
 		spec.TemplatesRoot,
 		spec.Template,
 	)
+	if spec.EvePassword != "" {
+		log.Infof("LabPP EVE password fingerprint: %s", debugFingerprint)
+		stdlog.Printf("labpp eve password fingerprint: %s", debugFingerprint)
+	}
+	log.Infof("LabPP debug id: %s", debugID)
 	log.Infof("LabPP payload fields: project=%s deployment=%s template=%s templatesRoot=%s", project, deployment, spec.Template, spec.TemplatesRoot)
 	log.Infof("LabPP payload preview: %s", labppPayloadPreview(payload))
 	if payloadJSON, err := json.Marshal(payload); err == nil {
@@ -476,14 +611,52 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 	if err := json.Unmarshal(body, &job); err != nil || strings.TrimSpace(job.ID) == "" {
 		return fmt.Errorf("labpp API returned invalid response")
 	}
+	if spec.TaskID > 0 && spec.WorkspaceCtx != nil {
+		metaAny, _ := fromJSONMap(spec.Metadata)
+		if metaAny == nil {
+			metaAny = map[string]any{}
+		}
+		metaAny["labppJobId"] = job.ID
+		metaAny["labppLabPath"] = spec.LabPath
+		metaAny["labppTemplate"] = spec.Template
+		metaAny["labppApiUrl"] = spec.APIURL
+		metaUpdated, err := toJSONMap(metaAny)
+		if err != nil {
+			stdlog.Printf("labpp metadata encode: %v", err)
+		} else {
+			spec.Metadata = metaUpdated
+			metaCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			if err := updateTaskMetadata(metaCtx, s.db, spec.TaskID, metaUpdated); err != nil {
+				stdlog.Printf("labpp metadata update: %v", err)
+			}
+			cancel()
+		}
+	}
 
 	lastLog := ""
+	lastLogAt := time.Now()
+	lastStatus := ""
+	lastStatusAt := time.Now()
+	startedAt := time.Now()
 	deadline := time.Now().Add(time.Duration(spec.MaxSeconds) * time.Second)
 	if spec.MaxSeconds <= 0 {
 		deadline = time.Now().Add(20 * time.Minute)
 	}
 
 	for {
+		if spec.TaskID > 0 {
+			canceled, meta := s.taskCanceled(ctx, spec.TaskID)
+			if canceled {
+				jobID := job.ID
+				if jobID == "" {
+					jobID = labppMetaString(meta, "labppJobId")
+				}
+				if jobID != "" {
+					s.cancelLabppJob(ctx, spec.APIURL, jobID, spec.Insecure, log)
+				}
+				return fmt.Errorf("labpp job canceled")
+			}
+		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("labpp job timed out")
 		}
@@ -502,6 +675,7 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 					log.Infof(diff)
 				}
 				lastLog = nextLog
+				lastLogAt = time.Now()
 			}
 		}
 
@@ -509,12 +683,52 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		if status == "" {
 			status = strings.ToLower(strings.TrimSpace(derefString(job.State)))
 		}
+		if status == "" {
+			status = "pending"
+		}
+		if status != lastStatus || time.Since(lastStatusAt) > 20*time.Second {
+			log.Infof("LabPP status: %s (elapsed %s)", status, time.Since(startedAt).Truncate(time.Second))
+			lastStatus = status
+			lastStatusAt = time.Now()
+		} else if status == "running" && time.Since(lastLogAt) > 30*time.Second && time.Since(lastStatusAt) > 20*time.Second {
+			log.Infof("LabPP still running; waiting for node boot/config (elapsed %s)", time.Since(startedAt).Truncate(time.Second))
+			lastStatusAt = time.Now()
+		}
+		if status == "running" && lastLog != "" {
+			if strings.Contains(lastLog, "LabPP job completed with status SUCCESS") ||
+				(strings.Contains(lastLog, "NODE-SETUP complete for all nodes") && (spec.Action == "start" || spec.Action == "e2e")) {
+				log.Infof("LabPP status inferred as success from logs")
+				if spec.WorkspaceCtx != nil && strings.TrimSpace(spec.DeploymentID) != "" {
+					syncCtx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+					if err := s.syncForwardLabppDevices(syncCtx, spec.WorkspaceCtx, spec.DeploymentID, spec.APIURL, job.ID, spec.Insecure); err != nil {
+						stdlog.Printf("forward labpp sync: %v", err)
+					}
+					cancel()
+				}
+				return nil
+			}
+		}
 		if status == "success" || status == "succeeded" || status == "failed" || status == "canceled" || status == "cancelled" {
 			if status != "success" && status != "succeeded" {
-				if job.Error != nil && strings.TrimSpace(*job.Error) != "" {
-					return errors.New(*job.Error)
+				errText := ""
+				if job.Error != nil {
+					errText = strings.TrimSpace(*job.Error)
+				}
+				if isLabppBenignFailure(spec.Action, errText, lastLog) {
+					log.Infof("LabPP action treated as success: %s", errText)
+					return nil
+				}
+				if errText != "" {
+					return errors.New(errText)
 				}
 				return fmt.Errorf("labpp job %s", status)
+			}
+			if spec.WorkspaceCtx != nil && strings.TrimSpace(spec.DeploymentID) != "" {
+				syncCtx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+				if err := s.syncForwardLabppDevices(syncCtx, spec.WorkspaceCtx, spec.DeploymentID, spec.APIURL, job.ID, spec.Insecure); err != nil {
+					stdlog.Printf("forward labpp sync: %v", err)
+				}
+				cancel()
 			}
 			return nil
 		}
@@ -524,6 +738,7 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 }
 
 type containerlabRunSpec struct {
+	TaskID      int
 	APIURL      string
 	Token       string
 	Action      string
@@ -535,6 +750,12 @@ type containerlabRunSpec struct {
 }
 
 func (s *Service) runContainerlabTask(ctx context.Context, spec containerlabRunSpec, log *taskLogger) error {
+	if spec.TaskID > 0 {
+		canceled, _ := s.taskCanceled(ctx, spec.TaskID)
+		if canceled {
+			return fmt.Errorf("containerlab job canceled")
+		}
+	}
 	switch spec.Action {
 	case "deploy":
 		payload := containerlabDeployRequest{TopologyContent: spec.Topology}
@@ -557,6 +778,10 @@ func (s *Service) runContainerlabTask(ctx context.Context, spec containerlabRunS
 		if err != nil {
 			return fmt.Errorf("failed to reach containerlab API: %w", err)
 		}
+		if resp.StatusCode == http.StatusNotFound {
+			log.Infof("Containerlab lab not found; destroy treated as success.")
+			return nil
+		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			return fmt.Errorf("containerlab API rejected request: %s", strings.TrimSpace(string(body)))
 		}
@@ -570,6 +795,7 @@ func (s *Service) runContainerlabTask(ctx context.Context, spec containerlabRunS
 }
 
 type tofuRunSpec struct {
+	TaskID         int
 	WorkspaceCtx   *workspaceContext
 	WorkspaceSlug  string
 	Username       string
@@ -583,6 +809,12 @@ type tofuRunSpec struct {
 }
 
 func (s *Service) runTofuTask(ctx context.Context, spec tofuRunSpec, log *taskLogger) error {
+	if spec.TaskID > 0 {
+		canceled, _ := s.taskCanceled(ctx, spec.TaskID)
+		if canceled {
+			return fmt.Errorf("tofu job canceled")
+		}
+	}
 	if spec.Template == "" {
 		return fmt.Errorf("template is required")
 	}
@@ -642,6 +874,10 @@ func (s *Service) runTofuTask(ctx context.Context, spec tofuRunSpec, log *taskLo
 		return nil
 	case "destroy":
 		if err := runTofuCommand(ctx, log, tofuPath, workDir, env, "destroy", "-auto-approve", "-input=false", "-no-color"); err != nil {
+			if isTofuBenignFailure("destroy", err) {
+				log.Infof("Tofu destroy treated as success: %v", err)
+				return nil
+			}
 			return err
 		}
 		s.syncTofuState(ctx, spec, workDir, log)
@@ -691,6 +927,51 @@ func runTofuCommand(ctx context.Context, log *taskLogger, binary string, workDir
 		return fmt.Errorf("tofu command failed: %w", err)
 	}
 	return nil
+}
+
+func isLabppBenignFailure(action string, errText string, logs string) bool {
+	if action == "" {
+		return false
+	}
+	action = strings.ToLower(strings.TrimSpace(action))
+	if action != "stop" && action != "delete" && action != "destroy" {
+		return false
+	}
+	candidate := strings.ToLower(strings.TrimSpace(errText))
+	if candidate == "" {
+		candidate = strings.ToLower(strings.TrimSpace(logs))
+	}
+	if candidate == "" {
+		return false
+	}
+	for _, marker := range []string{
+		"lab does not exists",
+		"lab does not exist",
+		"lab not found",
+		"not found",
+	} {
+		if strings.Contains(candidate, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func isTofuBenignFailure(action string, err error) bool {
+	if action != "destroy" || err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, marker := range []string{
+		"no state file was found",
+		"state does not exist",
+		"no such file or directory",
+	} {
+		if strings.Contains(msg, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 var execCommandContext = exec.CommandContext

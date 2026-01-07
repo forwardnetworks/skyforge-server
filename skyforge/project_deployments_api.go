@@ -100,6 +100,7 @@ type LabppInfo struct {
 	EveURL    string `json:"eveUrl,omitempty"`
 	LabPath   string `json:"labPath"`
 	Endpoint  string `json:"endpoint,omitempty"`
+	JobID     string `json:"jobId,omitempty"`
 }
 
 type ContainerlabInfo struct {
@@ -367,8 +368,18 @@ func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req 
 		if getString("eveServer") == "" {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("eveServer is required").Err()
 		}
-		if getString("template") == "" {
+		template := strings.TrimSpace(getString("template"))
+		if template == "" {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("template is required").Err()
+		}
+		if strings.TrimSpace(getString("labPath")) == "" {
+			stamp := time.Now().UTC().Format("20060102-1504")
+			cfgAny["labPath"] = fmt.Sprintf(
+				"/%s-%s/%s.unl",
+				labppSafeFilename.ReplaceAllString(name, "-"),
+				stamp,
+				labppLabFilename(template),
+			)
 		}
 	case "containerlab":
 		if getString("netlabServer") == "" {
@@ -516,6 +527,33 @@ func (s *Service) DeleteWorkspaceDeployment(ctx context.Context, id, deploymentI
 	existing, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
 	if err != nil {
 		return nil, err
+	}
+	if existing.Type == "netlab" {
+		cfgAny, _ := fromJSONMap(existing.Config)
+		if cfgAny == nil {
+			cfgAny = map[string]any{}
+		}
+		netlabServer, _ := cfgAny["netlabServer"].(string)
+		if strings.TrimSpace(netlabServer) == "" {
+			netlabServer = strings.TrimSpace(pc.workspace.NetlabServer)
+		}
+		if strings.TrimSpace(netlabServer) == "" {
+			netlabServer = strings.TrimSpace(pc.workspace.EveServer)
+		}
+		if strings.TrimSpace(netlabServer) != "" {
+			_, err := s.RunWorkspaceNetlab(ctx, id, &WorkspaceNetlabRunRequest{
+				Message:          strings.TrimSpace(fmt.Sprintf("Skyforge netlab cleanup (%s)", pc.claims.Username)),
+				Action:           "down",
+				Cleanup:          true,
+				NetlabServer:     netlabServer,
+				NetlabMultilabID: existing.ID,
+				NetlabDeployment: existing.Name,
+			})
+			if err != nil {
+				log.Printf("deployments delete netlab cleanup: %v", err)
+				return nil, errs.B().Code(errs.Unavailable).Msg("failed to clean netlab deployment").Err()
+			}
+		}
 	}
 	if req != nil && req.ForwardDelete {
 		cfgAny, _ := fromJSONMap(existing.Config)
@@ -745,11 +783,11 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 		}
 		labPath = strings.TrimSpace(labPath)
 		if labPath == "" {
+			stamp := time.Now().UTC().Format("20060102-1504")
 			labPath = fmt.Sprintf(
-				"/Users/%s/%s/%s/%s.unl",
-				pc.claims.Username,
-				pc.workspace.Slug,
-				dep.Name,
+				"/%s-%s/%s.unl",
+				labppSafeFilename.ReplaceAllString(dep.Name, "-"),
+				stamp,
 				labppLabFilename(template),
 			)
 		}
@@ -782,6 +820,7 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 			LabPath:           labPath,
 			ThreadCount:       int(threadCount),
 			Deployment:        dep.Name,
+			DeploymentID:      dep.ID,
 		})
 		if err != nil {
 			return nil, err
@@ -1161,7 +1200,11 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 			resp.Status = "stopped"
 		}
 
-		resp.Labpp = &LabppInfo{EveServer: eveServerName, EveURL: base, LabPath: labPath, Endpoint: endpoint}
+		labppInfo := &LabppInfo{EveServer: eveServerName, EveURL: base, LabPath: labPath, Endpoint: endpoint}
+		if task, err := getLatestDeploymentTask(ctx, s.db, pc.workspace.ID, dep.ID, "labpp-run"); err == nil && task != nil {
+			labppInfo.JobID = getJSONMapString(task.Metadata, "labppJobId")
+		}
+		resp.Labpp = labppInfo
 		return resp, nil
 	case "tofu":
 		stateKey := strings.TrimSpace(pc.workspace.TerraformStateKey)
@@ -1242,6 +1285,91 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 		resp.Note = "info is not yet supported for this deployment type"
 		return resp, nil
 	}
+}
+
+// SyncWorkspaceDeploymentForward triggers a Forward Networks sync for a deployment.
+// Currently supported for LabPP deployments.
+//
+//encore:api auth method=POST path=/api/workspaces/:id/deployments/:deploymentID/forward-sync
+func (s *Service) SyncWorkspaceDeploymentForward(ctx context.Context, id, deploymentID string) (*WorkspaceDeploymentActionResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	pc, err := s.workspaceContextForUser(user, id)
+	if err != nil {
+		return nil, err
+	}
+	if pc.access == "viewer" {
+		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+	if err != nil {
+		return nil, err
+	}
+	if dep == nil {
+		return nil, errs.B().Code(errs.NotFound).Msg("deployment not found").Err()
+	}
+	if dep.Type != "labpp" {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("forward sync is only supported for labpp deployments").Err()
+	}
+	cfgAny, _ := fromJSONMap(dep.Config)
+	if cfgAny == nil {
+		cfgAny = map[string]any{}
+	}
+	forwardCfg, err := s.forwardConfigForWorkspace(ctx, pc.workspace.ID)
+	if err != nil {
+		return nil, err
+	}
+	if forwardCfg == nil {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("forward networks is not configured").Err()
+	}
+	task, err := getLatestDeploymentTask(ctx, s.db, pc.workspace.ID, dep.ID, "labpp-run")
+	if err != nil {
+		return nil, err
+	}
+	if task == nil {
+		return nil, errs.B().Code(errs.NotFound).Msg("no labpp run metadata found").Err()
+	}
+	jobID := getJSONMapString(task.Metadata, "labppJobId")
+	if jobID == "" {
+		return nil, errs.B().Code(errs.NotFound).Msg("labpp job id not found").Err()
+	}
+
+	eveServerName, _ := cfgAny["eveServer"].(string)
+	eveServerName = strings.TrimSpace(eveServerName)
+	if eveServerName == "" {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("eve-ng server selection is required").Err()
+	}
+	eveServer := eveServerByName(s.cfg.EveServers, eveServerName)
+	if eveServer == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("unknown eve server").Err()
+	}
+	apiURL := strings.TrimRight(strings.TrimSpace(s.cfg.LabppAPIURL), "/")
+	if apiURL == "" {
+		base := strings.TrimRight(strings.TrimSpace(eveServer.WebURL), "/")
+		if base == "" {
+			base = strings.TrimRight(strings.TrimSpace(eveServer.APIURL), "/")
+		}
+		if base == "" && strings.TrimSpace(eveServer.SSHHost) != "" {
+			base = "https://" + strings.TrimSpace(eveServer.SSHHost)
+		}
+		apiURL = strings.TrimRight(base, "/") + "/labpp"
+	}
+	apiInsecure := s.cfg.LabppSkipTLSVerify || eveServer.SkipTLSVerify
+
+	syncCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if err := s.syncForwardLabppDevices(syncCtx, pc, dep.ID, apiURL, jobID, apiInsecure); err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg(err.Error()).Err()
+	}
+	return &WorkspaceDeploymentActionResponse{
+		WorkspaceID: pc.workspace.ID,
+		Deployment:  dep,
+	}, nil
 }
 
 // GetWorkspaceDeploymentNetlabGraph returns a rendered netlab topology graph for a deployment.
@@ -1421,10 +1549,19 @@ func (s *Service) StopWorkspaceDeployment(ctx context.Context, id, deploymentID 
 	if err != nil {
 		return nil, err
 	}
-	if dep.LastTaskID == nil {
+	var task *TaskRecord
+	if active, err := getActiveDeploymentTask(ctx, s.db, pc.workspace.ID, dep.ID); err == nil && active != nil {
+		task = active
+	} else if dep.LastTaskID != nil {
+		if rec, err := getTask(ctx, s.db, *dep.LastTaskID); err == nil {
+			task = rec
+		}
+	}
+	if task == nil {
 		return &WorkspaceDeploymentActionResponse{WorkspaceID: pc.workspace.ID, Deployment: dep}, nil
 	}
-	if err := cancelTask(ctx, s.db, *dep.LastTaskID); err != nil {
+	s.forceCancelRunner(ctx, pc, dep, task)
+	if err := cancelTask(ctx, s.db, task.ID); err != nil {
 		log.Printf("deployment stop: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to cancel task").Err()
 	}
@@ -1433,6 +1570,52 @@ func (s *Service) StopWorkspaceDeployment(ctx context.Context, id, deploymentID 
 		log.Printf("deployment stop update: %v", err)
 	}
 	return &WorkspaceDeploymentActionResponse{WorkspaceID: pc.workspace.ID, Deployment: dep}, nil
+}
+
+func (s *Service) forceCancelRunner(ctx context.Context, pc *workspaceContext, dep *WorkspaceDeployment, task *TaskRecord) {
+	if dep == nil || task == nil {
+		return
+	}
+	log := &taskLogger{svc: s, taskID: task.ID}
+	switch strings.ToLower(strings.TrimSpace(dep.Type)) {
+	case "labpp":
+		jobID := getJSONMapString(task.Metadata, "labppJobId")
+		if jobID == "" {
+			return
+		}
+		eveServerName := strings.TrimSpace(getJSONMapString(dep.Config, "eveServer"))
+		eveServer := eveServerByName(s.cfg.EveServers, eveServerName)
+		apiURL := strings.TrimRight(strings.TrimSpace(s.cfg.LabppAPIURL), "/")
+		if apiURL == "" && eveServer != nil {
+			base := strings.TrimRight(strings.TrimSpace(eveServer.WebURL), "/")
+			if base == "" {
+				base = strings.TrimRight(strings.TrimSpace(eveServer.APIURL), "/")
+			}
+			if base == "" && strings.TrimSpace(eveServer.SSHHost) != "" {
+				base = "https://" + strings.TrimSpace(eveServer.SSHHost)
+			}
+			if base != "" {
+				apiURL = strings.TrimRight(base, "/") + "/labpp"
+			}
+		}
+		if apiURL == "" {
+			return
+		}
+		insecure := s.cfg.LabppSkipTLSVerify || (eveServer != nil && eveServer.SkipTLSVerify)
+		s.cancelLabppJob(ctx, apiURL, jobID, insecure, log)
+	case "netlab":
+		jobID := getJSONMapString(task.Metadata, "netlabJobId")
+		if jobID == "" {
+			return
+		}
+		serverName := strings.TrimSpace(getJSONMapString(dep.Config, "netlabServer"))
+		server := netlabServerByNameForConfig(s.cfg, serverName)
+		if server == nil {
+			return
+		}
+		apiURL := strings.TrimRight(fmt.Sprintf("https://%s/netlab", strings.TrimSpace(server.SSHHost)), "/")
+		s.cancelNetlabJob(ctx, apiURL, jobID, log)
+	}
 }
 
 func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, req *WorkspaceDeploymentStartRequest, mode string) (*WorkspaceDeploymentActionResponse, error) {
@@ -1571,6 +1754,7 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 			LabPath:           strings.TrimSpace(labPath),
 			ThreadCount:       int(threadCount),
 			Deployment:        dep.Name,
+			DeploymentID:      dep.ID,
 		})
 		if err != nil {
 			return nil, err

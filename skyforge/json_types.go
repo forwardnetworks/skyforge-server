@@ -1,6 +1,10 @@
 package skyforge
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+)
 
 type JSONMap map[string]json.RawMessage
 
@@ -47,4 +51,23 @@ func fromJSONMap(value JSONMap) (map[string]any, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+func getJSONMapString(value JSONMap, key string) string {
+	if value == nil {
+		return ""
+	}
+	raw, ok := value[key]
+	if !ok {
+		return ""
+	}
+	var out string
+	if err := json.Unmarshal(raw, &out); err == nil {
+		return strings.TrimSpace(out)
+	}
+	var anyVal any
+	if err := json.Unmarshal(raw, &anyVal); err == nil {
+		return strings.TrimSpace(fmt.Sprintf("%v", anyVal))
+	}
+	return ""
 }

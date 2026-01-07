@@ -178,7 +178,7 @@ func resolveTemplateRepoForProject(cfg Config, pc *workspaceContext, source stri
 	branch := strings.TrimSpace(pc.workspace.DefaultBranch)
 
 	switch strings.ToLower(strings.TrimSpace(source)) {
-	case "", "workspace", "project":
+case "", "workspace":
 		// default
 	case "blueprints", "blueprint":
 		ref := strings.TrimSpace(pc.workspace.Blueprint)
@@ -264,6 +264,14 @@ func (s *Service) syncLabppTemplateDir(ctx context.Context, pc *workspaceContext
 	if _, err := readGiteaFileBytes(s.cfg, ref.Owner, ref.Repo, labJSONPath, ref.Branch); err != nil {
 		return "", fmt.Errorf("labpp template %q missing lab.json", templateName)
 	}
+	log.Printf("labpp template sync: repo=%s/%s branch=%s root=%s dest=%s", ref.Owner, ref.Repo, ref.Branch, rootPath, destTemplateDir)
+	rootEntries, err := listGiteaDirectory(s.cfg, ref.Owner, ref.Repo, rootPath, ref.Branch)
+	if err != nil {
+		return "", fmt.Errorf("failed to list labpp template %q: %w", templateName, err)
+	}
+	if len(rootEntries) == 0 {
+		return "", fmt.Errorf("labpp template %q has no files under %s", templateName, rootPath)
+	}
 
 	sshCfg := NetlabConfig{SSHHost: host, SSHUser: user, SSHKeyFile: keyFile, StateRoot: "/"}
 	client, err := dialSSH(sshCfg)
@@ -324,4 +332,51 @@ func (s *Service) syncLabppTemplateDir(ctx context.Context, pc *workspaceContext
 	}
 	_ = ctx
 	return destRoot, nil
+}
+
+func (s *Service) labppTemplateExists(eveServer *EveServerConfig, templatesRoot, templateName string) (bool, error) {
+	templatesRoot = strings.TrimRight(strings.TrimSpace(templatesRoot), "/")
+	templateName = strings.TrimSpace(templateName)
+	if templatesRoot == "" || templateName == "" {
+		return false, fmt.Errorf("templatesRoot and template are required")
+	}
+
+	host := strings.TrimSpace(eveServer.SSHHost)
+	if host == "" && strings.TrimSpace(eveServer.APIURL) != "" {
+		if u, err := url.Parse(strings.TrimSpace(eveServer.APIURL)); err == nil && u != nil {
+			host = strings.TrimSpace(u.Hostname())
+		}
+	}
+	if host == "" && strings.TrimSpace(eveServer.WebURL) != "" {
+		if u, err := url.Parse(strings.TrimSpace(eveServer.WebURL)); err == nil && u != nil {
+			host = strings.TrimSpace(u.Hostname())
+		}
+	}
+	if host == "" {
+		return false, fmt.Errorf("missing eve server sshHost (or apiUrl/webUrl)")
+	}
+	user := strings.TrimSpace(eveServer.SSHUser)
+	if user == "" {
+		user = strings.TrimSpace(s.cfg.Labs.EveSSHUser)
+	}
+	keyFile := strings.TrimSpace(s.cfg.Labs.EveSSHKeyFile)
+	if keyFile == "" {
+		return false, fmt.Errorf("missing SKYFORGE_EVE_SSH_KEY_FILE")
+	}
+
+	sshCfg := NetlabConfig{SSHHost: host, SSHUser: user, SSHKeyFile: keyFile, StateRoot: "/"}
+	client, err := dialSSH(sshCfg)
+	if err != nil {
+		return false, err
+	}
+	defer client.Close()
+
+	labJSON := path.Join(templatesRoot, templateName, "lab.json")
+	if _, err := runSSHCommand(client, fmt.Sprintf("test -f %q", labJSON), 8*time.Second); err != nil {
+		if strings.Contains(err.Error(), "exit status 1") {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }

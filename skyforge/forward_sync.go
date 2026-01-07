@@ -99,6 +99,46 @@ func netlabCredentialForDevice(device, image string) (netlabDeviceCredential, bo
 	return netlabDeviceCredential{}, false
 }
 
+func labppCredentialForDevice(deviceType string) (netlabDeviceCredential, bool) {
+	t := strings.ToLower(strings.TrimSpace(deviceType))
+	if t == "" {
+		return netlabDeviceCredential{
+			Username: "admin",
+			Password: "Testpasswd!",
+		}, true
+	}
+	switch {
+	case strings.Contains(t, "nxos"):
+		return netlabDeviceCredential{Username: "admin", Password: "4h9MK7rSo6q2qua"}, true
+	case strings.Contains(t, "docker"):
+		return netlabDeviceCredential{Username: "root", Password: "Testpasswd!"}, true
+	case strings.Contains(t, "xrv"):
+		return netlabDeviceCredential{Username: "testuser", Password: "Testpasswd!"}, true
+	case strings.Contains(t, "a10"):
+		return netlabDeviceCredential{Username: "admin", Password: "a10"}, true
+	case strings.Contains(t, "nokia") || strings.Contains(t, "vsim"):
+		return netlabDeviceCredential{Username: "admin", Password: "admin"}, true
+	case strings.Contains(t, "alpine"):
+		return netlabDeviceCredential{Username: "root", Password: "Forward123"}, true
+	}
+	switch {
+	case strings.Contains(t, "vmx"):
+		return netlabCredentialForDevice("vmx", "")
+	case strings.Contains(t, "vjunos-switch"):
+		return netlabCredentialForDevice("vjunos-switch", "")
+	case strings.Contains(t, "vjunos"):
+		return netlabCredentialForDevice("vjunos-router", "")
+	case strings.Contains(t, "vsrx"):
+		return netlabCredentialForDevice("vsrx", "")
+	case strings.Contains(t, "vptx"):
+		return netlabCredentialForDevice("vptx", "")
+	}
+	return netlabDeviceCredential{
+		Username: "admin",
+		Password: "Testpasswd!",
+	}, true
+}
+
 type netlabStatusDevice struct {
 	Node     string
 	Device   string
@@ -179,6 +219,17 @@ func stripANSICodes(value string) string {
 	return b.String()
 }
 
+type labppDeviceInfo struct {
+	Name   string `json:"name"`
+	Type   string `json:"type"`
+	MgmtIP string `json:"mgmtIp"`
+}
+
+type labppDevicesResponse struct {
+	ID      string            `json:"id"`
+	Devices []labppDeviceInfo `json:"devices"`
+}
+
 func (s *Service) forwardConfigForWorkspace(ctx context.Context, workspaceID string) (*forwardCredentials, error) {
 	if s.db == nil {
 		return nil, fmt.Errorf("database unavailable")
@@ -226,23 +277,41 @@ func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *wor
 		return strings.TrimSpace(fmt.Sprintf("%v", raw))
 	}
 
+	networkName := getString(forwardNetworkNameKey)
+	credentialName := ""
+	if networkName != "" {
+		credentialName = networkName
+	}
 	networkID := getString(forwardNetworkIDKey)
 	changed := false
 	if networkID == "" {
-		networkName := fmt.Sprintf("skyforge/%s/%s", pc.workspace.Slug, dep.Name)
-		network, err := forwardCreateNetwork(ctx, client, networkName)
+		networkName := fmt.Sprintf("%s-%s", dep.Name, time.Now().UTC().Format("20060102-1504"))
+		network, err := forwardCreateNetworkWithRetry(ctx, client, networkName)
 		if err != nil {
 			return cfgAny, err
 		}
 		networkID = network.ID
 		cfgAny[forwardNetworkIDKey] = networkID
 		cfgAny[forwardNetworkNameKey] = networkName
+		credentialName = networkName
 		changed = true
 	}
 
 	collectorUser := strings.TrimSpace(forwardCfg.CollectorUser)
 	if collectorUser != "" {
 		status, err := forwardGetCollectorStatus(ctx, client, networkID)
+		if err != nil && strings.Contains(err.Error(), "not found") {
+			networkName := fmt.Sprintf("%s-%s", dep.Name, time.Now().UTC().Format("20060102-1504"))
+			network, createErr := forwardCreateNetworkWithRetry(ctx, client, networkName)
+			if createErr != nil {
+				return cfgAny, createErr
+			}
+			networkID = network.ID
+			cfgAny[forwardNetworkIDKey] = networkID
+			cfgAny[forwardNetworkNameKey] = networkName
+			changed = true
+			status, err = forwardGetCollectorStatus(ctx, client, networkID)
+		}
 		if err != nil {
 			return cfgAny, err
 		}
@@ -261,7 +330,7 @@ func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *wor
 		devicePassword = defaultNetlabDevicePassword
 	}
 	if cliCredentialID == "" && deviceUsername != "" && devicePassword != "" {
-		cred, err := forwardCreateCliCredential(ctx, client, networkID, deviceUsername, devicePassword)
+		cred, err := forwardCreateCliCredentialNamed(ctx, client, networkID, credentialName, deviceUsername, devicePassword)
 		if err != nil {
 			if strings.Contains(err.Error(), "No collector configured") {
 				log.Printf("forward cli credential skipped: %v", err)
@@ -286,6 +355,11 @@ func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *wor
 			jumpUser = userName
 		}
 	}
+	if dep.Type == "labpp" && useUserJump {
+		if userName := strings.TrimSpace(pc.claims.Username); userName != "" {
+			jumpUser = userName
+		}
+	}
 	if dep.Type == "netlab" && (jumpHost == "" || jumpKey == "" || jumpUser == "") {
 		netlabServerName := getString("netlabServer")
 		if netlabServerName != "" {
@@ -298,6 +372,25 @@ func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *wor
 				}
 				if jumpKey == "" && server.SSHKeyFile != "" {
 					if keyBytes, err := os.ReadFile(server.SSHKeyFile); err == nil {
+						jumpKey = strings.TrimSpace(string(keyBytes))
+					}
+				}
+			}
+		}
+	}
+	if dep.Type == "labpp" && (jumpHost == "" || jumpKey == "" || jumpUser == "") {
+		eveServerName := getString("eveServer")
+		if eveServerName != "" {
+			if server := eveServerByName(s.cfg.EveServers, eveServerName); server != nil {
+				eve := normalizeEveServer(*server, s.cfg.Labs)
+				if jumpHost == "" {
+					jumpHost = strings.TrimSpace(eve.SSHHost)
+				}
+				if jumpUser == "" || !useUserJump {
+					jumpUser = strings.TrimSpace(eve.SSHUser)
+				}
+				if jumpKey == "" && strings.TrimSpace(s.cfg.Labs.EveSSHKeyFile) != "" {
+					if keyBytes, err := os.ReadFile(strings.TrimSpace(s.cfg.Labs.EveSSHKeyFile)); err == nil {
 						jumpKey = strings.TrimSpace(string(keyBytes))
 					}
 				}
@@ -328,6 +421,43 @@ func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *wor
 		}
 	}
 	return cfgAny, nil
+}
+
+func forwardCreateNetworkWithRetry(ctx context.Context, client *forwardClient, baseName string) (*forwardNetwork, error) {
+	name := strings.TrimSpace(baseName)
+	if name == "" {
+		name = fmt.Sprintf("deployment-%s", time.Now().UTC().Format("20060102-1504"))
+	}
+	for attempt := 0; attempt < 3; attempt++ {
+		network, err := forwardCreateNetwork(ctx, client, name)
+		if err == nil {
+			return network, nil
+		}
+		if !strings.Contains(err.Error(), "already used") {
+			return nil, err
+		}
+		name = fmt.Sprintf("%s-%02d", baseName, attempt+1)
+	}
+	return nil, fmt.Errorf("forward network name collision after retries")
+}
+
+func isForwardNameCollision(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "already exists") ||
+		strings.Contains(msg, "duplicate") ||
+		strings.Contains(msg, "name is already") ||
+		strings.Contains(msg, "name exists")
+}
+
+func isForwardJumpServerMissing(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "jump server") && strings.Contains(msg, "not found")
 }
 
 func (s *Service) syncForwardNetlabDevices(ctx context.Context, pc *workspaceContext, dep *WorkspaceDeployment, logText string) error {
@@ -364,6 +494,7 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, pc *workspaceCon
 	if networkID == "" {
 		return nil
 	}
+	credentialName := strings.TrimSpace(getString(forwardNetworkNameKey))
 	jumpServerID := getString(forwardJumpServerIDKey)
 	defaultCliCredentialID := getString(forwardCliCredentialIDKey)
 	credentialIDsByDevice := map[string]string{}
@@ -407,7 +538,7 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, pc *workspaceCon
 			cliCredentialID = defaultCliCredentialID
 		}
 		if cliCredentialID == "" && strings.TrimSpace(cred.Username) != "" {
-			created, err := forwardCreateCliCredential(ctx, client, networkID, cred.Username, cred.Password)
+			created, err := forwardCreateCliCredentialNamed(ctx, client, networkID, credentialName, cred.Username, cred.Password)
 			if err != nil {
 				if strings.Contains(err.Error(), "No collector configured") {
 					log.Printf("forward cli credential skipped: %v", err)
@@ -435,7 +566,24 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, pc *workspaceCon
 		return nil
 	}
 	if err := forwardPutClassicDevices(ctx, client, networkID, devices); err != nil {
-		return err
+		if isForwardJumpServerMissing(err) && jumpServerID != "" {
+			cfgAny[forwardJumpServerIDKey] = ""
+			refreshed, refreshErr := s.ensureForwardNetworkForDeployment(ctx, pc, dep)
+			if refreshErr != nil {
+				return refreshErr
+			}
+			cfgAny = refreshed
+			jumpServerID = getString(forwardJumpServerIDKey)
+			for i := range devices {
+				devices[i].JumpServerID = jumpServerID
+			}
+			if retryErr := forwardPutClassicDevices(ctx, client, networkID, devices); retryErr != nil {
+				return retryErr
+			}
+			changed = true
+		} else {
+			return err
+		}
 	}
 	for attempt := 1; attempt <= 3; attempt++ {
 		if err := forwardStartCollection(ctx, client, networkID); err != nil {
@@ -453,6 +601,159 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, pc *workspaceCon
 		if err := s.updateDeploymentConfig(ctx, pc.workspace.ID, dep.ID, cfgAny); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func (s *Service) syncForwardLabppDevices(ctx context.Context, pc *workspaceContext, deploymentID, apiURL, jobID string, insecure bool) error {
+	if pc == nil {
+		return fmt.Errorf("workspace context unavailable")
+	}
+	if strings.TrimSpace(deploymentID) == "" {
+		return fmt.Errorf("deployment id is required")
+	}
+	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+	if err != nil {
+		return err
+	}
+	if dep == nil {
+		return fmt.Errorf("deployment not found")
+	}
+	cfgAny, _ := fromJSONMap(dep.Config)
+	if cfgAny == nil {
+		cfgAny = map[string]any{}
+	}
+	cfgAny, err = s.ensureForwardNetworkForDeployment(ctx, pc, dep)
+	if err != nil {
+		return err
+	}
+
+	forwardCfg, err := s.forwardConfigForWorkspace(ctx, pc.workspace.ID)
+	if err != nil || forwardCfg == nil {
+		return err
+	}
+	client, err := newForwardClient(*forwardCfg)
+	if err != nil {
+		return err
+	}
+
+	deviceUsername := strings.TrimSpace(forwardCfg.DeviceUsername)
+	devicePassword := strings.TrimSpace(forwardCfg.DevicePassword)
+
+	resp, body, err := labppAPIGet(ctx, fmt.Sprintf("%s/jobs/%s/devices", strings.TrimRight(apiURL, "/"), jobID), insecure)
+	if err != nil {
+		return err
+	}
+	if resp == nil || resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("labpp devices request failed: %s", strings.TrimSpace(string(body)))
+	}
+	var devicesResp labppDevicesResponse
+	if err := json.Unmarshal(body, &devicesResp); err != nil {
+		return fmt.Errorf("labpp devices response invalid: %w", err)
+	}
+
+	getString := func(key string) string {
+		raw, ok := cfgAny[key]
+		if !ok {
+			return ""
+		}
+		if v, ok := raw.(string); ok {
+			return strings.TrimSpace(v)
+		}
+		return strings.TrimSpace(fmt.Sprintf("%v", raw))
+	}
+	networkID := getString(forwardNetworkIDKey)
+	if networkID == "" {
+		return fmt.Errorf("forward network missing for deployment")
+	}
+	credentialName := strings.TrimSpace(getString(forwardNetworkNameKey))
+	jumpServerID := getString(forwardJumpServerIDKey)
+	defaultCliCredentialID := getString(forwardCliCredentialIDKey)
+
+	credentialIDsByDevice := map[string]string{}
+	if raw, ok := cfgAny[forwardCliCredentialMap]; ok {
+		if decoded, ok := raw.(map[string]any); ok {
+			for key, value := range decoded {
+				if str, ok := value.(string); ok {
+					credentialIDsByDevice[key] = str
+				}
+			}
+		}
+	}
+
+	devices := []forwardClassicDevice{}
+	for _, device := range devicesResp.Devices {
+		name := strings.TrimSpace(device.Name)
+		host := strings.TrimSpace(device.MgmtIP)
+		if name == "" || host == "" {
+			continue
+		}
+		cliID := defaultCliCredentialID
+		if cliID == "" && deviceUsername != "" && devicePassword != "" {
+			cred, err := forwardCreateCliCredentialNamed(ctx, client, networkID, credentialName, deviceUsername, devicePassword)
+			if err != nil {
+				if strings.Contains(err.Error(), "No collector configured") {
+					log.Printf("forward cli credential skipped: %v", err)
+				} else {
+					return err
+				}
+			} else {
+				cliID = cred.ID
+				credentialIDsByDevice[name] = cliID
+			}
+		} else if cliID == "" {
+			cred, ok := labppCredentialForDevice(device.Type)
+			if !ok {
+				cred, ok = netlabCredentialForDevice("", "")
+			}
+			if ok {
+				created, err := forwardCreateCliCredentialNamed(ctx, client, networkID, credentialName, cred.Username, cred.Password)
+				if err != nil {
+					if strings.Contains(err.Error(), "No collector configured") {
+						log.Printf("forward cli credential skipped: %v", err)
+					} else {
+						return err
+					}
+				} else {
+					cliID = created.ID
+					credentialIDsByDevice[name] = cliID
+				}
+			}
+		}
+
+		devices = append(devices, forwardClassicDevice{
+			Name:            name,
+			Host:            host,
+			CliCredentialID: cliID,
+			JumpServerID:    jumpServerID,
+		})
+	}
+
+	if err := forwardPutClassicDevices(ctx, client, networkID, devices); err != nil {
+		if isForwardJumpServerMissing(err) && jumpServerID != "" {
+			cfgAny[forwardJumpServerIDKey] = ""
+			refreshed, refreshErr := s.ensureForwardNetworkForDeployment(ctx, pc, dep)
+			if refreshErr != nil {
+				return refreshErr
+			}
+			cfgAny = refreshed
+			jumpServerID = getString(forwardJumpServerIDKey)
+			for i := range devices {
+				devices[i].JumpServerID = jumpServerID
+			}
+			if retryErr := forwardPutClassicDevices(ctx, client, networkID, devices); retryErr != nil {
+				return retryErr
+			}
+		} else {
+			return err
+		}
+	}
+	if err := forwardStartCollection(ctx, client, networkID); err != nil {
+		log.Printf("forward start collection: %v", err)
+	}
+	cfgAny[forwardCliCredentialMap] = credentialIDsByDevice
+	if err := s.updateDeploymentConfig(ctx, pc.workspace.ID, dep.ID, cfgAny); err != nil {
+		return err
 	}
 	return nil
 }

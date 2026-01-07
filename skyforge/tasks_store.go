@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"encore.dev/beta/errs"
@@ -11,7 +12,7 @@ import (
 
 type TaskRecord struct {
 	ID           int
-	WorkspaceID    string
+	WorkspaceID  string
 	DeploymentID sql.NullString
 	TaskType     string
 	Status       string
@@ -31,6 +32,14 @@ type TaskLogEntry struct {
 }
 
 func createTask(ctx context.Context, db *sql.DB, workspaceID string, deploymentID *string, taskType string, message string, createdBy string, metadata JSONMap) (*TaskRecord, error) {
+	return createTaskWithActiveCheck(ctx, db, workspaceID, deploymentID, taskType, message, createdBy, metadata, false)
+}
+
+func createTaskAllowActive(ctx context.Context, db *sql.DB, workspaceID string, deploymentID *string, taskType string, message string, createdBy string, metadata JSONMap) (*TaskRecord, error) {
+	return createTaskWithActiveCheck(ctx, db, workspaceID, deploymentID, taskType, message, createdBy, metadata, true)
+}
+
+func createTaskWithActiveCheck(ctx context.Context, db *sql.DB, workspaceID string, deploymentID *string, taskType string, message string, createdBy string, metadata JSONMap, allowActive bool) (*TaskRecord, error) {
 	if db == nil {
 		return nil, errDBUnavailable
 	}
@@ -44,6 +53,15 @@ func createTask(ctx context.Context, db *sql.DB, workspaceID string, deploymentI
 	var dep sql.NullString
 	if deploymentID != nil && *deploymentID != "" {
 		dep = sql.NullString{String: *deploymentID, Valid: true}
+		if !allowActive {
+			active, err := hasActiveDeploymentTask(ctx, db, workspaceID, dep.String)
+			if err != nil {
+				return nil, err
+			}
+			if active {
+				return nil, errs.B().Code(errs.FailedPrecondition).Msg("deployment already has an active run").Err()
+			}
+		}
 	}
 	var msg sql.NullString
 	if message != "" {
@@ -64,6 +82,47 @@ RETURNING id, created_at`, workspaceID, dep, taskType, "queued", msg, metaBytes,
 		return nil, err
 	}
 	return rec, nil
+}
+
+func hasActiveDeploymentTask(ctx context.Context, db *sql.DB, workspaceID string, deploymentID string) (bool, error) {
+	if db == nil {
+		return false, errDBUnavailable
+	}
+	var count int
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*)
+FROM sf_tasks
+WHERE workspace_id=$1
+  AND deployment_id=$2
+  AND status IN ('queued','running')`, workspaceID, deploymentID).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func getActiveDeploymentTask(ctx context.Context, db *sql.DB, workspaceID string, deploymentID string) (*TaskRecord, error) {
+	if db == nil {
+		return nil, errDBUnavailable
+	}
+	row := db.QueryRowContext(ctx, `SELECT id, workspace_id, deployment_id, task_type, status, message, metadata, created_by, created_at, started_at, finished_at, error
+FROM sf_tasks
+WHERE workspace_id=$1
+  AND deployment_id=$2
+  AND status IN ('queued','running')
+ORDER BY created_at DESC
+LIMIT 1`, workspaceID, deploymentID)
+	rec := TaskRecord{}
+	var metaBytes []byte
+	if err := row.Scan(&rec.ID, &rec.WorkspaceID, &rec.DeploymentID, &rec.TaskType, &rec.Status, &rec.Message, &metaBytes, &rec.CreatedBy, &rec.CreatedAt, &rec.StartedAt, &rec.FinishedAt, &rec.Error); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if len(metaBytes) > 0 {
+		_ = json.Unmarshal(metaBytes, &rec.Metadata)
+	}
+	return &rec, nil
 }
 
 func markTaskStarted(ctx context.Context, db *sql.DB, taskID int) error {
@@ -105,6 +164,21 @@ func appendTaskLog(ctx context.Context, db *sql.DB, taskID int, stream string, o
 		stream = "stdout"
 	}
 	_, err := db.ExecContext(ctx, `INSERT INTO sf_task_logs (task_id, stream, output) VALUES ($1,$2,$3)`, taskID, stream, output)
+	return err
+}
+
+func updateTaskMetadata(ctx context.Context, db *sql.DB, taskID int, metadata JSONMap) error {
+	if db == nil {
+		return errDBUnavailable
+	}
+	if metadata == nil {
+		metadata = JSONMap{}
+	}
+	metaBytes, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+	_, err = db.ExecContext(ctx, `UPDATE sf_tasks SET metadata=$1 WHERE id=$2`, metaBytes, taskID)
 	return err
 }
 
@@ -152,6 +226,31 @@ WHERE id=$1`, taskID)
 	rec := TaskRecord{}
 	var metaBytes []byte
 	if err := row.Scan(&rec.ID, &rec.WorkspaceID, &rec.DeploymentID, &rec.TaskType, &rec.Status, &rec.Message, &metaBytes, &rec.CreatedBy, &rec.CreatedAt, &rec.StartedAt, &rec.FinishedAt, &rec.Error); err != nil {
+		return nil, err
+	}
+	if len(metaBytes) > 0 {
+		_ = json.Unmarshal(metaBytes, &rec.Metadata)
+	}
+	return &rec, nil
+}
+
+func getLatestDeploymentTask(ctx context.Context, db *sql.DB, workspaceID string, deploymentID string, taskType string) (*TaskRecord, error) {
+	if db == nil {
+		return nil, errDBUnavailable
+	}
+	row := db.QueryRowContext(ctx, `SELECT id, workspace_id, deployment_id, task_type, status, message, metadata, created_by, created_at, started_at, finished_at, error
+FROM sf_tasks
+WHERE workspace_id=$1
+  AND deployment_id=$2
+  AND ($3 = '' OR task_type=$3)
+ORDER BY created_at DESC
+LIMIT 1`, workspaceID, deploymentID, taskType)
+	rec := TaskRecord{}
+	var metaBytes []byte
+	if err := row.Scan(&rec.ID, &rec.WorkspaceID, &rec.DeploymentID, &rec.TaskType, &rec.Status, &rec.Message, &metaBytes, &rec.CreatedBy, &rec.CreatedAt, &rec.StartedAt, &rec.FinishedAt, &rec.Error); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
 		return nil, err
 	}
 	if len(metaBytes) > 0 {

@@ -160,7 +160,7 @@ func toolDefinitions() []ToolServiceStatus {
 func deploymentNameForTool(id string) (string, bool) {
 	switch id {
 	case "api-testing":
-		return "hoppscotch", true
+		return "yaade", true
 	case "vscode":
 		return "code-server", true
 	default:

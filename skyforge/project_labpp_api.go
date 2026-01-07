@@ -41,7 +41,7 @@ func (s *Service) GetWorkspaceLabppTemplates(ctx context.Context, id string, req
 		return nil, err
 	}
 
-		source := "workspace"
+	source := "blueprints"
 	if req != nil {
 		if v := strings.ToLower(strings.TrimSpace(req.Source)); v != "" {
 			source = v
