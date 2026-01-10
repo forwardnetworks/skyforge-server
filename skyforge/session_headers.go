@@ -12,6 +12,7 @@ func addSessionHeaders(headers http.Header, claims *SessionClaims) {
 	headers.Set("X-Skyforge-Username", claims.Username)
 	headers.Set("X-Skyforge-DisplayName", claims.DisplayName)
 	headers.Set("Remote-User", claims.Username)
+	headers.Set("X-Forwarded-User", claims.Username)
 	if strings.TrimSpace(claims.ActorUsername) != "" {
 		headers.Set("X-Skyforge-Actor", strings.TrimSpace(claims.ActorUsername))
 		headers.Set("X-Skyforge-Impersonating", boolString(isImpersonating(claims)))
@@ -19,6 +20,7 @@ func addSessionHeaders(headers http.Header, claims *SessionClaims) {
 	if claims.Email != "" {
 		headers.Set("X-Skyforge-Email", claims.Email)
 		headers.Set("Remote-User-Email", claims.Email)
+		headers.Set("X-Forwarded-Email", claims.Email)
 	}
 	if len(claims.Groups) > 0 {
 		headers.Set("X-Skyforge-Groups", strings.Join(claims.Groups, ","))
@@ -35,10 +37,12 @@ func addSessionHeaders(headers http.Header, claims *SessionClaims) {
 	if firstName != "" {
 		headers.Set("X-Skyforge-First-Name", firstName)
 		headers.Set("Remote-User-First-Name", firstName)
+		headers.Set("X-Forwarded-First-Name", firstName)
 	}
 	if lastName != "" {
 		headers.Set("X-Skyforge-Last-Name", lastName)
 		headers.Set("Remote-User-Last-Name", lastName)
+		headers.Set("X-Forwarded-Last-Name", lastName)
 	}
 }
 
