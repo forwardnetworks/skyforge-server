@@ -88,28 +88,27 @@ func (s *Service) YaadeSSO(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var sessionCookie *http.Cookie
-	for _, c := range resp.Cookies() {
-		if c.Name == "vertx-web.session" {
-			sessionCookie = c
-			break
-		}
-	}
-	if sessionCookie == nil || sessionCookie.Value == "" {
+	cookies := resp.Cookies()
+	if len(cookies) == 0 {
 		log.Printf("yaade sso: missing session cookie from login")
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "api testing login failed"})
 		return
 	}
 
 	secure := strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") || r.TLS != nil
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookie.Name,
-		Value:    sessionCookie.Value,
-		Path:     "/api-testing",
-		HttpOnly: true,
-		Secure:   secure,
-		SameSite: http.SameSiteLaxMode,
-	})
+	for _, c := range cookies {
+		if c == nil || c.Name == "" || c.Value == "" {
+			continue
+		}
+		http.SetCookie(w, &http.Cookie{
+			Name:     c.Name,
+			Value:    c.Value,
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   secure,
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
 	http.Redirect(w, r, "/api-testing/", http.StatusFound)
 }
 
