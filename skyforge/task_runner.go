@@ -2,6 +2,7 @@ package skyforge
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
@@ -12,8 +13,8 @@ import (
 	"io"
 	stdlog "log"
 	"net/http"
+	"net/url"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -22,6 +23,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hashicorp/terraform-exec/tfexec"
 
 	"encore.app/storage"
 )
@@ -66,28 +68,6 @@ func labppMetaString(meta map[string]any, key string) string {
 		return strings.TrimSpace(v)
 	}
 	return strings.TrimSpace(fmt.Sprintf("%v", raw))
-}
-
-func (s *Service) cancelLabppJob(ctx context.Context, apiURL, jobID string, insecure bool, log *taskLogger) {
-	if strings.TrimSpace(jobID) == "" {
-		return
-	}
-	ctxReq, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	resp, body, err := labppAPICancel(ctxReq, fmt.Sprintf("%s/jobs/%s/cancel", strings.TrimRight(apiURL, "/"), jobID), insecure)
-	if err != nil {
-		log.Errorf("LabPP cancel failed: %v", err)
-		return
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		log.Infof("LabPP cancel: job not found (treated as canceled).")
-		return
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		log.Errorf("LabPP cancel rejected: %s", strings.TrimSpace(string(body)))
-		return
-	}
-	log.Infof("LabPP cancel requested for job %s", jobID)
 }
 
 func (s *Service) cancelNetlabJob(ctx context.Context, apiURL, jobID string, log *taskLogger) {
@@ -266,7 +246,7 @@ func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *ta
 				if lr.Log != "" && lr.Log != lastLog {
 					diff := lr.Log[len(lastLog):]
 					if diff != "" {
-						log.Infof(diff)
+						log.Infof("%s", diff)
 					}
 					lastLog = lr.Log
 				}
@@ -383,8 +363,6 @@ type labppRunSpec struct {
 	TaskID        int
 	WorkspaceCtx  *workspaceContext
 	DeploymentID  string
-	APIURL        string
-	Insecure      bool
 	Action        string
 	WorkspaceSlug string
 	Username      string
@@ -399,82 +377,6 @@ type labppRunSpec struct {
 	EvePassword   string
 	MaxSeconds    int
 	Metadata      JSONMap
-}
-
-type labppJob struct {
-	ID     string  `json:"id"`
-	Status *string `json:"status,omitempty"`
-	State  *string `json:"state,omitempty"`
-	Error  *string `json:"error,omitempty"`
-}
-
-type labppLog struct {
-	Log string `json:"log"`
-}
-
-func labppAPIDo(ctx context.Context, url string, payload any, insecure bool) (*http.Response, []byte, error) {
-	var body io.Reader
-	if payload != nil {
-		b, err := json.Marshal(payload)
-		if err != nil {
-			return nil, nil, err
-		}
-		body = strings.NewReader(string(b))
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
-	if err != nil {
-		return nil, nil, err
-	}
-	if payload != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	client := &http.Client{Timeout: 30 * time.Second}
-	if insecure && strings.HasPrefix(url, "https") {
-		client.Transport = insecureTransport()
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer resp.Body.Close()
-	data, _ := io.ReadAll(resp.Body)
-	return resp, data, nil
-}
-
-func labppAPIGet(ctx context.Context, url string, insecure bool) (*http.Response, []byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, nil, err
-	}
-	client := &http.Client{Timeout: 30 * time.Second}
-	if insecure && strings.HasPrefix(url, "https") {
-		client.Transport = insecureTransport()
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer resp.Body.Close()
-	data, _ := io.ReadAll(resp.Body)
-	return resp, data, nil
-}
-
-func labppAPICancel(ctx context.Context, url string, insecure bool) (*http.Response, []byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
-	if err != nil {
-		return nil, nil, err
-	}
-	client := &http.Client{Timeout: 30 * time.Second}
-	if insecure && strings.HasPrefix(url, "https") {
-		client.Transport = insecureTransport()
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer resp.Body.Close()
-	data, _ := io.ReadAll(resp.Body)
-	return resp, data, nil
 }
 
 func normalizeLabppLog(raw string) string {
@@ -533,97 +435,141 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 	}
 	labPath := strings.TrimSpace(spec.LabPath)
 	if labPath == "" && strings.TrimSpace(spec.Template) != "" {
-		stamp := time.Now().UTC().Format("20060102-1504")
-		labPath = fmt.Sprintf(
-			"/%s-%s/%s.unl",
-			labppSafeFilename.ReplaceAllString(deployment, "-"),
-			stamp,
-			labppLabFilename(spec.Template),
-		)
+		labPath = labppLabPath(spec.Username, deployment, spec.Template, time.Now())
 	}
-	if labPath != "" {
-		labPath = "/" + strings.TrimPrefix(labPath, "/")
-	}
+	labPath = labppNormalizeFolderPath(labPath)
 	templatesRoot := strings.TrimSpace(spec.TemplatesRoot)
 	if templatesRoot == "" {
-		templatesRoot = "/var/lib/skyforge/labpp-templates"
+		templatesRoot = "/var/lib/skyforge/labpp/templates"
 	}
+	action := strings.TrimSpace(spec.Action)
+	if strings.EqualFold(action, "configure") {
+		action = "config"
+	}
+	if strings.EqualFold(action, "e2e") {
+		action = ""
+	}
+	if strings.EqualFold(action, "start") {
+		action = ""
+	}
+	templateDir := filepath.Join(templatesRoot, spec.Template)
+	if _, err := os.Stat(templateDir); err != nil {
+		return fmt.Errorf("labpp template dir missing: %w", err)
+	}
+	configDirBase := strings.TrimSpace(s.cfg.LabppConfigDirBase)
+	if configDirBase == "" {
+		return fmt.Errorf("labpp config dir base is not configured")
+	}
+	if err := os.MkdirAll(configDirBase, 0o755); err != nil {
+		return fmt.Errorf("failed to ensure labpp config dir base: %w", err)
+	}
+
+	eveHost := resolveLabppHost(spec.EveURL)
+	if eveHost == "" {
+		return fmt.Errorf("eve host unavailable for labpp")
+	}
+	configFile, err := s.writeLabppConfigFile(eveHost, spec.EveUsername, spec.EvePassword)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(configFile)
+
 	debugID := uuid.NewString()
 	debugFingerprint := ""
 	if spec.EvePassword != "" {
 		sum := sha256.Sum256([]byte(spec.EvePassword))
 		debugFingerprint = fmt.Sprintf("%x", sum)
 	}
-	payload := map[string]any{
-		"action":           strings.ToUpper(spec.Action),
-		"project":          project,
-		"deployment":       deployment,
-		"templatesRoot":    templatesRoot,
-		"template":         spec.Template,
-		"debugId":          debugID,
-		"debugFingerprint": debugFingerprint,
-		"eve": map[string]any{
-			"url":      spec.EveURL,
-			"username": spec.EveUsername,
-			"password": spec.EvePassword,
-		},
-	}
+	log.Infof("LabPP debug id: %s", debugID)
+	log.Infof("LabPP EVE password fingerprint: %s", debugFingerprint)
+	log.Infof("LabPP run: action=%s labPath=%s templateDir=%s", action, labPath, templateDir)
+
+	customArgs := []string{"--verbose", "--debug", "labpp", "--template-dir", templateDir, "--config-dir-base", configDirBase, "--labpp-config-file", configFile}
 	if labPath != "" {
-		payload["labPath"] = labPath
+		customArgs = append(customArgs, "--lab-path", labPath)
+	}
+	if action != "" {
+		customArgs = append(customArgs, "--action", strings.ToUpper(action))
 	}
 	if spec.ThreadCount > 0 {
-		payload["threadCount"] = spec.ThreadCount
+		customArgs = append(customArgs, "--thread-count", strconv.Itoa(spec.ThreadCount))
 	}
 
-	stdlog.Printf(
-		"labpp payload context: action=%s labPath=%s templatesRoot=%s template=%s",
-		spec.Action,
-		labPath,
-		spec.TemplatesRoot,
-		spec.Template,
-	)
-	log.Infof(
-		"LabPP payload context: action=%s labPath=%s templatesRoot=%s template=%s",
-		spec.Action,
-		labPath,
-		spec.TemplatesRoot,
-		spec.Template,
-	)
-	if spec.EvePassword != "" {
-		log.Infof("LabPP EVE password fingerprint: %s", debugFingerprint)
-		stdlog.Printf("labpp eve password fingerprint: %s", debugFingerprint)
+	labppS3Endpoint := strings.TrimSpace(s.cfg.LabppS3Endpoint)
+	if labppS3Endpoint == "" {
+		labppS3Endpoint = "http://minio:9000"
 	}
-	log.Infof("LabPP debug id: %s", debugID)
-	log.Infof("LabPP payload fields: project=%s deployment=%s template=%s templatesRoot=%s", project, deployment, spec.Template, spec.TemplatesRoot)
-	log.Infof("LabPP payload preview: %s", labppPayloadPreview(payload))
-	if payloadJSON, err := json.Marshal(payload); err == nil {
-		stdlog.Printf("labpp payload json: %s", payloadJSON)
+	jobEnv := map[string]string{
+		"LABPP_NETBOX_URL":          s.cfg.LabppNetboxURL,
+		"LABPP_NETBOX_USERNAME":     s.cfg.LabppNetboxUsername,
+		"LABPP_NETBOX_PASSWORD":     s.cfg.LabppNetboxPassword,
+		"LABPP_NETBOX_TOKEN":        s.cfg.LabppNetboxToken,
+		"LABPP_NETBOX_MGMT_SUBNET":  s.cfg.LabppNetboxMgmtSubnet,
+		"LABPP_S3_ACCESS_KEY":       s.cfg.LabppS3AccessKey,
+		"LABPP_S3_SECRET_KEY":       s.cfg.LabppS3SecretKey,
+		"LABPP_S3_REGION":           s.cfg.LabppS3Region,
+		"LABPP_S3_BUCKET":           s.cfg.LabppS3BucketName,
+		"LABPP_S3_ENDPOINT":         labppS3Endpoint,
+		"LABPP_S3_DISABLE_SSL":      fmt.Sprintf("%v", s.cfg.LabppS3DisableSSL),
+		"LABPP_S3_DISABLE_CHECKSUM": fmt.Sprintf("%v", s.cfg.LabppS3DisableChecksum),
+		"LABPP_EVE_HOST":            eveHost,
+		"LABPP_CONFIG_FILE":         configFile,
+		"LABPP_CONFIG_DIR_BASE":     configDirBase,
+		"LABPP_TEMPLATES_DIR":       templateDir,
+		"LABPP_LAB_PATH":            labPath,
+		"LABPP_ACTION":              action,
+		"LABPP_EVE_SSH_HOST":        eveHost,
+		"LABPP_EVE_SSH_USER":        s.cfg.Labs.EveSSHUser,
+		"LABPP_EVE_SSH_KEY_FILE":    s.cfg.Labs.EveSSHKeyFile,
+		"LABPP_EVE_SSH_PORT":        "22",
+		"LABPP_EVE_SSH_TUNNEL":      fmt.Sprintf("%v", s.cfg.Labs.EveSSHTunnel),
+		"LABPP_EVE_SSH_NO_PROXY":    "localhost|127.0.0.1|minio|netbox|nautobot|gitea|skyforge-server|*.svc|*.cluster.local",
+		"LABPP_SKIP_FORWARD":        "true",
 	}
-	log.Infof("Starting labpp job (%s)", spec.Action)
-	resp, body, err := labppAPIDo(ctx, spec.APIURL+"/jobs", payload, spec.Insecure)
-	if err != nil {
-		return fmt.Errorf("failed to reach labpp API: %w", err)
+	if spec.ThreadCount > 0 {
+		jobEnv["LABPP_THREAD_COUNT"] = strconv.Itoa(spec.ThreadCount)
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("labpp API rejected request: %s", strings.TrimSpace(string(body)))
+	for key, value := range spec.Environment {
+		jobEnv[key] = value
 	}
-	var job labppJob
-	if err := json.Unmarshal(body, &job); err != nil || strings.TrimSpace(job.ID) == "" {
-		return fmt.Errorf("labpp API returned invalid response")
+
+	log.Infof("Starting LabPP runner job (%s)", strings.Join(customArgs, " "))
+	jobName := fmt.Sprintf("labpp-%d", spec.TaskID)
+	if err := s.runLabppJob(ctx, log, jobName, customArgs, jobEnv); err != nil {
+		if isLabppBenignFailure(action, err.Error(), "") {
+			log.Infof("LabPP %s treated as success: %v", action, err)
+			return nil
+		}
+		return err
 	}
+
+	dataSourcesPath := ""
+	if spec.WorkspaceCtx != nil && strings.TrimSpace(spec.DeploymentID) != "" && action == "" {
+		dataSourcesDir := filepath.Join(strings.TrimSpace(s.cfg.PlatformDataDir), "labpp", "data-sources", spec.DeploymentID)
+		csvPath, err := s.generateLabppDataSourcesCSV(ctx, spec.DeploymentID, templateDir, configDirBase, configFile, labPath, dataSourcesDir, log, eveHost)
+		if err != nil {
+			stdlog.Printf("labpp data_sources.csv generation failed: %v", err)
+		} else {
+			dataSourcesPath = csvPath
+			forwardOverride := forwardOverridesFromEnv(spec.Environment)
+			if err := s.syncForwardLabppDevicesFromCSV(ctx, spec.WorkspaceCtx, spec.DeploymentID, csvPath, forwardOverride); err != nil {
+				stdlog.Printf("forward labpp sync: %v", err)
+			}
+		}
+	}
+
 	if spec.TaskID > 0 && spec.WorkspaceCtx != nil {
 		metaAny, _ := fromJSONMap(spec.Metadata)
 		if metaAny == nil {
 			metaAny = map[string]any{}
 		}
-		metaAny["labppJobId"] = job.ID
-		metaAny["labppLabPath"] = spec.LabPath
+		metaAny["labppLabPath"] = labPath
 		metaAny["labppTemplate"] = spec.Template
-		metaAny["labppApiUrl"] = spec.APIURL
+		if dataSourcesPath != "" {
+			metaAny["labppDataSourcesCsv"] = dataSourcesPath
+		}
 		metaUpdated, err := toJSONMap(metaAny)
-		if err != nil {
-			stdlog.Printf("labpp metadata encode: %v", err)
-		} else {
+		if err == nil {
 			spec.Metadata = metaUpdated
 			metaCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			if err := updateTaskMetadata(metaCtx, s.db, spec.TaskID, metaUpdated); err != nil {
@@ -633,108 +579,177 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		}
 	}
 
-	lastLog := ""
-	lastLogAt := time.Now()
-	lastStatus := ""
-	lastStatusAt := time.Now()
-	startedAt := time.Now()
-	deadline := time.Now().Add(time.Duration(spec.MaxSeconds) * time.Second)
-	if spec.MaxSeconds <= 0 {
-		deadline = time.Now().Add(20 * time.Minute)
+	return nil
+}
+
+func resolveLabppHost(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
 	}
-
-	for {
-		if spec.TaskID > 0 {
-			canceled, meta := s.taskCanceled(ctx, spec.TaskID)
-			if canceled {
-				jobID := job.ID
-				if jobID == "" {
-					jobID = labppMetaString(meta, "labppJobId")
-				}
-				if jobID != "" {
-					s.cancelLabppJob(ctx, spec.APIURL, jobID, spec.Insecure, log)
-				}
-				return fmt.Errorf("labpp job canceled")
-			}
+	if !strings.Contains(raw, "://") {
+		if strings.Contains(raw, "/") {
+			raw = "https://" + strings.TrimPrefix(raw, "//")
+		} else {
+			return raw
 		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("labpp job timed out")
-		}
-
-		getResp, getBody, err := labppAPIGet(ctx, fmt.Sprintf("%s/jobs/%s", spec.APIURL, job.ID), spec.Insecure)
-		if err == nil && getResp != nil && getResp.StatusCode >= 200 && getResp.StatusCode < 300 {
-			_ = json.Unmarshal(getBody, &job)
-		}
-
-		logResp, logBody, err := labppAPIGet(ctx, fmt.Sprintf("%s/jobs/%s/log", spec.APIURL, job.ID), spec.Insecure)
-		if err == nil && logResp != nil && logResp.StatusCode >= 200 && logResp.StatusCode < 300 {
-			nextLog := normalizeLabppLog(string(logBody))
-			if nextLog != "" && nextLog != lastLog {
-				diff := nextLog[len(lastLog):]
-				if diff != "" {
-					log.Infof(diff)
-				}
-				lastLog = nextLog
-				lastLogAt = time.Now()
-			}
-		}
-
-		status := strings.ToLower(strings.TrimSpace(derefString(job.Status)))
-		if status == "" {
-			status = strings.ToLower(strings.TrimSpace(derefString(job.State)))
-		}
-		if status == "" {
-			status = "pending"
-		}
-		if status != lastStatus || time.Since(lastStatusAt) > 20*time.Second {
-			log.Infof("LabPP status: %s (elapsed %s)", status, time.Since(startedAt).Truncate(time.Second))
-			lastStatus = status
-			lastStatusAt = time.Now()
-		} else if status == "running" && time.Since(lastLogAt) > 30*time.Second && time.Since(lastStatusAt) > 20*time.Second {
-			log.Infof("LabPP still running; waiting for node boot/config (elapsed %s)", time.Since(startedAt).Truncate(time.Second))
-			lastStatusAt = time.Now()
-		}
-		if status == "running" && lastLog != "" {
-			if strings.Contains(lastLog, "LabPP job completed with status SUCCESS") ||
-				(strings.Contains(lastLog, "NODE-SETUP complete for all nodes") && (spec.Action == "start" || spec.Action == "e2e")) {
-				log.Infof("LabPP status inferred as success from logs")
-				if spec.WorkspaceCtx != nil && strings.TrimSpace(spec.DeploymentID) != "" {
-					syncCtx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
-					if err := s.syncForwardLabppDevices(syncCtx, spec.WorkspaceCtx, spec.DeploymentID, spec.APIURL, job.ID, spec.Insecure); err != nil {
-						stdlog.Printf("forward labpp sync: %v", err)
-					}
-					cancel()
-				}
-				return nil
-			}
-		}
-		if status == "success" || status == "succeeded" || status == "failed" || status == "canceled" || status == "cancelled" {
-			if status != "success" && status != "succeeded" {
-				errText := ""
-				if job.Error != nil {
-					errText = strings.TrimSpace(*job.Error)
-				}
-				if isLabppBenignFailure(spec.Action, errText, lastLog) {
-					log.Infof("LabPP action treated as success: %s", errText)
-					return nil
-				}
-				if errText != "" {
-					return errors.New(errText)
-				}
-				return fmt.Errorf("labpp job %s", status)
-			}
-			if spec.WorkspaceCtx != nil && strings.TrimSpace(spec.DeploymentID) != "" {
-				syncCtx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
-				if err := s.syncForwardLabppDevices(syncCtx, spec.WorkspaceCtx, spec.DeploymentID, spec.APIURL, job.ID, spec.Insecure); err != nil {
-					stdlog.Printf("forward labpp sync: %v", err)
-				}
-				cancel()
-			}
-			return nil
-		}
-
-		time.Sleep(2 * time.Second)
 	}
+	u, err := url.Parse(raw)
+	if err == nil && u != nil && u.Hostname() != "" {
+		return u.Hostname()
+	}
+	raw = strings.TrimPrefix(raw, "https://")
+	raw = strings.TrimPrefix(raw, "http://")
+	raw = strings.TrimPrefix(raw, "//")
+	return strings.TrimSpace(strings.Split(raw, "/")[0])
+}
+
+func (s *Service) writeLabppConfigFile(eveHost, username, password string) (string, error) {
+	if strings.TrimSpace(username) == "" || strings.TrimSpace(password) == "" {
+		return "", fmt.Errorf("labpp eve credentials are required")
+	}
+	configDir := strings.TrimSpace(s.cfg.LabppConfigDirBase)
+	if configDir == "" {
+		configDir = os.TempDir()
+	}
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		return "", fmt.Errorf("failed to create labpp config dir: %w", err)
+	}
+	f, err := os.CreateTemp(configDir, "labpp-*.properties")
+	if err != nil {
+		return "", fmt.Errorf("failed to create labpp config file: %w", err)
+	}
+	defer f.Close()
+
+	version := strings.TrimSpace(s.cfg.LabppConfigVersion)
+	if version == "" {
+		version = "1.0"
+	}
+	lines := []string{
+		fmt.Sprintf("version=%s", version),
+		fmt.Sprintf("username=%s", username),
+		fmt.Sprintf("password=%s", password),
+		fmt.Sprintf("server_url=https://%s", eveHost),
+	}
+	if s.cfg.LabppNetboxURL != "" {
+		netboxURL := strings.TrimRight(s.cfg.LabppNetboxURL, "/")
+		if !strings.Contains(netboxURL, "/netbox") {
+			netboxURL = netboxURL + "/netbox"
+		}
+		lines = append(lines, fmt.Sprintf("netbox_server_url=%s", netboxURL))
+	}
+	if s.cfg.LabppNetboxUsername != "" {
+		lines = append(lines, fmt.Sprintf("netbox_username=%s", s.cfg.LabppNetboxUsername))
+	}
+	if s.cfg.LabppNetboxPassword != "" {
+		lines = append(lines, fmt.Sprintf("netbox_password=%s", s.cfg.LabppNetboxPassword))
+	}
+	if s.cfg.LabppNetboxToken != "" {
+		lines = append(lines, fmt.Sprintf("netbox_token=%s", s.cfg.LabppNetboxToken))
+	}
+	if s.cfg.LabppNetboxMgmtSubnet != "" {
+		lines = append(lines, fmt.Sprintf("netbox_mgmt_subnet_ip=%s", s.cfg.LabppNetboxMgmtSubnet))
+	}
+	if s.cfg.LabppS3AccessKey != "" {
+		lines = append(lines, fmt.Sprintf("s3_access_key=%s", s.cfg.LabppS3AccessKey))
+	}
+	if s.cfg.LabppS3SecretKey != "" {
+		lines = append(lines, fmt.Sprintf("s3_secret_key=%s", s.cfg.LabppS3SecretKey))
+	}
+	if s.cfg.LabppS3Region != "" {
+		lines = append(lines, fmt.Sprintf("s3_region=%s", s.cfg.LabppS3Region))
+	}
+	if s.cfg.LabppS3BucketName != "" {
+		lines = append(lines, fmt.Sprintf("s3_bucket_name=%s", s.cfg.LabppS3BucketName))
+	}
+	if s.cfg.LabppS3Endpoint != "" {
+		lines = append(lines, fmt.Sprintf("s3_endpoint=%s", s.cfg.LabppS3Endpoint))
+	}
+	lines = append(lines, fmt.Sprintf("s3_disable_ssl=%v", s.cfg.LabppS3DisableSSL))
+	lines = append(lines, fmt.Sprintf("s3_disable_checksum=%v", s.cfg.LabppS3DisableChecksum))
+	if _, err := f.WriteString(strings.Join(lines, "\n") + "\n"); err != nil {
+		return "", fmt.Errorf("failed to write labpp config file: %w", err)
+	}
+	return f.Name(), nil
+}
+
+func (s *Service) generateLabppDataSourcesCSV(ctx context.Context, deploymentID, templateDir, configDirBase, configFile, labPath, dataSourcesDir string, log *taskLogger, eveHost string) (string, error) {
+	if dataSourcesDir == "" {
+		dataSourcesDir = filepath.Join(os.TempDir(), "labpp-data-sources")
+	}
+	if err := os.MkdirAll(dataSourcesDir, 0o755); err != nil {
+		return "", fmt.Errorf("failed to create data sources dir: %w", err)
+	}
+	customArgs := []string{"--verbose", "--debug", "labpp", "--template-dir", templateDir, "--config-dir-base", configDirBase, "--labpp-config-file", configFile, "--action", "DATA_SOURCES_CSV", "--sources-dir", dataSourcesDir}
+	if labPath != "" {
+		customArgs = append(customArgs, "--lab-path", labPath)
+	}
+	log.Infof("Generating labpp data_sources.csv")
+	labppS3Endpoint := strings.TrimSpace(s.cfg.LabppS3Endpoint)
+	if labppS3Endpoint == "" {
+		labppS3Endpoint = "http://minio:9000"
+	}
+	jobEnv := map[string]string{
+		"LABPP_NETBOX_URL":          s.cfg.LabppNetboxURL,
+		"LABPP_NETBOX_USERNAME":     s.cfg.LabppNetboxUsername,
+		"LABPP_NETBOX_PASSWORD":     s.cfg.LabppNetboxPassword,
+		"LABPP_NETBOX_TOKEN":        s.cfg.LabppNetboxToken,
+		"LABPP_NETBOX_MGMT_SUBNET":  s.cfg.LabppNetboxMgmtSubnet,
+		"LABPP_S3_ACCESS_KEY":       s.cfg.LabppS3AccessKey,
+		"LABPP_S3_SECRET_KEY":       s.cfg.LabppS3SecretKey,
+		"LABPP_S3_REGION":           s.cfg.LabppS3Region,
+		"LABPP_S3_BUCKET":           s.cfg.LabppS3BucketName,
+		"LABPP_S3_ENDPOINT":         labppS3Endpoint,
+		"LABPP_S3_DISABLE_SSL":      fmt.Sprintf("%v", s.cfg.LabppS3DisableSSL),
+		"LABPP_S3_DISABLE_CHECKSUM": fmt.Sprintf("%v", s.cfg.LabppS3DisableChecksum),
+		"LABPP_EVE_HOST":            eveHost,
+		"LABPP_CONFIG_FILE":         configFile,
+		"LABPP_CONFIG_DIR_BASE":     configDirBase,
+		"LABPP_TEMPLATES_DIR":       templateDir,
+		"LABPP_LAB_PATH":            labPath,
+		"LABPP_ACTION":              "DATA_SOURCES_CSV",
+		"LABPP_SOURCES_DIR":         dataSourcesDir,
+		"LABPP_EVE_SSH_HOST":        eveHost,
+		"LABPP_EVE_SSH_USER":        s.cfg.Labs.EveSSHUser,
+		"LABPP_EVE_SSH_KEY_FILE":    s.cfg.Labs.EveSSHKeyFile,
+		"LABPP_EVE_SSH_PORT":        "22",
+		"LABPP_EVE_SSH_TUNNEL":      fmt.Sprintf("%v", s.cfg.Labs.EveSSHTunnel),
+		"LABPP_EVE_SSH_NO_PROXY":    "localhost|127.0.0.1|minio|netbox|nautobot|gitea|skyforge-server|*.svc|*.cluster.local",
+	}
+	if err := s.runLabppJob(ctx, log, fmt.Sprintf("labpp-sources-%s", deploymentID), customArgs, jobEnv); err != nil {
+		return "", err
+	}
+	csvPath := filepath.Join(dataSourcesDir, "data_sources.csv")
+	if _, err := os.Stat(csvPath); err != nil {
+		return "", fmt.Errorf("labpp data_sources.csv missing: %w", err)
+	}
+	return csvPath, nil
+}
+
+func forwardOverridesFromEnv(env map[string]string) *forwardCredentials {
+	if len(env) == 0 {
+		return nil
+	}
+	override := &forwardCredentials{}
+	set := func(field *string, key string) {
+		if value, ok := env[key]; ok {
+			if trimmed := strings.TrimSpace(value); trimmed != "" {
+				*field = trimmed
+			}
+		}
+	}
+	set(&override.BaseURL, "LABPP_FORWARD_URL")
+	set(&override.BaseURL, "LABPP_FORWARD_BASE_URL")
+	set(&override.Username, "LABPP_FORWARD_USERNAME")
+	set(&override.Password, "LABPP_FORWARD_PASSWORD")
+	set(&override.DeviceUsername, "LABPP_FORWARD_DEVICE_USERNAME")
+	set(&override.DevicePassword, "LABPP_FORWARD_DEVICE_PASSWORD")
+	set(&override.CollectorID, "LABPP_FORWARD_COLLECTOR_ID")
+	if override.BaseURL == "" && override.Username == "" && override.Password == "" &&
+		override.DeviceUsername == "" && override.DevicePassword == "" && override.CollectorID == "" {
+		return nil
+	}
+	return override
 }
 
 type containerlabRunSpec struct {
@@ -770,7 +785,7 @@ func (s *Service) runContainerlabTask(ctx context.Context, spec containerlabRunS
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			return fmt.Errorf("containerlab API rejected request: %s", strings.TrimSpace(string(body)))
 		}
-		log.Infof(string(body))
+		log.Infof("%s", string(body))
 		return nil
 	case "destroy":
 		url := fmt.Sprintf("%s/api/v1/labs/%s", spec.APIURL, spec.LabName)
@@ -786,7 +801,7 @@ func (s *Service) runContainerlabTask(ctx context.Context, spec containerlabRunS
 			return fmt.Errorf("containerlab API rejected request: %s", strings.TrimSpace(string(body)))
 		}
 		if len(body) > 0 {
-			log.Infof(string(body))
+			log.Infof("%s", string(body))
 		}
 		return nil
 	default:
@@ -794,7 +809,7 @@ func (s *Service) runContainerlabTask(ctx context.Context, spec containerlabRunS
 	}
 }
 
-type tofuRunSpec struct {
+type terraformRunSpec struct {
 	TaskID         int
 	WorkspaceCtx   *workspaceContext
 	WorkspaceSlug  string
@@ -808,11 +823,11 @@ type tofuRunSpec struct {
 	Environment    map[string]any
 }
 
-func (s *Service) runTofuTask(ctx context.Context, spec tofuRunSpec, log *taskLogger) error {
+func (s *Service) runTerraformTask(ctx context.Context, spec terraformRunSpec, log *taskLogger) error {
 	if spec.TaskID > 0 {
 		canceled, _ := s.taskCanceled(ctx, spec.TaskID)
 		if canceled {
-			return fmt.Errorf("tofu job canceled")
+			return fmt.Errorf("terraform job canceled")
 		}
 	}
 	if spec.Template == "" {
@@ -838,18 +853,18 @@ func (s *Service) runTofuTask(ctx context.Context, spec tofuRunSpec, log *taskLo
 	if strings.TrimSpace(workRoot) == "" {
 		workRoot = os.TempDir()
 	}
-	workDir := filepath.Join(workRoot, "tofu-workspaces", spec.WorkspaceSlug, spec.Username, spec.Template)
+	workDir := filepath.Join(workRoot, "terraform-workspaces", spec.WorkspaceSlug, spec.Username, spec.Template)
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		return err
 	}
 
 	sourceDir := path.Join(templatesDir, spec.Template)
-	log.Infof("Syncing tofu template %s", sourceDir)
+	log.Infof("Syncing terraform template %s", sourceDir)
 	if err := syncGiteaDirectory(s.cfg, ref.Owner, ref.Repo, sourceDir, ref.Branch, workDir); err != nil {
 		return err
 	}
 
-	tofuPath, err := ensureTofuBinary()
+	terraformPath, err := ensureTerraformBinary()
 	if err != nil {
 		return err
 	}
@@ -859,35 +874,35 @@ func (s *Service) runTofuTask(ctx context.Context, spec tofuRunSpec, log *taskLo
 		env[k] = fmt.Sprint(v)
 	}
 
-	if err := runTofuCommand(ctx, log, tofuPath, workDir, env, "init", "-input=false", "-no-color"); err != nil {
+	if err := runTerraformCommand(ctx, log, terraformPath, workDir, env, "init"); err != nil {
 		return err
 	}
 
 	switch spec.Action {
 	case "plan":
-		return runTofuCommand(ctx, log, tofuPath, workDir, env, "plan", "-input=false", "-no-color")
+		return runTerraformCommand(ctx, log, terraformPath, workDir, env, "plan")
 	case "apply":
-		if err := runTofuCommand(ctx, log, tofuPath, workDir, env, "apply", "-auto-approve", "-input=false", "-no-color"); err != nil {
+		if err := runTerraformCommand(ctx, log, terraformPath, workDir, env, "apply"); err != nil {
 			return err
 		}
-		s.syncTofuState(ctx, spec, workDir, log)
+		s.syncTerraformState(ctx, spec, workDir, log)
 		return nil
 	case "destroy":
-		if err := runTofuCommand(ctx, log, tofuPath, workDir, env, "destroy", "-auto-approve", "-input=false", "-no-color"); err != nil {
-			if isTofuBenignFailure("destroy", err) {
-				log.Infof("Tofu destroy treated as success: %v", err)
+		if err := runTerraformCommand(ctx, log, terraformPath, workDir, env, "destroy"); err != nil {
+			if isTerraformBenignFailure("destroy", err) {
+				log.Infof("Terraform destroy treated as success: %v", err)
 				return nil
 			}
 			return err
 		}
-		s.syncTofuState(ctx, spec, workDir, log)
+		s.syncTerraformState(ctx, spec, workDir, log)
 		return nil
 	default:
-		return fmt.Errorf("unknown tofu action")
+		return fmt.Errorf("unknown terraform action")
 	}
 }
 
-func (s *Service) syncTofuState(ctx context.Context, spec tofuRunSpec, workDir string, log *taskLogger) {
+func (s *Service) syncTerraformState(ctx context.Context, spec terraformRunSpec, workDir string, log *taskLogger) {
 	if spec.WorkspaceCtx == nil {
 		return
 	}
@@ -909,22 +924,60 @@ func (s *Service) syncTofuState(ctx context.Context, spec tofuRunSpec, workDir s
 	log.Infof("Terraform state synced to object storage.")
 }
 
-func runTofuCommand(ctx context.Context, log *taskLogger, binary string, workDir string, env map[string]string, args ...string) error {
+func runTerraformCommand(ctx context.Context, log *taskLogger, binary string, workDir string, env map[string]string, action string) error {
 	if binary == "" {
-		return fmt.Errorf("tofu binary not found")
+		return fmt.Errorf("terraform binary not found")
 	}
-	cmd := execCommandContext(ctx, binary, args...)
-	cmd.Dir = workDir
-	cmd.Env = os.Environ()
+	tf, err := tfexec.NewTerraform(workDir, binary)
+	if err != nil {
+		return fmt.Errorf("failed to init terraform exec: %w", err)
+	}
+	envMap := map[string]string{}
+	for _, item := range os.Environ() {
+		parts := strings.SplitN(item, "=", 2)
+		if len(parts) == 2 {
+			envMap[parts[0]] = parts[1]
+		}
+	}
 	for k, v := range env {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+		envMap[k] = v
 	}
-	output, err := cmd.CombinedOutput()
-	if len(output) > 0 {
-		log.Infof(string(output))
+	if _, ok := envMap["TF_CLI_ARGS_init"]; !ok {
+		envMap["TF_CLI_ARGS_init"] = "-input=false -no-color"
+	}
+	if _, ok := envMap["TF_CLI_ARGS_plan"]; !ok {
+		envMap["TF_CLI_ARGS_plan"] = "-input=false -no-color"
+	}
+	if _, ok := envMap["TF_CLI_ARGS_apply"]; !ok {
+		envMap["TF_CLI_ARGS_apply"] = "-auto-approve -input=false -no-color"
+	}
+	if _, ok := envMap["TF_CLI_ARGS_destroy"]; !ok {
+		envMap["TF_CLI_ARGS_destroy"] = "-auto-approve -input=false -no-color"
+	}
+	if err := tf.SetEnv(envMap); err != nil {
+		return fmt.Errorf("failed to configure terraform env: %w", err)
+	}
+	var output bytes.Buffer
+	tf.SetStdout(&output)
+	tf.SetStderr(&output)
+
+	switch action {
+	case "init":
+		err = tf.Init(ctx)
+	case "plan":
+		_, err = tf.Plan(ctx)
+	case "apply":
+		err = tf.Apply(ctx)
+	case "destroy":
+		err = tf.Destroy(ctx)
+	default:
+		return fmt.Errorf("unknown terraform action")
+	}
+	if output.Len() > 0 {
+		log.Infof("%s", output.String())
 	}
 	if err != nil {
-		return fmt.Errorf("tofu command failed: %w", err)
+		return fmt.Errorf("terraform command failed: %w", err)
 	}
 	return nil
 }
@@ -957,7 +1010,7 @@ func isLabppBenignFailure(action string, errText string, logs string) bool {
 	return false
 }
 
-func isTofuBenignFailure(action string, err error) bool {
+func isTerraformBenignFailure(action string, err error) bool {
 	if action != "destroy" || err == nil {
 		return false
 	}
@@ -974,51 +1027,49 @@ func isTofuBenignFailure(action string, err error) bool {
 	return false
 }
 
-var execCommandContext = exec.CommandContext
+var terraformBinaryOnce sync.Once
+var terraformBinaryPath string
+var terraformBinaryErr error
 
-var tofuBinaryOnce sync.Once
-var tofuBinaryPath string
-var tofuBinaryErr error
-
-func ensureTofuBinary() (string, error) {
-	tofuBinaryOnce.Do(func() {
-		if path := strings.TrimSpace(os.Getenv("SKYFORGE_TOFU_PATH")); path != "" {
-			tofuBinaryPath = path
+func ensureTerraformBinary() (string, error) {
+	terraformBinaryOnce.Do(func() {
+		if path := strings.TrimSpace(os.Getenv("SKYFORGE_TERRAFORM_PATH")); path != "" {
+			terraformBinaryPath = path
 			return
 		}
 		cacheRoot := filepath.Join(os.TempDir(), "skyforge-tools")
-		tofuBinaryPath = filepath.Join(cacheRoot, "tofu")
-		if _, err := os.Stat(tofuBinaryPath); err == nil {
+		terraformBinaryPath = filepath.Join(cacheRoot, "terraform")
+		if _, err := os.Stat(terraformBinaryPath); err == nil {
 			return
 		}
-		version := strings.TrimSpace(os.Getenv("SKYFORGE_TOFU_VERSION"))
+		version := strings.TrimSpace(os.Getenv("SKYFORGE_TERRAFORM_VERSION"))
 		if version == "" {
-			version = "1.7.2"
+			version = "1.9.8"
 		}
-		url := strings.TrimSpace(os.Getenv("SKYFORGE_TOFU_URL"))
+		url := strings.TrimSpace(os.Getenv("SKYFORGE_TERRAFORM_URL"))
 		if url == "" {
-			url = fmt.Sprintf("https://github.com/opentofu/opentofu/releases/download/v%s/tofu_%s_linux_amd64.zip", version, version)
+			url = fmt.Sprintf("https://releases.hashicorp.com/terraform/%s/terraform_%s_linux_amd64.zip", version, version)
 		}
 		if err := os.MkdirAll(cacheRoot, 0o755); err != nil {
-			tofuBinaryErr = err
+			terraformBinaryErr = err
 			return
 		}
-		if err := downloadAndUnzipTofu(url, tofuBinaryPath); err != nil {
-			tofuBinaryErr = err
+		if err := downloadAndUnzipTerraform(url, terraformBinaryPath); err != nil {
+			terraformBinaryErr = err
 			return
 		}
 	})
-	return tofuBinaryPath, tofuBinaryErr
+	return terraformBinaryPath, terraformBinaryErr
 }
 
-func downloadAndUnzipTofu(url string, dest string) error {
+func downloadAndUnzipTerraform(url string, dest string) error {
 	resp, err := http.Get(url)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("failed to download tofu: %s", resp.Status)
+		return fmt.Errorf("failed to download terraform: %s", resp.Status)
 	}
 	tmpFile := dest + ".zip"
 	out, err := os.Create(tmpFile)

@@ -8,6 +8,8 @@ import (
 // Encore-managed secrets fallback (matches encore.app).
 var secrets struct {
 	SKYFORGE_SESSION_SECRET                      string
+	SKYFORGE_OIDC_CLIENT_ID                      string
+	SKYFORGE_OIDC_CLIENT_SECRET                  string
 	SKYFORGE_LDAP_URL                            string
 	SKYFORGE_LDAP_BIND_TEMPLATE                  string
 	SKYFORGE_LDAP_LOOKUP_BINDDN                  string
@@ -24,6 +26,10 @@ func getEncoreSecret(key string) string {
 	switch key {
 	case "SKYFORGE_SESSION_SECRET":
 		return strings.TrimSpace(secrets.SKYFORGE_SESSION_SECRET)
+	case "SKYFORGE_OIDC_CLIENT_ID":
+		return strings.TrimSpace(secrets.SKYFORGE_OIDC_CLIENT_ID)
+	case "SKYFORGE_OIDC_CLIENT_SECRET":
+		return strings.TrimSpace(secrets.SKYFORGE_OIDC_CLIENT_SECRET)
 	case "SKYFORGE_LDAP_URL":
 		return strings.TrimSpace(secrets.SKYFORGE_LDAP_URL)
 	case "SKYFORGE_LDAP_BIND_TEMPLATE":

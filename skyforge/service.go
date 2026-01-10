@@ -66,6 +66,7 @@ type Config struct {
 	PlatformDataDir           string
 	MaxGroups                 int
 	AdminUsers                []string
+	AdminUsername             string
 	AdminPassword             string
 	WorkspaceSyncSeconds      int
 	UI                        UIConfig
@@ -80,6 +81,7 @@ type Config struct {
 	GiteaBaseURL              string
 	NetboxBaseURL             string
 	NautobotBaseURL           string
+	YaadeBaseURL              string
 	StateBackend              string
 	DBHost                    string
 	DBPort                    int
@@ -91,14 +93,32 @@ type Config struct {
 	Netlab                    NetlabConfig
 	NetlabServers             []NetlabServerConfig
 	Labs                      LabsConfig
+	OIDC                      OIDCConfig
 	LDAP                      LDAPConfig
 	LDAPLookupBindDN          string
 	LDAPLookupBindPassword    string
 	Workspaces                WorkspacesConfig
 	Redis                     RedisConfig
 	EveServers                []EveServerConfig
-	LabppAPIURL               string
-	LabppSkipTLSVerify        bool
+	LabppRunnerImage          string
+	LabppRunnerPullPolicy     string
+	LabppRunnerPVCName        string
+	LabppConfigDirBase        string
+	LabppConfigVersion        string
+	LabppNetboxURL            string
+	LabppNetboxUsername       string
+	LabppNetboxPassword       string
+	LabppNetboxToken          string
+	LabppNetboxMgmtSubnet     string
+	LabppS3AccessKey          string
+	LabppS3SecretKey          string
+	LabppS3Region             string
+	LabppS3BucketName         string
+	LabppS3Endpoint           string
+	LabppS3DisableSSL         bool
+	LabppS3DisableChecksum    bool
+	YaadeAdminUsername        string
+	YaadeAdminPassword        string
 	ContainerlabAPIPath       string
 	ContainerlabJWTSecret     string
 	ContainerlabSkipTLSVerify bool
@@ -110,6 +130,13 @@ type Config struct {
 	DNSURL                    string
 	DNSAdminUsername          string
 	DNSUserZoneSuffix         string
+}
+
+type OIDCConfig struct {
+	IssuerURL    string
+	ClientID     string
+	ClientSecret string
+	RedirectURL  string
 }
 
 type RunRequest struct {
@@ -177,6 +204,8 @@ type UIConfig struct {
 	SupportText      string
 	SupportURL       string
 	ThemeDefault     string
+	OIDCEnabled      bool
+	OIDCLoginURL     string
 }
 
 type NetlabConfig struct {
@@ -204,6 +233,7 @@ type LabsConfig struct {
 	EveSkipTLSVerify bool
 	EveSSHKeyFile    string
 	EveSSHUser       string
+	EveSSHTunnel     bool
 	EveLabsPath      string
 	EveTmpPath       string
 }
@@ -260,9 +290,9 @@ type SkyforgeWorkspace struct {
 	Blueprint                 string    `json:"blueprint,omitempty"`
 	DefaultBranch             string    `json:"defaultBranch,omitempty"`
 	TerraformStateKey         string    `json:"terraformStateKey,omitempty"`
-	TofuInitTemplateID        int       `json:"tofuInitTemplateId,omitempty"`
-	TofuPlanTemplateID        int       `json:"tofuPlanTemplateId,omitempty"`
-	TofuApplyTemplateID       int       `json:"tofuApplyTemplateId,omitempty"`
+	TerraformInitTemplateID   int       `json:"terraformInitTemplateId,omitempty"`
+	TerraformPlanTemplateID   int       `json:"terraformPlanTemplateId,omitempty"`
+	TerraformApplyTemplateID  int       `json:"terraformApplyTemplateId,omitempty"`
 	AnsibleRunTemplateID      int       `json:"ansibleRunTemplateId,omitempty"`
 	NetlabRunTemplateID       int       `json:"netlabRunTemplateId,omitempty"`
 	LabppRunTemplateID        int       `json:"labppRunTemplateId,omitempty"`
@@ -294,6 +324,21 @@ func getenv(key, fallback string) string {
 		return val
 	}
 	return fallback
+}
+
+func getenvBool(key string, fallback bool) bool {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	switch strings.ToLower(value) {
+	case "1", "true", "yes", "y", "on":
+		return true
+	case "0", "false", "no", "n", "off":
+		return false
+	default:
+		return fallback
+	}
 }
 
 func inferEmailDomain(explicit string) string {
@@ -730,6 +775,7 @@ func loadConfig() Config {
 	}
 
 	adminUsers := parseUserList(getenv("SKYFORGE_ADMIN_USERS", ""))
+	adminUsername := strings.TrimSpace(getenv("SKYFORGE_ADMIN_USERNAME", "skyforge"))
 	adminPassword := strings.TrimSpace(getOptionalSecret("SKYFORGE_ADMIN_PASSWORD"))
 	corpEmailDomain := inferEmailDomain(getenv("SKYFORGE_CORP_EMAIL_DOMAIN", ""))
 	awsSSOStartURL := strings.TrimSpace(getenv("SKYFORGE_AWS_SSO_START_URL", ""))
@@ -739,6 +785,11 @@ func loadConfig() Config {
 	giteaBaseURL := strings.TrimRight(getenv("SKYFORGE_GITEA_URL", ""), "/")
 	netboxBaseURL := strings.TrimRight(getenv("SKYFORGE_NETBOX_URL", ""), "/")
 	nautobotBaseURL := strings.TrimRight(getenv("SKYFORGE_NAUTOBOT_URL", ""), "/")
+	yaadeBaseURL := strings.TrimRight(getenv("SKYFORGE_YAADE_URL", ""), "/")
+	oidcIssuerURL := strings.TrimSpace(getenv("SKYFORGE_OIDC_ISSUER_URL", ""))
+	oidcClientID := strings.TrimSpace(getOptionalSecret("SKYFORGE_OIDC_CLIENT_ID"))
+	oidcClientSecret := strings.TrimSpace(getOptionalSecret("SKYFORGE_OIDC_CLIENT_SECRET"))
+	oidcRedirectURL := strings.TrimSpace(getenv("SKYFORGE_OIDC_REDIRECT_URL", ""))
 	stateBackend := strings.TrimSpace(getenv("SKYFORGE_STATE_BACKEND", "file"))
 	dbHost := strings.TrimSpace(getenv("SKYFORGE_DB_HOST", ""))
 	dbPort := 5432
@@ -792,12 +843,30 @@ func loadConfig() Config {
 		EveSkipTLSVerify: getenv("SKYFORGE_EVE_SKIP_TLS_VERIFY", "false") == "true",
 		EveSSHKeyFile:    getenv("SKYFORGE_EVE_SSH_KEY_FILE", ""),
 		EveSSHUser:       getenv("SKYFORGE_EVE_SSH_USER", ""),
+		EveSSHTunnel:     getenv("SKYFORGE_EVE_SSH_TUNNEL_ENABLED", "true") == "true",
 		EveLabsPath:      getenv("SKYFORGE_EVE_LABS_PATH", "/opt/unetlab/labs"),
 		EveTmpPath:       getenv("SKYFORGE_EVE_TMP_PATH", "/opt/unetlab/tmp"),
 	}
 
-	labppAPIURL := strings.TrimRight(strings.TrimSpace(getenv("SKYFORGE_LABPP_API_URL", "")), "/")
-	labppSkipTLSVerify := getenv("SKYFORGE_LABPP_SKIP_TLS_VERIFY", "false") == "true"
+	labppRunnerImage := strings.TrimSpace(getenv("SKYFORGE_LABPP_RUNNER_IMAGE", ""))
+	labppRunnerPullPolicy := strings.TrimSpace(getenv("SKYFORGE_LABPP_RUNNER_PULL_POLICY", "IfNotPresent"))
+	labppRunnerPVCName := strings.TrimSpace(getenv("SKYFORGE_LABPP_RUNNER_PVC", "skyforge-server-data"))
+	labppConfigDirBase := strings.TrimSpace(getenv("SKYFORGE_LABPP_CONFIG_DIR_BASE", "/var/lib/skyforge/labpp/configs"))
+	labppConfigVersion := strings.TrimSpace(getenv("SKYFORGE_LABPP_CONFIG_VERSION", "1.0"))
+	labppNetboxURL := strings.TrimSpace(getenv("SKYFORGE_LABPP_NETBOX_URL", ""))
+	labppNetboxUsername := strings.TrimSpace(getOptionalSecret("SKYFORGE_LABPP_NETBOX_USERNAME"))
+	labppNetboxPassword := strings.TrimSpace(getOptionalSecret("SKYFORGE_LABPP_NETBOX_PASSWORD"))
+	labppNetboxToken := strings.TrimSpace(getOptionalSecret("SKYFORGE_LABPP_NETBOX_TOKEN"))
+	labppNetboxMgmtSubnet := strings.TrimSpace(getenv("SKYFORGE_LABPP_NETBOX_MGMT_SUBNET", ""))
+	labppS3AccessKey := strings.TrimSpace(getOptionalSecret("SKYFORGE_LABPP_S3_ACCESS_KEY"))
+	labppS3SecretKey := strings.TrimSpace(getOptionalSecret("SKYFORGE_LABPP_S3_SECRET_KEY"))
+	labppS3Region := strings.TrimSpace(getenv("SKYFORGE_LABPP_S3_REGION", ""))
+	labppS3BucketName := strings.TrimSpace(getenv("SKYFORGE_LABPP_S3_BUCKET", ""))
+	labppS3Endpoint := strings.TrimSpace(getenv("SKYFORGE_LABPP_S3_ENDPOINT", ""))
+	labppS3DisableSSL := getenvBool("SKYFORGE_LABPP_S3_DISABLE_SSL", true)
+	labppS3DisableChecksum := getenvBool("SKYFORGE_LABPP_S3_DISABLE_CHECKSUM", false)
+	yaadeAdminUsername := strings.TrimSpace(getenv("SKYFORGE_YAADE_ADMIN_USERNAME", getenv("YAADE_ADMIN_USERNAME", "admin")))
+	yaadeAdminPassword := strings.TrimSpace(getOptionalSecret("YAADE_ADMIN_PASSWORD"))
 
 	containerlabAPIPath := strings.TrimSpace(getenv("SKYFORGE_CONTAINERLAB_API_PATH", "/containerlab"))
 	if containerlabAPIPath == "" {
@@ -932,6 +1001,8 @@ func loadConfig() Config {
 		SupportText:      strings.TrimSpace(getenv("SKYFORGE_UI_SUPPORT_TEXT", "Need access? Contact your platform admin.")),
 		SupportURL:       strings.TrimSpace(getenv("SKYFORGE_UI_SUPPORT_URL", "")),
 		ThemeDefault:     strings.TrimSpace(getenv("SKYFORGE_UI_THEME_DEFAULT", "")),
+		OIDCEnabled:      strings.TrimSpace(oidcIssuerURL) != "" && strings.TrimSpace(oidcClientID) != "" && strings.TrimSpace(oidcClientSecret) != "" && strings.TrimSpace(oidcRedirectURL) != "",
+		OIDCLoginURL:     "/api/skyforge/api/oidc/login",
 	}
 	notificationsEnabled := getenv("SKYFORGE_NOTIFICATIONS_ENABLED", "true") == "true"
 	notificationsInterval := 30 * time.Second
@@ -956,31 +1027,39 @@ func loadConfig() Config {
 	}
 
 	return Config{
-		ListenAddr:                getenv("SKYFORGE_LISTEN_ADDR", ":8085"),
-		SessionSecret:             mustGetSecret("SKYFORGE_SESSION_SECRET"),
-		SessionTTL:                sessionTTL,
-		SessionCookie:             getenv("SKYFORGE_SESSION_COOKIE", "skyforge_session"),
-		CookieSecure:              getenv("SKYFORGE_COOKIE_SECURE", "auto"),
-		CookieDomain:              strings.TrimSpace(getenv("SKYFORGE_COOKIE_DOMAIN", "")),
-		InternalToken:             strings.TrimSpace(getOptionalSecret("SKYFORGE_INTERNAL_TOKEN")),
-		StaticRoot:                strings.TrimSpace(getenv("SKYFORGE_STATIC_ROOT", "/opt/skyforge/static")),
-		PlatformDataDir:           strings.TrimSpace(getenv("SKYFORGE_PLATFORM_DATA_DIR", "/var/lib/skyforge/platform-data")),
-		MaxGroups:                 maxGroups,
-		AdminUsers:                adminUsers,
-		AdminPassword:             adminPassword,
-		WorkspaceSyncSeconds:      workspaceSyncSeconds,
-		UI:                        uiCfg,
-		NotificationsEnabled:      notificationsEnabled,
-		NotificationsInterval:     notificationsInterval,
-		CloudCredentialChecks:     cloudCredentialChecks,
-		CorpEmailDomain:           corpEmailDomain,
-		AwsSSOAccountID:           awsSSOAccountID,
-		AwsSSORoleName:            awsSSORoleName,
-		AwsSSOStartURL:            awsSSOStartURL,
-		AwsSSORegion:              awsSSORegion,
-		GiteaBaseURL:              giteaBaseURL,
-		NetboxBaseURL:             netboxBaseURL,
-		NautobotBaseURL:           nautobotBaseURL,
+		ListenAddr:            getenv("SKYFORGE_LISTEN_ADDR", ":8085"),
+		SessionSecret:         mustGetSecret("SKYFORGE_SESSION_SECRET"),
+		SessionTTL:            sessionTTL,
+		SessionCookie:         getenv("SKYFORGE_SESSION_COOKIE", "skyforge_session"),
+		CookieSecure:          getenv("SKYFORGE_COOKIE_SECURE", "auto"),
+		CookieDomain:          strings.TrimSpace(getenv("SKYFORGE_COOKIE_DOMAIN", "")),
+		InternalToken:         strings.TrimSpace(getOptionalSecret("SKYFORGE_INTERNAL_TOKEN")),
+		StaticRoot:            strings.TrimSpace(getenv("SKYFORGE_STATIC_ROOT", "/opt/skyforge/static")),
+		PlatformDataDir:       strings.TrimSpace(getenv("SKYFORGE_PLATFORM_DATA_DIR", "/var/lib/skyforge/platform-data")),
+		MaxGroups:             maxGroups,
+		AdminUsers:            adminUsers,
+		AdminUsername:         adminUsername,
+		AdminPassword:         adminPassword,
+		WorkspaceSyncSeconds:  workspaceSyncSeconds,
+		UI:                    uiCfg,
+		NotificationsEnabled:  notificationsEnabled,
+		NotificationsInterval: notificationsInterval,
+		CloudCredentialChecks: cloudCredentialChecks,
+		CorpEmailDomain:       corpEmailDomain,
+		AwsSSOAccountID:       awsSSOAccountID,
+		AwsSSORoleName:        awsSSORoleName,
+		AwsSSOStartURL:        awsSSOStartURL,
+		AwsSSORegion:          awsSSORegion,
+		GiteaBaseURL:          giteaBaseURL,
+		NetboxBaseURL:         netboxBaseURL,
+		NautobotBaseURL:       nautobotBaseURL,
+		YaadeBaseURL:          yaadeBaseURL,
+		OIDC: OIDCConfig{
+			IssuerURL:    oidcIssuerURL,
+			ClientID:     oidcClientID,
+			ClientSecret: oidcClientSecret,
+			RedirectURL:  oidcRedirectURL,
+		},
 		StateBackend:              stateBackend,
 		DBHost:                    dbHost,
 		DBPort:                    dbPort,
@@ -998,8 +1077,25 @@ func loadConfig() Config {
 		Workspaces:                workspacesCfg,
 		Redis:                     redisCfg,
 		EveServers:                filteredEveServers,
-		LabppAPIURL:               labppAPIURL,
-		LabppSkipTLSVerify:        labppSkipTLSVerify,
+		LabppRunnerImage:          labppRunnerImage,
+		LabppRunnerPullPolicy:     labppRunnerPullPolicy,
+		LabppRunnerPVCName:        labppRunnerPVCName,
+		LabppConfigDirBase:        labppConfigDirBase,
+		LabppConfigVersion:        labppConfigVersion,
+		LabppNetboxURL:            labppNetboxURL,
+		LabppNetboxUsername:       labppNetboxUsername,
+		LabppNetboxPassword:       labppNetboxPassword,
+		LabppNetboxToken:          labppNetboxToken,
+		LabppNetboxMgmtSubnet:     labppNetboxMgmtSubnet,
+		LabppS3AccessKey:          labppS3AccessKey,
+		LabppS3SecretKey:          labppS3SecretKey,
+		LabppS3Region:             labppS3Region,
+		LabppS3BucketName:         labppS3BucketName,
+		LabppS3Endpoint:           labppS3Endpoint,
+		LabppS3DisableSSL:         labppS3DisableSSL,
+		LabppS3DisableChecksum:    labppS3DisableChecksum,
+		YaadeAdminUsername:        yaadeAdminUsername,
+		YaadeAdminPassword:        yaadeAdminPassword,
 		ContainerlabAPIPath:       containerlabAPIPath,
 		ContainerlabJWTSecret:     containerlabJWTSecret,
 		ContainerlabSkipTLSVerify: containerlabSkipTLSVerify,
@@ -2155,7 +2251,7 @@ func deleteWorkspaceGCPCredentials(ctx context.Context, db *sql.DB, workspaceID 
 
 func (s *pgWorkspacesStore) load() ([]SkyforgeWorkspace, error) {
 	rows, err := s.db.Query(`SELECT id, slug, name, description, created_at, created_by,
-		blueprint, default_branch, terraform_state_key, tofu_init_template_id, tofu_plan_template_id, tofu_apply_template_id, ansible_run_template_id, netlab_run_template_id, labpp_run_template_id, containerlab_run_template_id,
+		blueprint, default_branch, terraform_state_key, terraform_init_template_id, terraform_plan_template_id, terraform_apply_template_id, ansible_run_template_id, netlab_run_template_id, labpp_run_template_id, containerlab_run_template_id,
 		aws_account_id, aws_role_name, aws_region, aws_auth_method, artifacts_bucket, is_public,
 		eve_server, netlab_server, legacy_workspace_id, gitea_owner, gitea_repo
 	FROM sf_workspaces ORDER BY created_at DESC`)
@@ -2168,21 +2264,21 @@ func (s *pgWorkspacesStore) load() ([]SkyforgeWorkspace, error) {
 	workspaceByID := map[string]*SkyforgeWorkspace{}
 	for rows.Next() {
 		var (
-			id, slug, name, createdBy                                                       string
-			description, blueprint, defaultBranch                                           sql.NullString
-			terraformStateKey                                                               sql.NullString
-			tofuInit, tofuPlan, tofuApply, ansibleRun, netlabRun, labppRun, containerlabRun sql.NullInt64
-			awsAccountID, awsRoleName, awsRegion, awsAuthMethod                             sql.NullString
-			artifactsBucket                                                                 sql.NullString
-			isPublic                                                                        bool
-			eveServer                                                                       sql.NullString
-			netlabServer                                                                    sql.NullString
-			createdAt                                                                       time.Time
-			legacyWorkspaceID                                                                 int
-			giteaOwner, giteaRepo                                                           string
+			id, slug, name, createdBy                                                                      string
+			description, blueprint, defaultBranch                                                          sql.NullString
+			terraformStateKey                                                                              sql.NullString
+			terraformInit, terraformPlan, terraformApply, ansibleRun, netlabRun, labppRun, containerlabRun sql.NullInt64
+			awsAccountID, awsRoleName, awsRegion, awsAuthMethod                                            sql.NullString
+			artifactsBucket                                                                                sql.NullString
+			isPublic                                                                                       bool
+			eveServer                                                                                      sql.NullString
+			netlabServer                                                                                   sql.NullString
+			createdAt                                                                                      time.Time
+			legacyWorkspaceID                                                                              int
+			giteaOwner, giteaRepo                                                                          string
 		)
 		if err := rows.Scan(&id, &slug, &name, &description, &createdAt, &createdBy,
-			&blueprint, &defaultBranch, &terraformStateKey, &tofuInit, &tofuPlan, &tofuApply, &ansibleRun, &netlabRun, &labppRun, &containerlabRun,
+			&blueprint, &defaultBranch, &terraformStateKey, &terraformInit, &terraformPlan, &terraformApply, &ansibleRun, &netlabRun, &labppRun, &containerlabRun,
 			&awsAccountID, &awsRoleName, &awsRegion, &awsAuthMethod, &artifactsBucket, &isPublic,
 			&eveServer, &netlabServer, &legacyWorkspaceID, &giteaOwner, &giteaRepo,
 		); err != nil {
@@ -2198,9 +2294,9 @@ func (s *pgWorkspacesStore) load() ([]SkyforgeWorkspace, error) {
 			Blueprint:                 blueprint.String,
 			DefaultBranch:             defaultBranch.String,
 			TerraformStateKey:         terraformStateKey.String,
-			TofuInitTemplateID:        int(tofuInit.Int64),
-			TofuPlanTemplateID:        int(tofuPlan.Int64),
-			TofuApplyTemplateID:       int(tofuApply.Int64),
+			TerraformInitTemplateID:   int(terraformInit.Int64),
+			TerraformPlanTemplateID:   int(terraformPlan.Int64),
+			TerraformApplyTemplateID:  int(terraformApply.Int64),
 			AnsibleRunTemplateID:      int(ansibleRun.Int64),
 			NetlabRunTemplateID:       int(netlabRun.Int64),
 			LabppRunTemplateID:        int(labppRun.Int64),
@@ -2213,7 +2309,7 @@ func (s *pgWorkspacesStore) load() ([]SkyforgeWorkspace, error) {
 			IsPublic:                  isPublic,
 			EveServer:                 eveServer.String,
 			NetlabServer:              netlabServer.String,
-			LegacyWorkspaceID:           legacyWorkspaceID,
+			LegacyWorkspaceID:         legacyWorkspaceID,
 			GiteaOwner:                giteaOwner,
 			GiteaRepo:                 giteaRepo,
 		}
@@ -2332,13 +2428,13 @@ func (s *pgWorkspacesStore) save(workspaces []SkyforgeWorkspace) error {
 		}
 		if _, err := tx.Exec(`INSERT INTO sf_workspaces (
 		  id, slug, name, description, created_at, created_by,
-		  blueprint, default_branch, terraform_state_key, tofu_init_template_id, tofu_plan_template_id, tofu_apply_template_id, ansible_run_template_id, netlab_run_template_id, labpp_run_template_id, containerlab_run_template_id,
+		  blueprint, default_branch, terraform_state_key, terraform_init_template_id, terraform_plan_template_id, terraform_apply_template_id, ansible_run_template_id, netlab_run_template_id, labpp_run_template_id, containerlab_run_template_id,
 		  aws_account_id, aws_role_name, aws_region, aws_auth_method, artifacts_bucket, is_public,
 		  eve_server, netlab_server, legacy_workspace_id, gitea_owner, gitea_repo, updated_at
 		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,now())`,
 			id, slug, strings.TrimSpace(p.Name), nullIfEmpty(strings.TrimSpace(p.Description)), p.CreatedAt.UTC(), createdBy,
 			nullIfEmpty(strings.TrimSpace(p.Blueprint)), nullIfEmpty(strings.TrimSpace(p.DefaultBranch)),
-			nullIfEmpty(strings.TrimSpace(p.TerraformStateKey)), p.TofuInitTemplateID, p.TofuPlanTemplateID, p.TofuApplyTemplateID, p.AnsibleRunTemplateID, p.NetlabRunTemplateID, p.LabppRunTemplateID, p.ContainerlabRunTemplateID,
+			nullIfEmpty(strings.TrimSpace(p.TerraformStateKey)), p.TerraformInitTemplateID, p.TerraformPlanTemplateID, p.TerraformApplyTemplateID, p.AnsibleRunTemplateID, p.NetlabRunTemplateID, p.LabppRunTemplateID, p.ContainerlabRunTemplateID,
 			nullIfEmpty(strings.TrimSpace(p.AWSAccountID)), nullIfEmpty(strings.TrimSpace(p.AWSRoleName)), nullIfEmpty(strings.TrimSpace(p.AWSRegion)),
 			nullIfEmpty(strings.TrimSpace(p.AWSAuthMethod)), nullIfEmpty(strings.TrimSpace(p.ArtifactsBucket)), p.IsPublic,
 			nullIfEmpty(strings.TrimSpace(p.EveServer)), nullIfEmpty(strings.TrimSpace(p.NetlabServer)),
@@ -3263,6 +3359,8 @@ type storageObjectSummary struct {
 func initService() (*Service, error) {
 	hydrateSecretEnv(
 		"SKYFORGE_SESSION_SECRET",
+		"SKYFORGE_OIDC_CLIENT_ID",
+		"SKYFORGE_OIDC_CLIENT_SECRET",
 		"SKYFORGE_LDAP_URL",
 		"SKYFORGE_LDAP_BIND_TEMPLATE",
 		"SKYFORGE_LDAP_LOOKUP_BINDDN",
@@ -3295,6 +3393,10 @@ func initService() (*Service, error) {
 		log.Printf("LDAP not configured; using local admin only")
 	}
 	sessionManager := NewSessionManager(cfg.SessionSecret, cfg.SessionCookie, cfg.SessionTTL, cfg.CookieSecure, cfg.CookieDomain)
+	oidcClient, err := initOIDCClient(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("oidc init failed: %w", err)
+	}
 	if cfg.Redis.Enabled {
 		client := redis.NewClient(&redis.Options{
 			Addr:     cfg.Redis.Addr,
@@ -3313,9 +3415,9 @@ func initService() (*Service, error) {
 	}
 	var (
 		workspaceStore workspacesStore
-		awsStore     awsSSOTokenStore
-		userStore    usersStore
-		db           *sql.DB
+		awsStore       awsSSOTokenStore
+		userStore      usersStore
+		db             *sql.DB
 	)
 
 	fileWorkspaceStore := newFileWorkspacesStore(cfg.Workspaces.DataDir)
@@ -3391,8 +3493,9 @@ func initService() (*Service, error) {
 	return &Service{
 		cfg:            cfg,
 		auth:           auth,
+		oidc:           oidcClient,
 		sessionManager: sessionManager,
-		workspaceStore:   workspaceStore,
+		workspaceStore: workspaceStore,
 		awsStore:       awsStore,
 		userStore:      userStore,
 		box:            box,
@@ -3439,8 +3542,9 @@ type SessionManager struct {
 type Service struct {
 	cfg            Config
 	auth           *LDAPAuthenticator
+	oidc           *OIDCClient
 	sessionManager *SessionManager
-	workspaceStore   workspacesStore
+	workspaceStore workspacesStore
 	awsStore       awsSSOTokenStore
 	userStore      usersStore
 	box            *secretBox

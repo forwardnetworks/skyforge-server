@@ -11,6 +11,8 @@ type UIConfigResponse struct {
 	SupportText      string `json:"supportText"`
 	SupportURL       string `json:"supportUrl"`
 	ThemeDefault     string `json:"themeDefault"`
+	OIDCEnabled      bool   `json:"oidcEnabled"`
+	OIDCLoginURL     string `json:"oidcLoginUrl"`
 }
 
 // GetUIConfig returns UI configuration values.
@@ -26,5 +28,7 @@ func (s *Service) GetUIConfig(_ context.Context) (*UIConfigResponse, error) {
 		SupportText:      s.cfg.UI.SupportText,
 		SupportURL:       s.cfg.UI.SupportURL,
 		ThemeDefault:     s.cfg.UI.ThemeDefault,
+		OIDCEnabled:      s.cfg.UI.OIDCEnabled,
+		OIDCLoginURL:     s.cfg.UI.OIDCLoginURL,
 	}, nil
 }

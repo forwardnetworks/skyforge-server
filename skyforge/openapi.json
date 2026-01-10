@@ -725,6 +725,9 @@
           "eveUrl": {
             "type": "string"
           },
+          "jobId": {
+            "type": "string"
+          },
           "labPath": {
             "type": "string"
           }
@@ -733,7 +736,8 @@
           "eveServer",
           "eveUrl",
           "labPath",
-          "endpoint"
+          "endpoint",
+          "jobId"
         ],
         "type": "object"
       },
@@ -1100,15 +1104,15 @@
           "terraformStateKey": {
             "type": "string"
           },
-          "tofuApplyTemplateId": {
+          "terraformApplyTemplateId": {
             "format": "int64",
             "type": "integer"
           },
-          "tofuInitTemplateId": {
+          "terraformInitTemplateId": {
             "format": "int64",
             "type": "integer"
           },
-          "tofuPlanTemplateId": {
+          "terraformPlanTemplateId": {
             "format": "int64",
             "type": "integer"
           },
@@ -1142,9 +1146,9 @@
           "blueprint",
           "defaultBranch",
           "terraformStateKey",
-          "tofuInitTemplateId",
-          "tofuPlanTemplateId",
-          "tofuApplyTemplateId",
+          "terraformInitTemplateId",
+          "terraformPlanTemplateId",
+          "terraformApplyTemplateId",
           "ansibleRunTemplateId",
           "netlabRunTemplateId",
           "labppRunTemplateId",
@@ -3694,6 +3698,65 @@
         "summary": "NetboxSSO performs a one-time token exchange for NetBox and redirects to the UI.\n"
       }
     },
+    "/api/netlab/defaults": {
+      "get": {
+        "operationId": "GET:skyforge.GetNetlabDefaults",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "workspace_id",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "netlab_server",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "output": {
+                      "type": "string"
+                    },
+                    "runner": {
+                      "type": "string"
+                    },
+                    "user": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "user",
+                    "runner",
+                    "output"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetNetlabDefaults returns the current netlab defaults from a runner.\n"
+      }
+    },
     "/api/netlab/labs": {
       "get": {
         "operationId": "GET:skyforge.ListNetlabLabs",
@@ -3936,6 +3999,34 @@
           }
         },
         "summary": "ListNetlabServers returns configured Netlab runners.\n"
+      }
+    },
+    "/api/oidc/callback": {
+      "get": {
+        "operationId": "GET:skyforge.OIDCCallback",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "OIDCCallback finishes the OIDC flow and issues the Skyforge session cookie.\n"
+      }
+    },
+    "/api/oidc/login": {
+      "get": {
+        "operationId": "GET:skyforge.OIDCLogin",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "OIDCLogin starts the Dex OIDC auth flow and stores state/nonce cookies.\n"
       }
     },
     "/api/pki/certs": {
@@ -5772,15 +5863,15 @@
                     "terraformStateKey": {
                       "type": "string"
                     },
-                    "tofuApplyTemplateId": {
+                    "terraformApplyTemplateId": {
                       "format": "int64",
                       "type": "integer"
                     },
-                    "tofuInitTemplateId": {
+                    "terraformInitTemplateId": {
                       "format": "int64",
                       "type": "integer"
                     },
-                    "tofuPlanTemplateId": {
+                    "terraformPlanTemplateId": {
                       "format": "int64",
                       "type": "integer"
                     },
@@ -5814,9 +5905,9 @@
                     "blueprint",
                     "defaultBranch",
                     "terraformStateKey",
-                    "tofuInitTemplateId",
-                    "tofuPlanTemplateId",
-                    "tofuApplyTemplateId",
+                    "terraformInitTemplateId",
+                    "terraformPlanTemplateId",
+                    "terraformApplyTemplateId",
                     "ansibleRunTemplateId",
                     "netlabRunTemplateId",
                     "labppRunTemplateId",
@@ -7244,7 +7335,7 @@
               "schema": {
                 "properties": {
                   "action": {
-                    "title": "create, start, stop, destroy\n",
+                    "title": "create, start, stop, destroy, export\n",
                     "type": "string"
                   }
                 },
@@ -7351,6 +7442,68 @@
         "summary": "DestroyWorkspaceDeployment triggers a destructive run (destroy) for a\ndeployment.\n"
       }
     },
+    "/api/workspaces/{id}/deployments/{deploymentID}/forward-sync": {
+      "post": {
+        "description": "Currently supported for LabPP deployments.\n",
+        "operationId": "POST:skyforge.SyncWorkspaceDeploymentForward",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "deploymentID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "deployment": {
+                      "$ref": "#/components/schemas/skyforge.WorkspaceDeployment"
+                    },
+                    "run": {
+                      "$ref": "#/components/schemas/skyforge.JSONMap"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "workspaceId",
+                    "deployment",
+                    "run"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "SyncWorkspaceDeploymentForward triggers a Forward Networks sync for a\ndeployment.\n"
+      }
+    },
     "/api/workspaces/{id}/deployments/{deploymentID}/info": {
       "get": {
         "description": "For Netlab deployments, this executes \\`netlab status\\` against the associated Netlab API and returns the output.\n",
@@ -7449,6 +7602,67 @@
         "summary": "GetWorkspaceDeploymentInfo returns provider-specific info for a deployment.\n"
       }
     },
+    "/api/workspaces/{id}/deployments/{deploymentID}/netlab-graph": {
+      "get": {
+        "operationId": "GET:skyforge.GetWorkspaceDeploymentNetlabGraph",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "deploymentID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "generatedAt": {
+                      "type": "string"
+                    },
+                    "outputPath": {
+                      "type": "string"
+                    },
+                    "svg": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "generatedAt",
+                    "svg",
+                    "outputPath"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspaceDeploymentNetlabGraph returns a rendered netlab topology graph for a\ndeployment.\n"
+      }
+    },
     "/api/workspaces/{id}/deployments/{deploymentID}/start": {
       "post": {
         "operationId": "POST:skyforge.StartWorkspaceDeployment",
@@ -7482,7 +7696,7 @@
               "schema": {
                 "properties": {
                   "action": {
-                    "title": "used for tofu (apply/destroy)\n",
+                    "title": "used for terraform (apply/destroy)\n",
                     "type": "string"
                   }
                 },
@@ -7777,15 +7991,15 @@
                     "terraformStateKey": {
                       "type": "string"
                     },
-                    "tofuApplyTemplateId": {
+                    "terraformApplyTemplateId": {
                       "format": "int64",
                       "type": "integer"
                     },
-                    "tofuInitTemplateId": {
+                    "terraformInitTemplateId": {
                       "format": "int64",
                       "type": "integer"
                     },
-                    "tofuPlanTemplateId": {
+                    "terraformPlanTemplateId": {
                       "format": "int64",
                       "type": "integer"
                     },
@@ -7819,9 +8033,9 @@
                     "blueprint",
                     "defaultBranch",
                     "terraformStateKey",
-                    "tofuInitTemplateId",
-                    "tofuPlanTemplateId",
-                    "tofuApplyTemplateId",
+                    "terraformInitTemplateId",
+                    "terraformPlanTemplateId",
+                    "terraformApplyTemplateId",
                     "ansibleRunTemplateId",
                     "netlabRunTemplateId",
                     "labppRunTemplateId",
@@ -8705,15 +8919,15 @@
                     "terraformStateKey": {
                       "type": "string"
                     },
-                    "tofuApplyTemplateId": {
+                    "terraformApplyTemplateId": {
                       "format": "int64",
                       "type": "integer"
                     },
-                    "tofuInitTemplateId": {
+                    "terraformInitTemplateId": {
                       "format": "int64",
                       "type": "integer"
                     },
-                    "tofuPlanTemplateId": {
+                    "terraformPlanTemplateId": {
                       "format": "int64",
                       "type": "integer"
                     },
@@ -8747,9 +8961,9 @@
                     "blueprint",
                     "defaultBranch",
                     "terraformStateKey",
-                    "tofuInitTemplateId",
-                    "tofuPlanTemplateId",
-                    "tofuApplyTemplateId",
+                    "terraformInitTemplateId",
+                    "terraformPlanTemplateId",
+                    "terraformApplyTemplateId",
                     "ansibleRunTemplateId",
                     "netlabRunTemplateId",
                     "labppRunTemplateId",
@@ -8965,15 +9179,15 @@
                     "terraformStateKey": {
                       "type": "string"
                     },
-                    "tofuApplyTemplateId": {
+                    "terraformApplyTemplateId": {
                       "format": "int64",
                       "type": "integer"
                     },
-                    "tofuInitTemplateId": {
+                    "terraformInitTemplateId": {
                       "format": "int64",
                       "type": "integer"
                     },
-                    "tofuPlanTemplateId": {
+                    "terraformPlanTemplateId": {
                       "format": "int64",
                       "type": "integer"
                     },
@@ -9007,9 +9221,9 @@
                     "blueprint",
                     "defaultBranch",
                     "terraformStateKey",
-                    "tofuInitTemplateId",
-                    "tofuPlanTemplateId",
-                    "tofuApplyTemplateId",
+                    "terraformInitTemplateId",
+                    "terraformPlanTemplateId",
+                    "terraformApplyTemplateId",
                     "ansibleRunTemplateId",
                     "netlabRunTemplateId",
                     "labppRunTemplateId",
@@ -9321,6 +9535,9 @@
                   "deployment": {
                     "type": "string"
                   },
+                  "deploymentId": {
+                    "type": "string"
+                  },
                   "environment": {
                     "$ref": "#/components/schemas/skyforge.JSONMap"
                   },
@@ -9377,7 +9594,8 @@
                   "templatesDestRoot",
                   "labPath",
                   "threadCount",
-                  "deployment"
+                  "deployment",
+                  "deploymentId"
                 ],
                 "type": "object"
               }
@@ -9440,7 +9658,16 @@
               "schema": {
                 "properties": {
                   "action": {
-                    "title": "up, create, restart, collect, status, down\n",
+                    "title": "up, create, restart, collect, status, down, clab-tarball\n",
+                    "type": "string"
+                  },
+                  "clabCleanup": {
+                    "type": "boolean"
+                  },
+                  "clabConfigDir": {
+                    "type": "string"
+                  },
+                  "clabTarball": {
                     "type": "string"
                   },
                   "cleanup": {
@@ -9502,7 +9729,10 @@
                   "templateSource",
                   "templateRepo",
                   "templatesDir",
-                  "template"
+                  "template",
+                  "clabTarball",
+                  "clabConfigDir",
+                  "clabCleanup"
                 ],
                 "type": "object"
               }
@@ -9543,9 +9773,9 @@
         "summary": "RunWorkspaceNetlab triggers a netlab run for a workspace.\n"
       }
     },
-    "/api/workspaces/{id}/runs/tofu-apply": {
+    "/api/workspaces/{id}/runs/terraform-apply": {
       "post": {
-        "operationId": "POST:skyforge.RunWorkspaceTofuApply",
+        "operationId": "POST:skyforge.RunWorkspaceTerraformApply",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -9627,6 +9857,16 @@
               "type": "string"
             },
             "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "deployment_id",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
           }
         ],
         "responses": {
@@ -9660,12 +9900,12 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "RunWorkspaceTofuApply triggers a tofu apply run for a workspace.\n"
+        "summary": "RunWorkspaceTerraformApply triggers a terraform apply run for a workspace.\n"
       }
     },
-    "/api/workspaces/{id}/runs/tofu-plan": {
+    "/api/workspaces/{id}/runs/terraform-plan": {
       "post": {
-        "operationId": "POST:skyforge.RunWorkspaceTofuPlan",
+        "operationId": "POST:skyforge.RunWorkspaceTerraformPlan",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -9710,7 +9950,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "RunWorkspaceTofuPlan triggers a tofu plan run for a workspace.\n"
+        "summary": "RunWorkspaceTerraformPlan triggers a terraform plan run for a workspace.\n"
       }
     },
     "/api/workspaces/{id}/sync": {
@@ -9777,9 +10017,9 @@
         "summary": "SyncWorkspace syncs resources for a single workspace.\n"
       }
     },
-    "/api/workspaces/{id}/tofu/templates": {
+    "/api/workspaces/{id}/terraform/templates": {
       "get": {
-        "operationId": "GET:skyforge.GetWorkspaceTofuTemplates",
+        "operationId": "GET:skyforge.GetWorkspaceTerraformTemplates",
         "parameters": [
           {
             "allowEmptyValue": true,
@@ -9867,7 +10107,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "GetWorkspaceTofuTemplates lists Terraform template directories for a workspace.\n"
+        "summary": "GetWorkspaceTerraformTemplates lists Terraform template directories for a workspace.\n"
       }
     },
     "/api/workspaces/{id}/variable-groups": {
@@ -10184,6 +10424,21 @@
           }
         },
         "summary": "SyncWorkspaceBlueprint syncs a workspace's blueprint catalog into the repo.\n"
+      }
+    },
+    "/api/yaade/sso": {
+      "get": {
+        "description": "and redirects to the API testing UI.\n",
+        "operationId": "GET:skyforge.YaadeSSO",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "YaadeSSO performs a one-time login against Yaade using the shared admin account\n"
       }
     },
     "/auth/login": {

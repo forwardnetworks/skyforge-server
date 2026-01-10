@@ -96,11 +96,12 @@ type NetlabInfo struct {
 }
 
 type LabppInfo struct {
-	EveServer string `json:"eveServer"`
-	EveURL    string `json:"eveUrl,omitempty"`
-	LabPath   string `json:"labPath"`
-	Endpoint  string `json:"endpoint,omitempty"`
-	JobID     string `json:"jobId,omitempty"`
+	EveServer      string `json:"eveServer"`
+	EveURL         string `json:"eveUrl,omitempty"`
+	LabPath        string `json:"labPath"`
+	Endpoint       string `json:"endpoint,omitempty"`
+	JobID          string `json:"jobId,omitempty"`
+	DataSourcesCSV string `json:"dataSourcesCsv,omitempty"`
 }
 
 type ContainerlabInfo struct {
@@ -128,10 +129,10 @@ func normalizeDeploymentName(name string) (string, error) {
 func normalizeDeploymentType(raw string) (string, error) {
 	t := strings.ToLower(strings.TrimSpace(raw))
 	switch t {
-	case "tofu", "netlab", "labpp", "containerlab":
+	case "terraform", "netlab", "labpp", "containerlab":
 		return t, nil
 	default:
-		return "", errs.B().Code(errs.InvalidArgument).Msg("deployment type must be tofu, netlab, labpp, or containerlab").Err()
+		return "", errs.B().Code(errs.InvalidArgument).Msg("deployment type must be terraform, netlab, labpp, or containerlab").Err()
 	}
 }
 
@@ -322,7 +323,7 @@ func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req 
 		return strings.TrimSpace(fmt.Sprintf("%v", raw))
 	}
 	switch typ {
-	case "tofu":
+	case "terraform":
 		cloud := strings.ToLower(getString("cloud"))
 		if cloud == "" {
 			cloud = "aws"
@@ -373,13 +374,7 @@ func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req 
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("template is required").Err()
 		}
 		if strings.TrimSpace(getString("labPath")) == "" {
-			stamp := time.Now().UTC().Format("20060102-1504")
-			cfgAny["labPath"] = fmt.Sprintf(
-				"/%s-%s/%s.unl",
-				labppSafeFilename.ReplaceAllString(name, "-"),
-				stamp,
-				labppLabFilename(template),
-			)
+			cfgAny["labPath"] = labppLabPath(pc.claims.Username, name, template, time.Now())
 		}
 	case "containerlab":
 		if getString("netlabServer") == "" {
@@ -437,6 +432,14 @@ func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req 
 			log.Printf("forward network create: %v", err)
 			_, _ = s.db.ExecContext(ctx, `DELETE FROM sf_deployments WHERE workspace_id=$1 AND id=$2`, pc.workspace.ID, deploymentID)
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to create Forward network").Err()
+		}
+		if typ == "labpp" {
+			_, err := s.RunWorkspaceDeploymentAction(ctx, id, deploymentID, &WorkspaceDeploymentOpRequest{Action: "create"})
+			if err != nil {
+				log.Printf("labpp create upload: %v", err)
+				_, _ = s.db.ExecContext(ctx, `DELETE FROM sf_deployments WHERE workspace_id=$1 AND id=$2`, pc.workspace.ID, deploymentID)
+				return nil, err
+			}
 		}
 		return s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
 	}
@@ -555,6 +558,13 @@ func (s *Service) DeleteWorkspaceDeployment(ctx context.Context, id, deploymentI
 			}
 		}
 	}
+	if existing.Type == "labpp" {
+		_, err := s.RunWorkspaceDeploymentAction(ctx, id, deploymentID, &WorkspaceDeploymentOpRequest{Action: "destroy"})
+		if err != nil {
+			log.Printf("deployments delete labpp cleanup: %v", err)
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to clean labpp deployment").Err()
+		}
+	}
 	if req != nil && req.ForwardDelete {
 		cfgAny, _ := fromJSONMap(existing.Config)
 		if cfgAny == nil {
@@ -593,7 +603,7 @@ func (s *Service) DeleteWorkspaceDeployment(ctx context.Context, id, deploymentI
 }
 
 type WorkspaceDeploymentStartRequest struct {
-	Action string `json:"action,omitempty"` // used for tofu (apply/destroy)
+	Action string `json:"action,omitempty"` // used for terraform (apply/destroy)
 }
 
 type WorkspaceDeploymentOpRequest struct {
@@ -664,7 +674,7 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 
 	run := (*WorkspaceRunResponse)(nil)
 	switch dep.Type {
-	case "tofu":
+	case "terraform":
 		cloud, _ := cfgAny["cloud"].(string)
 		templateSource, _ := cfgAny["templateSource"].(string)
 		templateRepo, _ := cfgAny["templateRepo"].(string)
@@ -680,7 +690,7 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 		template = strings.TrimSpace(template)
 		switch op {
 		case "create":
-			run, err = s.RunWorkspaceTofuApply(ctx, id, &WorkspaceTofuApplyParams{
+			run, err = s.RunWorkspaceTerraformApply(ctx, id, &WorkspaceTerraformApplyParams{
 				Confirm:        "true",
 				Cloud:          cloud,
 				Action:         "apply",
@@ -691,7 +701,7 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 				DeploymentID:   dep.ID,
 			})
 		case "destroy":
-			run, err = s.RunWorkspaceTofuApply(ctx, id, &WorkspaceTofuApplyParams{
+			run, err = s.RunWorkspaceTerraformApply(ctx, id, &WorkspaceTerraformApplyParams{
 				Confirm:        "true",
 				Cloud:          cloud,
 				Action:         "destroy",
@@ -702,7 +712,7 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 				DeploymentID:   dep.ID,
 			})
 		default:
-			return nil, errs.B().Code(errs.InvalidArgument).Msg("unsupported tofu action (use create or destroy)").Err()
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("unsupported terraform action (use create or destroy)").Err()
 		}
 		if err != nil {
 			return nil, err
@@ -770,6 +780,8 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 		templatesDestRoot, _ := cfgAny["templatesDestRoot"].(string)
 		labPath, _ := cfgAny["labPath"].(string)
 		threadCount, _ := cfgAny["threadCount"].(float64)
+		eveUsername, _ := cfgAny["eveUsername"].(string)
+		evePassword, _ := cfgAny["evePassword"].(string)
 
 		eveServer = strings.TrimSpace(eveServer)
 		if eveServer == "" {
@@ -778,20 +790,14 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 		if strings.TrimSpace(template) == "" {
 			return nil, errs.B().Code(errs.FailedPrecondition).Msg("labpp template is required").Err()
 		}
-		if (op == "start" || op == "stop") && !infraCreated {
+		if op == "stop" && !infraCreated {
 			return nil, errs.B().Code(errs.FailedPrecondition).Msg("labpp deployment must be created before start/stop").Err()
 		}
 		labPath = strings.TrimSpace(labPath)
 		if labPath == "" {
-			stamp := time.Now().UTC().Format("20060102-1504")
-			labPath = fmt.Sprintf(
-				"/%s-%s/%s.unl",
-				labppSafeFilename.ReplaceAllString(dep.Name, "-"),
-				stamp,
-				labppLabFilename(template),
-			)
+			labPath = labppLabPath(pc.claims.Username, dep.Name, template, time.Now())
 		}
-		labPath = "/" + strings.TrimPrefix(labPath, "/")
+		labPath = labppNormalizeFolderPath(labPath)
 		cfgAny["labPath"] = labPath
 
 		labppAction := "e2e"
@@ -799,7 +805,11 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 		case "create":
 			labppAction = "upload"
 		case "start":
-			labppAction = "start"
+			if !infraCreated {
+				labppAction = "e2e"
+			} else {
+				labppAction = "start"
+			}
 		case "stop":
 			labppAction = "stop"
 		case "destroy":
@@ -811,6 +821,8 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 			Environment:       envJSON,
 			Action:            labppAction,
 			EveServer:         eveServer,
+			EveUsername:       strings.TrimSpace(eveUsername),
+			EvePassword:       strings.TrimSpace(evePassword),
 			Template:          strings.TrimSpace(template),
 			TemplatesRoot:     "",
 			TemplateSource:    strings.TrimSpace(templateSource),
@@ -1141,18 +1153,14 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 		labPath, _ := cfgAny["labPath"].(string)
 		labPath = strings.TrimSpace(labPath)
 		if labPath == "" && template != "" {
-			labPath = fmt.Sprintf(
-				"/Users/%s/%s/%s/%s.unl",
-				pc.claims.Username,
-				pc.workspace.Slug,
-				strings.TrimSpace(dep.Name),
-				labppLabFilename(template),
-			)
+			labPath = labppLabPath(pc.claims.Username, dep.Name, template, time.Now())
 		}
+		labPath = labppNormalizeFolderPath(labPath)
 		if labPath == "" {
 			resp.Note = "lab path is not configured yet"
 			return resp, nil
 		}
+		labFilePath := labppLabFilePath(labPath, template)
 
 		base := strings.TrimRight(strings.TrimSpace(eveServer.APIURL), "/")
 		if base == "" {
@@ -1160,15 +1168,19 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 		}
 		if base == "" {
 			resp.Note = "eve server is missing apiUrl/webUrl"
-			resp.Labpp = &LabppInfo{EveServer: eveServerName, LabPath: labPath}
+			resp.Labpp = &LabppInfo{EveServer: eveServerName, LabPath: labFilePath}
 			return resp, nil
 		}
 
-		username := strings.TrimSpace(eveServer.Username)
-		password := strings.TrimSpace(eveServer.Password)
-		if username == "" || password == "" {
-			resp.Note = "eve server credentials are not configured"
-			resp.Labpp = &LabppInfo{EveServer: eveServerName, EveURL: base, LabPath: labPath}
+		username := strings.TrimSpace(pc.claims.Username)
+		password, ok := getCachedLDAPPassword(pc.claims.Username)
+		if !ok {
+			username = strings.TrimSpace(eveServer.Username)
+			password = strings.TrimSpace(eveServer.Password)
+		}
+		if username == "" || strings.TrimSpace(password) == "" {
+			resp.Note = "LDAP password unavailable; reauthenticate to check lab status"
+			resp.Labpp = &LabppInfo{EveServer: eveServerName, EveURL: base, LabPath: labFilePath}
 			return resp, nil
 		}
 
@@ -1190,7 +1202,7 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 			return resp, nil
 		}
 
-		hasRunning, endpoint, err := eveLabHasRunningNodes(checkCtx, client, base, username, labPath)
+		hasRunning, endpoint, err := eveLabHasRunningNodes(checkCtx, client, base, username, labFilePath)
 		if err != nil {
 			resp.Note = sanitizeError(err)
 			resp.Status = "error"
@@ -1200,13 +1212,13 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 			resp.Status = "stopped"
 		}
 
-		labppInfo := &LabppInfo{EveServer: eveServerName, EveURL: base, LabPath: labPath, Endpoint: endpoint}
+		labppInfo := &LabppInfo{EveServer: eveServerName, EveURL: base, LabPath: labFilePath, Endpoint: endpoint}
 		if task, err := getLatestDeploymentTask(ctx, s.db, pc.workspace.ID, dep.ID, "labpp-run"); err == nil && task != nil {
-			labppInfo.JobID = getJSONMapString(task.Metadata, "labppJobId")
+			labppInfo.DataSourcesCSV = strings.TrimSpace(getJSONMapString(task.Metadata, "labppDataSourcesCsv"))
 		}
 		resp.Labpp = labppInfo
 		return resp, nil
-	case "tofu":
+	case "terraform":
 		stateKey := strings.TrimSpace(pc.workspace.TerraformStateKey)
 		if stateKey == "" {
 			resp.Note = "terraform state key is not configured"
@@ -1334,36 +1346,14 @@ func (s *Service) SyncWorkspaceDeploymentForward(ctx context.Context, id, deploy
 	if task == nil {
 		return nil, errs.B().Code(errs.NotFound).Msg("no labpp run metadata found").Err()
 	}
-	jobID := getJSONMapString(task.Metadata, "labppJobId")
-	if jobID == "" {
-		return nil, errs.B().Code(errs.NotFound).Msg("labpp job id not found").Err()
+	csvPath := strings.TrimSpace(getJSONMapString(task.Metadata, "labppDataSourcesCsv"))
+	if csvPath == "" {
+		return nil, errs.B().Code(errs.NotFound).Msg("labpp data sources file not found").Err()
 	}
-
-	eveServerName, _ := cfgAny["eveServer"].(string)
-	eveServerName = strings.TrimSpace(eveServerName)
-	if eveServerName == "" {
-		return nil, errs.B().Code(errs.FailedPrecondition).Msg("eve-ng server selection is required").Err()
-	}
-	eveServer := eveServerByName(s.cfg.EveServers, eveServerName)
-	if eveServer == nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("unknown eve server").Err()
-	}
-	apiURL := strings.TrimRight(strings.TrimSpace(s.cfg.LabppAPIURL), "/")
-	if apiURL == "" {
-		base := strings.TrimRight(strings.TrimSpace(eveServer.WebURL), "/")
-		if base == "" {
-			base = strings.TrimRight(strings.TrimSpace(eveServer.APIURL), "/")
-		}
-		if base == "" && strings.TrimSpace(eveServer.SSHHost) != "" {
-			base = "https://" + strings.TrimSpace(eveServer.SSHHost)
-		}
-		apiURL = strings.TrimRight(base, "/") + "/labpp"
-	}
-	apiInsecure := s.cfg.LabppSkipTLSVerify || eveServer.SkipTLSVerify
 
 	syncCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	if err := s.syncForwardLabppDevices(syncCtx, pc, dep.ID, apiURL, jobID, apiInsecure); err != nil {
+	if err := s.syncForwardLabppDevicesFromCSV(syncCtx, pc, dep.ID, csvPath, nil); err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg(err.Error()).Err()
 	}
 	return &WorkspaceDeploymentActionResponse{
@@ -1579,30 +1569,7 @@ func (s *Service) forceCancelRunner(ctx context.Context, pc *workspaceContext, d
 	log := &taskLogger{svc: s, taskID: task.ID}
 	switch strings.ToLower(strings.TrimSpace(dep.Type)) {
 	case "labpp":
-		jobID := getJSONMapString(task.Metadata, "labppJobId")
-		if jobID == "" {
-			return
-		}
-		eveServerName := strings.TrimSpace(getJSONMapString(dep.Config, "eveServer"))
-		eveServer := eveServerByName(s.cfg.EveServers, eveServerName)
-		apiURL := strings.TrimRight(strings.TrimSpace(s.cfg.LabppAPIURL), "/")
-		if apiURL == "" && eveServer != nil {
-			base := strings.TrimRight(strings.TrimSpace(eveServer.WebURL), "/")
-			if base == "" {
-				base = strings.TrimRight(strings.TrimSpace(eveServer.APIURL), "/")
-			}
-			if base == "" && strings.TrimSpace(eveServer.SSHHost) != "" {
-				base = "https://" + strings.TrimSpace(eveServer.SSHHost)
-			}
-			if base != "" {
-				apiURL = strings.TrimRight(base, "/") + "/labpp"
-			}
-		}
-		if apiURL == "" {
-			return
-		}
-		insecure := s.cfg.LabppSkipTLSVerify || (eveServer != nil && eveServer.SkipTLSVerify)
-		s.cancelLabppJob(ctx, apiURL, jobID, insecure, log)
+		log.Infof("LabPP cancel requested; CLI runner will stop on task cancellation.")
 	case "netlab":
 		jobID := getJSONMapString(task.Metadata, "netlabJobId")
 		if jobID == "" {
@@ -1668,7 +1635,7 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 	var run *WorkspaceRunResponse
 
 	switch dep.Type {
-	case "tofu":
+	case "terraform":
 		cloud, _ := cfgAny["cloud"].(string)
 		templateSource, _ := cfgAny["templateSource"].(string)
 		templateRepo, _ := cfgAny["templateRepo"].(string)
@@ -1678,7 +1645,7 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 		if cloud == "" {
 			cloud = "aws"
 		}
-		run, err = s.RunWorkspaceTofuApply(ctx, id, &WorkspaceTofuApplyParams{
+		run, err = s.RunWorkspaceTerraformApply(ctx, id, &WorkspaceTerraformApplyParams{
 			Confirm:        "true",
 			Cloud:          cloud,
 			Action:         action,
@@ -1731,6 +1698,8 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 		templatesDestRoot, _ := cfgAny["templatesDestRoot"].(string)
 		labPath, _ := cfgAny["labPath"].(string)
 		threadCount, _ := cfgAny["threadCount"].(float64)
+		eveUsername, _ := cfgAny["eveUsername"].(string)
+		evePassword, _ := cfgAny["evePassword"].(string)
 
 		labppAction := "e2e"
 		switch mode {
@@ -1745,6 +1714,8 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 			Environment:       envJSON,
 			Action:            labppAction,
 			EveServer:         strings.TrimSpace(eveServer),
+			EveUsername:       strings.TrimSpace(eveUsername),
+			EvePassword:       strings.TrimSpace(evePassword),
 			Template:          strings.TrimSpace(template),
 			TemplatesRoot:     "",
 			TemplateSource:    strings.TrimSpace(templateSource),

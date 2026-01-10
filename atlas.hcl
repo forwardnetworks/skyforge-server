@@ -5,7 +5,7 @@ variable "db_url" {
 env "prod" {
   url = var.db_url
   migration {
-    dir    = "file://./skyforge/migrations"
+    dir    = "file:///app/skyforge/migrations"
     format = golang-migrate
   }
   format {

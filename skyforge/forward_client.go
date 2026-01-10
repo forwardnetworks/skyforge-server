@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -328,6 +329,11 @@ func forwardPutClassicDevices(ctx context.Context, c *forwardClient, networkID s
 	if len(devices) == 0 {
 		return nil
 	}
+	payload, err := json.Marshal(devices)
+	if err != nil {
+		return fmt.Errorf("forward add devices marshal failed: %w", err)
+	}
+	log.Printf("forward add devices putBatch network=%s payload=%s", networkID, string(payload))
 	resp, body, err := c.doJSON(ctx, http.MethodPost, "/api/networks/"+url.PathEscape(networkID)+"/classic-devices?action=putBatch", nil, devices)
 	if err != nil {
 		return err

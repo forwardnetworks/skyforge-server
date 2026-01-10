@@ -25,15 +25,9 @@ type eveLoginRequest struct {
 func (s *Service) EveSSO(w http.ResponseWriter, r *http.Request) {
 	user, err := requireAuthUser()
 	if err != nil {
-		redirectToReauth(w, r)
+		s.redirectToReauth(w, r)
 		return
 	}
-	password, ok := getCachedLDAPPassword(user.Username)
-	if !ok {
-		redirectToReauth(w, r)
-		return
-	}
-
 	target := strings.TrimSpace(r.URL.Query().Get("server"))
 	server, err := s.selectEveServer(target, "")
 	if err != nil {
@@ -57,8 +51,22 @@ func (s *Service) EveSSO(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	password, ok := getCachedLDAPPassword(user.Username)
+	loginUser := user.Username
+	if !ok {
+		serverUser := strings.TrimSpace(server.Username)
+		serverPass := strings.TrimSpace(server.Password)
+		if serverUser != "" && serverPass != "" {
+			loginUser = serverUser
+			password = serverPass
+		} else {
+			s.redirectToReauth(w, r)
+			return
+		}
+	}
+
 	loginURL := base + "/api/auth/login"
-	payload := eveLoginRequest{Username: user.Username, Password: password}
+	payload := eveLoginRequest{Username: loginUser, Password: password}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to build login request"})

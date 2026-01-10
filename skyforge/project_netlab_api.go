@@ -87,7 +87,7 @@ func (s *Service) GetWorkspaceNetlabTemplates(ctx context.Context, id string, re
 	}
 
 	if branch == "" {
-		branch = "master"
+		branch = "main"
 		if b, err := getGiteaRepoDefaultBranch(s.cfg, owner, repo); err == nil && strings.TrimSpace(b) != "" {
 			branch = strings.TrimSpace(b)
 		}

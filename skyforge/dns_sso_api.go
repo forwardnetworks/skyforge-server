@@ -397,7 +397,7 @@ func (s *Service) DNSBootstrap(ctx context.Context, req *DNSBootstrapRequest) (*
 func (s *Service) DNSSSO(w http.ResponseWriter, r *http.Request) {
 	user, err := requireAuthUser()
 	if err != nil {
-		redirectToReauth(w, r)
+		s.redirectToReauth(w, r)
 		return
 	}
 

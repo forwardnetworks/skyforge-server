@@ -41,6 +41,27 @@ func giteaClientFor(cfg Config) *gitea.Client {
 	return giteaClient
 }
 
+func ensureGiteaUserFromProfile(cfg Config, profile *UserProfile) error {
+	if profile == nil {
+		return fmt.Errorf("missing user profile")
+	}
+	username := strings.TrimSpace(profile.Username)
+	if username == "" {
+		return fmt.Errorf("missing username")
+	}
+	identity := gitea.Identity(profile.DisplayName, username, profile.Email)
+	email, _ := identity["email"].(string)
+	name, _ := identity["name"].(string)
+	if err := giteaClientFor(cfg).EnsureUser(username, email, name); err != nil {
+		if strings.Contains(err.Error(), "e-mail already in use") {
+			fallback := fallbackGiteaEmail(cfg, username)
+			return giteaClientFor(cfg).EnsureUser(username, fallback, name)
+		}
+		return err
+	}
+	return nil
+}
+
 func ensureGiteaUser(cfg Config, username, password string) error {
 	base := cfg.GiteaBaseURL
 	apiURL := strings.TrimRight(cfg.Workspaces.GiteaAPIURL, "/")
@@ -90,6 +111,43 @@ func ensureGiteaUser(cfg Config, username, password string) error {
 		return fmt.Errorf("gitea login failed (%d)", postResp.StatusCode)
 	}
 	return nil
+}
+
+func ensureGiteaUserPassword(cfg Config, username, displayName, email, password string) error {
+	username = strings.TrimSpace(username)
+	displayName = strings.TrimSpace(displayName)
+	email = strings.TrimSpace(email)
+	if username == "" {
+		return fmt.Errorf("gitea user missing username")
+	}
+	if email == "" {
+		identity := gitea.Identity(displayName, username, email)
+		if name, ok := identity["name"].(string); ok && strings.TrimSpace(name) != "" {
+			displayName = strings.TrimSpace(name)
+		}
+		if derived, ok := identity["email"].(string); ok && strings.TrimSpace(derived) != "" {
+			email = strings.TrimSpace(derived)
+		}
+	}
+	if err := giteaClientFor(cfg).EnsureUser(username, email, displayName); err != nil {
+		if strings.Contains(err.Error(), "e-mail already in use") {
+			fallback := fallbackGiteaEmail(cfg, username)
+			if err := giteaClientFor(cfg).EnsureUser(username, fallback, displayName); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+	return giteaClientFor(cfg).SetUserPassword(username, password)
+}
+
+func fallbackGiteaEmail(cfg Config, username string) string {
+	domain := strings.TrimSpace(cfg.CorpEmailDomain)
+	if domain == "" {
+		domain = "local"
+	}
+	return fmt.Sprintf("%s+gitea@%s", username, domain)
 }
 
 func giteaDo(cfg Config, method, path string, payload any) (*http.Response, []byte, error) {

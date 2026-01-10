@@ -2,6 +2,7 @@ package skyforge
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"log"
 	"net/http"
@@ -44,6 +45,11 @@ func cookiePathForRedirect(redirectPath string) string {
 	return "/" + parts[0]
 }
 
+type yaadeLoginPayload struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
 func extractFormAction(html string) string {
 	m := formActionRE.FindStringSubmatch(html)
 	if len(m) < 2 {
@@ -70,7 +76,7 @@ func buildActionURL(base *url.URL, action string, fallback string) string {
 	return base.ResolveReference(parsed).String()
 }
 
-func performFormSSO(w http.ResponseWriter, r *http.Request, targetBase, loginPath, redirectPath, userField, passField, csrfField, forwardedProto string, username, password string) {
+func performFormSSO(w http.ResponseWriter, r *http.Request, targetBase, loginPath, redirectPath, userField, passField, csrfField, forwardedProto, forwardedHost, username, password string) {
 	base := strings.TrimRight(strings.TrimSpace(targetBase), "/")
 	if base == "" {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "integration not configured"})
@@ -96,6 +102,10 @@ func performFormSSO(w http.ResponseWriter, r *http.Request, targetBase, loginPat
 	}
 	if forwardedProto != "" {
 		getReq.Header.Set("X-Forwarded-Proto", forwardedProto)
+	}
+	if forwardedHost != "" {
+		getReq.Host = forwardedHost
+		getReq.Header.Set("X-Forwarded-Host", forwardedHost)
 	}
 	getResp, err := client.Do(getReq)
 	if err != nil {
@@ -155,6 +165,21 @@ func performFormSSO(w http.ResponseWriter, r *http.Request, targetBase, loginPat
 			}
 		}
 		postReq.Header.Set("X-Forwarded-Proto", forwardedProto)
+	}
+	if forwardedHost != "" {
+		if parsed, err := url.Parse(referer); err == nil {
+			parsed.Host = forwardedHost
+			if parsed.Scheme == "" {
+				parsed.Scheme = forwardedProto
+			}
+			referer = parsed.String()
+		}
+		postReq.Host = forwardedHost
+		postReq.Header.Set("X-Forwarded-Host", forwardedHost)
+		if forwardedProto == "" {
+			forwardedProto = "https"
+		}
+		origin = forwardedProto + "://" + forwardedHost
 	}
 	postReq.Header.Set("Referer", referer)
 	if origin != "" {
@@ -238,13 +263,22 @@ func joinCookieHeader(cookies []*http.Cookie) string {
 	return strings.Join(parts, "; ")
 }
 
-func redirectToReauth(w http.ResponseWriter, r *http.Request) {
+func (s *Service) redirectToReauth(w http.ResponseWriter, r *http.Request) {
 	const publicAPIPrefix = "/api/skyforge"
 	requestURI := strings.TrimSpace(r.URL.RequestURI())
 	if requestURI == "" {
 		requestURI = "/"
 	}
 	externalNext := publicAPIPrefix + requestURI
+	if s != nil && s.oidc != nil {
+		http.Redirect(
+			w,
+			r,
+			publicAPIPrefix+"/api/oidc/login?next="+url.QueryEscape(externalNext),
+			http.StatusFound,
+		)
+		return
+	}
 	http.Redirect(
 		w,
 		r,
@@ -277,33 +311,46 @@ func normalizeGiteaBaseURL(raw string) string {
 func (s *Service) GiteaSSO(w http.ResponseWriter, r *http.Request) {
 	user, err := requireAuthUser()
 	if err != nil {
-		redirectToReauth(w, r)
+		s.redirectToReauth(w, r)
 		return
 	}
-	password, ok := getCachedLDAPPassword(user.Username)
-	if !ok {
-		redirectToReauth(w, r)
-		return
-	}
-
 	next := strings.TrimSpace(r.URL.Query().Get("next"))
 	if next == "" || !strings.HasPrefix(next, "/git") {
 		next = "/git/"
 	}
+	if s.oidc != nil {
+		http.Redirect(w, r, next, http.StatusFound)
+		return
+	}
+	password, ok := getCachedLDAPPassword(user.Username)
+	if !ok {
+		s.redirectToReauth(w, r)
+		return
+	}
+	if err := ensureGiteaUserPassword(s.cfg, user.Username, user.DisplayName, user.Email, password); err != nil {
+		log.Printf("gitea sso: failed to sync user password for %s: %v", user.Username, err)
+	}
+
 	forwardedProto := strings.ToLower(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")))
 	if forwardedProto == "" && r.TLS != nil {
 		forwardedProto = "https"
 	}
+	forwardedHost := strings.TrimSpace(r.Host)
+	baseURL := giteaInternalBaseURL(s.cfg)
+	if baseURL == "" {
+		baseURL = normalizeGiteaBaseURL(s.cfg.GiteaBaseURL)
+	}
 	performFormSSO(
 		w,
 		r,
-		giteaInternalBaseURL(s.cfg),
+		baseURL,
 		"/user/login",
 		next,
 		"user_name",
 		"password",
 		"_csrf",
 		forwardedProto,
+		forwardedHost,
 		user.Username,
 		password,
 	)
@@ -315,12 +362,17 @@ func (s *Service) GiteaSSO(w http.ResponseWriter, r *http.Request) {
 func (s *Service) NetboxSSO(w http.ResponseWriter, r *http.Request) {
 	user, err := requireAuthUser()
 	if err != nil {
-		redirectToReauth(w, r)
+		s.redirectToReauth(w, r)
+		return
+	}
+	if s.oidc != nil {
+		http.Redirect(w, r, "/netbox/", http.StatusFound)
 		return
 	}
 	password, ok := getCachedLDAPPassword(user.Username)
+	loginUser := user.Username
 	if !ok {
-		redirectToReauth(w, r)
+		s.redirectToReauth(w, r)
 		return
 	}
 	performFormSSO(
@@ -333,7 +385,8 @@ func (s *Service) NetboxSSO(w http.ResponseWriter, r *http.Request) {
 		"password",
 		"csrfmiddlewaretoken",
 		"https",
-		user.Username,
+		"",
+		loginUser,
 		password,
 	)
 }
@@ -344,12 +397,17 @@ func (s *Service) NetboxSSO(w http.ResponseWriter, r *http.Request) {
 func (s *Service) NautobotSSO(w http.ResponseWriter, r *http.Request) {
 	user, err := requireAuthUser()
 	if err != nil {
-		redirectToReauth(w, r)
+		s.redirectToReauth(w, r)
+		return
+	}
+	if s.oidc != nil {
+		http.Redirect(w, r, "/nautobot/", http.StatusFound)
 		return
 	}
 	password, ok := getCachedLDAPPassword(user.Username)
+	loginUser := user.Username
 	if !ok {
-		redirectToReauth(w, r)
+		s.redirectToReauth(w, r)
 		return
 	}
 	performFormSSO(
@@ -362,9 +420,83 @@ func (s *Service) NautobotSSO(w http.ResponseWriter, r *http.Request) {
 		"password",
 		"csrfmiddlewaretoken",
 		"https",
-		user.Username,
+		"",
+		loginUser,
 		password,
 	)
+}
+
+// YaadeSSO performs a one-time login against Yaade using the shared admin account
+// and redirects to the API testing UI.
+//
+//encore:api auth raw method=GET path=/api/yaade/sso
+func (s *Service) YaadeSSO(w http.ResponseWriter, r *http.Request) {
+	_, err := requireAuthUser()
+	if err != nil {
+		s.redirectToReauth(w, r)
+		return
+	}
+	adminUser := strings.TrimSpace(s.cfg.YaadeAdminUsername)
+	adminPass := strings.TrimSpace(s.cfg.YaadeAdminPassword)
+	if adminUser == "" || adminPass == "" {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "yaade admin credentials not configured"})
+		return
+	}
+
+	base := strings.TrimRight(yaadeInternalBaseURL(s.cfg), "/")
+	if base == "" {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "yaade not configured"})
+		return
+	}
+
+	payload := yaadeLoginPayload{Username: adminUser, Password: adminPass}
+	body, _ := json.Marshal(payload)
+	loginURL := base + "/api-testing/api/login"
+	req, err := http.NewRequest(http.MethodPost, loginURL, bytes.NewBuffer(body))
+	if err != nil {
+		log.Printf("yaade sso: failed to build login request: %v", err)
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to reach api testing login"})
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("yaade sso: login failed url=%q err=%v", loginURL, err)
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to reach api testing login"})
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		log.Printf("yaade sso: login rejected url=%q status=%d", loginURL, resp.StatusCode)
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "api testing login rejected"})
+		return
+	}
+
+	var sessionCookie *http.Cookie
+	for _, c := range resp.Cookies() {
+		if c.Name == "vertx-web.session" {
+			sessionCookie = c
+			break
+		}
+	}
+	if sessionCookie == nil || sessionCookie.Value == "" {
+		log.Printf("yaade sso: missing session cookie from login")
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "api testing login failed"})
+		return
+	}
+
+	secure := strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") || r.TLS != nil
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookie.Name,
+		Value:    sessionCookie.Value,
+		Path:     "/api-testing",
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.Redirect(w, r, "/api-testing/", http.StatusFound)
 }
 
 // GiteaPublicSSO logs into Gitea with a read-only public account.

@@ -52,6 +52,10 @@ func defaultWorkspaceName(username string) string {
 	return fmt.Sprintf("%s Workspace", normalized)
 }
 
+func defaultWorkspaceRepo() string {
+	return "workspace"
+}
+
 func (s *Service) ensureDefaultWorkspace(ctx context.Context, user *AuthUser) (*SkyforgeWorkspace, error) {
 	if user == nil {
 		return nil, nil
@@ -217,6 +221,9 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 
 	owner := user.Username
 	repo := slug
+	if slug == defaultWorkspaceSlug(user.Username) {
+		repo = defaultWorkspaceRepo()
+	}
 	terraformStateKey := fmt.Sprintf("tf-%s/primary.tfstate", slug)
 	artifactsBucket := storage.StorageBucketName
 
@@ -415,9 +422,9 @@ variable "TF_VAR_gcp_region" {
 	}
 
 	legacyWorkspaceID := nextLegacyWorkspaceID(workspaces)
-	tofuInitID := 0
-	tofuPlanID := 0
-	tofuApplyID := 0
+	terraformInitID := 0
+	terraformPlanID := 0
+	terraformApplyID := 0
 	ansibleRunID := 0
 	netlabRunID := 0
 	labppRunID := 0
@@ -437,9 +444,9 @@ variable "TF_VAR_gcp_region" {
 		Blueprint:                 strings.TrimSpace(req.Blueprint),
 		DefaultBranch:             defaultBranch,
 		TerraformStateKey:         terraformStateKey,
-		TofuInitTemplateID:        tofuInitID,
-		TofuPlanTemplateID:        tofuPlanID,
-		TofuApplyTemplateID:       tofuApplyID,
+		TerraformInitTemplateID:   terraformInitID,
+		TerraformPlanTemplateID:   terraformPlanID,
+		TerraformApplyTemplateID:  terraformApplyID,
 		AnsibleRunTemplateID:      ansibleRunID,
 		NetlabRunTemplateID:       netlabRunID,
 		LabppRunTemplateID:        labppRunID,

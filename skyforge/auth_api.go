@@ -74,7 +74,7 @@ func fillSessionHeaders(out *SessionHeaders, claims *SessionClaims) {
 
 type LoginResponse struct {
 	SetCookie string `header:"Set-Cookie" json:"-"`
-	UserProfile
+	UserProfile UserProfile `json:"user"`
 }
 
 type LogoutResponse struct {
@@ -158,6 +158,11 @@ func (s *Service) Login(ctx context.Context, req *LoginRequest) (*LoginResponse,
 		}
 		cacheLDAPPassword(profile.Username, req.Password, s.cfg.SessionTTL)
 		go s.bootstrapUserLabs(profile.Username)
+		go func() {
+			if err := ensureGiteaUserFromProfile(s.cfg, profile); err != nil {
+				rlog.Warn("gitea user provision failed", "username", profile.Username, "error", err)
+			}
+		}()
 
 		if err := s.userStore.upsert(profile.Username); err != nil {
 			rlog.Warn("user store upsert failed", "error", err)
@@ -192,6 +197,11 @@ func (s *Service) Login(ctx context.Context, req *LoginRequest) (*LoginResponse,
 	}
 	cacheLDAPPassword(profile.Username, req.Password, s.cfg.SessionTTL)
 	go s.bootstrapUserLabs(profile.Username)
+	go func() {
+		if err := ensureGiteaUserFromProfile(s.cfg, profile); err != nil {
+			rlog.Warn("gitea user provision failed", "username", profile.Username, "error", err)
+		}
+	}()
 
 	if err := s.userStore.upsert(profile.Username); err != nil {
 		rlog.Warn("user store upsert failed", "error", err)
@@ -240,7 +250,11 @@ func (s *Service) Reauth(w http.ResponseWriter, r *http.Request) {
 		clearCachedLDAPPassword(claims.Username)
 	}
 	http.SetCookie(w, s.sessionManager.ClearCookie())
-	http.Redirect(w, r, "/?next="+url.QueryEscape(next), http.StatusFound)
+	if s.oidc != nil {
+		http.Redirect(w, r, "/api/skyforge/api/oidc/login?next="+url.QueryEscape(next), http.StatusFound)
+		return
+	}
+	http.Redirect(w, r, "/status?signin=1&next="+url.QueryEscape(next), http.StatusFound)
 }
 
 //encore:api public method=POST path=/auth/logout
@@ -535,7 +549,7 @@ func buildTraefikRedirect(headers http.Header) string {
 	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.Contains(next, "://") {
 		next = "/"
 	}
-	return scheme + "://" + host + "/?next=" + url.QueryEscape(next)
+	return scheme + "://" + host + "/api/skyforge/api/oidc/login?next=" + url.QueryEscape(next)
 }
 
 func auditDetailsFromEncore(req *encore.Request) string {

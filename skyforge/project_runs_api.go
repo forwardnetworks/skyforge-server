@@ -25,7 +25,7 @@ type WorkspaceRunResponse struct {
 	User        string  `json:"user"`
 }
 
-type WorkspaceTofuApplyParams struct {
+type WorkspaceTerraformApplyParams struct {
 	Confirm        string `query:"confirm" encore:"optional"`
 	Cloud          string `query:"cloud" encore:"optional"`
 	Action         string `query:"action" encore:"optional"`
@@ -36,10 +36,10 @@ type WorkspaceTofuApplyParams struct {
 	DeploymentID   string `query:"deployment_id" encore:"optional"`
 }
 
-// RunWorkspaceTofuPlan triggers a tofu plan run for a workspace.
+// RunWorkspaceTerraformPlan triggers a terraform plan run for a workspace.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/runs/tofu-plan
-func (s *Service) RunWorkspaceTofuPlan(ctx context.Context, id string) (*WorkspaceRunResponse, error) {
+//encore:api auth method=POST path=/api/workspaces/:id/runs/terraform-plan
+func (s *Service) RunWorkspaceTerraformPlan(ctx context.Context, id string) (*WorkspaceRunResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -54,12 +54,12 @@ func (s *Service) RunWorkspaceTofuPlan(ctx context.Context, id string) (*Workspa
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	dep, err := s.getLatestDeploymentByType(ctx, pc.workspace.ID, "tofu")
+	dep, err := s.getLatestDeploymentByType(ctx, pc.workspace.ID, "terraform")
 	if err != nil {
 		return nil, err
 	}
 	if dep == nil {
-		return nil, errs.B().Code(errs.FailedPrecondition).Msg("no tofu deployment configured").Err()
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("no terraform deployment configured").Err()
 	}
 	region := strings.TrimSpace(pc.workspace.AWSRegion)
 	if region == "" {
@@ -103,7 +103,7 @@ func (s *Service) RunWorkspaceTofuPlan(ctx context.Context, id string) (*Workspa
 			actor,
 			actorIsAdmin,
 			impersonated,
-			"workspace.run.tofu-plan",
+			"workspace.run.terraform-plan",
 			pc.workspace.ID,
 			fmt.Sprintf("deployment=%s", dep.Name),
 		)
@@ -133,14 +133,14 @@ func (s *Service) RunWorkspaceTofuPlan(ctx context.Context, id string) (*Workspa
 		"template":   template,
 	})
 	if err != nil {
-		log.Printf("tofu plan meta encode: %v", err)
+		log.Printf("terraform plan meta encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode metadata").Err()
 	}
-	task, err := createTask(ctx, s.db, pc.workspace.ID, &dep.ID, "tofu-plan", fmt.Sprintf("Skyforge tofu plan (%s)", pc.claims.Username), pc.claims.Username, meta)
+	task, err := createTask(ctx, s.db, pc.workspace.ID, &dep.ID, "terraform-plan", fmt.Sprintf("Skyforge terraform plan (%s)", pc.claims.Username), pc.claims.Username, meta)
 	if err != nil {
 		return nil, err
 	}
-	spec := tofuRunSpec{
+	spec := terraformRunSpec{
 		TaskID:         task.ID,
 		WorkspaceCtx:   pc,
 		WorkspaceSlug:  pc.workspace.Slug,
@@ -154,12 +154,12 @@ func (s *Service) RunWorkspaceTofuPlan(ctx context.Context, id string) (*Workspa
 		Environment:    envMap,
 	}
 	s.queueTask(task, func(ctx context.Context, log *taskLogger) error {
-		return s.runTofuTask(ctx, spec, log)
+		return s.runTerraformTask(ctx, spec, log)
 	})
 
 	taskJSON, err := toJSONMap(taskToRunInfo(*task))
 	if err != nil {
-		log.Printf("tofu plan task encode: %v", err)
+		log.Printf("terraform plan task encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode run").Err()
 	}
 	return &WorkspaceRunResponse{
@@ -169,10 +169,10 @@ func (s *Service) RunWorkspaceTofuPlan(ctx context.Context, id string) (*Workspa
 	}, nil
 }
 
-// RunWorkspaceTofuApply triggers a tofu apply run for a workspace.
+// RunWorkspaceTerraformApply triggers a terraform apply run for a workspace.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/runs/tofu-apply
-func (s *Service) RunWorkspaceTofuApply(ctx context.Context, id string, params *WorkspaceTofuApplyParams) (*WorkspaceRunResponse, error) {
+//encore:api auth method=POST path=/api/workspaces/:id/runs/terraform-apply
+func (s *Service) RunWorkspaceTerraformApply(ctx context.Context, id string, params *WorkspaceTerraformApplyParams) (*WorkspaceRunResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -299,7 +299,7 @@ func (s *Service) RunWorkspaceTofuApply(ctx context.Context, id string, params *
 			actor,
 			actorIsAdmin,
 			impersonated,
-			"workspace.run.tofu-apply",
+			"workspace.run.terraform-apply",
 			pc.workspace.ID,
 			fmt.Sprintf("action=%s cloud=%s template=%s", action, cloud, templateName),
 		)
@@ -310,14 +310,14 @@ func (s *Service) RunWorkspaceTofuApply(ctx context.Context, id string, params *
 		"action":   action,
 	})
 	if err != nil {
-		log.Printf("tofu apply meta encode: %v", err)
+		log.Printf("terraform apply meta encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode metadata").Err()
 	}
-	task, err := createTask(ctx, s.db, pc.workspace.ID, nil, fmt.Sprintf("tofu-%s", action), fmt.Sprintf("Skyforge tofu %s %s (%s)", action, strings.ToUpper(cloud), pc.claims.Username), pc.claims.Username, meta)
+	task, err := createTask(ctx, s.db, pc.workspace.ID, nil, fmt.Sprintf("terraform-%s", action), fmt.Sprintf("Skyforge terraform %s %s (%s)", action, strings.ToUpper(cloud), pc.claims.Username), pc.claims.Username, meta)
 	if err != nil {
 		return nil, err
 	}
-	spec := tofuRunSpec{
+	spec := terraformRunSpec{
 		TaskID:         task.ID,
 		WorkspaceCtx:   pc,
 		WorkspaceSlug:  pc.workspace.Slug,
@@ -331,12 +331,12 @@ func (s *Service) RunWorkspaceTofuApply(ctx context.Context, id string, params *
 		Environment:    envMap,
 	}
 	s.queueTask(task, func(ctx context.Context, log *taskLogger) error {
-		return s.runTofuTask(ctx, spec, log)
+		return s.runTerraformTask(ctx, spec, log)
 	})
 
 	taskJSON, err := toJSONMap(taskToRunInfo(*task))
 	if err != nil {
-		log.Printf("tofu apply task encode: %v", err)
+		log.Printf("terraform apply task encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode run").Err()
 	}
 	return &WorkspaceRunResponse{
@@ -381,12 +381,14 @@ type WorkspaceLabppRunRequest struct {
 	Environment       JSONMap `json:"environment,omitempty"`
 	Action            string  `json:"action,omitempty"` // e2e, upload, start, stop, delete, configure
 	EveServer         string  `json:"eveServer,omitempty"`
+	EveUsername       string  `json:"eveUsername,omitempty"`
+	EvePassword       string  `json:"evePassword,omitempty"`
 	TemplatesRoot     string  `json:"templatesRoot,omitempty"`
 	Template          string  `json:"template,omitempty"`
 	TemplateSource    string  `json:"templateSource,omitempty"`    // workspace (default), blueprints, or custom
 	TemplateRepo      string  `json:"templateRepo,omitempty"`      // owner/repo or URL (custom only)
 	TemplatesDir      string  `json:"templatesDir,omitempty"`      // repo-relative directory (default: blueprints/labpp)
-	TemplatesDestRoot string  `json:"templatesDestRoot,omitempty"` // host path for synced templates (default: /var/lib/skyforge/labpp-templates)
+	TemplatesDestRoot string  `json:"templatesDestRoot,omitempty"` // host path for synced templates (default: /var/lib/skyforge/labpp/templates)
 	LabPath           string  `json:"labPath,omitempty"`
 	ThreadCount       int     `json:"threadCount,omitempty"`
 	Deployment        string  `json:"deployment,omitempty"`
@@ -603,32 +605,25 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 		return nil, errs.B().Code(errs.Unavailable).Msg("eve server is not configured").Err()
 	}
 
-	apiURL := strings.TrimRight(strings.TrimSpace(s.cfg.LabppAPIURL), "/")
-	if apiURL == "" {
-		base := strings.TrimRight(strings.TrimSpace(eveServer.WebURL), "/")
-		if base == "" {
-			base = strings.TrimRight(strings.TrimSpace(eveServer.APIURL), "/")
-		}
-		if base == "" && strings.TrimSpace(eveServer.SSHHost) != "" {
-			base = "https://" + strings.TrimSpace(eveServer.SSHHost)
-		}
-		apiURL = strings.TrimRight(base, "/") + "/labpp"
-	}
-	apiInsecure := s.cfg.LabppSkipTLSVerify || eveServer.SkipTLSVerify
-
 	eveURL := strings.TrimSpace(eveServer.WebURL)
 	if eveURL == "" {
 		eveURL = strings.TrimSpace(eveServer.APIURL)
 	}
-	eveUsername := strings.TrimSpace(eveServer.Username)
+	eveUsername := strings.TrimSpace(req.EveUsername)
+	evePassword := strings.TrimSpace(req.EvePassword)
 	if eveUsername == "" {
-		eveUsername = strings.TrimSpace(s.cfg.Labs.EveUsername)
+		eveUsername = strings.TrimSpace(pc.claims.Username)
 	}
-	evePassword := strings.TrimSpace(eveServer.Password)
 	if evePassword == "" {
-		evePassword = strings.TrimSpace(s.cfg.Labs.EvePassword)
+		cached, ok := getCachedLDAPPassword(pc.claims.Username)
+		if ok {
+			evePassword = strings.TrimSpace(cached)
+		}
 	}
-	if strings.TrimSpace(eveURL) == "" || strings.TrimSpace(eveUsername) == "" || evePassword == "" {
+	if strings.TrimSpace(eveUsername) == "" || strings.TrimSpace(evePassword) == "" {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("eve credentials are required for labpp (username/password)").Err()
+	}
+	if strings.TrimSpace(eveURL) == "" || eveUsername == "" || strings.TrimSpace(evePassword) == "" {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("eve credentials are required for labpp (url/username/password)").Err()
 	}
 
@@ -637,7 +632,7 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 		action = "e2e"
 	}
 	switch action {
-	case "e2e", "upload", "start", "stop", "delete", "configure":
+	case "e2e", "upload", "start", "stop", "delete", "configure", "config":
 	default:
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid labpp action").Err()
 	}
@@ -682,17 +677,9 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 		}
 	}
 	if labPath == "" {
-		stamp := time.Now().UTC().Format("20060102-1504")
-		labPath = fmt.Sprintf(
-			"/%s-%s/%s.unl",
-			labppSafeFilename.ReplaceAllString(deployment, "-"),
-			stamp,
-			labppLabFilename(template),
-		)
+		labPath = labppLabPath(pc.claims.Username, deployment, template, time.Now())
 	}
-	if labPath != "" {
-		labPath = "/" + strings.TrimPrefix(labPath, "/")
-	}
+	labPath = labppNormalizeFolderPath(labPath)
 	log.Printf("labpp run config: template=%s templatesRoot=%s labPath=%s action=%s", template, templatesRoot, labPath, action)
 
 	message := strings.TrimSpace(req.Message)
@@ -744,8 +731,6 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 		TaskID:        task.ID,
 		WorkspaceCtx:  pc,
 		DeploymentID:  deploymentID,
-		APIURL:        apiURL,
-		Insecure:      apiInsecure,
 		Action:        action,
 		WorkspaceSlug: strings.TrimSpace(pc.workspace.Slug),
 		Username:      pc.claims.Username,

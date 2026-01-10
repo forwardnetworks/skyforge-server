@@ -90,7 +90,7 @@ func (s *Service) GetWorkspaceLabppTemplates(ctx context.Context, id string, req
 	}
 
 	if branch == "" {
-		branch = "master"
+		branch = "main"
 		if b, err := getGiteaRepoDefaultBranch(s.cfg, owner, repo); err == nil && strings.TrimSpace(b) != "" {
 			branch = strings.TrimSpace(b)
 		}

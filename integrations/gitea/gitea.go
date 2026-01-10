@@ -2,6 +2,7 @@ package gitea
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -83,6 +84,76 @@ func (c *Client) GetRepoDefaultBranch(owner, repo string) (string, error) {
 		return strings.TrimSpace(branch), nil
 	}
 	return "master", nil
+}
+
+func (c *Client) EnsureUser(username, email, fullName string) error {
+	username = strings.TrimSpace(username)
+	email = strings.TrimSpace(email)
+	fullName = strings.TrimSpace(fullName)
+	if username == "" {
+		return fmt.Errorf("gitea user missing username")
+	}
+	if email == "" {
+		return fmt.Errorf("gitea user %s missing email", username)
+	}
+	if fullName == "" {
+		fullName = username
+	}
+
+	resp, body, err := c.Do(http.MethodGet, fmt.Sprintf("/users/%s", url.PathEscape(username)), nil)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode == http.StatusOK {
+		return nil
+	}
+	if resp.StatusCode != http.StatusNotFound {
+		return fmt.Errorf("gitea user lookup failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	password, err := randomPassword(24)
+	if err != nil {
+		return err
+	}
+	payload := map[string]any{
+		"username":             username,
+		"email":                email,
+		"full_name":            fullName,
+		"password":             password,
+		"must_change_password": false,
+		"send_notify":          false,
+	}
+	resp, body, err = c.Do(http.MethodPost, "/admin/users", payload)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("gitea create user failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
+func (c *Client) SetUserPassword(username, password string) error {
+	username = strings.TrimSpace(username)
+	password = strings.TrimSpace(password)
+	if username == "" {
+		return fmt.Errorf("gitea user missing username")
+	}
+	if password == "" {
+		return fmt.Errorf("gitea user missing password")
+	}
+	payload := map[string]any{
+		"password":             password,
+		"must_change_password": false,
+	}
+	resp, body, err := c.Do(http.MethodPatch, fmt.Sprintf("/admin/users/%s", url.PathEscape(username)), payload)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("gitea update user password failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return nil
 }
 
 type ContentEntry struct {
@@ -256,6 +327,17 @@ func (c *Client) EnsureRepo(owner, repo string) error {
 		return fmt.Errorf("gitea create repo failed (%d) via %s: %s", resp.StatusCode, fullURL, strings.TrimSpace(string(body)))
 	}
 	return nil
+}
+
+func randomPassword(length int) (string, error) {
+	if length < 12 {
+		length = 12
+	}
+	buf := make([]byte, length)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf)[:length], nil
 }
 
 func (c *Client) EnsureRepoFromBlueprint(owner, repo, blueprint string) error {

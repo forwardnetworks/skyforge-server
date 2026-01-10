@@ -40,5 +40,10 @@ func giteaInternalBaseURL(cfg Config) string {
 	if base == "" {
 		base = cfg.GiteaBaseURL
 	}
-	return normalizeGiteaBaseURL(base)
+	internal := normalizeGiteaBaseURL(base)
+	publicBase := normalizeGiteaBaseURL(cfg.GiteaBaseURL)
+	if publicBase != "" && strings.HasSuffix(strings.ToLower(publicBase), "/git") && !strings.HasSuffix(strings.ToLower(internal), "/git") {
+		internal = strings.TrimRight(internal, "/") + "/git"
+	}
+	return internal
 }

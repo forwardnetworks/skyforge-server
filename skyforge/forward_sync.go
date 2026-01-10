@@ -2,10 +2,14 @@ package skyforge
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -223,6 +227,7 @@ type labppDeviceInfo struct {
 	Name   string `json:"name"`
 	Type   string `json:"type"`
 	MgmtIP string `json:"mgmtIp"`
+	Port   int    `json:"port"`
 }
 
 type labppDevicesResponse struct {
@@ -605,7 +610,80 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, pc *workspaceCon
 	return nil
 }
 
-func (s *Service) syncForwardLabppDevices(ctx context.Context, pc *workspaceContext, deploymentID, apiURL, jobID string, insecure bool) error {
+func readLabppDataSourcesCSV(path string) ([]labppDeviceInfo, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	reader := csv.NewReader(f)
+	reader.TrimLeadingSpace = true
+	records, err := reader.ReadAll()
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	devices := []labppDeviceInfo{}
+	if len(records) == 0 {
+		return nil, fmt.Errorf("data_sources.csv contains no devices")
+	}
+	header := make([]string, len(records[0]))
+	for i, value := range records[0] {
+		header[i] = strings.ToLower(strings.TrimSpace(value))
+	}
+	findIndex := func(names ...string) int {
+		for _, name := range names {
+			for idx, value := range header {
+				if value == name {
+					return idx
+				}
+			}
+		}
+		return -1
+	}
+	nameIdx := findIndex("name")
+	if nameIdx == -1 {
+		nameIdx = 0
+	}
+	ipIdx := findIndex("ip_address", "mgmt_ip", "mgmt_ip_address", "host", "ip")
+	portIdx := findIndex("ssh_port", "port")
+
+	for i := 1; i < len(records); i++ {
+		record := records[i]
+		if len(record) <= nameIdx {
+			continue
+		}
+		name := strings.TrimSpace(record[nameIdx])
+		host := ""
+		if ipIdx >= 0 && len(record) > ipIdx {
+			host = strings.TrimSpace(record[ipIdx])
+		}
+		if name == "" || host == "" {
+			continue
+		}
+		if slash := strings.Index(host, "/"); slash > 0 {
+			host = host[:slash]
+		}
+		port := 22
+		if portIdx >= 0 && len(record) > portIdx {
+			if rawPort := strings.TrimSpace(record[portIdx]); rawPort != "" {
+				if parsed, err := strconv.Atoi(rawPort); err == nil && parsed > 0 {
+					port = parsed
+				}
+			}
+		}
+		devices = append(devices, labppDeviceInfo{
+			Name:   name,
+			MgmtIP: host,
+			Port:   port,
+		})
+	}
+	if len(devices) == 0 {
+		return nil, fmt.Errorf("data_sources.csv contains no devices")
+	}
+	return devices, nil
+}
+
+func (s *Service) syncForwardLabppDevicesFromCSV(ctx context.Context, pc *workspaceContext, deploymentID, csvPath string, override *forwardCredentials) error {
 	if pc == nil {
 		return fmt.Errorf("workspace context unavailable")
 	}
@@ -627,31 +705,65 @@ func (s *Service) syncForwardLabppDevices(ctx context.Context, pc *workspaceCont
 	if err != nil {
 		return err
 	}
-
-	forwardCfg, err := s.forwardConfigForWorkspace(ctx, pc.workspace.ID)
-	if err != nil || forwardCfg == nil {
+	devices, err := readLabppDataSourcesCSV(csvPath)
+	if err != nil {
 		return err
+	}
+	forwardCfg, err := s.forwardConfigForWorkspace(ctx, pc.workspace.ID)
+	if err != nil {
+		return err
+	}
+	forwardCfg = applyForwardOverrides(forwardCfg, override)
+	if forwardCfg == nil {
+		return nil
 	}
 	client, err := newForwardClient(*forwardCfg)
 	if err != nil {
 		return err
 	}
-
 	deviceUsername := strings.TrimSpace(forwardCfg.DeviceUsername)
 	devicePassword := strings.TrimSpace(forwardCfg.DevicePassword)
+	return s.syncForwardLabppDevicesWithList(ctx, pc, dep, cfgAny, client, deviceUsername, devicePassword, devices)
+}
 
-	resp, body, err := labppAPIGet(ctx, fmt.Sprintf("%s/jobs/%s/devices", strings.TrimRight(apiURL, "/"), jobID), insecure)
-	if err != nil {
-		return err
+func applyForwardOverrides(base *forwardCredentials, override *forwardCredentials) *forwardCredentials {
+	if override == nil {
+		return base
 	}
-	if resp == nil || resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("labpp devices request failed: %s", strings.TrimSpace(string(body)))
+	if base == nil {
+		return override
 	}
-	var devicesResp labppDevicesResponse
-	if err := json.Unmarshal(body, &devicesResp); err != nil {
-		return fmt.Errorf("labpp devices response invalid: %w", err)
+	if strings.TrimSpace(override.BaseURL) != "" {
+		base.BaseURL = strings.TrimSpace(override.BaseURL)
 	}
+	if strings.TrimSpace(override.Username) != "" {
+		base.Username = strings.TrimSpace(override.Username)
+	}
+	if strings.TrimSpace(override.Password) != "" {
+		base.Password = strings.TrimSpace(override.Password)
+	}
+	if strings.TrimSpace(override.CollectorID) != "" {
+		base.CollectorID = strings.TrimSpace(override.CollectorID)
+	}
+	if strings.TrimSpace(override.DeviceUsername) != "" {
+		base.DeviceUsername = strings.TrimSpace(override.DeviceUsername)
+	}
+	if strings.TrimSpace(override.DevicePassword) != "" {
+		base.DevicePassword = strings.TrimSpace(override.DevicePassword)
+	}
+	return base
+}
 
+func (s *Service) syncForwardLabppDevicesWithList(ctx context.Context, pc *workspaceContext, dep *WorkspaceDeployment, cfgAny map[string]any, client *forwardClient, deviceUsername, devicePassword string, devicesResp []labppDeviceInfo) error {
+	if pc == nil || dep == nil {
+		return fmt.Errorf("workspace context unavailable")
+	}
+	if client == nil {
+		return fmt.Errorf("forward client is required")
+	}
+	if cfgAny == nil {
+		cfgAny = map[string]any{}
+	}
 	getString := func(key string) string {
 		raw, ok := cfgAny[key]
 		if !ok {
@@ -682,11 +794,15 @@ func (s *Service) syncForwardLabppDevices(ctx context.Context, pc *workspaceCont
 	}
 
 	devices := []forwardClassicDevice{}
-	for _, device := range devicesResp.Devices {
+	for _, device := range devicesResp {
 		name := strings.TrimSpace(device.Name)
 		host := strings.TrimSpace(device.MgmtIP)
 		if name == "" || host == "" {
 			continue
+		}
+		port := device.Port
+		if port <= 0 {
+			port = 22
 		}
 		cliID := defaultCliCredentialID
 		if cliID == "" && deviceUsername != "" && devicePassword != "" {
@@ -724,6 +840,7 @@ func (s *Service) syncForwardLabppDevices(ctx context.Context, pc *workspaceCont
 		devices = append(devices, forwardClassicDevice{
 			Name:            name,
 			Host:            host,
+			Port:            port,
 			CliCredentialID: cliID,
 			JumpServerID:    jumpServerID,
 		})

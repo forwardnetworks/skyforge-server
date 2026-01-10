@@ -1,10 +1,14 @@
 package skyforge
 
 import (
+	"bytes"
+	"compress/gzip"
 	"crypto/tls"
+	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"encore.dev/beta/errs"
@@ -115,14 +119,16 @@ func (s *Service) proxyEveLab(w http.ResponseWriter, req *http.Request) {
 		r.URL.Path = pathSuffix
 		r.URL.RawPath = pathSuffix
 		r.Host = targetURL.Host
+		r.Header.Del("Accept-Encoding")
 	}
 	proxy.Transport = &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: server.SkipTLSVerify},
+		DisableCompression: true,
+		TLSClientConfig:    &tls.Config{InsecureSkipVerify: server.SkipTLSVerify},
 	}
 	proxy.ModifyResponse = func(resp *http.Response) error {
 		location := resp.Header.Get("Location")
 		if location == "" {
-			return nil
+			return rewriteEveHTML(resp, "/labs/"+serverName)
 		}
 		if strings.HasPrefix(location, "/") {
 			resp.Header.Set("Location", "/labs/"+serverName+location)
@@ -137,10 +143,88 @@ func (s *Service) proxyEveLab(w http.ResponseWriter, req *http.Request) {
 			rewrite += "?" + loc.RawQuery
 		}
 		resp.Header.Set("Location", rewrite)
-		return nil
+		return rewriteEveHTML(resp, "/labs/"+serverName)
 	}
 
 	proxy.ServeHTTP(w, req)
+}
+
+func rewriteEveHTML(resp *http.Response, prefix string) error {
+	body, err := readMaybeGzip(resp)
+	if err != nil {
+		return err
+	}
+	_ = resp.Body.Close()
+	rewritten := body
+	if bytes.Contains(rewritten, []byte(`/assets/`)) || bytes.Contains(rewritten, []byte(`assets/`)) || bytes.Contains(rewritten, []byte("<html")) {
+		prefixedAssets := []byte(prefix + "/assets/")
+		plainPrefixedAssets := []byte(strings.TrimPrefix(prefix, "/") + "/assets/")
+		token := []byte("__SF_EVE_ASSETS__")
+		rewritten = bytes.ReplaceAll(rewritten, prefixedAssets, token)
+		rewritten = bytes.ReplaceAll(rewritten, plainPrefixedAssets, token)
+		rewritten = bytes.ReplaceAll(rewritten, []byte(`/assets/`), prefixedAssets)
+		rewritten = bytes.ReplaceAll(rewritten, []byte(`assets/`), prefixedAssets)
+		rewritten = bytes.ReplaceAll(rewritten, token, prefixedAssets)
+		doublePrefix := []byte(prefix + "/" + strings.TrimPrefix(prefix, "/") + "/assets/")
+		doubleSlashPrefix := []byte(prefix + "//" + strings.TrimPrefix(prefix, "/") + "/assets/")
+		protoRelativePrefix := []byte("//" + strings.TrimPrefix(prefix, "/") + "/assets/")
+		httpsPrefix := []byte("https://" + strings.TrimPrefix(prefix, "/") + "/assets/")
+		httpPrefix := []byte("http://" + strings.TrimPrefix(prefix, "/") + "/assets/")
+		protoRelativeBase := []byte("//" + strings.TrimPrefix(prefix, "/") + "/")
+		rewritten = bytes.ReplaceAll(rewritten, doublePrefix, prefixedAssets)
+		rewritten = bytes.ReplaceAll(rewritten, doubleSlashPrefix, prefixedAssets)
+		rewritten = bytes.ReplaceAll(rewritten, protoRelativePrefix, prefixedAssets)
+		rewritten = bytes.ReplaceAll(rewritten, httpsPrefix, prefixedAssets)
+		rewritten = bytes.ReplaceAll(rewritten, httpPrefix, prefixedAssets)
+		rewritten = bytes.ReplaceAll(rewritten, protoRelativeBase, []byte(prefix+"/"))
+	}
+	if bytes.Contains(rewritten, []byte("<head>")) {
+		prefixLiteral := strconv.Quote(prefix + "/")
+		badPrefix := strconv.Quote("https://" + strings.TrimPrefix(prefix, "/") + "/")
+		badPrefixAlt := strconv.Quote("http://" + strings.TrimPrefix(prefix, "/") + "/")
+		fixScript := []byte(`<script>(()=>{const prefix=` + prefixLiteral + `;const bad=` + badPrefix + `;const badAlt=` + badPrefixAlt + `;const badProto="//` + strings.TrimPrefix(prefix, "/") + `/";const rewrite=v=>{if(typeof v!=="string")return v;if(v.startsWith(bad))return prefix+v.slice(bad.length);if(v.startsWith(badAlt))return prefix+v.slice(badAlt.length);if(v.startsWith(badProto))return prefix+v.slice(badProto.length);return v;};const fix=l=>{if(!l||!l.href)return;l.href=rewrite(l.href);};const origSetAttr=Element.prototype.setAttribute;Element.prototype.setAttribute=function(name,value){if(this.tagName==="LINK"&&name==="href")value=rewrite(value);return origSetAttr.call(this,name,value);};const desc=Object.getOwnPropertyDescriptor(HTMLLinkElement.prototype,"href");if(desc&&desc.set){Object.defineProperty(HTMLLinkElement.prototype,"href",{get:desc.get,set(v){desc.set.call(this,rewrite(v));}});}document.querySelectorAll('link[rel="modulepreload"]').forEach(fix);new MutationObserver(m=>{for(const r of m){for(const n of r.addedNodes){if(n.tagName==="LINK"&&n.rel==="modulepreload"){fix(n);}}}}).observe(document.documentElement,{childList:true,subtree:true});})();</script>`)
+		rewritten = bytes.Replace(rewritten, []byte("<head>"), append([]byte("<head>"), fixScript...), 1)
+	}
+	if err := writeMaybeGzip(resp, rewritten); err != nil {
+		return err
+	}
+	if !strings.Contains(strings.ToLower(resp.Header.Get("Content-Encoding")), "gzip") {
+		resp.ContentLength = int64(len(rewritten))
+		resp.Header.Set("Content-Length", strconv.Itoa(len(rewritten)))
+	}
+	return nil
+}
+
+func readMaybeGzip(resp *http.Response) ([]byte, error) {
+	if !strings.Contains(strings.ToLower(resp.Header.Get("Content-Encoding")), "gzip") {
+		return io.ReadAll(resp.Body)
+	}
+	reader, err := gzip.NewReader(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	return io.ReadAll(reader)
+}
+
+func writeMaybeGzip(resp *http.Response, data []byte) error {
+	if !strings.Contains(strings.ToLower(resp.Header.Get("Content-Encoding")), "gzip") {
+		resp.Body = io.NopCloser(bytes.NewReader(data))
+		return nil
+	}
+	var buf bytes.Buffer
+	writer := gzip.NewWriter(&buf)
+	if _, err := writer.Write(data); err != nil {
+		_ = writer.Close()
+		return err
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(buf.Bytes()))
+	resp.ContentLength = int64(buf.Len())
+	resp.Header.Set("Content-Length", strconv.Itoa(buf.Len()))
+	return nil
 }
 
 func (s *Service) selectEveServer(targetName, workspaceID string) (*EveServerConfig, error) {

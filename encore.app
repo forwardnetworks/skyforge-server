@@ -16,7 +16,6 @@
       "https://localhost"
     ],
     "allow_headers": [
-      "Authorization",
       "Content-Type",
       "Accept",
       "x-current-role",
@@ -35,6 +34,8 @@
   },
   "secrets": {
     "SKYFORGE_SESSION_SECRET": {},
+    "SKYFORGE_OIDC_CLIENT_ID": {},
+    "SKYFORGE_OIDC_CLIENT_SECRET": {},
     "SKYFORGE_LDAP_URL": {},
     "SKYFORGE_LDAP_BIND_TEMPLATE": {},
     "SKYFORGE_LDAP_LOOKUP_BINDDN": {},

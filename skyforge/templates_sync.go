@@ -2,10 +2,13 @@ package skyforge
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/url"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -38,7 +41,7 @@ func normalizeLabppTemplatesDir(source, dir string) string {
 }
 
 func giteaDefaultBranch(cfg Config, owner, repo string) string {
-	branch := "master"
+	branch := "main"
 	if b, err := getGiteaRepoDefaultBranch(cfg, owner, repo); err == nil && strings.TrimSpace(b) != "" {
 		branch = strings.TrimSpace(b)
 	}
@@ -178,7 +181,7 @@ func resolveTemplateRepoForProject(cfg Config, pc *workspaceContext, source stri
 	branch := strings.TrimSpace(pc.workspace.DefaultBranch)
 
 	switch strings.ToLower(strings.TrimSpace(source)) {
-case "", "workspace":
+	case "", "workspace":
 		// default
 	case "blueprints", "blueprint":
 		ref := strings.TrimSpace(pc.workspace.Blueprint)
@@ -226,10 +229,10 @@ func (s *Service) syncLabppTemplateDir(ctx context.Context, pc *workspaceContext
 		return "", fmt.Errorf("templatesDir must be a safe repo-relative path")
 	}
 	if strings.TrimSpace(destRoot) == "" {
-		destRoot = "/var/lib/skyforge/labpp-templates"
+		destRoot = "/var/lib/skyforge/labpp/templates"
 	}
 	destRoot = strings.TrimRight(strings.TrimSpace(destRoot), "/")
-	destTemplateDir := destRoot + "/" + templateName
+	destTemplateDir := filepath.Join(destRoot, templateName)
 
 	ref, err := resolveTemplateRepoForProject(s.cfg, pc, templateSource, templateRepo)
 	if err != nil {
@@ -248,15 +251,7 @@ func (s *Service) syncLabppTemplateDir(ctx context.Context, pc *workspaceContext
 		}
 	}
 	if host == "" {
-		return "", fmt.Errorf("missing eve server sshHost (or apiUrl/webUrl)")
-	}
-	user := strings.TrimSpace(eveServer.SSHUser)
-	if user == "" {
-		user = strings.TrimSpace(s.cfg.Labs.EveSSHUser)
-	}
-	keyFile := strings.TrimSpace(s.cfg.Labs.EveSSHKeyFile)
-	if keyFile == "" {
-		return "", fmt.Errorf("missing SKYFORGE_EVE_SSH_KEY_FILE")
+		return "", fmt.Errorf("missing eve server host for labpp template sync")
 	}
 
 	rootPath := path.Join(templatesDir, templateName)
@@ -273,14 +268,10 @@ func (s *Service) syncLabppTemplateDir(ctx context.Context, pc *workspaceContext
 		return "", fmt.Errorf("labpp template %q has no files under %s", templateName, rootPath)
 	}
 
-	sshCfg := NetlabConfig{SSHHost: host, SSHUser: user, SSHKeyFile: keyFile, StateRoot: "/"}
-	client, err := dialSSH(sshCfg)
-	if err != nil {
+	if err := os.RemoveAll(destTemplateDir); err != nil {
 		return "", err
 	}
-	defer client.Close()
-
-	if _, err := runSSHCommand(client, fmt.Sprintf("rm -rf %q && install -d -m 0755 %q", destTemplateDir, destTemplateDir), 15*time.Second); err != nil {
+	if err := os.MkdirAll(destTemplateDir, 0o755); err != nil {
 		return "", err
 	}
 
@@ -301,7 +292,7 @@ func (s *Service) syncLabppTemplateDir(ctx context.Context, pc *workspaceContext
 			dest := path.Join(destTemplateDir, rel)
 			switch entry.Type {
 			case "dir":
-				if _, err := runSSHCommand(client, fmt.Sprintf("install -d -m 0755 %q", dest), 10*time.Second); err != nil {
+				if err := os.MkdirAll(dest, 0o755); err != nil {
 					return err
 				}
 				if err := syncDir(entryPath); err != nil {
@@ -312,13 +303,15 @@ func (s *Service) syncLabppTemplateDir(ctx context.Context, pc *workspaceContext
 				if err != nil {
 					return err
 				}
-				if _, err := runSSHCommand(client, fmt.Sprintf("install -d -m 0755 %q", path.Dir(dest)), 10*time.Second); err != nil {
+				if err := os.MkdirAll(path.Dir(dest), 0o755); err != nil {
 					return err
 				}
-				if _, err := runSSHCommandWithInput(client, fmt.Sprintf("cat > %q", dest), body, 20*time.Second); err != nil {
+				if strings.HasSuffix(entryPath, "/lab.json") {
+					body = injectLabppServer(body, host)
+				}
+				if err := os.WriteFile(dest, body, 0o644); err != nil {
 					return err
 				}
-				_, _ = runSSHCommand(client, fmt.Sprintf("chmod 0644 %q >/dev/null 2>&1 || true", dest), 5*time.Second)
 			default:
 				// ignore
 			}
@@ -340,43 +333,27 @@ func (s *Service) labppTemplateExists(eveServer *EveServerConfig, templatesRoot,
 	if templatesRoot == "" || templateName == "" {
 		return false, fmt.Errorf("templatesRoot and template are required")
 	}
-
-	host := strings.TrimSpace(eveServer.SSHHost)
-	if host == "" && strings.TrimSpace(eveServer.APIURL) != "" {
-		if u, err := url.Parse(strings.TrimSpace(eveServer.APIURL)); err == nil && u != nil {
-			host = strings.TrimSpace(u.Hostname())
-		}
-	}
-	if host == "" && strings.TrimSpace(eveServer.WebURL) != "" {
-		if u, err := url.Parse(strings.TrimSpace(eveServer.WebURL)); err == nil && u != nil {
-			host = strings.TrimSpace(u.Hostname())
-		}
-	}
-	if host == "" {
-		return false, fmt.Errorf("missing eve server sshHost (or apiUrl/webUrl)")
-	}
-	user := strings.TrimSpace(eveServer.SSHUser)
-	if user == "" {
-		user = strings.TrimSpace(s.cfg.Labs.EveSSHUser)
-	}
-	keyFile := strings.TrimSpace(s.cfg.Labs.EveSSHKeyFile)
-	if keyFile == "" {
-		return false, fmt.Errorf("missing SKYFORGE_EVE_SSH_KEY_FILE")
-	}
-
-	sshCfg := NetlabConfig{SSHHost: host, SSHUser: user, SSHKeyFile: keyFile, StateRoot: "/"}
-	client, err := dialSSH(sshCfg)
-	if err != nil {
-		return false, err
-	}
-	defer client.Close()
-
-	labJSON := path.Join(templatesRoot, templateName, "lab.json")
-	if _, err := runSSHCommand(client, fmt.Sprintf("test -f %q", labJSON), 8*time.Second); err != nil {
-		if strings.Contains(err.Error(), "exit status 1") {
+	if _, err := os.Stat(filepath.Join(templatesRoot, templateName, "lab.json")); err != nil {
+		if os.IsNotExist(err) {
 			return false, nil
 		}
 		return false, err
 	}
 	return true, nil
+}
+
+func injectLabppServer(body []byte, host string) []byte {
+	if strings.TrimSpace(host) == "" {
+		return body
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return body
+	}
+	doc["labpp_server"] = host
+	updated, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return body
+	}
+	return append(updated, '\n')
 }

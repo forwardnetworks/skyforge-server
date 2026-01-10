@@ -12,9 +12,8 @@ import (
 
 // AuthParams defines the parameters for authentication.
 type AuthParams struct {
-	Cookie        string `header:"Cookie"`
-	Authorization string `header:"Authorization"`
-	CurrentRole   string `header:"X-Current-Role"`
+	Cookie      string `header:"Cookie"`
+	CurrentRole string `header:"X-Current-Role"`
 }
 
 // AuthUser represents the authenticated user data stored in auth.Data().
@@ -34,16 +33,6 @@ type AuthUser struct {
 //encore:authhandler
 func (s *Service) AuthHandler(ctx context.Context, p *AuthParams) (auth.UID, *AuthUser, error) {
 	cookieHeader := strings.TrimSpace(p.Cookie)
-	if cookieHeader == "" {
-		token := strings.TrimSpace(p.Authorization)
-		if strings.HasPrefix(token, "Bearer ") {
-			token = strings.TrimSpace(strings.TrimPrefix(token, "Bearer "))
-		}
-		if token != "" {
-			cookieHeader = s.cfg.SessionCookie + "=" + token
-		}
-	}
-
 	if cookieHeader == "" {
 		return "", nil, &errs.Error{
 			Code:    errs.Unauthenticated,
