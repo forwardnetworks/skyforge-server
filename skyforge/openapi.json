@@ -1101,9 +1101,6 @@
           "slug": {
             "type": "string"
           },
-          "terraformStateKey": {
-            "type": "string"
-          },
           "terraformApplyTemplateId": {
             "format": "int64",
             "type": "integer"
@@ -1115,6 +1112,9 @@
           "terraformPlanTemplateId": {
             "format": "int64",
             "type": "integer"
+          },
+          "terraformStateKey": {
+            "type": "string"
           },
           "viewerGroups": {
             "items": {
@@ -3099,7 +3099,7 @@
     },
     "/api/eve/sso": {
       "get": {
-        "description": "and redirects to the proxied /labs/\\\u003cserver\u003e/ path.\n",
+        "description": "and redirects to the proxied /labs/\\<server>/ path.\n",
         "operationId": "GET:skyforge.EveSSO",
         "responses": {
           "200": {
@@ -3182,20 +3182,6 @@
           }
         },
         "summary": "GiteaPublicSSO logs into Gitea with a read-only public account.\n"
-      }
-    },
-    "/api/gitea/sso": {
-      "get": {
-        "operationId": "GET:skyforge.GiteaSSO",
-        "responses": {
-          "200": {
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GiteaSSO performs a one-time token exchange for Gitea and redirects to the UI.\n"
       }
     },
     "/api/health": {
@@ -3668,34 +3654,6 @@
             "$ref": "#/components/responses/APIError"
           }
         }
-      }
-    },
-    "/api/nautobot/sso": {
-      "get": {
-        "operationId": "GET:skyforge.NautobotSSO",
-        "responses": {
-          "200": {
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "NautobotSSO performs a one-time token exchange for Nautobot and redirects to the\nUI.\n"
-      }
-    },
-    "/api/netbox/sso": {
-      "get": {
-        "operationId": "GET:skyforge.NetboxSSO",
-        "responses": {
-          "200": {
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "NetboxSSO performs a one-time token exchange for NetBox and redirects to the UI.\n"
       }
     },
     "/api/netlab/defaults": {
@@ -5239,7 +5197,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "ListSyslogRoutes lists configured source-\u003euser mappings (admin only).\n"
+        "summary": "ListSyslogRoutes lists configured source->user mappings (admin only).\n"
       },
       "put": {
         "operationId": "PUT:skyforge.UpsertSyslogRoute",
@@ -5860,9 +5818,6 @@
                     "slug": {
                       "type": "string"
                     },
-                    "terraformStateKey": {
-                      "type": "string"
-                    },
                     "terraformApplyTemplateId": {
                       "format": "int64",
                       "type": "integer"
@@ -5874,6 +5829,9 @@
                     "terraformPlanTemplateId": {
                       "format": "int64",
                       "type": "integer"
+                    },
+                    "terraformStateKey": {
+                      "type": "string"
                     },
                     "viewerGroups": {
                       "items": {
@@ -7988,9 +7946,6 @@
                     "slug": {
                       "type": "string"
                     },
-                    "terraformStateKey": {
-                      "type": "string"
-                    },
                     "terraformApplyTemplateId": {
                       "format": "int64",
                       "type": "integer"
@@ -8002,6 +7957,9 @@
                     "terraformPlanTemplateId": {
                       "format": "int64",
                       "type": "integer"
+                    },
+                    "terraformStateKey": {
+                      "type": "string"
                     },
                     "viewerGroups": {
                       "items": {
@@ -8916,9 +8874,6 @@
                     "slug": {
                       "type": "string"
                     },
-                    "terraformStateKey": {
-                      "type": "string"
-                    },
                     "terraformApplyTemplateId": {
                       "format": "int64",
                       "type": "integer"
@@ -8930,6 +8885,9 @@
                     "terraformPlanTemplateId": {
                       "format": "int64",
                       "type": "integer"
+                    },
+                    "terraformStateKey": {
+                      "type": "string"
                     },
                     "viewerGroups": {
                       "items": {
@@ -9176,9 +9134,6 @@
                     "slug": {
                       "type": "string"
                     },
-                    "terraformStateKey": {
-                      "type": "string"
-                    },
                     "terraformApplyTemplateId": {
                       "format": "int64",
                       "type": "integer"
@@ -9190,6 +9145,9 @@
                     "terraformPlanTemplateId": {
                       "format": "int64",
                       "type": "integer"
+                    },
+                    "terraformStateKey": {
+                      "type": "string"
                     },
                     "viewerGroups": {
                       "items": {
@@ -10677,7 +10635,7 @@
     },
     "/hooks/{rest}": {
       "post": {
-        "description": "Example:\n\n\tPOST https://\u003chostname\u003e/hooks/\u003ctoken\u003e/github\n",
+        "description": "Example:\n\n\tPOST https://<hostname>/hooks/<token>/github\n",
         "operationId": "POST:skyforge.WebhookIngestAny",
         "parameters": [
           {
