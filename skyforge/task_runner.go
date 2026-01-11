@@ -208,6 +208,7 @@ type netlabRunSpec struct {
 	Environment     map[string]string
 	Action          string
 	Deployment      string
+	DeploymentID    string
 	WorkspaceRoot   string
 	TemplateSource  string
 	TemplateRepo    string
@@ -352,11 +353,108 @@ func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *ta
 					return err
 				}
 			}
+			if strings.EqualFold(spec.Action, "up") || strings.EqualFold(spec.Action, "restart") {
+				if err := s.maybeSyncForwardNetlabAfterRun(ctx, spec, log, apiURL); err != nil {
+					log.Infof("forward netlab sync skipped: %v", err)
+				}
+			}
 			return nil
 		}
 
 		time.Sleep(2 * time.Second)
 	}
+}
+
+func (s *Service) maybeSyncForwardNetlabAfterRun(ctx context.Context, spec netlabRunSpec, log *taskLogger, apiURL string) error {
+	if s == nil {
+		return fmt.Errorf("service unavailable")
+	}
+	if log == nil {
+		return fmt.Errorf("task logger unavailable")
+	}
+	if spec.WorkspaceCtx == nil {
+		return fmt.Errorf("workspace context unavailable")
+	}
+	if strings.TrimSpace(spec.DeploymentID) == "" {
+		// Only deployment-backed Netlab runs have stable deployment IDs.
+		return fmt.Errorf("deployment id unavailable")
+	}
+
+	dep, err := s.getWorkspaceDeployment(ctx, spec.WorkspaceCtx.workspace.ID, strings.TrimSpace(spec.DeploymentID))
+	if err != nil {
+		return err
+	}
+	if dep == nil || dep.Type != "netlab" {
+		return fmt.Errorf("netlab deployment not found")
+	}
+
+	ctxReq, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	payload := map[string]any{
+		"action":        "status",
+		"user":          spec.Username,
+		"workspace":     spec.WorkspaceSlug,
+		"deployment":    spec.Deployment,
+		"workspaceRoot": spec.WorkspaceRoot,
+		"plugin":        "multilab",
+		"multilabId":    strconv.Itoa(spec.MultilabNumeric),
+		"instance":      strconv.Itoa(spec.MultilabNumeric),
+		"stateRoot":     strings.TrimSpace(spec.StateRoot),
+	}
+	if strings.TrimSpace(spec.TopologyPath) != "" {
+		payload["topologyPath"] = strings.TrimSpace(spec.TopologyPath)
+	}
+
+	postResp, body, err := netlabAPIDo(ctxReq, apiURL+"/jobs", payload)
+	if err != nil {
+		return fmt.Errorf("failed to reach netlab API: %w", err)
+	}
+	if postResp.StatusCode < 200 || postResp.StatusCode >= 300 {
+		return fmt.Errorf("netlab API rejected status request: %s", strings.TrimSpace(string(body)))
+	}
+	var statusJob netlabAPIJob
+	if err := json.Unmarshal(body, &statusJob); err != nil || strings.TrimSpace(statusJob.ID) == "" {
+		return fmt.Errorf("netlab status returned invalid response")
+	}
+
+	statusLog := ""
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		if time.Now().After(deadline) {
+			break
+		}
+
+		getResp, getBody, err := netlabAPIGet(ctxReq, fmt.Sprintf("%s/jobs/%s", apiURL, statusJob.ID))
+		if err == nil && getResp != nil && getResp.StatusCode >= 200 && getResp.StatusCode < 300 {
+			_ = json.Unmarshal(getBody, &statusJob)
+		}
+
+		logResp, logBody, err := netlabAPIGet(ctxReq, fmt.Sprintf("%s/jobs/%s/log", apiURL, statusJob.ID))
+		if err == nil && logResp != nil && logResp.StatusCode >= 200 && logResp.StatusCode < 300 {
+			var lr netlabAPILog
+			if err := json.Unmarshal(logBody, &lr); err == nil {
+				statusLog = lr.Log
+			}
+		}
+
+		state := strings.ToLower(strings.TrimSpace(statusJob.State))
+		if state == "" {
+			state = strings.ToLower(strings.TrimSpace(derefString(statusJob.Status)))
+		}
+		if state == "success" || state == "failed" || state == "canceled" {
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+	if strings.TrimSpace(statusLog) == "" {
+		return fmt.Errorf("netlab status log unavailable")
+	}
+
+	if err := s.syncForwardNetlabDevices(ctxReq, spec.WorkspaceCtx, dep, statusLog); err != nil {
+		return err
+	}
+	log.Infof("Forward netlab sync completed.")
+	return nil
 }
 
 func isNetlabBenignFailure(action string, errText string, logs string) bool {

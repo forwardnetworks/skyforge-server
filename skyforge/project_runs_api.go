@@ -538,6 +538,7 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 		Environment:     envMap,
 		Action:          action,
 		Deployment:      deploymentName,
+		DeploymentID:    strings.TrimSpace(req.NetlabMultilabID),
 		WorkspaceRoot:   workspaceRoot,
 		TemplateSource:  strings.TrimSpace(req.TemplateSource),
 		TemplateRepo:    strings.TrimSpace(req.TemplateRepo),
