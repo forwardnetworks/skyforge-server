@@ -679,9 +679,16 @@ func readLabppDataSourcesCSV(path string) ([]labppDeviceInfo, error) {
 		}
 
 		mgmtIP := ""
+		host := ""
 		if ipIdx >= 0 && len(record) > ipIdx {
-			if ip, ok := extractIPv4(record[ipIdx]); ok {
+			raw := strings.TrimSpace(record[ipIdx])
+			if ip, ok := extractIPv4(raw); ok {
 				mgmtIP = ip
+			} else if raw != "" {
+				// LabPP's data_sources.csv may use hostnames in the ip_address column
+				// (e.g. EVE host + per-device ssh_port). Preserve it as a host so we
+				// can still upload devices to Forward using host+port.
+				host = raw
 			}
 		}
 		if mgmtIP == "" {
@@ -693,9 +700,8 @@ func readLabppDataSourcesCSV(path string) ([]labppDeviceInfo, error) {
 			}
 		}
 
-		host := ""
 		if mgmtIP == "" && hostIdx >= 0 && len(record) > hostIdx {
-			host = strings.TrimSpace(record[hostIdx])
+			host = firstNonEmptyTrimmed(host, record[hostIdx])
 		}
 		if mgmtIP == "" && host == "" {
 			continue
