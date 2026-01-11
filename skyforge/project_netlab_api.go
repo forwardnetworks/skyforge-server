@@ -94,10 +94,17 @@ func (s *Service) GetWorkspaceNetlabTemplates(ctx context.Context, id string, re
 	}
 
 	dir := "blueprints/netlab"
+	if source == "blueprints" || source == "blueprint" {
+		dir = "netlab"
+	}
 	if req != nil {
 		if next := strings.Trim(strings.TrimSpace(req.Dir), "/"); next != "" {
 			if !isSafeRelativePath(next) {
 				return nil, errs.B().Code(errs.InvalidArgument).Msg("dir must be a safe repo-relative path").Err()
+			}
+			if source == "blueprints" || source == "blueprint" {
+				next = strings.TrimPrefix(next, "blueprints/")
+				next = strings.Trim(strings.TrimSpace(next), "/")
 			}
 			dir = next
 		}

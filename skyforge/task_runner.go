@@ -572,8 +572,9 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 	if labppS3Endpoint == "" {
 		labppS3Endpoint = "http://minio:9000"
 	}
+	netboxURL := netboxInternalBaseURL(s.cfg)
 	jobEnv := map[string]string{
-		"LABPP_NETBOX_URL":          s.cfg.LabppNetboxURL,
+		"LABPP_NETBOX_URL":          netboxURL,
 		"LABPP_NETBOX_MGMT_SUBNET":  s.cfg.LabppNetboxMgmtSubnet,
 		"LABPP_S3_ACCESS_KEY":       s.cfg.LabppS3AccessKey,
 		"LABPP_S3_SECRET_KEY":       s.cfg.LabppS3SecretKey,
@@ -657,7 +658,8 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		} else {
 			dataSourcesPath = csvPath
 			forwardOverride := forwardOverridesFromEnv(spec.Environment)
-			if err := s.syncForwardLabppDevicesFromCSV(ctx, spec.WorkspaceCtx, spec.DeploymentID, csvPath, forwardOverride); err != nil {
+			startCollection := action == ""
+			if err := s.syncForwardLabppDevicesFromCSV(ctx, spec.WorkspaceCtx, spec.DeploymentID, csvPath, startCollection, forwardOverride); err != nil {
 				stdlog.Printf("forward labpp sync: %v", err)
 			}
 		}
@@ -792,8 +794,9 @@ func (s *Service) generateLabppDataSourcesCSV(ctx context.Context, deploymentID,
 	if labppS3Endpoint == "" {
 		labppS3Endpoint = "http://minio:9000"
 	}
+	netboxURL := netboxInternalBaseURL(s.cfg)
 	jobEnv := map[string]string{
-		"LABPP_NETBOX_URL":          s.cfg.LabppNetboxURL,
+		"LABPP_NETBOX_URL":          netboxURL,
 		"LABPP_NETBOX_MGMT_SUBNET":  s.cfg.LabppNetboxMgmtSubnet,
 		"LABPP_S3_ACCESS_KEY":       s.cfg.LabppS3AccessKey,
 		"LABPP_S3_SECRET_KEY":       s.cfg.LabppS3SecretKey,

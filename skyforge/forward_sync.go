@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -644,8 +645,28 @@ func readLabppDataSourcesCSV(path string) ([]labppDeviceInfo, error) {
 	if nameIdx == -1 {
 		nameIdx = 0
 	}
-	ipIdx := findIndex("ip_address", "mgmt_ip", "mgmt_ip_address", "host", "ip")
+	ipIdx := findIndex("ip_address", "mgmt_ip", "mgmt_ip_address", "management_ip", "management_ipv4", "ip")
+	hostIdx := findIndex("host", "hostname", "ssh_host")
 	portIdx := findIndex("ssh_port", "port")
+
+	extractIPv4 := func(value string) (string, bool) {
+		clean := strings.TrimSpace(value)
+		if clean == "" {
+			return "", false
+		}
+		if slash := strings.Index(clean, "/"); slash > 0 {
+			clean = clean[:slash]
+		}
+		if host, _, err := net.SplitHostPort(clean); err == nil {
+			if ip := net.ParseIP(host); ip != nil && ip.To4() != nil {
+				return host, true
+			}
+		}
+		if ip := net.ParseIP(clean); ip != nil && ip.To4() != nil {
+			return clean, true
+		}
+		return "", false
+	}
 
 	for i := 1; i < len(records); i++ {
 		record := records[i]
@@ -653,27 +674,55 @@ func readLabppDataSourcesCSV(path string) ([]labppDeviceInfo, error) {
 			continue
 		}
 		name := strings.TrimSpace(record[nameIdx])
-		host := ""
-		if ipIdx >= 0 && len(record) > ipIdx {
-			host = strings.TrimSpace(record[ipIdx])
-		}
-		if name == "" || host == "" {
+		if name == "" {
 			continue
 		}
-		if slash := strings.Index(host, "/"); slash > 0 {
-			host = host[:slash]
+
+		mgmtIP := ""
+		if ipIdx >= 0 && len(record) > ipIdx {
+			if ip, ok := extractIPv4(record[ipIdx]); ok {
+				mgmtIP = ip
+			}
 		}
-		port := 22
-		if portIdx >= 0 && len(record) > portIdx {
-			if rawPort := strings.TrimSpace(record[portIdx]); rawPort != "" {
-				if parsed, err := strconv.Atoi(rawPort); err == nil && parsed > 0 {
-					port = parsed
+		if mgmtIP == "" {
+			for _, value := range record {
+				if ip, ok := extractIPv4(value); ok {
+					mgmtIP = ip
+					break
 				}
 			}
 		}
+
+		host := ""
+		if mgmtIP == "" && hostIdx >= 0 && len(record) > hostIdx {
+			host = strings.TrimSpace(record[hostIdx])
+		}
+		if mgmtIP == "" && host == "" {
+			continue
+		}
+
+		port := 22
+		if mgmtIP == "" {
+			// Only honor explicit port values when we don't have a management IPv4.
+			if portIdx >= 0 && len(record) > portIdx {
+				if rawPort := strings.TrimSpace(record[portIdx]); rawPort != "" {
+					if parsed, err := strconv.Atoi(rawPort); err == nil && parsed > 0 {
+						port = parsed
+					}
+				}
+			} else if host != "" {
+				if hostOnly, portStr, err := net.SplitHostPort(host); err == nil {
+					host = hostOnly
+					if parsed, err := strconv.Atoi(strings.TrimSpace(portStr)); err == nil && parsed > 0 {
+						port = parsed
+					}
+				}
+			}
+		}
+
 		devices = append(devices, labppDeviceInfo{
 			Name:   name,
-			MgmtIP: host,
+			MgmtIP: firstNonEmpty(mgmtIP, host),
 			Port:   port,
 		})
 	}
@@ -683,7 +732,16 @@ func readLabppDataSourcesCSV(path string) ([]labppDeviceInfo, error) {
 	return devices, nil
 }
 
-func (s *Service) syncForwardLabppDevicesFromCSV(ctx context.Context, pc *workspaceContext, deploymentID, csvPath string, override *forwardCredentials) error {
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func (s *Service) syncForwardLabppDevicesFromCSV(ctx context.Context, pc *workspaceContext, deploymentID, csvPath string, startCollection bool, override *forwardCredentials) error {
 	if pc == nil {
 		return fmt.Errorf("workspace context unavailable")
 	}
@@ -723,7 +781,7 @@ func (s *Service) syncForwardLabppDevicesFromCSV(ctx context.Context, pc *worksp
 	}
 	deviceUsername := strings.TrimSpace(forwardCfg.DeviceUsername)
 	devicePassword := strings.TrimSpace(forwardCfg.DevicePassword)
-	return s.syncForwardLabppDevicesWithList(ctx, pc, dep, cfgAny, client, deviceUsername, devicePassword, devices)
+	return s.syncForwardLabppDevicesWithList(ctx, pc, dep, cfgAny, client, deviceUsername, devicePassword, devices, startCollection)
 }
 
 func applyForwardOverrides(base *forwardCredentials, override *forwardCredentials) *forwardCredentials {
@@ -754,7 +812,7 @@ func applyForwardOverrides(base *forwardCredentials, override *forwardCredential
 	return base
 }
 
-func (s *Service) syncForwardLabppDevicesWithList(ctx context.Context, pc *workspaceContext, dep *WorkspaceDeployment, cfgAny map[string]any, client *forwardClient, deviceUsername, devicePassword string, devicesResp []labppDeviceInfo) error {
+func (s *Service) syncForwardLabppDevicesWithList(ctx context.Context, pc *workspaceContext, dep *WorkspaceDeployment, cfgAny map[string]any, client *forwardClient, deviceUsername, devicePassword string, devicesResp []labppDeviceInfo, startCollection bool) error {
 	if pc == nil || dep == nil {
 		return fmt.Errorf("workspace context unavailable")
 	}
@@ -865,8 +923,10 @@ func (s *Service) syncForwardLabppDevicesWithList(ctx context.Context, pc *works
 			return err
 		}
 	}
-	if err := forwardStartCollection(ctx, client, networkID); err != nil {
-		log.Printf("forward start collection: %v", err)
+	if startCollection {
+		if err := forwardStartCollection(ctx, client, networkID); err != nil {
+			log.Printf("forward start collection: %v", err)
+		}
 	}
 	cfgAny[forwardCliCredentialMap] = credentialIDsByDevice
 	if err := s.updateDeploymentConfig(ctx, pc.workspace.ID, dep.ID, cfgAny); err != nil {

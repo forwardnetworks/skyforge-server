@@ -1353,7 +1353,7 @@ func (s *Service) SyncWorkspaceDeploymentForward(ctx context.Context, id, deploy
 
 	syncCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	if err := s.syncForwardLabppDevicesFromCSV(syncCtx, pc, dep.ID, csvPath, nil); err != nil {
+	if err := s.syncForwardLabppDevicesFromCSV(syncCtx, pc, dep.ID, csvPath, true, nil); err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg(err.Error()).Err()
 	}
 	return &WorkspaceDeploymentActionResponse{
