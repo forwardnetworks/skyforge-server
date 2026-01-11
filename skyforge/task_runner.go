@@ -818,6 +818,7 @@ func (s *Service) generateLabppDataSourcesCSV(ctx context.Context, deploymentID,
 		"LABPP_EVE_SSH_PORT":        "22",
 		"LABPP_EVE_SSH_TUNNEL":      fmt.Sprintf("%v", s.cfg.Labs.EveSSHTunnel),
 		"LABPP_EVE_SSH_NO_PROXY":    "localhost|127.0.0.1|minio|netbox|nautobot|gitea|skyforge-server|*.svc|*.cluster.local",
+		"LABPP_SKIP_FORWARD":        "true",
 	}
 	jobEnv["LABPP_NETBOX_USERNAME"] = s.cfg.LabppNetboxUsername
 	jobEnv["LABPP_NETBOX_PASSWORD"] = s.cfg.LabppNetboxPassword
