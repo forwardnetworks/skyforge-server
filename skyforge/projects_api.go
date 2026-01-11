@@ -213,10 +213,6 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown netlabServer").Err()
 	}
 
-	ldapPassword, ok := getCachedLDAPPassword(user.Username)
-	if !ok {
-		return nil, errs.B().Code(errs.FailedPrecondition).Msg("LDAP password unavailable; reauthenticate").Err()
-	}
 	giteaCfg := s.cfg
 
 	owner := user.Username
@@ -237,9 +233,27 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 		}
 	}
 
-	if err := ensureGiteaUser(s.cfg, user.Username, ldapPassword); err != nil {
-		log.Printf("ensureGiteaUser: %v", err)
+	profile := &UserProfile{
+		Authenticated: true,
+		Username:      user.Username,
+		DisplayName:   strings.TrimSpace(user.DisplayName),
+		Email:         strings.TrimSpace(user.Email),
+		Groups:        user.Groups,
+		IsAdmin:       isAdminUser(s.cfg, user.Username),
 	}
+	if profile.DisplayName == "" {
+		profile.DisplayName = profile.Username
+	}
+	if profile.Email == "" && strings.TrimSpace(s.cfg.CorpEmailDomain) != "" {
+		profile.Email = fmt.Sprintf("%s@%s", profile.Username, strings.TrimSpace(s.cfg.CorpEmailDomain))
+	}
+	// Provisioning the Gitea user is a best-effort side-effect. Workspace creation
+	// should succeed even if the downstream integration is temporarily unavailable.
+	go func() {
+		if err := ensureGiteaUserFromProfile(s.cfg, profile); err != nil {
+			log.Printf("ensureGiteaUserFromProfile: %v", err)
+		}
+	}()
 
 	blueprint := strings.TrimSpace(req.Blueprint)
 	defaultBranch := "main"
@@ -248,26 +262,27 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 			log.Printf("ensureBlueprintCatalogRepo: %v", err)
 		}
 	}
-	if err := ensureGiteaRepoFromBlueprint(giteaCfg, owner, repo, blueprint); err != nil {
-		if strings.TrimSpace(blueprint) == "" {
-			log.Printf("ensureGiteaRepo: %v", err)
-			return nil, errs.B().Code(errs.Unavailable).Msg("failed to provision gitea repo").Err()
+	// Workspace creation should not be blocked on provisioning downstream tooling.
+	// Gitea provisioning/sync is best-effort and can be retried via workspace sync.
+	{
+		if err := ensureGiteaRepoFromBlueprint(giteaCfg, owner, repo, blueprint); err != nil {
+			if strings.TrimSpace(blueprint) == "" {
+				log.Printf("ensureGiteaRepo: %v", err)
+			} else {
+				log.Printf("ensureGiteaRepoFromBlueprint fallback: %v", err)
+				if err := ensureGiteaRepo(giteaCfg, owner, repo); err != nil {
+					log.Printf("ensureGiteaRepo fallback: %v", err)
+				} else if err := syncGiteaRepoFromBlueprintWithSource(s.cfg, giteaCfg, owner, repo, blueprint, defaultBranch, claims); err != nil {
+					log.Printf("syncGiteaRepoFromBlueprint fallback: %v", err)
+				}
+			}
 		}
-		log.Printf("ensureGiteaRepoFromBlueprint fallback: %v", err)
-		if err := ensureGiteaRepo(giteaCfg, owner, repo); err != nil {
-			log.Printf("ensureGiteaRepo fallback: %v", err)
-			return nil, errs.B().Code(errs.Unavailable).Msg("failed to provision gitea repo").Err()
-		}
-		if err := syncGiteaRepoFromBlueprintWithSource(s.cfg, giteaCfg, owner, repo, blueprint, defaultBranch, claims); err != nil {
-			log.Printf("syncGiteaRepoFromBlueprint fallback: %v", err)
-			return nil, errs.B().Code(errs.Unavailable).Msg("failed to sync blueprint").Err()
-		}
-	}
 
-	defaultBranch, err = getGiteaRepoDefaultBranch(giteaCfg, owner, repo)
-	if err != nil {
-		log.Printf("getGiteaRepoDefaultBranch: %v", err)
-		defaultBranch = "master"
+		if branch, err := getGiteaRepoDefaultBranch(giteaCfg, owner, repo); err != nil {
+			log.Printf("getGiteaRepoDefaultBranch: %v", err)
+		} else if strings.TrimSpace(branch) != "" {
+			defaultBranch = branch
+		}
 	}
 
 	storageEndpoint := strings.TrimSpace(s.cfg.Workspaces.ObjectStorageEndpoint)
@@ -290,10 +305,6 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
   }
 }
 `, storageEndpoint, terraformStateKey)
-	if err := ensureGiteaFile(s.cfg, owner, repo, "backend.tf", backendTF, "chore: configure terraform backend", defaultBranch, claims); err != nil {
-		log.Printf("ensureGiteaFile backend.tf: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to configure repo backend").Err()
-	}
 
 	compatTFVars := `variable "TF_IN_AUTOMATION" {
   type    = string
@@ -396,18 +407,10 @@ variable "TF_VAR_gcp_region" {
   default = ""
 }
 `
-	if err := ensureGiteaFile(s.cfg, owner, repo, "skyforge-compat.tf", compatTFVars, "chore: add skyforge terraform env compatibility", defaultBranch, claims); err != nil {
-		log.Printf("ensureGiteaFile skyforge-compat.tf: %v", err)
-	}
-
 	desc := strings.TrimSpace(req.Description)
 	if desc == "" {
 		desc = "Provisioned by Skyforge."
 	}
-	if err := ensureGiteaFile(giteaCfg, owner, repo, "README.md", fmt.Sprintf("# %s\n\n%s\n", name, desc), "docs: add README", defaultBranch, claims); err != nil {
-		log.Printf("ensureGiteaFile README.md: %v", err)
-	}
-
 	playbookYML := `- name: Skyforge placeholder playbook
   hosts: localhost
   connection: local
@@ -417,9 +420,20 @@ variable "TF_VAR_gcp_region" {
       debug:
         msg: "Replace playbook.yml with your Ansible automation."
 `
-	if err := ensureGiteaFile(giteaCfg, owner, repo, "playbook.yml", playbookYML, "chore: add placeholder ansible playbook", defaultBranch, claims); err != nil {
-		log.Printf("ensureGiteaFile playbook.yml: %v", err)
-	}
+	go func() {
+		if err := ensureGiteaFile(s.cfg, owner, repo, "backend.tf", backendTF, "chore: configure terraform backend", defaultBranch, claims); err != nil {
+			log.Printf("ensureGiteaFile backend.tf: %v", err)
+		}
+		if err := ensureGiteaFile(s.cfg, owner, repo, "skyforge-compat.tf", compatTFVars, "chore: add skyforge terraform env compatibility", defaultBranch, claims); err != nil {
+			log.Printf("ensureGiteaFile skyforge-compat.tf: %v", err)
+		}
+		if err := ensureGiteaFile(giteaCfg, owner, repo, "README.md", fmt.Sprintf("# %s\n\n%s\n", name, desc), "docs: add README", defaultBranch, claims); err != nil {
+			log.Printf("ensureGiteaFile README.md: %v", err)
+		}
+		if err := ensureGiteaFile(giteaCfg, owner, repo, "playbook.yml", playbookYML, "chore: add placeholder ansible playbook", defaultBranch, claims); err != nil {
+			log.Printf("ensureGiteaFile playbook.yml: %v", err)
+		}
+	}()
 
 	legacyWorkspaceID := nextLegacyWorkspaceID(workspaces)
 	terraformInitID := 0
@@ -526,17 +540,28 @@ func (s *Service) SyncWorkspaceBlueprint(ctx context.Context, workspaceID string
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("no blueprint configured").Err()
 	}
 
-	ldapPassword, ok := getCachedLDAPPassword(user.Username)
-	if !ok {
-		return nil, errs.B().Code(errs.FailedPrecondition).Msg("LDAP password unavailable; reauthenticate").Err()
-	}
 	if strings.EqualFold(blueprint, defaultBlueprintCatalog) {
 		if err := ensureBlueprintCatalogRepo(s.cfg, blueprint); err != nil {
 			log.Printf("ensureBlueprintCatalogRepo: %v", err)
 		}
 	}
-	if err := ensureGiteaUser(s.cfg, user.Username, ldapPassword); err != nil {
-		log.Printf("ensureGiteaUser: %v", err)
+	profile := &UserProfile{
+		Authenticated: true,
+		Username:      user.Username,
+		DisplayName:   strings.TrimSpace(user.DisplayName),
+		Email:         strings.TrimSpace(user.Email),
+		Groups:        user.Groups,
+		IsAdmin:       isAdminUser(s.cfg, user.Username),
+	}
+	if profile.DisplayName == "" {
+		profile.DisplayName = profile.Username
+	}
+	if profile.Email == "" && strings.TrimSpace(s.cfg.CorpEmailDomain) != "" {
+		profile.Email = fmt.Sprintf("%s@%s", profile.Username, strings.TrimSpace(s.cfg.CorpEmailDomain))
+	}
+	if err := ensureGiteaUserFromProfile(s.cfg, profile); err != nil {
+		log.Printf("ensureGiteaUserFromProfile: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to provision gitea user").Err()
 	}
 	giteaCfg := s.cfg
 	targetBranch := strings.TrimSpace(pc.workspace.DefaultBranch)

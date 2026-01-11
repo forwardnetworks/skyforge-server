@@ -25,8 +25,74 @@ import (
 	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-exec/tfexec"
 
+	secretreader "encore.app/internal/secrets"
 	"encore.app/storage"
 )
+
+func (s *Service) notifyTaskEvent(ctx context.Context, task *TaskRecord, status string, errMsg string) error {
+	if s == nil || s.db == nil || task == nil || !task.DeploymentID.Valid {
+		return nil
+	}
+	// Only notify on deployment-scoped tasks for now (matches UI expectations).
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	meta, _ := fromJSONMap(task.Metadata)
+	action := strings.TrimSpace(labppMetaString(meta, "action"))
+	deploymentName := strings.TrimSpace(labppMetaString(meta, "deployment"))
+	template := strings.TrimSpace(labppMetaString(meta, "template"))
+	serverName := strings.TrimSpace(labppMetaString(meta, "server"))
+
+	if deploymentName == "" {
+		deploymentName = task.DeploymentID.String
+	}
+
+	title := ""
+	message := ""
+	priority := "low"
+	typ := "DEPLOYMENT"
+	category := "deployment"
+	referenceID := fmt.Sprintf("%s:%d", task.DeploymentID.String, task.ID)
+
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "running":
+		title = fmt.Sprintf("Deployment %s started", deploymentName)
+		message = strings.TrimSpace(fmt.Sprintf("action=%s template=%s server=%s task=%d", action, template, serverName, task.ID))
+	case "success":
+		title = fmt.Sprintf("Deployment %s succeeded", deploymentName)
+		message = strings.TrimSpace(fmt.Sprintf("action=%s task=%d", action, task.ID))
+	case "failed":
+		title = fmt.Sprintf("Deployment %s failed", deploymentName)
+		priority = "high"
+		if strings.TrimSpace(errMsg) == "" {
+			errMsg = task.Error.String
+		}
+		message = strings.TrimSpace(fmt.Sprintf("action=%s task=%d error=%s", action, task.ID, strings.TrimSpace(errMsg)))
+	case "canceled":
+		title = fmt.Sprintf("Deployment %s canceled", deploymentName)
+		message = strings.TrimSpace(fmt.Sprintf("action=%s task=%d", action, task.ID))
+	default:
+		return nil
+	}
+
+	_, _, workspace, err := s.loadWorkspaceByKey(task.WorkspaceID)
+	if err != nil {
+		// Fall back to notifying just the actor.
+		_, err := createNotification(ctx, s.db, task.CreatedBy, title, message, typ, category, referenceID, priority)
+		return err
+	}
+
+	recipients := workspaceNotificationRecipients(workspace)
+	if len(recipients) == 0 {
+		recipients = []string{task.CreatedBy}
+	}
+	for _, username := range recipients {
+		if _, err := createNotification(ctx, s.db, username, title, message, typ, category, referenceID, priority); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 type taskLogger struct {
 	svc    *Service
@@ -98,6 +164,9 @@ func (s *Service) queueTask(task *TaskRecord, runner func(ctx context.Context, l
 		if err := markTaskStarted(ctx, s.db, task.ID); err != nil {
 			stdlog.Printf("task start update failed: %v", err)
 		}
+		if err := s.notifyTaskEvent(ctx, task, "running", ""); err != nil {
+			stdlog.Printf("task start notification failed: %v", err)
+		}
 		logger := &taskLogger{svc: s, taskID: task.ID}
 		err := runner(ctx, logger)
 		status := "success"
@@ -115,6 +184,9 @@ func (s *Service) queueTask(task *TaskRecord, runner func(ctx context.Context, l
 			if err := finishTask(ctx, s.db, task.ID, status, errMsg); err != nil {
 				stdlog.Printf("task finish update failed: %v", err)
 			}
+		}
+		if err := s.notifyTaskEvent(ctx, task, status, errMsg); err != nil {
+			stdlog.Printf("task finish notification failed: %v", err)
 		}
 		if task.DeploymentID.Valid {
 			finishedAt := time.Now().UTC()
@@ -438,6 +510,7 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		labPath = labppLabPath(spec.Username, deployment, spec.Template, time.Now())
 	}
 	labPath = labppNormalizeFolderPath(labPath)
+	labppRunnerPath := strings.TrimPrefix(strings.TrimSpace(labPath), "/")
 	templatesRoot := strings.TrimSpace(spec.TemplatesRoot)
 	if templatesRoot == "" {
 		templatesRoot = "/var/lib/skyforge/labpp/templates"
@@ -485,8 +558,8 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 	log.Infof("LabPP run: action=%s labPath=%s templateDir=%s", action, labPath, templateDir)
 
 	customArgs := []string{"--verbose", "--debug", "labpp", "--template-dir", templateDir, "--config-dir-base", configDirBase, "--labpp-config-file", configFile}
-	if labPath != "" {
-		customArgs = append(customArgs, "--lab-path", labPath)
+	if labppRunnerPath != "" {
+		customArgs = append(customArgs, "--lab-path", labppRunnerPath)
 	}
 	if action != "" {
 		customArgs = append(customArgs, "--action", strings.ToUpper(action))
@@ -501,9 +574,6 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 	}
 	jobEnv := map[string]string{
 		"LABPP_NETBOX_URL":          s.cfg.LabppNetboxURL,
-		"LABPP_NETBOX_USERNAME":     s.cfg.LabppNetboxUsername,
-		"LABPP_NETBOX_PASSWORD":     s.cfg.LabppNetboxPassword,
-		"LABPP_NETBOX_TOKEN":        s.cfg.LabppNetboxToken,
 		"LABPP_NETBOX_MGMT_SUBNET":  s.cfg.LabppNetboxMgmtSubnet,
 		"LABPP_S3_ACCESS_KEY":       s.cfg.LabppS3AccessKey,
 		"LABPP_S3_SECRET_KEY":       s.cfg.LabppS3SecretKey,
@@ -516,7 +586,7 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		"LABPP_CONFIG_FILE":         configFile,
 		"LABPP_CONFIG_DIR_BASE":     configDirBase,
 		"LABPP_TEMPLATES_DIR":       templateDir,
-		"LABPP_LAB_PATH":            labPath,
+		"LABPP_LAB_PATH":            labppRunnerPath,
 		"LABPP_ACTION":              action,
 		"LABPP_EVE_SSH_HOST":        eveHost,
 		"LABPP_EVE_SSH_USER":        s.cfg.Labs.EveSSHUser,
@@ -525,6 +595,34 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		"LABPP_EVE_SSH_TUNNEL":      fmt.Sprintf("%v", s.cfg.Labs.EveSSHTunnel),
 		"LABPP_EVE_SSH_NO_PROXY":    "localhost|127.0.0.1|minio|netbox|nautobot|gitea|skyforge-server|*.svc|*.cluster.local",
 		"LABPP_SKIP_FORWARD":        "true",
+		"LABPP_DEPLOYMENT_ID":       strings.TrimSpace(spec.DeploymentID),
+	}
+	jobEnv["LABPP_NETBOX_USERNAME"] = s.cfg.LabppNetboxUsername
+	jobEnv["LABPP_NETBOX_PASSWORD"] = s.cfg.LabppNetboxPassword
+	jobEnv["LABPP_NETBOX_TOKEN"] = s.cfg.LabppNetboxToken
+	if jobEnv["LABPP_NETBOX_USERNAME"] == "" {
+		jobEnv["LABPP_NETBOX_USERNAME"] = strings.TrimSpace(os.Getenv("SKYFORGE_LABPP_NETBOX_USERNAME"))
+	}
+	if jobEnv["LABPP_NETBOX_USERNAME"] == "" {
+		if secret, err := secretreader.ReadSecretFromEnvOrFile("SKYFORGE_LABPP_NETBOX_USERNAME", "skyforge-labpp-netbox-username"); err == nil {
+			jobEnv["LABPP_NETBOX_USERNAME"] = strings.TrimSpace(secret)
+		}
+	}
+	if jobEnv["LABPP_NETBOX_PASSWORD"] == "" {
+		jobEnv["LABPP_NETBOX_PASSWORD"] = strings.TrimSpace(os.Getenv("SKYFORGE_LABPP_NETBOX_PASSWORD"))
+	}
+	if jobEnv["LABPP_NETBOX_PASSWORD"] == "" {
+		if secret, err := secretreader.ReadSecretFromEnvOrFile("SKYFORGE_LABPP_NETBOX_PASSWORD", "skyforge-labpp-netbox-password"); err == nil {
+			jobEnv["LABPP_NETBOX_PASSWORD"] = strings.TrimSpace(secret)
+		}
+	}
+	if jobEnv["LABPP_NETBOX_TOKEN"] == "" {
+		jobEnv["LABPP_NETBOX_TOKEN"] = strings.TrimSpace(os.Getenv("SKYFORGE_LABPP_NETBOX_TOKEN"))
+	}
+	if jobEnv["LABPP_NETBOX_TOKEN"] == "" {
+		if secret, err := secretreader.ReadSecretFromEnvOrFile("SKYFORGE_LABPP_NETBOX_TOKEN", "skyforge-labpp-netbox-token"); err == nil {
+			jobEnv["LABPP_NETBOX_TOKEN"] = strings.TrimSpace(secret)
+		}
 	}
 	if spec.ThreadCount > 0 {
 		jobEnv["LABPP_THREAD_COUNT"] = strconv.Itoa(spec.ThreadCount)
@@ -536,15 +634,22 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 	log.Infof("Starting LabPP runner job (%s)", strings.Join(customArgs, " "))
 	jobName := fmt.Sprintf("labpp-%d", spec.TaskID)
 	if err := s.runLabppJob(ctx, log, jobName, customArgs, jobEnv); err != nil {
-		if isLabppBenignFailure(action, err.Error(), "") {
+		// LabPP sometimes fails late while trying to contact Forward (often configured as localhost).
+		// Skyforge owns Forward sync, so treat these as success to avoid reporting a failed run
+		// after the lab has been successfully created/configured.
+		if isLabppForwardFailure(err.Error()) {
+			log.Infof("LabPP forward-check failure ignored: %v", err)
+		} else if isLabppBenignFailure(action, err.Error(), "") {
 			log.Infof("LabPP %s treated as success: %v", action, err)
 			return nil
+		} else {
+			return err
 		}
-		return err
 	}
 
 	dataSourcesPath := ""
-	if spec.WorkspaceCtx != nil && strings.TrimSpace(spec.DeploymentID) != "" && action == "" {
+	shouldSyncForward := action == "" || strings.EqualFold(action, "upload") || strings.EqualFold(action, "create")
+	if spec.WorkspaceCtx != nil && strings.TrimSpace(spec.DeploymentID) != "" && shouldSyncForward {
 		dataSourcesDir := filepath.Join(strings.TrimSpace(s.cfg.PlatformDataDir), "labpp", "data-sources", spec.DeploymentID)
 		csvPath, err := s.generateLabppDataSourcesCSV(ctx, spec.DeploymentID, templateDir, configDirBase, configFile, labPath, dataSourcesDir, log, eveHost)
 		if err != nil {
@@ -644,9 +749,6 @@ func (s *Service) writeLabppConfigFile(eveHost, username, password string) (stri
 	if s.cfg.LabppNetboxPassword != "" {
 		lines = append(lines, fmt.Sprintf("netbox_password=%s", s.cfg.LabppNetboxPassword))
 	}
-	if s.cfg.LabppNetboxToken != "" {
-		lines = append(lines, fmt.Sprintf("netbox_token=%s", s.cfg.LabppNetboxToken))
-	}
 	if s.cfg.LabppNetboxMgmtSubnet != "" {
 		lines = append(lines, fmt.Sprintf("netbox_mgmt_subnet_ip=%s", s.cfg.LabppNetboxMgmtSubnet))
 	}
@@ -681,8 +783,9 @@ func (s *Service) generateLabppDataSourcesCSV(ctx context.Context, deploymentID,
 		return "", fmt.Errorf("failed to create data sources dir: %w", err)
 	}
 	customArgs := []string{"--verbose", "--debug", "labpp", "--template-dir", templateDir, "--config-dir-base", configDirBase, "--labpp-config-file", configFile, "--action", "DATA_SOURCES_CSV", "--sources-dir", dataSourcesDir}
-	if labPath != "" {
-		customArgs = append(customArgs, "--lab-path", labPath)
+	labppRunnerPath := strings.TrimPrefix(strings.TrimSpace(labPath), "/")
+	if labppRunnerPath != "" {
+		customArgs = append(customArgs, "--lab-path", labppRunnerPath)
 	}
 	log.Infof("Generating labpp data_sources.csv")
 	labppS3Endpoint := strings.TrimSpace(s.cfg.LabppS3Endpoint)
@@ -691,9 +794,6 @@ func (s *Service) generateLabppDataSourcesCSV(ctx context.Context, deploymentID,
 	}
 	jobEnv := map[string]string{
 		"LABPP_NETBOX_URL":          s.cfg.LabppNetboxURL,
-		"LABPP_NETBOX_USERNAME":     s.cfg.LabppNetboxUsername,
-		"LABPP_NETBOX_PASSWORD":     s.cfg.LabppNetboxPassword,
-		"LABPP_NETBOX_TOKEN":        s.cfg.LabppNetboxToken,
 		"LABPP_NETBOX_MGMT_SUBNET":  s.cfg.LabppNetboxMgmtSubnet,
 		"LABPP_S3_ACCESS_KEY":       s.cfg.LabppS3AccessKey,
 		"LABPP_S3_SECRET_KEY":       s.cfg.LabppS3SecretKey,
@@ -706,7 +806,7 @@ func (s *Service) generateLabppDataSourcesCSV(ctx context.Context, deploymentID,
 		"LABPP_CONFIG_FILE":         configFile,
 		"LABPP_CONFIG_DIR_BASE":     configDirBase,
 		"LABPP_TEMPLATES_DIR":       templateDir,
-		"LABPP_LAB_PATH":            labPath,
+		"LABPP_LAB_PATH":            labppRunnerPath,
 		"LABPP_ACTION":              "DATA_SOURCES_CSV",
 		"LABPP_SOURCES_DIR":         dataSourcesDir,
 		"LABPP_EVE_SSH_HOST":        eveHost,
@@ -715,6 +815,24 @@ func (s *Service) generateLabppDataSourcesCSV(ctx context.Context, deploymentID,
 		"LABPP_EVE_SSH_PORT":        "22",
 		"LABPP_EVE_SSH_TUNNEL":      fmt.Sprintf("%v", s.cfg.Labs.EveSSHTunnel),
 		"LABPP_EVE_SSH_NO_PROXY":    "localhost|127.0.0.1|minio|netbox|nautobot|gitea|skyforge-server|*.svc|*.cluster.local",
+	}
+	jobEnv["LABPP_NETBOX_USERNAME"] = s.cfg.LabppNetboxUsername
+	jobEnv["LABPP_NETBOX_PASSWORD"] = s.cfg.LabppNetboxPassword
+	if jobEnv["LABPP_NETBOX_USERNAME"] == "" {
+		jobEnv["LABPP_NETBOX_USERNAME"] = strings.TrimSpace(os.Getenv("SKYFORGE_LABPP_NETBOX_USERNAME"))
+	}
+	if jobEnv["LABPP_NETBOX_USERNAME"] == "" {
+		if secret, err := secretreader.ReadSecretFromEnvOrFile("SKYFORGE_LABPP_NETBOX_USERNAME", "skyforge-labpp-netbox-username"); err == nil {
+			jobEnv["LABPP_NETBOX_USERNAME"] = strings.TrimSpace(secret)
+		}
+	}
+	if jobEnv["LABPP_NETBOX_PASSWORD"] == "" {
+		jobEnv["LABPP_NETBOX_PASSWORD"] = strings.TrimSpace(os.Getenv("SKYFORGE_LABPP_NETBOX_PASSWORD"))
+	}
+	if jobEnv["LABPP_NETBOX_PASSWORD"] == "" {
+		if secret, err := secretreader.ReadSecretFromEnvOrFile("SKYFORGE_LABPP_NETBOX_PASSWORD", "skyforge-labpp-netbox-password"); err == nil {
+			jobEnv["LABPP_NETBOX_PASSWORD"] = strings.TrimSpace(secret)
+		}
 	}
 	if err := s.runLabppJob(ctx, log, fmt.Sprintf("labpp-sources-%s", deploymentID), customArgs, jobEnv); err != nil {
 		return "", err
@@ -1002,6 +1120,26 @@ func isLabppBenignFailure(action string, errText string, logs string) bool {
 		"lab does not exist",
 		"lab not found",
 		"not found",
+	} {
+		if strings.Contains(candidate, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func isLabppForwardFailure(errText string) bool {
+	candidate := strings.ToLower(strings.TrimSpace(errText))
+	if candidate == "" {
+		return false
+	}
+	for _, marker := range []string{
+		"connect to http://localhost",
+		"connect to http://localhost:80",
+		"runsnapshotchecks",
+		"getnetworkwithname",
+		"fwdapi.getnetworks",
+		"http host connect exception",
 	} {
 		if strings.Contains(candidate, marker) {
 			return true
