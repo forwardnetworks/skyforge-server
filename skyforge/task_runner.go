@@ -7,16 +7,19 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	stdlog "log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -845,7 +848,154 @@ func (s *Service) generateLabppDataSourcesCSV(ctx context.Context, deploymentID,
 	if _, err := os.Stat(csvPath); err != nil {
 		return "", fmt.Errorf("labpp data_sources.csv missing: %w", err)
 	}
+	if log != nil {
+		// LabPP's DATA_SOURCES_CSV currently emits host+ssh_port rows (EVE host/port mapping).
+		// Forward expects to connect to each device at port 22 through the configured jump server,
+		// so rewrite the CSV to contain per-device management IPv4s when LabPP has already reserved
+		// and logged those IPs from NetBox.
+		if err := s.rewriteLabppDataSourcesCSVWithNetboxIPs(ctx, log, csvPath); err != nil {
+			log.Infof("labpp data_sources.csv rewrite skipped: %v", err)
+		}
+	}
 	return csvPath, nil
+}
+
+func (s *Service) rewriteLabppDataSourcesCSVWithNetboxIPs(ctx context.Context, log *taskLogger, csvPath string) error {
+	if s == nil || s.db == nil || log == nil || log.taskID <= 0 {
+		return fmt.Errorf("task logging unavailable")
+	}
+
+	f, err := os.Open(csvPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	reader := csv.NewReader(f)
+	reader.TrimLeadingSpace = true
+	records, err := reader.ReadAll()
+	if err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	if len(records) < 2 {
+		return nil
+	}
+
+	header := make([]string, len(records[0]))
+	for i, value := range records[0] {
+		header[i] = strings.ToLower(strings.TrimSpace(value))
+	}
+	findIndex := func(names ...string) int {
+		for _, name := range names {
+			for idx, value := range header {
+				if value == name {
+					return idx
+				}
+			}
+		}
+		return -1
+	}
+	nameIdx := findIndex("name")
+	if nameIdx == -1 {
+		nameIdx = 0
+	}
+	ipIdx := findIndex("ip_address", "mgmt_ip", "mgmt_ip_address", "management_ip", "management_ipv4", "ip")
+	if ipIdx == -1 {
+		return nil
+	}
+
+	// Only rewrite when the CSV isn't already using IPv4 addresses.
+	needsRewrite := false
+	for i := 1; i < len(records); i++ {
+		row := records[i]
+		if len(row) <= ipIdx {
+			continue
+		}
+		raw := strings.TrimSpace(row[ipIdx])
+		if ip := net.ParseIP(raw); ip == nil || ip.To4() == nil {
+			needsRewrite = true
+			break
+		}
+	}
+	if !needsRewrite {
+		return nil
+	}
+
+	logs, err := listTaskLogs(ctx, s.db, log.taskID, 5000)
+	if err != nil {
+		return err
+	}
+
+	// Example line (from LabPP NetBox allocator):
+	// "**dal_VMX_VFP_1: Received Ip 10.255.0.2/24 available for the node"
+	ipLine := regexp.MustCompile(`\*\*([A-Za-z0-9_.-]+):\s*Received Ip\s+([0-9.]+)/`)
+	ipByName := map[string]string{}
+	for _, entry := range logs {
+		matches := ipLine.FindStringSubmatch(entry.Output)
+		if len(matches) != 3 {
+			continue
+		}
+		name := strings.TrimSpace(matches[1])
+		ip := strings.TrimSpace(matches[2])
+		if name == "" {
+			continue
+		}
+		parsed := net.ParseIP(ip)
+		if parsed == nil || parsed.To4() == nil {
+			continue
+		}
+		ipByName[name] = parsed.String()
+	}
+	if len(ipByName) == 0 {
+		return fmt.Errorf("no netbox ip assignments found in task logs")
+	}
+
+	out := [][]string{{"name", "ip_address"}}
+	for i := 1; i < len(records); i++ {
+		row := records[i]
+		if len(row) <= nameIdx {
+			continue
+		}
+		name := strings.TrimSpace(row[nameIdx])
+		if name == "" {
+			continue
+		}
+		ip, ok := ipByName[name]
+		if !ok {
+			return fmt.Errorf("missing netbox ip assignment for %q", name)
+		}
+		out = append(out, []string{name, ip})
+	}
+	if len(out) <= 1 {
+		return fmt.Errorf("no rows to rewrite")
+	}
+
+	tmp := csvPath + ".tmp"
+	outFile, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+	writer := csv.NewWriter(outFile)
+	if err := writer.WriteAll(out); err != nil {
+		_ = outFile.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		_ = outFile.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := outFile.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, csvPath); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	log.Infof("Rewrote labpp data_sources.csv with netbox management IPv4s.")
+	return nil
 }
 
 func forwardOverridesFromEnv(env map[string]string) *forwardCredentials {
