@@ -219,6 +219,40 @@ type giteaContentResponse struct {
 	Path     string `json:"path"`
 }
 
+type giteaBranchResponse struct {
+	Name   string `json:"name"`
+	Commit struct {
+		ID string `json:"id"`
+	} `json:"commit"`
+}
+
+func getGiteaBranchHeadSHA(cfg Config, owner, repo, branch string) (string, error) {
+	owner = strings.TrimSpace(owner)
+	repo = strings.TrimSpace(repo)
+	branch = strings.TrimSpace(branch)
+	if owner == "" || repo == "" || branch == "" {
+		return "", fmt.Errorf("gitea branch lookup requires owner/repo/branch")
+	}
+	path := fmt.Sprintf("/repos/%s/%s/branches/%s", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(branch))
+	resp, body, err := giteaDo(cfg, http.MethodGet, path, nil)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode != http.StatusOK {
+		fullURL := strings.TrimRight(cfg.Workspaces.GiteaAPIURL, "/") + path
+		return "", fmt.Errorf("gitea %s responded %d: %s", fullURL, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var parsed giteaBranchResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return "", err
+	}
+	sha := strings.TrimSpace(parsed.Commit.ID)
+	if sha == "" {
+		return "", fmt.Errorf("gitea branch commit id missing")
+	}
+	return sha, nil
+}
+
 func readGiteaFile(cfg Config, owner, repo, filePath, ref string) (string, error) {
 	filePath = strings.TrimPrefix(strings.TrimSpace(filePath), "/")
 	refSuffix := ""

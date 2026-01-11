@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -17,6 +18,27 @@ type templateRepoRef struct {
 	Owner  string
 	Repo   string
 	Branch string
+}
+
+var netlabSyncLock = struct {
+	mu    sync.Mutex
+	locks map[string]*sync.Mutex
+}{
+	locks: make(map[string]*sync.Mutex),
+}
+
+func withNetlabSyncLock(key string, fn func() error) error {
+	netlabSyncLock.mu.Lock()
+	lock, ok := netlabSyncLock.locks[key]
+	if !ok {
+		lock = &sync.Mutex{}
+		netlabSyncLock.locks[key] = lock
+	}
+	netlabSyncLock.mu.Unlock()
+
+	lock.Lock()
+	defer lock.Unlock()
+	return fn()
 }
 
 func defaultLabppTemplatesDir(source string) string {
@@ -142,59 +164,103 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 		return "", err
 	}
 
-	var syncDir func(repoPath string) error
-	syncDir = func(repoPath string) error {
-		entries, err := listGiteaDirectory(s.cfg, ref.Owner, ref.Repo, repoPath, ref.Branch)
-		if err != nil {
+	lockKey := strings.Join([]string{workdir, ref.Owner, ref.Repo, ref.Branch, rootPath}, "|")
+	if err := withNetlabSyncLock(lockKey, func() error {
+		// If the repo hasn't changed since last sync, avoid re-copying the entire netlab directory.
+		// This makes consecutive create→start runs fast and also prevents redundant syncs when
+		// multiple netlab tasks are queued close together.
+		sha := ""
+		if ref.Owner != "" && ref.Repo != "" && ref.Branch != "" {
+			if got, err := getGiteaBranchHeadSHA(s.cfg, ref.Owner, ref.Repo, ref.Branch); err == nil {
+				sha = strings.TrimSpace(got)
+			}
+		}
+		stampPath := path.Join(destRoot, ".skyforge-netlab-sync")
+		if sha != "" && topologyPath != "" {
+			required := path.Join(workdir, topologyPath)
+			current, _ := runSSHCommand(client, fmt.Sprintf("cat %q 2>/dev/null || true", stampPath), 5*time.Second)
+			current = strings.TrimSpace(current)
+			expected := strings.TrimSpace(strings.Join([]string{
+				"repo=" + ref.Owner + "/" + ref.Repo,
+				"branch=" + ref.Branch,
+				"sha=" + sha,
+				"root=" + rootPath,
+			}, "\n"))
+			existsOut, _ := runSSHCommand(client, fmt.Sprintf("test -f %q && echo ok || true", required), 5*time.Second)
+			if strings.TrimSpace(existsOut) == "ok" && current == expected {
+				return nil
+			}
+		}
+
+		var syncDir func(repoPath string) error
+		syncDir = func(repoPath string) error {
+			entries, err := listGiteaDirectory(s.cfg, ref.Owner, ref.Repo, repoPath, ref.Branch)
+			if err != nil {
+				return err
+			}
+			if len(entries) == 0 {
+				return fmt.Errorf("labpp template directory is empty: %s", repoPath)
+			}
+			for _, entry := range entries {
+				name := strings.TrimSpace(entry.Name)
+				if name == "" || strings.HasPrefix(name, ".") {
+					continue
+				}
+				entryPath := strings.TrimPrefix(strings.TrimSpace(entry.Path), "/")
+				rel := strings.TrimPrefix(entryPath, rootPath)
+				rel = strings.TrimPrefix(rel, "/")
+				dest := path.Join(destRoot, rel)
+				switch entry.Type {
+				case "dir":
+					if _, err := runSSHCommand(client, fmt.Sprintf("install -d -m 0755 %q", dest), 10*time.Second); err != nil {
+						return err
+					}
+					if err := syncDir(entryPath); err != nil {
+						return err
+					}
+				case "file":
+					body, err := readGiteaFileBytes(s.cfg, ref.Owner, ref.Repo, entryPath, ref.Branch)
+					if err != nil {
+						return fmt.Errorf("failed to read template %s: %w", entryPath, err)
+					}
+					if _, err := runSSHCommand(client, fmt.Sprintf("install -d -m 0755 %q", path.Dir(dest)), 10*time.Second); err != nil {
+						return err
+					}
+					writeCmd := fmt.Sprintf("cat > %q", dest)
+					if _, err := runSSHCommandWithInput(client, writeCmd, body, 15*time.Second); err != nil {
+						return err
+					}
+					_, _ = runSSHCommand(client, fmt.Sprintf("chmod 0644 %q >/dev/null 2>&1 || true", dest), 5*time.Second)
+				}
+			}
+			return nil
+		}
+
+		if err := syncDir(rootPath); err != nil {
 			return err
 		}
-		if len(entries) == 0 {
-			return fmt.Errorf("labpp template directory is empty: %s", repoPath)
+		templatePath := strings.TrimPrefix(path.Join(templatesDir, templateFile), "/")
+		if templatePath != "" {
+			if _, err := readGiteaFileBytes(s.cfg, ref.Owner, ref.Repo, templatePath, ref.Branch); err != nil {
+				return fmt.Errorf("failed to read template %s: %w", templatePath, err)
+			}
 		}
-		for _, entry := range entries {
-			name := strings.TrimSpace(entry.Name)
-			if name == "" || strings.HasPrefix(name, ".") {
-				continue
-			}
-			entryPath := strings.TrimPrefix(strings.TrimSpace(entry.Path), "/")
-			rel := strings.TrimPrefix(entryPath, rootPath)
-			rel = strings.TrimPrefix(rel, "/")
-			dest := path.Join(destRoot, rel)
-			switch entry.Type {
-			case "dir":
-				if _, err := runSSHCommand(client, fmt.Sprintf("install -d -m 0755 %q", dest), 10*time.Second); err != nil {
-					return err
-				}
-				if err := syncDir(entryPath); err != nil {
-					return err
-				}
-			case "file":
-				body, err := readGiteaFileBytes(s.cfg, ref.Owner, ref.Repo, entryPath, ref.Branch)
-				if err != nil {
-					return fmt.Errorf("failed to read template %s: %w", entryPath, err)
-				}
-				if _, err := runSSHCommand(client, fmt.Sprintf("install -d -m 0755 %q", path.Dir(dest)), 10*time.Second); err != nil {
-					return err
-				}
-				writeCmd := fmt.Sprintf("cat > %q", dest)
-				if _, err := runSSHCommandWithInput(client, writeCmd, body, 15*time.Second); err != nil {
-					return err
-				}
-				_, _ = runSSHCommand(client, fmt.Sprintf("chmod 0644 %q >/dev/null 2>&1 || true", dest), 5*time.Second)
-			}
+		if sha != "" {
+			expected := strings.TrimSpace(strings.Join([]string{
+				"repo=" + ref.Owner + "/" + ref.Repo,
+				"branch=" + ref.Branch,
+				"sha=" + sha,
+				"root=" + rootPath,
+			}, "\n"))
+			// Use a heredoc to avoid complex quoting/escaping.
+			writeCmd := fmt.Sprintf("cat > %q <<'__SKYFORGE__'\n%s\n__SKYFORGE__\n", stampPath, expected)
+			_, _ = runSSHCommand(client, writeCmd, 5*time.Second)
 		}
 		return nil
-	}
-
-	if err := syncDir(rootPath); err != nil {
+	}); err != nil {
 		return "", err
 	}
-	templatePath := strings.TrimPrefix(path.Join(templatesDir, templateFile), "/")
-	if templatePath != "" {
-		if _, err := readGiteaFileBytes(s.cfg, ref.Owner, ref.Repo, templatePath, ref.Branch); err != nil {
-			return "", fmt.Errorf("failed to read template %s: %w", templatePath, err)
-		}
-	}
+
 	if owner != "" {
 		_, _ = runSSHCommand(client, fmt.Sprintf("chown -R %q:%q %q >/dev/null 2>&1 || true", owner, owner, workdir), 8*time.Second)
 	}
