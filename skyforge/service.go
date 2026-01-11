@@ -1161,6 +1161,7 @@ func (ps *fileWorkspacesStore) save(workspaces []SkyforgeWorkspace) error {
 type usersStore interface {
 	load() ([]string, error)
 	upsert(username string) error
+	remove(username string) error
 }
 
 type fileUsersStore struct {
@@ -1222,6 +1223,30 @@ func (us *fileUsersStore) upsert(username string) error {
 	}
 	users = append(users, username)
 	return us.save(users)
+}
+
+func (us *fileUsersStore) remove(username string) error {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil
+	}
+	users, err := us.load()
+	if err != nil {
+		return err
+	}
+	next := make([]string, 0, len(users))
+	changed := false
+	for _, u := range users {
+		if strings.EqualFold(strings.TrimSpace(u), username) {
+			changed = true
+			continue
+		}
+		next = append(next, u)
+	}
+	if !changed {
+		return nil
+	}
+	return us.save(next)
 }
 
 type secretBox struct {
@@ -1448,6 +1473,15 @@ func (s *pgUsersStore) upsert(username string) error {
 	}
 	_, err := s.db.Exec(`INSERT INTO sf_users (username, last_seen_at) VALUES ($1, now())
 ON CONFLICT (username) DO UPDATE SET last_seen_at=excluded.last_seen_at`, username)
+	return err
+}
+
+func (s *pgUsersStore) remove(username string) error {
+	username = strings.ToLower(strings.TrimSpace(username))
+	if username == "" {
+		return nil
+	}
+	_, err := s.db.Exec(`DELETE FROM sf_users WHERE username = $1`, username)
 	return err
 }
 

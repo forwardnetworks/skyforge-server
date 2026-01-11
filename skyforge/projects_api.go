@@ -256,6 +256,9 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 	}()
 
 	blueprint := strings.TrimSpace(req.Blueprint)
+	if blueprint == "" {
+		blueprint = defaultBlueprintCatalog
+	}
 	defaultBranch := "main"
 	if strings.EqualFold(blueprint, defaultBlueprintCatalog) {
 		if err := ensureBlueprintCatalogRepo(s.cfg, blueprint); err != nil {
@@ -284,6 +287,12 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 			defaultBranch = branch
 		}
 	}
+	// Sync the shared blueprint catalog into the user's repo (best-effort).
+	go func() {
+		if err := syncBlueprintCatalogIntoWorkspaceRepo(s.cfg, giteaCfg, owner, repo, defaultBlueprintCatalog, defaultBranch, claims); err != nil {
+			log.Printf("syncBlueprintCatalogIntoWorkspaceRepo: %v", err)
+		}
+	}()
 
 	storageEndpoint := strings.TrimSpace(s.cfg.Workspaces.ObjectStorageEndpoint)
 	if storageEndpoint == "" {
@@ -537,7 +546,7 @@ func (s *Service) SyncWorkspaceBlueprint(ctx context.Context, workspaceID string
 	}
 	blueprint := strings.TrimSpace(pc.workspace.Blueprint)
 	if blueprint == "" {
-		return nil, errs.B().Code(errs.FailedPrecondition).Msg("no blueprint configured").Err()
+		blueprint = defaultBlueprintCatalog
 	}
 
 	if strings.EqualFold(blueprint, defaultBlueprintCatalog) {
@@ -568,10 +577,10 @@ func (s *Service) SyncWorkspaceBlueprint(ctx context.Context, workspaceID string
 	if targetBranch == "" {
 		targetBranch = "main"
 	}
-	if err := syncGiteaRepoFromBlueprintWithSource(s.cfg, giteaCfg, pc.workspace.GiteaOwner, pc.workspace.GiteaRepo, blueprint, targetBranch, pc.claims); err != nil {
-		log.Printf("syncGiteaRepoFromBlueprint: %v", err)
-		if fallbackErr := syncGiteaRepoFromBlueprintWithSource(s.cfg, s.cfg, pc.workspace.GiteaOwner, pc.workspace.GiteaRepo, blueprint, targetBranch, pc.claims); fallbackErr != nil {
-			log.Printf("syncGiteaRepoFromBlueprint fallback: %v", fallbackErr)
+	if err := syncBlueprintCatalogIntoWorkspaceRepo(s.cfg, giteaCfg, pc.workspace.GiteaOwner, pc.workspace.GiteaRepo, blueprint, targetBranch, pc.claims); err != nil {
+		log.Printf("syncBlueprintCatalogIntoWorkspaceRepo: %v", err)
+		if fallbackErr := syncBlueprintCatalogIntoWorkspaceRepo(s.cfg, s.cfg, pc.workspace.GiteaOwner, pc.workspace.GiteaRepo, blueprint, targetBranch, pc.claims); fallbackErr != nil {
+			log.Printf("syncBlueprintCatalogIntoWorkspaceRepo fallback: %v", fallbackErr)
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to sync blueprint").Err()
 		}
 	}

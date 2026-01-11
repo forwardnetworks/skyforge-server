@@ -1,6 +1,7 @@
 package skyforge
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -54,8 +55,10 @@ func ensureGiteaUserFromProfile(cfg Config, profile *UserProfile) error {
 	name, _ := identity["name"].(string)
 	if err := giteaClientFor(cfg).EnsureUser(username, email, name); err != nil {
 		if strings.Contains(err.Error(), "e-mail already in use") {
-			fallback := fallbackGiteaEmail(cfg, username)
-			return giteaClientFor(cfg).EnsureUser(username, fallback, name)
+			if giteaUserExists(cfg, username) {
+				return nil
+			}
+			return fmt.Errorf("gitea email already in use for %s; resolve and retry", email)
 		}
 		return err
 	}
@@ -131,15 +134,23 @@ func ensureGiteaUserPassword(cfg Config, username, displayName, email, password 
 	}
 	if err := giteaClientFor(cfg).EnsureUser(username, email, displayName); err != nil {
 		if strings.Contains(err.Error(), "e-mail already in use") {
-			fallback := fallbackGiteaEmail(cfg, username)
-			if err := giteaClientFor(cfg).EnsureUser(username, fallback, displayName); err != nil {
-				return err
+			if !giteaUserExists(cfg, username) {
+				return fmt.Errorf("gitea email already in use for %s; resolve and retry", email)
 			}
 		} else {
 			return err
 		}
 	}
 	return giteaClientFor(cfg).SetUserPassword(username, password)
+}
+
+func giteaUserExists(cfg Config, username string) bool {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return false
+	}
+	resp, _, err := giteaClientFor(cfg).Do(http.MethodGet, fmt.Sprintf("/users/%s", url.PathEscape(username)), nil)
+	return err == nil && resp.StatusCode == http.StatusOK
 }
 
 func fallbackGiteaEmail(cfg Config, username string) string {
@@ -160,7 +171,30 @@ func getGiteaRepoDefaultBranch(cfg Config, owner, repo string) (string, error) {
 
 type giteaContentEntry = gitea.ContentEntry
 
+type giteaDirCacheEntry struct {
+	expires time.Time
+	entries []giteaContentEntry
+}
+
+var giteaDirCache = struct {
+	mu    sync.Mutex
+	items map[string]giteaDirCacheEntry
+}{
+	items: make(map[string]giteaDirCacheEntry),
+}
+
 func listGiteaDirectory(cfg Config, owner, repo, dir, ref string) ([]giteaContentEntry, error) {
+	cacheKey := strings.Join([]string{owner, repo, strings.TrimPrefix(dir, "/"), ref}, "|")
+	now := time.Now()
+	giteaDirCache.mu.Lock()
+	if entry, ok := giteaDirCache.items[cacheKey]; ok && now.Before(entry.expires) {
+		copied := make([]giteaContentEntry, len(entry.entries))
+		copy(copied, entry.entries)
+		giteaDirCache.mu.Unlock()
+		return copied, nil
+	}
+	giteaDirCache.mu.Unlock()
+
 	entries, err := giteaClientFor(cfg).ListDirectory(owner, repo, dir, ref)
 	if err != nil {
 		return nil, err
@@ -169,6 +203,12 @@ func listGiteaDirectory(cfg Config, owner, repo, dir, ref string) ([]giteaConten
 	for _, entry := range entries {
 		out = append(out, giteaContentEntry(entry))
 	}
+	giteaDirCache.mu.Lock()
+	giteaDirCache.items[cacheKey] = giteaDirCacheEntry{
+		expires: now.Add(30 * time.Second),
+		entries: out,
+	}
+	giteaDirCache.mu.Unlock()
 	return out, nil
 }
 
@@ -302,6 +342,32 @@ func syncGiteaRepoFromBlueprintWithSource(sourceCfg, targetCfg Config, targetOwn
 	return syncGiteaDirectoryWithSource(sourceCfg, targetCfg, owner, repo, targetOwner, targetRepo, "", blueprintBranch, targetBranch, claims)
 }
 
+func syncBlueprintCatalogIntoWorkspaceRepo(sourceCfg, targetCfg Config, targetOwner, targetRepo, blueprint, targetBranch string, claims *SessionClaims) error {
+	sourceOwner, sourceRepo, ok := parseGiteaBlueprintSlug(blueprint)
+	if !ok {
+		return fmt.Errorf("unsupported blueprint repo format")
+	}
+	sourceBranch, err := getGiteaRepoDefaultBranch(sourceCfg, sourceOwner, sourceRepo)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(targetBranch) == "" {
+		targetBranch = "main"
+	}
+
+	// Copy the catalog into a subdirectory in the user's repo so it doesn't pollute the root.
+	// The deployment UX expects `blueprints/<type>` (workspace repo), while the catalog repo is
+	// `<type>` at the repo root.
+	destRoot := "blueprints"
+	expected := []string{"containerlab", "labpp", "netlab", "terraform"}
+	for _, dir := range expected {
+		if err := syncGiteaDirectoryWithSourceToTarget(sourceCfg, targetCfg, sourceOwner, sourceRepo, targetOwner, targetRepo, dir, path.Join(destRoot, dir), sourceBranch, targetBranch, claims); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func syncGiteaDirectoryWithSource(sourceCfg, targetCfg Config, sourceOwner, sourceRepo, targetOwner, targetRepo, dir, sourceRef, targetBranch string, claims *SessionClaims) error {
 	entries, err := listGiteaDirectory(sourceCfg, sourceOwner, sourceRepo, dir, sourceRef)
 	if err != nil {
@@ -387,6 +453,30 @@ func ensureGiteaCollaborator(cfg Config, owner, repo, username, permission strin
 
 func removeGiteaCollaborator(cfg Config, owner, repo, username string) error {
 	return giteaClientFor(cfg).RemoveCollaborator(owner, repo, username)
+}
+
+func purgeGiteaUser(ctx context.Context, cfg Config, username string) error {
+	_ = ctx
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil
+	}
+	client := giteaClientFor(cfg)
+	repos, err := client.ListUserRepos(username)
+	if err != nil {
+		return err
+	}
+	for _, repo := range repos {
+		owner := strings.TrimSpace(repo.Owner.Login)
+		name := strings.TrimSpace(repo.Name)
+		if owner == "" || name == "" {
+			continue
+		}
+		if err := client.DeleteRepo(owner, name); err != nil {
+			return err
+		}
+	}
+	return client.DeleteUser(username)
 }
 
 func listGiteaCollaborators(cfg Config, owner, repo string) ([]string, error) {

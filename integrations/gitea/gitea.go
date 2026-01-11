@@ -156,6 +156,78 @@ func (c *Client) SetUserPassword(username, password string) error {
 	return nil
 }
 
+type RepoSummary struct {
+	Name  string `json:"name"`
+	Owner struct {
+		Login string `json:"login"`
+	} `json:"owner"`
+}
+
+func (c *Client) ListUserRepos(username string) ([]RepoSummary, error) {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil, fmt.Errorf("gitea user missing username")
+	}
+	path := fmt.Sprintf("/users/%s/repos?limit=1000", url.PathEscape(username))
+	resp, body, err := c.Do(http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		fullURL := strings.TrimRight(c.cfg.APIURL, "/") + path
+		return nil, fmt.Errorf("gitea %s responded %d: %s", fullURL, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var repos []RepoSummary
+	if err := json.Unmarshal(body, &repos); err != nil {
+		return nil, err
+	}
+	return repos, nil
+}
+
+func (c *Client) DeleteRepo(owner, repo string) error {
+	owner = strings.TrimSpace(owner)
+	repo = strings.TrimSpace(repo)
+	if owner == "" || repo == "" {
+		return fmt.Errorf("gitea repo missing owner/name")
+	}
+	path := fmt.Sprintf("/repos/%s/%s", url.PathEscape(owner), url.PathEscape(repo))
+	resp, body, err := c.Do(http.MethodDelete, path, nil)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	if resp.StatusCode != http.StatusNoContent {
+		fullURL := strings.TrimRight(c.cfg.APIURL, "/") + path
+		return fmt.Errorf("gitea %s responded %d: %s", fullURL, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
+func (c *Client) DeleteUser(username string) error {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return fmt.Errorf("gitea user missing username")
+	}
+	path := fmt.Sprintf("/admin/users/%s", url.PathEscape(username))
+	resp, body, err := c.Do(http.MethodDelete, path, nil)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		fullURL := strings.TrimRight(c.cfg.APIURL, "/") + path
+		return fmt.Errorf("gitea %s responded %d: %s", fullURL, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
 type ContentEntry struct {
 	Type string `json:"type"`
 	Name string `json:"name"`
