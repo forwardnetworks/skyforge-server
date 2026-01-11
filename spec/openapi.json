@@ -716,6 +716,9 @@
       },
       "skyforge.LabppInfo": {
         "properties": {
+          "dataSourcesCsv": {
+            "type": "string"
+          },
           "endpoint": {
             "type": "string"
           },
@@ -737,7 +740,8 @@
           "eveUrl",
           "labPath",
           "endpoint",
-          "jobId"
+          "jobId",
+          "dataSourcesCsv"
         ],
         "type": "object"
       },
@@ -1360,6 +1364,48 @@
           "mode",
           "desiredReplicas",
           "availableReplicas"
+        ],
+        "type": "object"
+      },
+      "skyforge.UserProfile": {
+        "properties": {
+          "actorUsername": {
+            "type": "string"
+          },
+          "authenticated": {
+            "type": "boolean"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "impersonating": {
+            "type": "boolean"
+          },
+          "isAdmin": {
+            "type": "boolean"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "authenticated",
+          "username",
+          "displayName",
+          "email",
+          "groups",
+          "isAdmin",
+          "actorUsername",
+          "impersonating"
         ],
         "type": "object"
       },
@@ -3099,7 +3145,7 @@
     },
     "/api/eve/sso": {
       "get": {
-        "description": "and redirects to the proxied /labs/\\<server>/ path.\n",
+        "description": "and redirects to the proxied /labs/\\\u003cserver\u003e/ path.\n",
         "operationId": "GET:skyforge.EveSSO",
         "responses": {
           "200": {
@@ -3620,6 +3666,21 @@
         },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "user": {
+                      "$ref": "#/components/schemas/skyforge.UserProfile"
+                    }
+                  },
+                  "required": [
+                    "user"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
             "description": "Success response"
           },
           "default": {
@@ -4930,6 +4991,34 @@
         "summary": "SessionTraefikHead is a Skyforge SSO gate compatible endpoint (HEAD).\n"
       }
     },
+    "/api/skyforge/api/oidc/callback": {
+      "get": {
+        "operationId": "GET:skyforge.OIDCCallbackAlias",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "OIDCCallbackAlias provides backward-compatible routing for legacy OIDC callback\nURLs.\n"
+      }
+    },
+    "/api/skyforge/api/oidc/login": {
+      "get": {
+        "operationId": "GET:skyforge.OIDCLoginAlias",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "OIDCLoginAlias provides backward-compatible routing for legacy OIDC login URLs.\n"
+      }
+    },
     "/api/snmp/traps/events": {
       "get": {
         "operationId": "GET:skyforge.ListSnmpTrapEvents",
@@ -5197,7 +5286,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "ListSyslogRoutes lists configured source->user mappings (admin only).\n"
+        "summary": "ListSyslogRoutes lists configured source-\u003euser mappings (admin only).\n"
       },
       "put": {
         "operationId": "PUT:skyforge.UpsertSyslogRoute",
@@ -5437,6 +5526,12 @@
                     "logoUrl": {
                       "type": "string"
                     },
+                    "oidcEnabled": {
+                      "type": "boolean"
+                    },
+                    "oidcLoginUrl": {
+                      "type": "string"
+                    },
                     "productName": {
                       "type": "string"
                     },
@@ -5461,7 +5556,9 @@
                     "headerBackground",
                     "supportText",
                     "supportUrl",
-                    "themeDefault"
+                    "themeDefault",
+                    "oidcEnabled",
+                    "oidcLoginUrl"
                   ],
                   "type": "object"
                 }
@@ -9499,7 +9596,13 @@
                   "environment": {
                     "$ref": "#/components/schemas/skyforge.JSONMap"
                   },
+                  "evePassword": {
+                    "type": "string"
+                  },
                   "eveServer": {
+                    "type": "string"
+                  },
+                  "eveUsername": {
                     "type": "string"
                   },
                   "gitBranch": {
@@ -9523,7 +9626,7 @@
                     "type": "string"
                   },
                   "templatesDestRoot": {
-                    "title": "host path for synced templates (default: /var/lib/skyforge/labpp-templates)\n",
+                    "title": "host path for synced templates (default: /var/lib/skyforge/labpp/templates)\n",
                     "type": "string"
                   },
                   "templatesDir": {
@@ -9544,6 +9647,8 @@
                   "environment",
                   "action",
                   "eveServer",
+                  "eveUsername",
+                  "evePassword",
                   "templatesRoot",
                   "template",
                   "templateSource",
@@ -10065,7 +10170,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "GetWorkspaceTerraformTemplates lists Terraform template directories for a workspace.\n"
+        "summary": "GetWorkspaceTerraformTemplates lists Terraform template directories for a\nworkspace.\n"
       }
     },
     "/api/workspaces/{id}/variable-groups": {
@@ -10425,6 +10530,21 @@
         },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "user": {
+                      "$ref": "#/components/schemas/skyforge.UserProfile"
+                    }
+                  },
+                  "required": [
+                    "user"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
             "description": "Success response"
           },
           "default": {
@@ -10635,7 +10755,7 @@
     },
     "/hooks/{rest}": {
       "post": {
-        "description": "Example:\n\n\tPOST https://<hostname>/hooks/<token>/github\n",
+        "description": "Example:\n\n\tPOST https://\u003chostname\u003e/hooks/\u003ctoken\u003e/github\n",
         "operationId": "POST:skyforge.WebhookIngestAny",
         "parameters": [
           {
