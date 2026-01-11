@@ -560,7 +560,7 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 	log.Infof("LabPP EVE password fingerprint: %s", debugFingerprint)
 	log.Infof("LabPP run: action=%s labPath=%s templateDir=%s", action, labPath, templateDir)
 
-	customArgs := []string{"--verbose", "--debug", "labpp", "--template-dir", templateDir, "--config-dir-base", configDirBase, "--labpp-config-file", configFile}
+	customArgs := []string{"--verbose", "--debug", "labpp", "--no-forwarding", "--template-dir", templateDir, "--config-dir-base", configDirBase, "--labpp-config-file", configFile}
 	if labppRunnerPath != "" {
 		customArgs = append(customArgs, "--lab-path", labppRunnerPath)
 	}
@@ -787,7 +787,7 @@ func (s *Service) generateLabppDataSourcesCSV(ctx context.Context, deploymentID,
 	if err := os.MkdirAll(dataSourcesDir, 0o755); err != nil {
 		return "", fmt.Errorf("failed to create data sources dir: %w", err)
 	}
-	customArgs := []string{"--verbose", "--debug", "labpp", "--template-dir", templateDir, "--config-dir-base", configDirBase, "--labpp-config-file", configFile, "--action", "DATA_SOURCES_CSV", "--sources-dir", dataSourcesDir}
+	customArgs := []string{"--verbose", "--debug", "labpp", "--no-forwarding", "--template-dir", templateDir, "--config-dir-base", configDirBase, "--labpp-config-file", configFile, "--action", "DATA_SOURCES_CSV", "--sources-dir", dataSourcesDir}
 	labppRunnerPath := strings.TrimPrefix(strings.TrimSpace(labPath), "/")
 	if labppRunnerPath != "" {
 		customArgs = append(customArgs, "--lab-path", labppRunnerPath)
