@@ -1043,6 +1043,7 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 	switch dep.Type {
 	case "netlab":
 		netlabServer := getString("netlabServer")
+		templateSource := getString("templateSource")
 		templatesDir := getString("templatesDir")
 		template := getString("template")
 		if netlabServer == "" {
@@ -1073,7 +1074,7 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 			"instance":      strconv.Itoa(multilabNumericID),
 			"stateRoot":     strings.TrimSpace(server.StateRoot),
 		}
-		if _, _, _, topologyPath := normalizeNetlabTemplateSelection(templatesDir, template); strings.TrimSpace(topologyPath) != "" {
+		if _, _, _, topologyPath := normalizeNetlabTemplateSelectionWithSource(templateSource, templatesDir, template); strings.TrimSpace(topologyPath) != "" {
 			payload["topologyPath"] = strings.TrimSpace(topologyPath)
 		}
 
@@ -1398,6 +1399,7 @@ func (s *Service) GetWorkspaceDeploymentNetlabGraph(ctx context.Context, id, dep
 	}
 
 	netlabServer := getString("netlabServer")
+	templateSource := getString("templateSource")
 	templatesDir := getString("templatesDir")
 	template := getString("template")
 	if netlabServer == "" {
@@ -1426,7 +1428,7 @@ func (s *Service) GetWorkspaceDeploymentNetlabGraph(ctx context.Context, id, dep
 		"instance":      strconv.Itoa(multilabNumericID),
 		"stateRoot":     strings.TrimSpace(server.StateRoot),
 	}
-	if _, _, _, topologyPath := normalizeNetlabTemplateSelection(templatesDir, template); strings.TrimSpace(topologyPath) != "" {
+	if _, _, _, topologyPath := normalizeNetlabTemplateSelectionWithSource(templateSource, templatesDir, template); strings.TrimSpace(topologyPath) != "" {
 		payload["topologyPath"] = strings.TrimSpace(topologyPath)
 	}
 

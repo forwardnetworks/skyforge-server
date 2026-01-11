@@ -48,12 +48,34 @@ func giteaDefaultBranch(cfg Config, owner, repo string) string {
 	return branch
 }
 
-func normalizeNetlabTemplateSelection(templatesDir, templateFile string) (string, string, string, string) {
+func defaultNetlabTemplatesDir(source string) string {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "blueprints", "blueprint":
+		return "netlab"
+	default:
+		return "blueprints/netlab"
+	}
+}
+
+func normalizeNetlabTemplatesDir(source, dir string) string {
+	dir = strings.Trim(strings.TrimSpace(dir), "/")
+	if dir == "" {
+		dir = defaultNetlabTemplatesDir(source)
+	}
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "blueprints", "blueprint":
+		dir = strings.TrimPrefix(dir, "blueprints/")
+	}
+	return strings.Trim(strings.TrimSpace(dir), "/")
+}
+
+func normalizeNetlabTemplateSelectionWithSource(source, templatesDir, templateFile string) (string, string, string, string) {
 	templatesDir = strings.Trim(strings.TrimSpace(templatesDir), "/")
 	templateFile = strings.TrimSpace(templateFile)
 	if templatesDir == "" {
-		templatesDir = "blueprints/netlab"
+		templatesDir = defaultNetlabTemplatesDir(source)
 	}
+	templatesDir = normalizeNetlabTemplatesDir(source, templatesDir)
 	if strings.HasSuffix(templatesDir, ".yml") || strings.HasSuffix(templatesDir, ".yaml") {
 		base := path.Base(templatesDir)
 		if templateFile == "" || templateFile == base {
@@ -83,11 +105,15 @@ func normalizeNetlabTemplateSelection(templatesDir, templateFile string) (string
 	return templatesDir, templateFile, rootPath, topologyPath
 }
 
+func normalizeNetlabTemplateSelection(templatesDir, templateFile string) (string, string, string, string) {
+	return normalizeNetlabTemplateSelectionWithSource("workspace", templatesDir, templateFile)
+}
+
 func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceContext, server *NetlabServerConfig, templateSource, templateRepo, templatesDir, templateFile, workdir, owner string) (string, error) {
 	if server == nil {
 		return "", fmt.Errorf("netlab runner not configured")
 	}
-	templatesDir, templateFile, rootPath, topologyPath := normalizeNetlabTemplateSelection(templatesDir, templateFile)
+	templatesDir, templateFile, rootPath, topologyPath := normalizeNetlabTemplateSelectionWithSource(templateSource, templatesDir, templateFile)
 	if templateFile == "" {
 		return "", nil
 	}
