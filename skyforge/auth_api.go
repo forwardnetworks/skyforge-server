@@ -73,7 +73,7 @@ func fillSessionHeaders(out *SessionHeaders, claims *SessionClaims) {
 }
 
 type LoginResponse struct {
-	SetCookie string `header:"Set-Cookie" json:"-"`
+	SetCookie   string      `header:"Set-Cookie" json:"-"`
 	UserProfile UserProfile `json:"user"`
 }
 
@@ -376,7 +376,6 @@ type traefikSessionPayload struct {
 //
 //encore:api public raw method=GET path=/api/session/traefik
 func (s *Service) SessionTraefik(w http.ResponseWriter, req *http.Request) {
-	cookieHeader := req.Header.Get("Cookie")
 	claims := claimsFromCookie(s.sessionManager, req.Header.Get("Cookie"))
 	if claims == nil {
 		location := buildTraefikRedirect(req.Header)

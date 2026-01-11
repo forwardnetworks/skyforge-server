@@ -722,7 +722,7 @@ func readLabppDataSourcesCSV(path string) ([]labppDeviceInfo, error) {
 
 		devices = append(devices, labppDeviceInfo{
 			Name:   name,
-			MgmtIP: firstNonEmpty(mgmtIP, host),
+			MgmtIP: firstNonEmptyTrimmed(mgmtIP, host),
 			Port:   port,
 		})
 	}
@@ -732,7 +732,7 @@ func readLabppDataSourcesCSV(path string) ([]labppDeviceInfo, error) {
 	return devices, nil
 }
 
-func firstNonEmpty(values ...string) string {
+func firstNonEmptyTrimmed(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {
 			return strings.TrimSpace(value)
