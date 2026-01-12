@@ -226,13 +226,53 @@ func kubeWaitJob(ctx context.Context, ns, name string, log *taskLogger) error {
 				}
 			}
 			if status.Failed > 0 {
-				return fmt.Errorf("labpp job failed")
+				// LabPP sometimes fails late while trying to contact Forward, even when we run in
+				// "--no-forwarding" mode and the lab itself has already been uploaded/configured.
+				// Treat these as success to avoid reporting failed runs when the desired artifact
+				// (data_sources.csv) has been generated.
+				if shouldIgnoreLabppFailedJob(lastLog) {
+					log.Infof("LabPP job failed after success marker; treating as success")
+					return nil
+				}
+				return fmt.Errorf("labpp job failed: %s", tailLines(lastLog, 40))
 			}
 			if status.Succeeded > 0 {
 				return nil
 			}
 		}
 	}
+}
+
+func shouldIgnoreLabppFailedJob(logs string) bool {
+	logs = strings.TrimSpace(logs)
+	if logs == "" {
+		return false
+	}
+	success := strings.Contains(logs, "Successfully executed the command.") ||
+		strings.Contains(logs, "data_sources.csv file created successfully at:")
+	if !success {
+		return false
+	}
+	// Forward "snapshot checks" are non-critical for Skyforge; the platform owns the later
+	// Forward sync step, and LabPP is only used to create the lab + generate CSV inventory.
+	if strings.Contains(logs, "LabPPCallback.runSnapshotChecks") ||
+		strings.Contains(logs, "No forward properties file found") ||
+		strings.Contains(logs, "Connect to https://localhost:8443") {
+		return true
+	}
+	return false
+}
+
+func tailLines(raw string, max int) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || max <= 0 {
+		return ""
+	}
+	lines := strings.Split(raw, "\n")
+	if len(lines) <= max {
+		return strings.TrimSpace(raw)
+	}
+	return strings.TrimSpace(strings.Join(lines[len(lines)-max:], "\n"))
 }
 
 func kubeGetJobStatus(ctx context.Context, client *http.Client, ns, name string) (kubeJobStatus, error) {
