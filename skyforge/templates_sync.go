@@ -167,11 +167,17 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 	}
 
 	// Preserve the full directory layout under the netlab root, but avoid syncing more than needed.
-	// When a template lives in a subdirectory (e.g. blueprints/netlab/<template>/...), syncing only
-	// that subtree is much faster than syncing the whole netlab folder.
+	// Syncing the entire netlab templates tree can take 30–60s due to per-file API calls + SSH round-trips.
+	// In practice we only need the directory containing the selected topology file (and its children).
 	syncStartPath := rootPath
-	if templatesDir != "" && templatesDir != rootPath {
-		syncStartPath = templatesDir
+	templatePath := strings.TrimPrefix(path.Join(templatesDir, templateFile), "/")
+	if templatePath != "" {
+		if dir := strings.Trim(strings.TrimSpace(path.Dir(templatePath)), "/"); dir != "" && dir != "." {
+			// Only narrow the sync start path if it's still within the computed rootPath.
+			if strings.HasPrefix(dir+"/", strings.Trim(rootPath, "/")+"/") || dir == strings.Trim(rootPath, "/") {
+				syncStartPath = dir
+			}
+		}
 	}
 
 	lockKey := strings.Join([]string{workdir, ref.Owner, ref.Repo, ref.Branch, rootPath}, "|")
