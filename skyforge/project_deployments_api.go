@@ -95,6 +95,15 @@ type NetlabInfo struct {
 	APIURL     string `json:"apiUrl"`
 }
 
+type NetlabConnectRequest struct {
+	Node string   `json:"node"`
+	Show []string `json:"show,omitempty"`
+}
+
+type NetlabConnectResponse struct {
+	Output string `json:"output"`
+}
+
 type LabppInfo struct {
 	EveServer      string `json:"eveServer"`
 	EveURL         string `json:"eveUrl,omitempty"`
@@ -1410,6 +1419,112 @@ func (s *Service) SyncWorkspaceDeploymentForward(ctx context.Context, id, deploy
 		WorkspaceID: pc.workspace.ID,
 		Deployment:  dep,
 	}, nil
+}
+
+// NetlabConnect executes `netlab connect` on the Netlab runner host and returns its output.
+//
+// This is an alternative to local SSH ProxyJump when clients can't reach the lab network.
+//
+//encore:api auth method=POST path=/api/workspaces/:id/deployments/:deploymentID/netlab/connect
+func (s *Service) NetlabConnect(ctx context.Context, id, deploymentID string, req *NetlabConnectRequest) (*NetlabConnectResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	pc, err := s.workspaceContextForUser(user, id)
+	if err != nil {
+		return nil, err
+	}
+	if pc.access == "viewer" {
+		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
+	}
+	if req == nil {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid payload").Err()
+	}
+	node := strings.TrimSpace(req.Node)
+	if node == "" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("node is required").Err()
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+
+	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+	if err != nil {
+		return nil, err
+	}
+	if dep.Type != "netlab" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("connect is only available for netlab deployments").Err()
+	}
+
+	cfgAny, _ := fromJSONMap(dep.Config)
+	if cfgAny == nil {
+		cfgAny = map[string]any{}
+	}
+	getString := func(key string) string {
+		raw, ok := cfgAny[key]
+		if !ok {
+			return ""
+		}
+		if v, ok := raw.(string); ok {
+			return strings.TrimSpace(v)
+		}
+		return strings.TrimSpace(fmt.Sprintf("%v", raw))
+	}
+
+	netlabServer := getString("netlabServer")
+	templateSource := getString("templateSource")
+	templatesDir := getString("templatesDir")
+	template := getString("template")
+	if netlabServer == "" {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
+	}
+	server, _ := resolveNetlabServer(s.cfg, netlabServer)
+	if server == nil || strings.TrimSpace(server.SSHHost) == "" {
+		return nil, errs.B().Code(errs.Unavailable).Msg("netlab runner is not configured").Err()
+	}
+
+	multilabID := dep.ID
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(multilabID))
+	multilabNumericID := int(h.Sum32()%199) + 1
+
+	workspaceRoot := fmt.Sprintf("/home/%s/netlab", pc.claims.Username)
+	apiURL := strings.TrimRight(fmt.Sprintf("https://%s/netlab", strings.TrimSpace(server.SSHHost)), "/")
+
+	payload := map[string]any{
+		"user":          strings.TrimSpace(pc.claims.Username),
+		"workspace":     strings.TrimSpace(pc.workspace.Slug),
+		"deployment":    strings.TrimSpace(dep.Name),
+		"workspaceRoot": workspaceRoot,
+		"plugin":        "multilab",
+		"multilabId":    strconv.Itoa(multilabNumericID),
+		"instance":      strconv.Itoa(multilabNumericID),
+		"stateRoot":     strings.TrimSpace(server.StateRoot),
+		"node":          node,
+	}
+	if req.Show != nil {
+		payload["show"] = req.Show
+	}
+	if _, _, _, topologyPath := normalizeNetlabTemplateSelectionWithSource(templateSource, templatesDir, template); strings.TrimSpace(topologyPath) != "" {
+		payload["topologyPath"] = strings.TrimSpace(topologyPath)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	postResp, body, err := netlabAPIDo(ctx, apiURL+"/connect", payload)
+	if err != nil {
+		log.Printf("netlab connect: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to reach netlab API").Err()
+	}
+	if postResp.StatusCode < 200 || postResp.StatusCode >= 300 {
+		return nil, errs.B().Code(errs.Unavailable).Msg(fmt.Sprintf("netlab API rejected request: %s", strings.TrimSpace(string(body)))).Err()
+	}
+	var lr netlabAPILog
+	if err := json.Unmarshal(body, &lr); err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("netlab API returned invalid response").Err()
+	}
+	return &NetlabConnectResponse{Output: lr.Log}, nil
 }
 
 // GetWorkspaceDeploymentNetlabGraph returns a rendered netlab topology graph for a deployment.
