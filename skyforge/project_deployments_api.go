@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -13,7 +14,9 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -111,6 +114,12 @@ type LabppInfo struct {
 	Endpoint       string `json:"endpoint,omitempty"`
 	JobID          string `json:"jobId,omitempty"`
 	DataSourcesCSV string `json:"dataSourcesCsv,omitempty"`
+}
+
+type LabppDataSourcesDownloadResponse struct {
+	Status   string `json:"status"`
+	Filename string `json:"filename"`
+	FileData string `json:"fileData"`
 }
 
 type ContainerlabInfo struct {
@@ -1428,6 +1437,72 @@ func (s *Service) SyncWorkspaceDeploymentForward(ctx context.Context, id, deploy
 	return &WorkspaceDeploymentActionResponse{
 		WorkspaceID: pc.workspace.ID,
 		Deployment:  dep,
+	}, nil
+}
+
+// DownloadLabppDataSourcesCSV returns the generated LabPP `data_sources.csv` for a deployment.
+//
+// The CSV is created by the LabPP runner and stored on the platform-data volume; Skyforge serves it
+// back to the user as a base64 payload for easy browser download.
+//
+//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/labpp/data-sources.csv
+func (s *Service) DownloadLabppDataSourcesCSV(ctx context.Context, id, deploymentID string) (*LabppDataSourcesDownloadResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	pc, err := s.workspaceContextForUser(user, id)
+	if err != nil {
+		return nil, err
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+	if err != nil {
+		return nil, err
+	}
+	if dep == nil {
+		return nil, errs.B().Code(errs.NotFound).Msg("deployment not found").Err()
+	}
+	if dep.Type != "labpp" {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("data sources csv is only available for labpp deployments").Err()
+	}
+	task, err := getLatestDeploymentTask(ctx, s.db, pc.workspace.ID, dep.ID, "labpp-run")
+	if err != nil {
+		return nil, err
+	}
+	if task == nil {
+		return nil, errs.B().Code(errs.NotFound).Msg("no labpp run metadata found").Err()
+	}
+	csvPath := strings.TrimSpace(getJSONMapString(task.Metadata, "labppDataSourcesCsv"))
+	if csvPath == "" {
+		return nil, errs.B().Code(errs.NotFound).Msg("labpp data sources file not found").Err()
+	}
+
+	platformRoot := strings.TrimSpace(s.cfg.PlatformDataDir)
+	if platformRoot == "" {
+		platformRoot = "/data"
+	}
+	allowedRoot := filepath.Clean(filepath.Join(platformRoot, "labpp", "data-sources")) + string(os.PathSeparator)
+	csvClean := filepath.Clean(csvPath)
+	if !strings.HasPrefix(csvClean+string(os.PathSeparator), allowedRoot) {
+		return nil, errs.B().Code(errs.PermissionDenied).Msg("invalid csv path").Err()
+	}
+
+	data, err := os.ReadFile(csvClean)
+	if err != nil {
+		return nil, errs.B().Code(errs.NotFound).Msg("labpp data sources file not found").Err()
+	}
+	// Keep responses small and predictable; this file is expected to be tiny.
+	if len(data) > 2<<20 {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("csv too large").Err()
+	}
+
+	return &LabppDataSourcesDownloadResponse{
+		Status:   "ok",
+		Filename: "data_sources.csv",
+		FileData: base64.StdEncoding.EncodeToString(data),
 	}, nil
 }
 

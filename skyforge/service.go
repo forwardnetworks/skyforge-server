@@ -5127,16 +5127,15 @@ type eveNodesResponse struct {
 }
 
 func eveEscapeLabPath(labPath string) string {
-	parts := strings.Split(strings.Trim(labPath, "/"), "/")
-	escaped := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		escaped = append(escaped, url.PathEscape(part))
+	labPath = strings.TrimSpace(labPath)
+	if labPath == "" {
+		return ""
 	}
-	return strings.Join(escaped, "/")
+	// EVE expects the lab path to be URL-encoded as a *single* path segment.
+	// That means we must encode slashes as %2F, otherwise nested lab paths
+	// are interpreted as URL path separators and the API returns 404.
+	escaped := url.PathEscape(labPath)
+	return strings.ReplaceAll(escaped, "/", "%2F")
 }
 
 func eveLabHasRunningNodes(ctx context.Context, client *http.Client, base string, username string, labPath string) (bool, string, error) {
@@ -5144,20 +5143,62 @@ func eveLabHasRunningNodes(ctx context.Context, client *http.Client, base string
 	if strings.HasSuffix(base, "/api") {
 		base = strings.TrimSuffix(base, "/api")
 	}
-	labPath = strings.TrimPrefix(strings.TrimSpace(labPath), "/")
+	labPath = strings.TrimSpace(labPath)
 	if labPath == "" {
 		return false, "", fmt.Errorf("empty eve lab path")
 	}
-
 	username = strings.TrimSpace(username)
-	labPathEscaped := eveEscapeLabPath(labPath)
 
-	endpointLegacy := base + "/api/labs/" + labPathEscaped + "/nodes"
-	endpoint := endpointLegacy
+	// EVE installs differ: some want the lab path with a leading '/', some without.
+	// Try both encodings to make the status check robust.
+	labCandidates := []string{labPath}
+	if strings.HasPrefix(labPath, "/") {
+		labCandidates = append(labCandidates, strings.TrimPrefix(labPath, "/"))
+	}
+	seen := map[string]bool{}
+	lastEndpoint := ""
 
-	if username != "" {
-		endpointUser := base + "/api/labs/" + url.PathEscape(username) + "/" + labPathEscaped + "/nodes"
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpointUser, nil)
+	for _, candidate := range labCandidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" || seen[candidate] {
+			continue
+		}
+		seen[candidate] = true
+
+		labPathEscaped := eveEscapeLabPath(candidate)
+		if labPathEscaped == "" {
+			continue
+		}
+
+		if username != "" {
+			endpointUser := base + "/api/labs/" + url.PathEscape(username) + "/" + labPathEscaped + "/nodes"
+			lastEndpoint = endpointUser
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpointUser, nil)
+			if err != nil {
+				return false, "", err
+			}
+			req.Header.Set("Accept", "application/json")
+			resp, err := client.Do(req)
+			if err != nil {
+				return false, "", err
+			}
+			if resp.StatusCode == http.StatusNotFound {
+				// Some EVE installs don't include the authenticated username in the URL.
+				_, _ = io.Copy(io.Discard, resp.Body)
+				resp.Body.Close()
+			} else if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				_, _ = io.Copy(io.Discard, resp.Body)
+				resp.Body.Close()
+				return false, endpointUser, fmt.Errorf("eve-ng nodes endpoint %s returned %d", endpointUser, resp.StatusCode)
+			} else {
+				defer resp.Body.Close()
+				return eveNodesHasRunning(endpointUser, resp)
+			}
+		}
+
+		endpointLegacy := base + "/api/labs/" + labPathEscaped + "/nodes"
+		lastEndpoint = endpointLegacy
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpointLegacy, nil)
 		if err != nil {
 			return false, "", err
 		}
@@ -5166,36 +5207,23 @@ func eveLabHasRunningNodes(ctx context.Context, client *http.Client, base string
 		if err != nil {
 			return false, "", err
 		}
-		defer resp.Body.Close()
 		if resp.StatusCode == http.StatusNotFound {
-			// Some EVE installs don't include the authenticated username in the URL.
-			// Fall back to the legacy endpoint.
 			_, _ = io.Copy(io.Discard, resp.Body)
-		} else if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			_, _ = io.Copy(io.Discard, resp.Body)
-			return false, endpointUser, fmt.Errorf("eve-ng nodes endpoint %s returned %d", endpointUser, resp.StatusCode)
-		} else {
-			endpoint = endpointUser
-			return eveNodesHasRunning(endpoint, resp)
+			resp.Body.Close()
+			continue
 		}
+		defer resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			return false, endpointLegacy, fmt.Errorf("eve-ng nodes endpoint %s returned %d", endpointLegacy, resp.StatusCode)
+		}
+		return eveNodesHasRunning(endpointLegacy, resp)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpointLegacy, nil)
-	if err != nil {
-		return false, "", err
+	if lastEndpoint == "" {
+		lastEndpoint = base + "/api/labs/<labPath>/nodes"
 	}
-	req.Header.Set("Accept", "application/json")
-	resp, err := client.Do(req)
-	if err != nil {
-		return false, "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		_, _ = io.Copy(io.Discard, resp.Body)
-		return false, endpointLegacy, fmt.Errorf("eve-ng nodes endpoint %s returned %d", endpointLegacy, resp.StatusCode)
-	}
-
-	return eveNodesHasRunning(endpoint, resp)
+	return false, lastEndpoint, fmt.Errorf("eve-ng nodes endpoint %s returned 404", lastEndpoint)
 }
 
 func eveNodesHasRunning(endpoint string, resp *http.Response) (bool, string, error) {
