@@ -52,11 +52,15 @@ type forwardCollectorStatus struct {
 }
 
 type forwardClassicDevice struct {
-	Name            string `json:"name"`
-	Host            string `json:"host"`
-	Port            int    `json:"port,omitempty"`
-	CliCredentialID string `json:"cliCredentialId,omitempty"`
-	JumpServerID    string `json:"jumpServerId,omitempty"`
+	Name                     string `json:"name"`
+	Host                     string `json:"host"`
+	Port                     int    `json:"port,omitempty"`
+	CliCredentialID          string `json:"cliCredentialId,omitempty"`
+	JumpServerID             string `json:"jumpServerId,omitempty"`
+	CollectBgpAdvertisements bool   `json:"collectBgpAdvertisements"`
+	BgpTableType             string `json:"bgpTableType"`
+	BgpPeerType              string `json:"bgpPeerType"`
+	EnableSnmpCollection     bool   `json:"enableSnmpCollection"`
 }
 
 func normalizeForwardBaseURL(raw string) (string, error) {

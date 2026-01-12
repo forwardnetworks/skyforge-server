@@ -560,11 +560,15 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, pc *workspaceCon
 			}
 		}
 		devices = append(devices, forwardClassicDevice{
-			Name:            name,
-			Host:            mgmt,
-			Port:            22,
-			CliCredentialID: cliCredentialID,
-			JumpServerID:    jumpServerID,
+			Name:                     name,
+			Host:                     mgmt,
+			Port:                     22,
+			CliCredentialID:          cliCredentialID,
+			JumpServerID:             jumpServerID,
+			CollectBgpAdvertisements: true,
+			BgpTableType:             "BOTH",
+			BgpPeerType:              "BOTH",
+			EnableSnmpCollection:     true,
 		})
 	}
 
@@ -902,11 +906,15 @@ func (s *Service) syncForwardLabppDevicesWithList(ctx context.Context, pc *works
 		}
 
 		devices = append(devices, forwardClassicDevice{
-			Name:            name,
-			Host:            host,
-			Port:            port,
-			CliCredentialID: cliID,
-			JumpServerID:    jumpServerID,
+			Name:                     name,
+			Host:                     host,
+			Port:                     port,
+			CliCredentialID:          cliID,
+			JumpServerID:             jumpServerID,
+			CollectBgpAdvertisements: true,
+			BgpTableType:             "BOTH",
+			BgpPeerType:              "BOTH",
+			EnableSnmpCollection:     true,
 		})
 	}
 
