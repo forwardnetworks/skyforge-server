@@ -275,6 +275,11 @@ func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *ta
 			return err
 		}
 		spec.TopologyPath = topologyPath
+		if disabled := netlabDisabledToolsFromEnv(spec.Environment); len(disabled) > 0 {
+			if err := s.patchNetlabTopologyOnRunner(ctx, spec, disabled, log); err != nil {
+				log.Infof("Netlab tool disable skipped: %v", err)
+			}
+		}
 	}
 
 	apiURL := strings.TrimRight(fmt.Sprintf("https://%s/netlab", strings.TrimSpace(spec.Server.SSHHost)), "/")
