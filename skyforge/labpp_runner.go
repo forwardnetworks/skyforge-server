@@ -76,6 +76,10 @@ func (s *Service) runLabppJob(ctx context.Context, log *taskLogger, name string,
 							"env":             kubeEnvList(env),
 							"volumeMounts": []map[string]any{
 								{
+									"name":      "labpp-test",
+									"mountPath": "/opt/skyforge/test",
+								},
+								{
 									"name":      "skyforge-data",
 									"mountPath": "/var/lib/skyforge",
 								},
@@ -93,6 +97,12 @@ func (s *Service) runLabppJob(ctx context.Context, log *taskLogger, name string,
 						},
 					},
 					"volumes": []map[string]any{
+						{
+							"name": "labpp-test",
+							"emptyDir": map[string]any{
+								"sizeLimit": "512Mi",
+							},
+						},
 						{
 							"name": "skyforge-data",
 							"persistentVolumeClaim": map[string]any{
