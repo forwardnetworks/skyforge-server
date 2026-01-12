@@ -378,6 +378,18 @@ func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *ta
 				if job.Error != nil {
 					errText = strings.TrimSpace(*job.Error)
 				}
+				// Best-effort: if netlab created enough state to report device mgmt IPs, still
+				// push them into Forward so the workflow can proceed even if `netlab up` fails
+				// late (e.g., config deploy / readiness checks).
+				if strings.EqualFold(spec.Action, "up") || strings.EqualFold(spec.Action, "restart") {
+					syncCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+					if err := s.maybeSyncForwardNetlabAfterRun(syncCtx, spec, log, apiURL); err != nil {
+						log.Infof("forward netlab sync skipped: %v", err)
+					} else {
+						log.Infof("Forward netlab sync completed (post-failure).")
+					}
+					cancel()
+				}
 				if isNetlabBenignFailure(spec.Action, errText, lastLog) {
 					log.Infof("Netlab action treated as success: %s", errText)
 					return nil
