@@ -513,6 +513,7 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 		"action":     action,
 		"server":     server.Name,
 		"deployment": deploymentName,
+		"dedupeKey":  fmt.Sprintf("netlab:%s:%s:%s", pc.workspace.ID, action, deploymentName),
 	})
 	if err != nil {
 		log.Printf("netlab meta encode: %v", err)
@@ -594,6 +595,12 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 	if req == nil {
 		req = &WorkspaceLabppRunRequest{}
 	}
+	if strings.TrimSpace(s.cfg.LabppConfigDirBase) == "" {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("labpp config dir base is not configured").Err()
+	}
+	if err := ensureWritableDir(strings.TrimSpace(s.cfg.LabppConfigDirBase)); err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("labpp config dir base is not writable").Err()
+	}
 
 	serverName := strings.TrimSpace(req.EveServer)
 	if serverName == "" {
@@ -640,6 +647,17 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 	case "e2e", "upload", "start", "stop", "delete", "configure", "config":
 	default:
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid labpp action").Err()
+	}
+
+	needsDataDir := action != "stop" && action != "delete"
+	if needsDataDir {
+		platformDataDir := strings.TrimSpace(s.cfg.PlatformDataDir)
+		if platformDataDir == "" {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("platform data dir is not configured").Err()
+		}
+		if err := ensureWritableDir(platformDataDir); err != nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("platform data dir is not writable").Err()
+		}
 	}
 
 	// The LabPP API uses this to parallelize per-node setup/configuration.
@@ -714,6 +732,7 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 		"server":     eveServer.Name,
 		"deployment": deployment,
 		"template":   template,
+		"dedupeKey":  fmt.Sprintf("labpp:%s:%s:%s:%s", pc.workspace.ID, strings.TrimSpace(req.DeploymentID), action, template),
 	})
 	if err != nil {
 		log.Printf("labpp meta encode: %v", err)

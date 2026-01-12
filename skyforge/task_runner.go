@@ -1529,6 +1529,9 @@ func isLabppForwardFailure(errText string) bool {
 	for _, marker := range []string{
 		"connect to http://localhost",
 		"connect to http://localhost:80",
+		"no forward properties file found",
+		"please provide one through the --fwd-config option",
+		"fwd init helps to create these",
 		"runsnapshotchecks",
 		"getnetworkwithname",
 		"fwdapi.getnetworks",

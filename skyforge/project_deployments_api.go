@@ -675,16 +675,14 @@ func (s *Service) DeleteWorkspaceDeployment(ctx context.Context, id, deploymentI
 				NetlabDeployment: existing.Name,
 			})
 			if err != nil {
-				log.Printf("deployments delete netlab cleanup: %v", err)
-				return nil, errs.B().Code(errs.Unavailable).Msg("failed to clean netlab deployment").Err()
+				log.Printf("deployments delete netlab cleanup (ignored): %v", err)
 			}
 		}
 	}
 	if existing.Type == "labpp" {
 		_, err := s.RunWorkspaceDeploymentAction(ctx, id, deploymentID, &WorkspaceDeploymentOpRequest{Action: "destroy"})
 		if err != nil {
-			log.Printf("deployments delete labpp cleanup: %v", err)
-			return nil, errs.B().Code(errs.Unavailable).Msg("failed to clean labpp deployment").Err()
+			log.Printf("deployments delete labpp cleanup (ignored): %v", err)
 		}
 	}
 	if req != nil && req.ForwardDelete {

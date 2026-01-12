@@ -47,6 +47,18 @@ func createTaskWithActiveCheck(ctx context.Context, db *sql.DB, workspaceID stri
 	if metadata == nil {
 		metadata = JSONMap{}
 	}
+
+	dedupeKey := strings.TrimSpace(getJSONMapString(metadata, "dedupeKey"))
+	if dedupeKey != "" {
+		rec, err := findActiveTaskByDedupeKey(ctx, db, workspaceID, deploymentID, taskType, dedupeKey)
+		if err != nil {
+			return nil, err
+		}
+		if rec != nil {
+			return rec, nil
+		}
+	}
+
 	metaBytes, err := json.Marshal(metadata)
 	if err != nil {
 		return nil, err
@@ -84,6 +96,50 @@ RETURNING id, created_at`, workspaceID, dep, taskType, "queued", msg, metaBytes,
 		return nil, err
 	}
 	return rec, nil
+}
+
+func findActiveTaskByDedupeKey(ctx context.Context, db *sql.DB, workspaceID string, deploymentID *string, taskType string, dedupeKey string) (*TaskRecord, error) {
+	if db == nil {
+		return nil, errDBUnavailable
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	taskType = strings.TrimSpace(taskType)
+	dedupeKey = strings.TrimSpace(dedupeKey)
+	if workspaceID == "" || taskType == "" || dedupeKey == "" {
+		return nil, nil
+	}
+
+	dep := sql.NullString{}
+	if deploymentID != nil && strings.TrimSpace(*deploymentID) != "" {
+		dep = sql.NullString{String: strings.TrimSpace(*deploymentID), Valid: true}
+	}
+
+	query := `SELECT id
+FROM sf_tasks
+WHERE workspace_id=$1
+  AND task_type=$2
+  AND status IN ('queued','running')
+  AND metadata->>'dedupeKey'=$3`
+	args := []any{workspaceID, taskType, dedupeKey}
+	if dep.Valid {
+		query += "\n  AND deployment_id=$4"
+		args = append(args, dep.String)
+	} else {
+		query += "\n  AND deployment_id IS NULL"
+	}
+	query += "\nORDER BY id DESC\nLIMIT 1"
+
+	var id int
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if id <= 0 {
+		return nil, nil
+	}
+	return getTask(ctx, db, id)
 }
 
 func hasActiveDeploymentTask(ctx context.Context, db *sql.DB, workspaceID string, deploymentID string) (bool, error) {
