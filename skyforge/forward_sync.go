@@ -18,11 +18,12 @@ import (
 )
 
 const (
-	forwardNetworkIDKey       = "forwardNetworkId"
-	forwardNetworkNameKey     = "forwardNetworkName"
-	forwardCliCredentialIDKey = "forwardCliCredentialId"
-	forwardCliCredentialMap   = "forwardCliCredentialIdsByDevice"
-	forwardJumpServerIDKey    = "forwardJumpServerId"
+	forwardNetworkIDKey        = "forwardNetworkId"
+	forwardNetworkNameKey      = "forwardNetworkName"
+	forwardCliCredentialIDKey  = "forwardCliCredentialId"
+	forwardCliCredentialMap    = "forwardCliCredentialIdsByDevice"
+	forwardSnmpCredentialIDKey = "forwardSnmpCredentialId"
+	forwardJumpServerIDKey     = "forwardJumpServerId"
 )
 
 const (
@@ -350,6 +351,26 @@ func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *wor
 		}
 	}
 
+	snmpCredentialID := getString(forwardSnmpCredentialIDKey)
+	if snmpCredentialID == "" && getenvBool("SKYFORGE_FORWARD_SNMP_CREATE_PLACEHOLDER", true) {
+		community := strings.TrimSpace(getenv("SKYFORGE_FORWARD_SNMP_COMMUNITY", "public"))
+		if community != "" {
+			cred, err := forwardCreateSnmpCredential(ctx, client, networkID, credentialName, community)
+			if err != nil {
+				if strings.Contains(err.Error(), "No collector configured") ||
+					strings.Contains(strings.ToLower(err.Error()), "not found") {
+					log.Printf("forward snmp credential skipped: %v", err)
+				} else {
+					return cfgAny, err
+				}
+			} else {
+				snmpCredentialID = cred.ID
+				cfgAny[forwardSnmpCredentialIDKey] = snmpCredentialID
+				changed = true
+			}
+		}
+	}
+
 	jumpServerID := getString(forwardJumpServerIDKey)
 	jumpHost := strings.TrimSpace(forwardCfg.JumpHost)
 	jumpKey := strings.TrimSpace(forwardCfg.JumpPrivateKey)
@@ -503,6 +524,7 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, pc *workspaceCon
 	credentialName := strings.TrimSpace(getString(forwardNetworkNameKey))
 	jumpServerID := getString(forwardJumpServerIDKey)
 	defaultCliCredentialID := getString(forwardCliCredentialIDKey)
+	snmpCredentialID := getString(forwardSnmpCredentialIDKey)
 	credentialIDsByDevice := map[string]string{}
 	if raw, ok := cfgAny[forwardCliCredentialMap]; ok {
 		if parsed, ok := raw.(map[string]any); ok {
@@ -564,6 +586,7 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, pc *workspaceCon
 			Host:                     mgmt,
 			Port:                     22,
 			CliCredentialID:          cliCredentialID,
+			SnmpCredentialID:         snmpCredentialID,
 			JumpServerID:             jumpServerID,
 			CollectBgpAdvertisements: true,
 			BgpTableType:             "BOTH",
@@ -849,6 +872,7 @@ func (s *Service) syncForwardLabppDevicesWithList(ctx context.Context, pc *works
 	credentialName := strings.TrimSpace(getString(forwardNetworkNameKey))
 	jumpServerID := getString(forwardJumpServerIDKey)
 	defaultCliCredentialID := getString(forwardCliCredentialIDKey)
+	snmpCredentialID := getString(forwardSnmpCredentialIDKey)
 
 	credentialIDsByDevice := map[string]string{}
 	if raw, ok := cfgAny[forwardCliCredentialMap]; ok {
@@ -910,6 +934,7 @@ func (s *Service) syncForwardLabppDevicesWithList(ctx context.Context, pc *works
 			Host:                     host,
 			Port:                     port,
 			CliCredentialID:          cliID,
+			SnmpCredentialID:         snmpCredentialID,
 			JumpServerID:             jumpServerID,
 			CollectBgpAdvertisements: true,
 			BgpTableType:             "BOTH",

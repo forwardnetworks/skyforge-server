@@ -30,6 +30,10 @@ type forwardCliCredential struct {
 	ID string `json:"id"`
 }
 
+type forwardSnmpCredential struct {
+	ID string `json:"id"`
+}
+
 type forwardJumpServer struct {
 	ID string `json:"id"`
 }
@@ -56,6 +60,7 @@ type forwardClassicDevice struct {
 	Host                     string `json:"host"`
 	Port                     int    `json:"port,omitempty"`
 	CliCredentialID          string `json:"cliCredentialId,omitempty"`
+	SnmpCredentialID         string `json:"snmpCredentialId,omitempty"`
 	JumpServerID             string `json:"jumpServerId,omitempty"`
 	CollectBgpAdvertisements bool   `json:"collectBgpAdvertisements"`
 	BgpTableType             string `json:"bgpTableType"`
@@ -297,6 +302,48 @@ func parseForwardCredentialID(body string) string {
 		return ""
 	}
 	if match := regexp.MustCompile(`credential\s+(L-\d+)`).FindStringSubmatch(body); len(match) > 1 {
+		return match[1]
+	}
+	return ""
+}
+
+func forwardCreateSnmpCredential(ctx context.Context, c *forwardClient, networkID string, name string, community string) (*forwardSnmpCredential, error) {
+	credentialName := strings.TrimSpace(name)
+	if credentialName == "" {
+		credentialName = fmt.Sprintf("Skyforge SNMP %d", time.Now().UTC().UnixNano())
+	}
+	payload := map[string]any{
+		"name":            credentialName,
+		"version":         "V2C",
+		"communityString": strings.TrimSpace(community),
+		"autoAssociate":   true,
+	}
+	resp, body, err := c.doJSON(ctx, http.MethodPost, "/api/networks/"+url.PathEscape(strings.TrimSpace(networkID))+"/snmpCredentials", nil, payload)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		bodyText := strings.TrimSpace(string(body))
+		if id := parseForwardSnmpCredentialID(bodyText); id != "" {
+			return &forwardSnmpCredential{ID: id}, nil
+		}
+		return nil, fmt.Errorf("forward create snmp credential failed: %s", bodyText)
+	}
+	var out forwardSnmpCredential
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(out.ID) == "" {
+		return nil, fmt.Errorf("forward snmp credential returned empty id")
+	}
+	return &out, nil
+}
+
+func parseForwardSnmpCredentialID(body string) string {
+	if body == "" {
+		return ""
+	}
+	if match := regexp.MustCompile(`\b(S-\d+)\b`).FindStringSubmatch(body); len(match) > 1 {
 		return match[1]
 	}
 	return ""
