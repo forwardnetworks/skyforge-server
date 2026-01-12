@@ -359,12 +359,34 @@ func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req 
 		cfgAny["templatesDir"] = templatesDir
 		cfgAny["template"] = template
 	case "netlab":
-		if getString("netlabServer") == "" {
+		netlabServer := strings.TrimSpace(getString("netlabServer"))
+		if netlabServer == "" {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("netlabServer is required").Err()
 		}
-		if getString("template") == "" {
+		template := strings.TrimSpace(getString("template"))
+		if template == "" {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("template is required").Err()
 		}
+		templateSource := strings.ToLower(getString("templateSource"))
+		if templateSource == "" {
+			templateSource = "blueprints"
+		}
+		templateRepo := strings.TrimSpace(getString("templateRepo"))
+		templatesDir := strings.Trim(getString("templatesDir"), "/")
+		if templateSource == "custom" && templateRepo == "" {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("custom repo is required").Err()
+		}
+		templatesDir = normalizeNetlabTemplatesDir(templateSource, templatesDir)
+		if !isSafeRelativePath(templatesDir) {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("templatesDir must be a safe repo-relative path").Err()
+		}
+		cfgAny["netlabServer"] = netlabServer
+		cfgAny["templateSource"] = templateSource
+		if templateRepo != "" {
+			cfgAny["templateRepo"] = templateRepo
+		}
+		cfgAny["templatesDir"] = templatesDir
+		cfgAny["template"] = template
 	case "labpp":
 		if getString("eveServer") == "" {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("eveServer is required").Err()

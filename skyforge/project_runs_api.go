@@ -530,6 +530,10 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 	}
 	envAny, _ := fromJSONMap(req.Environment)
 	envMap := parseEnvMap(envAny)
+	templateSource := strings.TrimSpace(req.TemplateSource)
+	if templateSource == "" {
+		templateSource = "blueprints"
+	}
 	spec := netlabRunSpec{
 		TaskID:          task.ID,
 		WorkspaceCtx:    pc,
@@ -540,7 +544,7 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 		Deployment:      deploymentName,
 		DeploymentID:    strings.TrimSpace(req.NetlabMultilabID),
 		WorkspaceRoot:   workspaceRoot,
-		TemplateSource:  strings.TrimSpace(req.TemplateSource),
+		TemplateSource:  templateSource,
 		TemplateRepo:    strings.TrimSpace(req.TemplateRepo),
 		TemplatesDir:    strings.TrimSpace(req.TemplatesDir),
 		Template:        strings.TrimSpace(req.Template),
