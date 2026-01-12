@@ -147,10 +147,10 @@ func normalizeDeploymentName(name string) (string, error) {
 func normalizeDeploymentType(raw string) (string, error) {
 	t := strings.ToLower(strings.TrimSpace(raw))
 	switch t {
-	case "terraform", "netlab", "labpp", "containerlab":
+	case "terraform", "netlab", "labpp", "containerlab", "clabernetes":
 		return t, nil
 	default:
-		return "", errs.B().Code(errs.InvalidArgument).Msg("deployment type must be terraform, netlab, labpp, or containerlab").Err()
+		return "", errs.B().Code(errs.InvalidArgument).Msg("deployment type must be terraform, netlab, labpp, containerlab, or clabernetes").Err()
 	}
 }
 
@@ -416,6 +416,33 @@ func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req 
 		if strings.TrimSpace(getString("labPath")) == "" {
 			cfgAny["labPath"] = labppLabPath(pc.claims.Username, name, template, time.Now())
 		}
+	case "clabernetes":
+		template := strings.TrimSpace(getString("template"))
+		if template == "" {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("template is required").Err()
+		}
+		templateSource := strings.ToLower(getString("templateSource"))
+		if templateSource == "" {
+			templateSource = "workspace"
+		}
+		templateRepo := getString("templateRepo")
+		templatesDir := strings.Trim(getString("templatesDir"), "/")
+		if templateSource == "custom" && templateRepo == "" {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("custom repo is required").Err()
+		}
+		if templatesDir == "" {
+			templatesDir = "blueprints/containerlab"
+		}
+		if !isSafeRelativePath(templatesDir) {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("templatesDir must be a safe repo-relative path").Err()
+		}
+		cfgAny["templateSource"] = templateSource
+		if templateRepo != "" {
+			cfgAny["templateRepo"] = templateRepo
+		}
+		cfgAny["templatesDir"] = templatesDir
+		cfgAny["template"] = template
+		cfgAny["labName"] = containerlabLabName(pc.workspace.Slug, name)
 	case "containerlab":
 		if getString("netlabServer") == "" {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("netlabServer is required").Err()
@@ -964,6 +991,41 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 		}
 		if strings.TrimSpace(labName) == "" {
 			cfgAny["labName"] = containerlabLabName(pc.workspace.Slug, dep.Name)
+		}
+	case "clabernetes":
+		templateSource, _ := cfgAny["templateSource"].(string)
+		templateRepo, _ := cfgAny["templateRepo"].(string)
+		templatesDir, _ := cfgAny["templatesDir"].(string)
+		template, _ := cfgAny["template"].(string)
+		labName, _ := cfgAny["labName"].(string)
+		k8sNamespace, _ := cfgAny["k8sNamespace"].(string)
+
+		if strings.TrimSpace(template) == "" && op != "destroy" {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("clabernetes template is required").Err()
+		}
+		if (op == "start" || op == "stop") && !infraCreated {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("clabernetes deployment must be created before start/stop").Err()
+		}
+		if strings.TrimSpace(labName) == "" {
+			labName = containerlabLabName(pc.workspace.Slug, dep.Name)
+			cfgAny["labName"] = labName
+		}
+		if strings.TrimSpace(k8sNamespace) == "" {
+			k8sNamespace = clabernetesWorkspaceNamespace(pc.workspace.Slug)
+			cfgAny["k8sNamespace"] = k8sNamespace
+		}
+
+		clabernetesAction := "deploy"
+		switch op {
+		case "create", "start":
+			clabernetesAction = "deploy"
+		case "stop", "destroy":
+			clabernetesAction = "destroy"
+		}
+
+		run, err = s.runClabernetesDeploymentAction(ctx, pc, dep, envJSON, clabernetesAction, strings.TrimSpace(templateSource), strings.TrimSpace(templateRepo), strings.TrimSpace(templatesDir), strings.TrimSpace(template), strings.TrimSpace(labName), strings.TrimSpace(k8sNamespace))
+		if err != nil {
+			return nil, err
 		}
 	default:
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown deployment type").Err()

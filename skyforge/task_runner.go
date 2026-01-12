@@ -1140,6 +1140,135 @@ func (s *Service) runContainerlabTask(ctx context.Context, spec containerlabRunS
 	}
 }
 
+type clabernetesRunSpec struct {
+	TaskID       int
+	Action       string
+	Namespace    string
+	TopologyName string
+	LabName      string
+	Template     string
+	TopologyYAML string
+	Environment  map[string]string
+}
+
+func (s *Service) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec, log *taskLogger) error {
+	if spec.TaskID > 0 {
+		canceled, _ := s.taskCanceled(ctx, spec.TaskID)
+		if canceled {
+			return fmt.Errorf("clabernetes job canceled")
+		}
+	}
+	ns := strings.TrimSpace(spec.Namespace)
+	if ns == "" {
+		return fmt.Errorf("k8s namespace is required")
+	}
+	name := strings.TrimSpace(spec.TopologyName)
+	if name == "" {
+		return fmt.Errorf("topology name is required")
+	}
+
+	switch spec.Action {
+	case "deploy":
+		log.Infof("Clabernetes deploy: namespace=%s topology=%s", ns, name)
+		if err := kubeEnsureNamespace(ctx, ns); err != nil {
+			return err
+		}
+		if _, err := kubeDeleteClabernetesTopology(ctx, ns, name); err != nil {
+			return err
+		}
+		payload := map[string]any{
+			"apiVersion": "clabernetes.containerlab.dev/v1alpha1",
+			"kind":       "Topology",
+			"metadata": map[string]any{
+				"name":      name,
+				"namespace": ns,
+				"labels": map[string]any{
+					"skyforge-managed": "true",
+				},
+			},
+			"spec": map[string]any{
+				"definition": map[string]any{
+					"containerlab": spec.TopologyYAML,
+				},
+			},
+		}
+		if err := kubeCreateClabernetesTopology(ctx, ns, payload); err != nil {
+			return err
+		}
+
+		started := time.Now()
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("clabernetes deploy canceled")
+			case <-ticker.C:
+				if spec.TaskID > 0 {
+					canceled, _ := s.taskCanceled(ctx, spec.TaskID)
+					if canceled {
+						return fmt.Errorf("clabernetes job canceled")
+					}
+				}
+				topo, _, err := kubeGetClabernetesTopology(ctx, ns, name)
+				if err != nil {
+					log.Errorf("Topology status error: %v", err)
+					continue
+				}
+				if topo != nil && topo.Status.TopologyReady {
+					log.Infof("Topology is ready (elapsed %s)", time.Since(started).Truncate(time.Second))
+					return nil
+				}
+				if time.Since(started) >= 15*time.Minute {
+					return fmt.Errorf("clabernetes deploy timed out after %s", time.Since(started).Truncate(time.Second))
+				}
+				log.Infof("Waiting for topology to become ready (elapsed %s)", time.Since(started).Truncate(time.Second))
+			}
+		}
+	case "destroy":
+		log.Infof("Clabernetes destroy: namespace=%s topology=%s", ns, name)
+		deleted, err := kubeDeleteClabernetesTopology(ctx, ns, name)
+		if err != nil {
+			return err
+		}
+		if !deleted {
+			log.Infof("Topology not found; destroy treated as success.")
+			return nil
+		}
+		started := time.Now()
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("clabernetes destroy canceled")
+			case <-ticker.C:
+				if spec.TaskID > 0 {
+					canceled, _ := s.taskCanceled(ctx, spec.TaskID)
+					if canceled {
+						return fmt.Errorf("clabernetes job canceled")
+					}
+				}
+				topo, status, err := kubeGetClabernetesTopology(ctx, ns, name)
+				if err != nil {
+					log.Errorf("Topology status error: %v", err)
+					continue
+				}
+				if topo == nil && status == http.StatusNotFound {
+					log.Infof("Topology deleted (elapsed %s)", time.Since(started).Truncate(time.Second))
+					return nil
+				}
+				if time.Since(started) >= 5*time.Minute {
+					return fmt.Errorf("clabernetes destroy timed out after %s", time.Since(started).Truncate(time.Second))
+				}
+				log.Infof("Waiting for topology deletion (elapsed %s)", time.Since(started).Truncate(time.Second))
+			}
+		}
+	default:
+		return fmt.Errorf("unknown clabernetes action")
+	}
+}
+
 type terraformRunSpec struct {
 	TaskID         int
 	WorkspaceCtx   *workspaceContext
