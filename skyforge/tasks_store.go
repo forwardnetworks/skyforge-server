@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"encore.dev/beta/errs"
@@ -145,6 +146,59 @@ LIMIT 1`, workspaceID, deploymentID).Scan(&id)
 		return 0, err
 	}
 	return id, nil
+}
+
+type deploymentQueueSummary struct {
+	QueueDepth       int
+	ActiveTaskID     int
+	ActiveTaskStatus string
+}
+
+func getDeploymentQueueSummary(ctx context.Context, db *sql.DB, workspaceID string, deploymentID string) (*deploymentQueueSummary, error) {
+	if db == nil {
+		return nil, errDBUnavailable
+	}
+	if strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(deploymentID) == "" {
+		return nil, nil
+	}
+
+	var (
+		queuedCount  sql.NullInt64
+		runningCount sql.NullInt64
+		oldestQueued sql.NullInt64
+		runningID    sql.NullInt64
+	)
+	err := db.QueryRowContext(ctx, `SELECT
+  SUM(CASE WHEN status='queued' THEN 1 ELSE 0 END) AS queued,
+  SUM(CASE WHEN status='running' THEN 1 ELSE 0 END) AS running,
+  MIN(id) FILTER (WHERE status='queued') AS oldest_queued_id,
+  MAX(id) FILTER (WHERE status='running') AS running_id
+FROM sf_tasks
+WHERE workspace_id=$1
+  AND deployment_id=$2
+  AND status IN ('queued','running')`, workspaceID, deploymentID).Scan(&queuedCount, &runningCount, &oldestQueued, &runningID)
+	if err != nil {
+		return nil, err
+	}
+
+	q := int(queuedCount.Int64)
+	r := int(runningCount.Int64)
+	if q == 0 && r == 0 {
+		return nil, nil
+	}
+
+	out := &deploymentQueueSummary{QueueDepth: q}
+	if r > 0 && runningID.Valid {
+		out.ActiveTaskStatus = "running"
+		out.ActiveTaskID = int(runningID.Int64)
+		return out, nil
+	}
+	if q > 0 && oldestQueued.Valid {
+		out.ActiveTaskStatus = "queued"
+		out.ActiveTaskID = int(oldestQueued.Int64)
+		return out, nil
+	}
+	return out, nil
 }
 
 func markTaskStarted(ctx context.Context, db *sql.DB, taskID int) error {

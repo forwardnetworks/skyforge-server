@@ -43,6 +43,9 @@ type WorkspaceDeployment struct {
 	LastStatus          *string `json:"lastStatus,omitempty"`
 	LastStartedAt       *string `json:"lastStartedAt,omitempty"`
 	LastFinishedAt      *string `json:"lastFinishedAt,omitempty"`
+	ActiveTaskID        *int    `json:"activeTaskId,omitempty"`
+	ActiveTaskStatus    *string `json:"activeTaskStatus,omitempty"`
+	QueueDepth          *int    `json:"queueDepth,omitempty"`
 }
 
 type WorkspaceDeploymentListResponse struct {
@@ -216,6 +219,21 @@ ORDER BY updated_at DESC`, pc.workspace.ID)
 		rec.WorkspaceID = pc.workspace.ID
 		rec.CreatedAt = createdAt.UTC().Format(time.RFC3339)
 		rec.UpdatedAt = updatedAt.UTC().Format(time.RFC3339)
+		{
+			qctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+			summary, err := getDeploymentQueueSummary(qctx, s.db, pc.workspace.ID, rec.ID)
+			cancel()
+			if err == nil && summary != nil {
+				if summary.ActiveTaskID > 0 {
+					rec.ActiveTaskID = &summary.ActiveTaskID
+				}
+				if strings.TrimSpace(summary.ActiveTaskStatus) != "" {
+					status := strings.TrimSpace(summary.ActiveTaskStatus)
+					rec.ActiveTaskStatus = &status
+				}
+				rec.QueueDepth = &summary.QueueDepth
+			}
+		}
 		if len(raw) > 0 {
 			if err := json.Unmarshal(raw, &rec.Config); err != nil {
 				rec.Config = JSONMap{}
@@ -2219,6 +2237,21 @@ WHERE workspace_id=$1 AND id=$2`, workspaceID, deploymentID).Scan(
 	rec.WorkspaceID = workspaceID
 	rec.CreatedAt = createdAt.UTC().Format(time.RFC3339)
 	rec.UpdatedAt = updatedAt.UTC().Format(time.RFC3339)
+	{
+		qctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+		summary, err := getDeploymentQueueSummary(qctx, s.db, workspaceID, rec.ID)
+		cancel()
+		if err == nil && summary != nil {
+			if summary.ActiveTaskID > 0 {
+				rec.ActiveTaskID = &summary.ActiveTaskID
+			}
+			if strings.TrimSpace(summary.ActiveTaskStatus) != "" {
+				status := strings.TrimSpace(summary.ActiveTaskStatus)
+				rec.ActiveTaskStatus = &status
+			}
+			rec.QueueDepth = &summary.QueueDepth
+		}
+	}
 	if len(raw) > 0 {
 		_ = json.Unmarshal(raw, &rec.Config)
 	}
