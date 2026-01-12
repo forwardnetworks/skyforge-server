@@ -126,7 +126,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	purgeURL := baseURL + "/api/skyforge/api/api/admin/users/purge"
+	purgeURL := baseURL + "/api/skyforge/api/admin/users/purge"
 	resp, body, err = doJSON(client, http.MethodPost, purgeURL, purgeUserRequest{Username: target, Confirm: target}, map[string]string{
 		"Cookie": setCookie,
 	})
@@ -140,4 +140,3 @@ func main() {
 	}
 	fmt.Printf("OK purged user: %s\n", target)
 }
-
