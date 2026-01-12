@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -244,9 +246,48 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 			return nil
 		}
 
-		if err := syncDir(syncStartPath); err != nil {
-			return err
+		syncedViaArchive := false
+		// Fast path: download the repo archive once and extract only the needed subtree.
+		// This avoids a large number of per-file API calls + SSH round-trips which can add 30-60s.
+		{
+			apiURL := strings.TrimRight(strings.TrimSpace(s.cfg.Workspaces.GiteaAPIURL), "/")
+			user := strings.TrimSpace(s.cfg.Workspaces.GiteaUsername)
+			pass := strings.TrimSpace(s.cfg.Workspaces.GiteaPassword)
+			if apiURL != "" && user != "" && pass != "" && ref.Owner != "" && ref.Repo != "" && ref.Branch != "" {
+				archiveURL := fmt.Sprintf(
+					"%s/repos/%s/%s/archive/%s.tar.gz",
+					apiURL,
+					url.PathEscape(ref.Owner),
+					url.PathEscape(ref.Repo),
+					url.PathEscape(ref.Branch),
+				)
+				req, err := http.NewRequestWithContext(ctx, http.MethodGet, archiveURL, nil)
+				if err == nil {
+					req.SetBasicAuth(user, pass)
+					resp, err := http.DefaultClient.Do(req)
+					if err == nil && resp != nil {
+						defer resp.Body.Close()
+						if resp.StatusCode == http.StatusOK {
+							stripComponents := 1 + strings.Count(strings.Trim(rootPath, "/"), "/") + 1
+							pattern := fmt.Sprintf("*/%s/*", strings.Trim(syncStartPath, "/"))
+							cmd := fmt.Sprintf("tar -xzf - -C %q --strip-components=%d --wildcards %q", destRoot, stripComponents, pattern)
+							if _, err := runSSHCommandWithReader(client, cmd, resp.Body, 4*time.Minute); err == nil {
+								syncedViaArchive = true
+							}
+						} else {
+							_, _ = io.Copy(io.Discard, resp.Body)
+						}
+					}
+				}
+			}
 		}
+
+		if !syncedViaArchive {
+			if err := syncDir(syncStartPath); err != nil {
+				return err
+			}
+		}
+
 		templatePath := strings.TrimPrefix(path.Join(templatesDir, templateFile), "/")
 		if templatePath != "" {
 			if _, err := readGiteaFileBytes(s.cfg, ref.Owner, ref.Repo, templatePath, ref.Branch); err != nil {

@@ -1,6 +1,7 @@
 package skyforge
 
 import (
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -36,4 +37,8 @@ func runSSHCommand(client *ssh.Client, command string, timeout time.Duration) (s
 
 func runSSHCommandWithInput(client *ssh.Client, command string, input []byte, timeout time.Duration) (string, error) {
 	return sshutil.RunCommandWithInput(client, command, input, timeout)
+}
+
+func runSSHCommandWithReader(client *ssh.Client, command string, input io.Reader, timeout time.Duration) (string, error) {
+	return sshutil.RunCommandWithReader(client, command, input, timeout)
 }

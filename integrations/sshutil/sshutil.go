@@ -3,6 +3,7 @@ package sshutil
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -92,6 +93,43 @@ func RunCommandWithInput(client *ssh.Client, command string, input []byte, timeo
 	session.Stdout = &outBuf
 	session.Stderr = &errBuf
 	session.Stdin = bytes.NewReader(input)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- session.Run(command)
+	}()
+
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			stderr := strings.TrimSpace(errBuf.String())
+			if stderr != "" {
+				return "", fmt.Errorf("%w: %s", err, stderr)
+			}
+			return "", err
+		}
+		return outBuf.String(), nil
+	case <-time.After(timeout):
+		_ = session.Signal(ssh.SIGKILL)
+		return "", fmt.Errorf("ssh command timed out after %s", timeout)
+	}
+}
+
+func RunCommandWithReader(client *ssh.Client, command string, input io.Reader, timeout time.Duration) (string, error) {
+	session, err := client.NewSession()
+	if err != nil {
+		return "", err
+	}
+	defer session.Close()
+
+	var outBuf strings.Builder
+	var errBuf strings.Builder
+	session.Stdout = &outBuf
+	session.Stderr = &errBuf
+	session.Stdin = input
 
 	done := make(chan error, 1)
 	go func() {
