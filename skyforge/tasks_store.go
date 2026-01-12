@@ -66,6 +66,18 @@ func createTaskWithActiveCheck(ctx context.Context, db *sql.DB, workspaceID stri
 	var dep sql.NullString
 	if deploymentID != nil && *deploymentID != "" {
 		dep = sql.NullString{String: *deploymentID, Valid: true}
+
+		// Guardrail: prevent a single deployment from accumulating an unbounded task backlog
+		// due to misclicks or broken automation.
+		queued, err := countQueuedDeploymentTasks(ctx, db, workspaceID, dep.String)
+		if err != nil {
+			return nil, err
+		}
+		const maxQueuedPerDeployment = 25
+		if queued >= maxQueuedPerDeployment {
+			return nil, errs.B().Code(errs.ResourceExhausted).Msg("too many queued runs for this deployment").Err()
+		}
+
 		if !allowActive {
 			active, err := hasActiveDeploymentTask(ctx, db, workspaceID, dep.String)
 			if err != nil {
@@ -96,6 +108,22 @@ RETURNING id, created_at`, workspaceID, dep, taskType, "queued", msg, metaBytes,
 		return nil, err
 	}
 	return rec, nil
+}
+
+func countQueuedDeploymentTasks(ctx context.Context, db *sql.DB, workspaceID string, deploymentID string) (int, error) {
+	if db == nil {
+		return 0, errDBUnavailable
+	}
+	var count int
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*)
+FROM sf_tasks
+WHERE workspace_id=$1
+  AND deployment_id=$2
+  AND status='queued'`, workspaceID, deploymentID).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 func findActiveTaskByDedupeKey(ctx context.Context, db *sql.DB, workspaceID string, deploymentID *string, taskType string, dedupeKey string) (*TaskRecord, error) {

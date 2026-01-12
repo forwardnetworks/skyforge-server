@@ -5,6 +5,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 
 	"encore.dev/beta/errs"
 )
@@ -122,6 +123,118 @@ func (s *Service) CreateRun(ctx context.Context, req *RunRequest) (*RunsCreateRe
 
 type RunsOutputParams struct {
 	WorkspaceID string `query:"workspace_id" encore:"optional"`
+}
+
+type RunsCancelResponse struct {
+	TaskID      int      `json:"task_id"`
+	WorkspaceID string   `json:"workspaceId"`
+	Status      string   `json:"status"`
+	Task        *JSONMap `json:"task,omitempty"`
+	User        string   `json:"user"`
+}
+
+// CancelRun cancels a queued or running task.
+//
+//encore:api auth method=POST path=/api/runs/:id/cancel
+func (s *Service) CancelRun(ctx context.Context, id int, params *RunsOutputParams) (*RunsCancelResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	if id <= 0 {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid task id").Err()
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+
+	// Load task first to determine workspace/deployment ownership.
+	task, err := getTask(ctx, s.db, id)
+	if err != nil {
+		return nil, errs.B().Code(errs.NotFound).Msg("task not found").Err()
+	}
+	if task == nil {
+		return nil, errs.B().Code(errs.NotFound).Msg("task not found").Err()
+	}
+
+	// Resolve workspace access (also enforces user membership).
+	workspaceKey := ""
+	if params != nil {
+		workspaceKey = strings.TrimSpace(params.WorkspaceID)
+	}
+	workspace, err := s.resolveWorkspaceForUser(ctx, user, workspaceKey)
+	if err != nil {
+		return nil, err
+	}
+	if workspace.ID != task.WorkspaceID {
+		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
+	}
+	// Viewers can see runs but shouldn't cancel them.
+	pc, err := s.workspaceContextForUser(user, workspace.ID)
+	if err != nil {
+		return nil, err
+	}
+	if pc.access == "viewer" {
+		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
+	}
+
+	status := strings.ToLower(strings.TrimSpace(task.Status))
+	switch status {
+	case "queued", "running":
+	default:
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("task is not cancelable").Err()
+	}
+
+	// Best-effort: propagate cancel for known cancellable task types.
+	meta, _ := fromJSONMap(task.Metadata)
+	taskType := strings.ToLower(strings.TrimSpace(task.TaskType))
+	if strings.HasPrefix(taskType, "netlab") {
+		jobID := strings.TrimSpace(labppMetaString(meta, "netlabJobId"))
+		if jobID != "" {
+			serverName := strings.TrimSpace(labppMetaString(meta, "server"))
+			server, _ := resolveNetlabServer(s.cfg, serverName)
+			if server != nil && strings.TrimSpace(server.SSHHost) != "" {
+				apiURL := strings.TrimRight("https://"+strings.TrimSpace(server.SSHHost)+"/netlab", "/")
+				log := &taskLogger{svc: s, taskID: task.ID}
+				s.cancelNetlabJob(ctx, apiURL, jobID, log)
+			}
+		}
+	}
+	if strings.HasPrefix(taskType, "labpp") {
+		// LabPP runs as an in-cluster Job named labpp-<taskId>.
+		kubeDeleteJob(context.Background(), kubeNamespace(), sanitizeKubeName("labpp-"+strconv.Itoa(task.ID)))
+	}
+	if strings.HasPrefix(taskType, "containerlab") {
+		// Containerlab tasks poll for cancellation; marking canceled is sufficient.
+	}
+	if strings.HasPrefix(taskType, "clabernetes") {
+		// Clabernetes tasks poll for cancellation; marking canceled is sufficient.
+	}
+	if strings.HasPrefix(taskType, "terraform") {
+		// Terraform tasks poll for cancellation; marking canceled is sufficient.
+	}
+
+	if err := cancelTask(ctx, s.db, task.ID); err != nil {
+		log.Printf("cancelTask: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to cancel task").Err()
+	}
+
+	// Notify + update deployment status for UI.
+	if err := s.notifyTaskEvent(ctx, task, "canceled", ""); err != nil {
+		log.Printf("cancel notify: %v", err)
+	}
+	if task.DeploymentID.Valid {
+		finishedAt := time.Now().UTC()
+		if err := s.updateDeploymentStatus(ctx, task.WorkspaceID, task.DeploymentID.String, "canceled", &finishedAt); err != nil {
+			log.Printf("cancel deployment status: %v", err)
+		}
+	}
+
+	taskJSON, err := toJSONMap(taskToRunInfo(*task))
+	if err != nil {
+		return &RunsCancelResponse{TaskID: task.ID, WorkspaceID: workspace.ID, Status: "canceled", User: user.Username}, nil
+	}
+	return &RunsCancelResponse{TaskID: task.ID, WorkspaceID: workspace.ID, Status: "canceled", Task: &taskJSON, User: user.Username}, nil
 }
 
 type RunsOutputResponse struct {

@@ -125,6 +125,49 @@ func (s *Service) taskCanceled(ctx context.Context, taskID int) (bool, map[strin
 	return false, meta
 }
 
+func (s *Service) appendTaskWarning(taskID int, warning string) {
+	if s == nil || s.db == nil || taskID <= 0 {
+		return
+	}
+	warning = strings.TrimSpace(warning)
+	if warning == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	rec, err := getTask(ctx, s.db, taskID)
+	if err != nil || rec == nil {
+		return
+	}
+	meta, _ := fromJSONMap(rec.Metadata)
+	if meta == nil {
+		meta = map[string]any{}
+	}
+
+	var warnings []any
+	if existing, ok := meta["warnings"].([]any); ok {
+		warnings = existing
+	}
+	if warnings == nil {
+		warnings = []any{}
+	}
+	for _, existing := range warnings {
+		if strings.EqualFold(strings.TrimSpace(fmt.Sprintf("%v", existing)), warning) {
+			meta["warningCount"] = len(warnings)
+			if metaJSON, err := toJSONMap(meta); err == nil {
+				_ = updateTaskMetadata(ctx, s.db, taskID, metaJSON)
+			}
+			return
+		}
+	}
+	warnings = append(warnings, warning)
+	meta["warnings"] = warnings
+	meta["warningCount"] = len(warnings)
+	if metaJSON, err := toJSONMap(meta); err == nil {
+		_ = updateTaskMetadata(ctx, s.db, taskID, metaJSON)
+	}
+}
+
 func labppMetaString(meta map[string]any, key string) string {
 	if meta == nil {
 		return ""
@@ -200,6 +243,21 @@ func (s *Service) queueTask(task *TaskRecord, runner func(ctx context.Context, l
 					break
 				}
 			}
+		}
+
+		// If the task was canceled while waiting in the queue, exit early without running it.
+		if rec, err := getTask(ctx, s.db, task.ID); err == nil && rec != nil && strings.EqualFold(rec.Status, "canceled") {
+			if err := s.notifyTaskEvent(ctx, task, "canceled", ""); err != nil {
+				stdlog.Printf("task cancel notification failed: %v", err)
+			}
+			if task.DeploymentID.Valid {
+				finishedAt := time.Now().UTC()
+				if err := s.updateDeploymentStatus(ctx, task.WorkspaceID, task.DeploymentID.String, "canceled", &finishedAt); err != nil {
+					stdlog.Printf("deployment status update failed: %v", err)
+				}
+			}
+			unlock()
+			return
 		}
 
 		if err := markTaskStarted(ctx, s.db, task.ID); err != nil {
@@ -780,8 +838,14 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		// Skyforge owns Forward sync, so treat these as success to avoid reporting a failed run
 		// after the lab has been successfully created/configured.
 		if isLabppForwardFailure(err.Error()) {
+			if s != nil {
+				s.appendTaskWarning(spec.TaskID, fmt.Sprintf("LabPP forward checks failed (ignored): %s", strings.TrimSpace(err.Error())))
+			}
 			log.Infof("LabPP forward-check failure ignored: %v", err)
 		} else if isLabppBenignFailure(action, err.Error(), "") {
+			if s != nil {
+				s.appendTaskWarning(spec.TaskID, fmt.Sprintf("LabPP benign failure treated as success: %s", strings.TrimSpace(err.Error())))
+			}
 			log.Infof("LabPP %s treated as success: %v", action, err)
 			return nil
 		} else {

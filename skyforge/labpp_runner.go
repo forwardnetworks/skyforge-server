@@ -211,6 +211,13 @@ func kubeWaitJob(ctx context.Context, ns, name string, log *taskLogger) error {
 		case <-ctx.Done():
 			return fmt.Errorf("labpp run canceled")
 		case <-ticker.C:
+			if log != nil && log.svc != nil {
+				canceled, _ := log.svc.taskCanceled(ctx, log.taskID)
+				if canceled {
+					kubeDeleteJob(context.Background(), ns, name)
+					return fmt.Errorf("labpp run canceled")
+				}
+			}
 			status, err := kubeGetJobStatus(ctx, client, ns, name)
 			if err != nil {
 				log.Errorf("LabPP job status error: %v", err)
@@ -231,6 +238,9 @@ func kubeWaitJob(ctx context.Context, ns, name string, log *taskLogger) error {
 				// Treat these as success to avoid reporting failed runs when the desired artifact
 				// (data_sources.csv) has been generated.
 				if shouldIgnoreLabppFailedJob(lastLog) {
+					if log != nil && log.svc != nil {
+						log.svc.appendTaskWarning(log.taskID, "LabPP post-run Forward checks failed (ignored)")
+					}
 					log.Infof("LabPP job failed after success marker; treating as success")
 					return nil
 				}
