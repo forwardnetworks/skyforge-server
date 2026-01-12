@@ -13,6 +13,9 @@ func addSessionHeaders(headers http.Header, claims *SessionClaims) {
 	headers.Set("X-Skyforge-DisplayName", claims.DisplayName)
 	headers.Set("Remote-User", claims.Username)
 	headers.Set("X-Forwarded-User", claims.Username)
+	// Provide a stable group header for downstream apps that support RemoteUser group sync.
+	// LDAP group DNs often contain commas, so we avoid serializing the full group list here.
+	headers.Set("Remote-User-Group", "skyforge-users")
 	if strings.TrimSpace(claims.ActorUsername) != "" {
 		headers.Set("X-Skyforge-Actor", strings.TrimSpace(claims.ActorUsername))
 		headers.Set("X-Skyforge-Impersonating", boolString(isImpersonating(claims)))
