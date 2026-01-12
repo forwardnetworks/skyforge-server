@@ -490,6 +490,16 @@ func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req 
 					_, _ = s.syncNetlabTopologyFile(ctx, pc, server, templateSource, templateRepo, templatesDir, template, workdir, owner)
 				}()
 			}
+
+			// Also kick off a `netlab create` run immediately so `start` has less work to do.
+			// This is best-effort: keep the deployment even if the create run fails.
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+				defer cancel()
+				if _, err := s.RunWorkspaceDeploymentAction(ctx, id, deploymentID, &WorkspaceDeploymentOpRequest{Action: "create"}); err != nil {
+					log.Printf("netlab create on deployment create: %v", err)
+				}
+			}()
 		}
 		if typ == "labpp" {
 			_, err := s.RunWorkspaceDeploymentAction(ctx, id, deploymentID, &WorkspaceDeploymentOpRequest{Action: "create"})
