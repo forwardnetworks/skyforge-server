@@ -669,35 +669,24 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		customArgs = append(customArgs, "--thread-count", strconv.Itoa(spec.ThreadCount))
 	}
 
-	labppS3Endpoint := strings.TrimSpace(s.cfg.LabppS3Endpoint)
-	if labppS3Endpoint == "" {
-		labppS3Endpoint = "http://minio:9000"
-	}
 	netboxURL := netboxInternalBaseURL(s.cfg)
 	jobEnv := map[string]string{
-		"LABPP_NETBOX_URL":          netboxURL,
-		"LABPP_NETBOX_MGMT_SUBNET":  s.cfg.LabppNetboxMgmtSubnet,
-		"LABPP_S3_ACCESS_KEY":       s.cfg.LabppS3AccessKey,
-		"LABPP_S3_SECRET_KEY":       s.cfg.LabppS3SecretKey,
-		"LABPP_S3_REGION":           s.cfg.LabppS3Region,
-		"LABPP_S3_BUCKET":           s.cfg.LabppS3BucketName,
-		"LABPP_S3_ENDPOINT":         labppS3Endpoint,
-		"LABPP_S3_DISABLE_SSL":      fmt.Sprintf("%v", s.cfg.LabppS3DisableSSL),
-		"LABPP_S3_DISABLE_CHECKSUM": fmt.Sprintf("%v", s.cfg.LabppS3DisableChecksum),
-		"LABPP_EVE_HOST":            eveHost,
-		"LABPP_CONFIG_FILE":         configFile,
-		"LABPP_CONFIG_DIR_BASE":     configDirBase,
-		"LABPP_TEMPLATES_DIR":       templateDir,
-		"LABPP_LAB_PATH":            labppRunnerPath,
-		"LABPP_ACTION":              action,
-		"LABPP_EVE_SSH_HOST":        eveHost,
-		"LABPP_EVE_SSH_USER":        s.cfg.Labs.EveSSHUser,
-		"LABPP_EVE_SSH_KEY_FILE":    s.cfg.Labs.EveSSHKeyFile,
-		"LABPP_EVE_SSH_PORT":        "22",
-		"LABPP_EVE_SSH_TUNNEL":      fmt.Sprintf("%v", s.cfg.Labs.EveSSHTunnel),
-		"LABPP_EVE_SSH_NO_PROXY":    "localhost|127.0.0.1|minio|netbox|nautobot|gitea|skyforge-server|*.svc|*.cluster.local",
-		"LABPP_SKIP_FORWARD":        "true",
-		"LABPP_DEPLOYMENT_ID":       strings.TrimSpace(spec.DeploymentID),
+		"LABPP_NETBOX_URL":         netboxURL,
+		"LABPP_NETBOX_MGMT_SUBNET": s.cfg.LabppNetboxMgmtSubnet,
+		"LABPP_EVE_HOST":           eveHost,
+		"LABPP_CONFIG_FILE":        configFile,
+		"LABPP_CONFIG_DIR_BASE":    configDirBase,
+		"LABPP_TEMPLATES_DIR":      templateDir,
+		"LABPP_LAB_PATH":           labppRunnerPath,
+		"LABPP_ACTION":             action,
+		"LABPP_EVE_SSH_HOST":       eveHost,
+		"LABPP_EVE_SSH_USER":       s.cfg.Labs.EveSSHUser,
+		"LABPP_EVE_SSH_KEY_FILE":   s.cfg.Labs.EveSSHKeyFile,
+		"LABPP_EVE_SSH_PORT":       "22",
+		"LABPP_EVE_SSH_TUNNEL":     fmt.Sprintf("%v", s.cfg.Labs.EveSSHTunnel),
+		"LABPP_EVE_SSH_NO_PROXY":   "localhost|127.0.0.1|minio|netbox|nautobot|gitea|skyforge-server|*.svc|*.cluster.local",
+		"LABPP_SKIP_FORWARD":       "true",
+		"LABPP_DEPLOYMENT_ID":      strings.TrimSpace(spec.DeploymentID),
 	}
 	jobEnv["LABPP_NETBOX_USERNAME"] = s.cfg.LabppNetboxUsername
 	jobEnv["LABPP_NETBOX_PASSWORD"] = s.cfg.LabppNetboxPassword
@@ -855,23 +844,6 @@ func (s *Service) writeLabppConfigFile(eveHost, username, password string) (stri
 	if s.cfg.LabppNetboxMgmtSubnet != "" {
 		lines = append(lines, fmt.Sprintf("netbox_mgmt_subnet_ip=%s", s.cfg.LabppNetboxMgmtSubnet))
 	}
-	if s.cfg.LabppS3AccessKey != "" {
-		lines = append(lines, fmt.Sprintf("s3_access_key=%s", s.cfg.LabppS3AccessKey))
-	}
-	if s.cfg.LabppS3SecretKey != "" {
-		lines = append(lines, fmt.Sprintf("s3_secret_key=%s", s.cfg.LabppS3SecretKey))
-	}
-	if s.cfg.LabppS3Region != "" {
-		lines = append(lines, fmt.Sprintf("s3_region=%s", s.cfg.LabppS3Region))
-	}
-	if s.cfg.LabppS3BucketName != "" {
-		lines = append(lines, fmt.Sprintf("s3_bucket_name=%s", s.cfg.LabppS3BucketName))
-	}
-	if s.cfg.LabppS3Endpoint != "" {
-		lines = append(lines, fmt.Sprintf("s3_endpoint=%s", s.cfg.LabppS3Endpoint))
-	}
-	lines = append(lines, fmt.Sprintf("s3_disable_ssl=%v", s.cfg.LabppS3DisableSSL))
-	lines = append(lines, fmt.Sprintf("s3_disable_checksum=%v", s.cfg.LabppS3DisableChecksum))
 	if _, err := f.WriteString(strings.Join(lines, "\n") + "\n"); err != nil {
 		return "", fmt.Errorf("failed to write labpp config file: %w", err)
 	}
@@ -891,35 +863,24 @@ func (s *Service) generateLabppDataSourcesCSV(ctx context.Context, deploymentID,
 		customArgs = append(customArgs, "--lab-path", labppRunnerPath)
 	}
 	log.Infof("Generating labpp data_sources.csv")
-	labppS3Endpoint := strings.TrimSpace(s.cfg.LabppS3Endpoint)
-	if labppS3Endpoint == "" {
-		labppS3Endpoint = "http://minio:9000"
-	}
 	netboxURL := netboxInternalBaseURL(s.cfg)
 	jobEnv := map[string]string{
-		"LABPP_NETBOX_URL":          netboxURL,
-		"LABPP_NETBOX_MGMT_SUBNET":  s.cfg.LabppNetboxMgmtSubnet,
-		"LABPP_S3_ACCESS_KEY":       s.cfg.LabppS3AccessKey,
-		"LABPP_S3_SECRET_KEY":       s.cfg.LabppS3SecretKey,
-		"LABPP_S3_REGION":           s.cfg.LabppS3Region,
-		"LABPP_S3_BUCKET":           s.cfg.LabppS3BucketName,
-		"LABPP_S3_ENDPOINT":         labppS3Endpoint,
-		"LABPP_S3_DISABLE_SSL":      fmt.Sprintf("%v", s.cfg.LabppS3DisableSSL),
-		"LABPP_S3_DISABLE_CHECKSUM": fmt.Sprintf("%v", s.cfg.LabppS3DisableChecksum),
-		"LABPP_EVE_HOST":            eveHost,
-		"LABPP_CONFIG_FILE":         configFile,
-		"LABPP_CONFIG_DIR_BASE":     configDirBase,
-		"LABPP_TEMPLATES_DIR":       templateDir,
-		"LABPP_LAB_PATH":            labppRunnerPath,
-		"LABPP_ACTION":              "DATA_SOURCES_CSV",
-		"LABPP_SOURCES_DIR":         dataSourcesDir,
-		"LABPP_EVE_SSH_HOST":        eveHost,
-		"LABPP_EVE_SSH_USER":        s.cfg.Labs.EveSSHUser,
-		"LABPP_EVE_SSH_KEY_FILE":    s.cfg.Labs.EveSSHKeyFile,
-		"LABPP_EVE_SSH_PORT":        "22",
-		"LABPP_EVE_SSH_TUNNEL":      fmt.Sprintf("%v", s.cfg.Labs.EveSSHTunnel),
-		"LABPP_EVE_SSH_NO_PROXY":    "localhost|127.0.0.1|minio|netbox|nautobot|gitea|skyforge-server|*.svc|*.cluster.local",
-		"LABPP_SKIP_FORWARD":        "true",
+		"LABPP_NETBOX_URL":         netboxURL,
+		"LABPP_NETBOX_MGMT_SUBNET": s.cfg.LabppNetboxMgmtSubnet,
+		"LABPP_EVE_HOST":           eveHost,
+		"LABPP_CONFIG_FILE":        configFile,
+		"LABPP_CONFIG_DIR_BASE":    configDirBase,
+		"LABPP_TEMPLATES_DIR":      templateDir,
+		"LABPP_LAB_PATH":           labppRunnerPath,
+		"LABPP_ACTION":             "DATA_SOURCES_CSV",
+		"LABPP_SOURCES_DIR":        dataSourcesDir,
+		"LABPP_EVE_SSH_HOST":       eveHost,
+		"LABPP_EVE_SSH_USER":       s.cfg.Labs.EveSSHUser,
+		"LABPP_EVE_SSH_KEY_FILE":   s.cfg.Labs.EveSSHKeyFile,
+		"LABPP_EVE_SSH_PORT":       "22",
+		"LABPP_EVE_SSH_TUNNEL":     fmt.Sprintf("%v", s.cfg.Labs.EveSSHTunnel),
+		"LABPP_EVE_SSH_NO_PROXY":   "localhost|127.0.0.1|minio|netbox|nautobot|gitea|skyforge-server|*.svc|*.cluster.local",
+		"LABPP_SKIP_FORWARD":       "true",
 	}
 	jobEnv["LABPP_NETBOX_USERNAME"] = s.cfg.LabppNetboxUsername
 	jobEnv["LABPP_NETBOX_PASSWORD"] = s.cfg.LabppNetboxPassword
