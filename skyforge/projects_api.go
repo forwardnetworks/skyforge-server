@@ -268,12 +268,13 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 	// Workspace creation should not be blocked on provisioning downstream tooling.
 	// Gitea provisioning/sync is best-effort and can be retried via workspace sync.
 	{
-		if err := ensureGiteaRepoFromBlueprint(giteaCfg, owner, repo, blueprint); err != nil {
+		repoPrivate := !req.IsPublic
+		if err := ensureGiteaRepoFromBlueprint(giteaCfg, owner, repo, blueprint, repoPrivate); err != nil {
 			if strings.TrimSpace(blueprint) == "" {
 				log.Printf("ensureGiteaRepo: %v", err)
 			} else {
 				log.Printf("ensureGiteaRepoFromBlueprint fallback: %v", err)
-				if err := ensureGiteaRepo(giteaCfg, owner, repo); err != nil {
+				if err := ensureGiteaRepo(giteaCfg, owner, repo, repoPrivate); err != nil {
 					log.Printf("ensureGiteaRepo fallback: %v", err)
 				} else if err := syncGiteaRepoFromBlueprintWithSource(s.cfg, giteaCfg, owner, repo, blueprint, defaultBranch, claims); err != nil {
 					log.Printf("syncGiteaRepoFromBlueprint fallback: %v", err)

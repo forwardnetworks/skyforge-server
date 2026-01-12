@@ -401,6 +401,28 @@ func (c *Client) EnsureRepo(owner, repo string) error {
 	return nil
 }
 
+func (c *Client) SetRepoPrivate(owner, repo string, private bool) error {
+	owner = strings.TrimSpace(owner)
+	repo = strings.TrimSpace(repo)
+	if owner == "" || repo == "" {
+		return fmt.Errorf("gitea repo missing owner/name")
+	}
+	path := fmt.Sprintf("/repos/%s/%s", url.PathEscape(owner), url.PathEscape(repo))
+	payload := map[string]any{"private": private}
+	resp, body, err := c.Do(http.MethodPatch, path, payload)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("gitea repo not found")
+	}
+	if resp.StatusCode != http.StatusOK {
+		fullURL := strings.TrimRight(c.cfg.APIURL, "/") + path
+		return fmt.Errorf("gitea %s responded %d: %s", fullURL, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
 func randomPassword(length int) (string, error) {
 	if length < 12 {
 		length = 12

@@ -208,10 +208,10 @@ func ensureLabCatalogRepos(cfg Config) error {
 	if owner == "" {
 		return fmt.Errorf("gitea username not configured")
 	}
-	if err := ensureGiteaRepo(cfg, owner, netlabCatalogRepo); err != nil {
+	if err := ensureGiteaRepo(cfg, owner, netlabCatalogRepo, cfg.Workspaces.GiteaRepoPrivate); err != nil {
 		return err
 	}
-	if err := ensureGiteaRepo(cfg, owner, cloudCatalogRepo); err != nil {
+	if err := ensureGiteaRepo(cfg, owner, cloudCatalogRepo, cfg.Workspaces.GiteaRepoPrivate); err != nil {
 		return err
 	}
 	return nil

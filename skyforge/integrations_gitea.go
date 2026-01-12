@@ -42,6 +42,17 @@ func giteaClientFor(cfg Config) *gitea.Client {
 	return giteaClient
 }
 
+func giteaClientForVisibility(cfg Config, repoPrivate bool) *gitea.Client {
+	next := gitea.Config{
+		APIURL:      cfg.Workspaces.GiteaAPIURL,
+		Username:    cfg.Workspaces.GiteaUsername,
+		Password:    cfg.Workspaces.GiteaPassword,
+		Timeout:     15 * time.Second,
+		RepoPrivate: repoPrivate,
+	}
+	return gitea.New(next)
+}
+
 func ensureGiteaUserFromProfile(cfg Config, profile *UserProfile) error {
 	if profile == nil {
 		return fmt.Errorf("missing user profile")
@@ -353,7 +364,7 @@ func ensureBlueprintCatalogRepo(cfg Config, blueprint string) error {
 	if !ok {
 		return nil
 	}
-	if err := ensureGiteaRepo(cfg, owner, repo); err != nil {
+	if err := ensureGiteaRepo(cfg, owner, repo, cfg.Workspaces.GiteaRepoPrivate); err != nil {
 		return err
 	}
 	readme := "# Skyforge Blueprint Catalog\n\nThis repository contains validated deployment blueprints synced into user workspaces.\n"
@@ -459,15 +470,20 @@ func syncGiteaDirectoryWithSourceToTarget(sourceCfg, targetCfg Config, sourceOwn
 	return nil
 }
 
-func ensureGiteaRepo(cfg Config, owner, repo string) error {
-	return giteaClientFor(cfg).EnsureRepo(owner, repo)
+func ensureGiteaRepo(cfg Config, owner, repo string, repoPrivate bool) error {
+	client := giteaClientForVisibility(cfg, repoPrivate)
+	if err := client.EnsureRepo(owner, repo); err != nil {
+		return err
+	}
+	// If the repo already existed (possibly with the wrong visibility), enforce it explicitly.
+	return client.SetRepoPrivate(owner, repo, repoPrivate)
 }
 
-func ensureGiteaRepoFromBlueprint(cfg Config, owner, repo, blueprint string) error {
+func ensureGiteaRepoFromBlueprint(cfg Config, owner, repo, blueprint string, repoPrivate bool) error {
 	// For Skyforge MVP we avoid copying blueprint content into each workspace repo.
 	// Projects can reference the shared blueprint catalog directly for deployments.
 	// A manual "sync" can be added later if/when users want a forked copy.
-	return giteaClientFor(cfg).EnsureRepo(owner, repo)
+	return ensureGiteaRepo(cfg, owner, repo, repoPrivate)
 }
 
 func giteaIdentityFromClaims(claims *SessionClaims) map[string]any {
