@@ -59,7 +59,8 @@ func createTaskWithActiveCheck(ctx context.Context, db *sql.DB, workspaceID stri
 				return nil, err
 			}
 			if active {
-				return nil, errs.B().Code(errs.FailedPrecondition).Msg("deployment already has an active run").Err()
+				// Queue the task behind the active deployment run.
+				// Execution is serialized per-deployment in the task runner.
 			}
 		}
 	}
@@ -123,6 +124,27 @@ LIMIT 1`, workspaceID, deploymentID)
 		_ = json.Unmarshal(metaBytes, &rec.Metadata)
 	}
 	return &rec, nil
+}
+
+func getOldestQueuedDeploymentTaskID(ctx context.Context, db *sql.DB, workspaceID string, deploymentID string) (int, error) {
+	if db == nil {
+		return 0, errDBUnavailable
+	}
+	var id int
+	err := db.QueryRowContext(ctx, `SELECT id
+FROM sf_tasks
+WHERE workspace_id=$1
+  AND deployment_id=$2
+  AND status='queued'
+ORDER BY id ASC
+LIMIT 1`, workspaceID, deploymentID).Scan(&id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return id, nil
 }
 
 func markTaskStarted(ctx context.Context, db *sql.DB, taskID int) error {

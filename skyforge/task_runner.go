@@ -164,6 +164,44 @@ func (s *Service) cancelNetlabJob(ctx context.Context, apiURL, jobID string, log
 func (s *Service) queueTask(task *TaskRecord, runner func(ctx context.Context, log *taskLogger) error) {
 	go func() {
 		ctx := context.Background()
+		unlock := func() {}
+		if task != nil && task.DeploymentID.Valid && s != nil && s.db != nil {
+			workspaceID := strings.TrimSpace(task.WorkspaceID)
+			deploymentID := strings.TrimSpace(task.DeploymentID.String)
+			if workspaceID != "" && deploymentID != "" {
+				lockKey := deploymentAdvisoryLockKey(workspaceID, deploymentID)
+				for {
+					ok, err := pgTryAdvisoryLock(ctx, s.db, lockKey)
+					if err != nil {
+						stdlog.Printf("deployment lock error: %v", err)
+						time.Sleep(750 * time.Millisecond)
+						continue
+					}
+					if !ok {
+						time.Sleep(750 * time.Millisecond)
+						continue
+					}
+
+					// Preserve ordering: only the oldest queued deployment task may start.
+					oldestQueuedID, err := getOldestQueuedDeploymentTaskID(ctx, s.db, workspaceID, deploymentID)
+					if err != nil {
+						_ = pgAdvisoryUnlock(context.Background(), s.db, lockKey)
+						stdlog.Printf("deployment queue check error: %v", err)
+						time.Sleep(750 * time.Millisecond)
+						continue
+					}
+					if oldestQueuedID != 0 && oldestQueuedID != task.ID {
+						_ = pgAdvisoryUnlock(context.Background(), s.db, lockKey)
+						time.Sleep(750 * time.Millisecond)
+						continue
+					}
+
+					unlock = func() { _ = pgAdvisoryUnlock(context.Background(), s.db, lockKey) }
+					break
+				}
+			}
+		}
+
 		if err := markTaskStarted(ctx, s.db, task.ID); err != nil {
 			stdlog.Printf("task start update failed: %v", err)
 		}
@@ -197,6 +235,7 @@ func (s *Service) queueTask(task *TaskRecord, runner func(ctx context.Context, l
 				stdlog.Printf("deployment status update failed: %v", err)
 			}
 		}
+		unlock()
 	}()
 }
 
