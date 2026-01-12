@@ -433,6 +433,33 @@ func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req 
 			_, _ = s.db.ExecContext(ctx, `DELETE FROM sf_deployments WHERE workspace_id=$1 AND id=$2`, pc.workspace.ID, deploymentID)
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to create Forward network").Err()
 		}
+		if typ == "netlab" {
+			// Prefetch/sync netlab template files on "deployment definition create" so a subsequent
+			// start has less work to do.
+			netlabServer := strings.TrimSpace(getString("netlabServer"))
+			templateSource := strings.TrimSpace(getString("templateSource"))
+			templateRepo := strings.TrimSpace(getString("templateRepo"))
+			templatesDir := strings.TrimSpace(getString("templatesDir"))
+			template := strings.TrimSpace(getString("template"))
+			workspaceSlug := strings.TrimSpace(pc.workspace.Slug)
+			deploymentName := strings.TrimSpace(dep.Name)
+			owner := strings.TrimSpace(pc.claims.Username)
+
+			if netlabServer != "" && template != "" && workspaceSlug != "" && deploymentName != "" && owner != "" {
+				go func() {
+					ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+					defer cancel()
+
+					server, _ := resolveNetlabServer(s.cfg, netlabServer)
+					if server == nil {
+						return
+					}
+					// Match runNetlabTask default workspace dir.
+					workdir := fmt.Sprintf("/home/%s/netlab/%s/%s", owner, workspaceSlug, deploymentName)
+					_, _ = s.syncNetlabTopologyFile(ctx, pc, server, templateSource, templateRepo, templatesDir, template, workdir, owner)
+				}()
+			}
+		}
 		if typ == "labpp" {
 			_, err := s.RunWorkspaceDeploymentAction(ctx, id, deploymentID, &WorkspaceDeploymentOpRequest{Action: "create"})
 			if err != nil {

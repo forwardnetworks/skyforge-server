@@ -164,6 +164,14 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 		return "", err
 	}
 
+	// Preserve the full directory layout under the netlab root, but avoid syncing more than needed.
+	// When a template lives in a subdirectory (e.g. blueprints/netlab/<template>/...), syncing only
+	// that subtree is much faster than syncing the whole netlab folder.
+	syncStartPath := rootPath
+	if templatesDir != "" && templatesDir != rootPath {
+		syncStartPath = templatesDir
+	}
+
 	lockKey := strings.Join([]string{workdir, ref.Owner, ref.Repo, ref.Branch, rootPath}, "|")
 	if err := withNetlabSyncLock(lockKey, func() error {
 		// If the repo hasn't changed since last sync, avoid re-copying the entire netlab directory.
@@ -199,7 +207,7 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 				return err
 			}
 			if len(entries) == 0 {
-				return fmt.Errorf("labpp template directory is empty: %s", repoPath)
+				return fmt.Errorf("netlab template directory is empty: %s", repoPath)
 			}
 			for _, entry := range entries {
 				name := strings.TrimSpace(entry.Name)
@@ -236,7 +244,7 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 			return nil
 		}
 
-		if err := syncDir(rootPath); err != nil {
+		if err := syncDir(syncStartPath); err != nil {
 			return err
 		}
 		templatePath := strings.TrimPrefix(path.Join(templatesDir, templateFile), "/")
