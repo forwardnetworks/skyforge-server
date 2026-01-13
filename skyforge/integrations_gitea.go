@@ -404,7 +404,9 @@ func ensureBlueprintCatalogRepo(cfg Config, blueprint string) error {
 	if !ok {
 		return nil
 	}
-	if err := ensureGiteaRepo(cfg, owner, repo, cfg.Workspaces.GiteaRepoPrivate); err != nil {
+	// The shared blueprint catalog should always be visible to users in Gitea Explore.
+	// Workspace repos can remain private-by-default, but the catalog is intended for browsing.
+	if err := ensureGiteaRepo(cfg, owner, repo, false); err != nil {
 		return err
 	}
 	readme := "# Skyforge Blueprint Catalog\n\nThis repository contains validated deployment blueprints synced into user workspaces.\n"
