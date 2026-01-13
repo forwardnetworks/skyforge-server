@@ -2,6 +2,7 @@ package skyforge
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"encore.app/internal/taskqueue"
@@ -19,6 +20,10 @@ func (s *Service) handleTaskEnqueued(ctx context.Context, msg *taskqueue.TaskEnq
 	if s == nil || s.db == nil || msg == nil || msg.TaskID <= 0 {
 		return nil
 	}
+	if !s.cfg.TaskWorkerEnabled {
+		// NACK (return error) so non-worker pods do not ACK queue messages.
+		// Dedicated worker pods should have this enabled to drain the queue.
+		return fmt.Errorf("task worker disabled")
+	}
 	return s.processQueuedTask(ctx, msg.TaskID)
 }
-
