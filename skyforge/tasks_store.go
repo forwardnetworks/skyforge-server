@@ -38,6 +38,12 @@ type TaskEventEntry struct {
 	Payload map[string]any `json:"payload,omitempty"`
 }
 
+type taskStatusCountRow struct {
+	TaskType         string
+	Count            int64
+	OldestAgeSeconds float64
+}
+
 func createTask(ctx context.Context, db *sql.DB, workspaceID string, deploymentID *string, taskType string, message string, createdBy string, metadata JSONMap) (*TaskRecord, error) {
 	return createTaskWithActiveCheck(ctx, db, workspaceID, deploymentID, taskType, message, createdBy, metadata, false)
 }
@@ -495,6 +501,75 @@ LIMIT 1`, workspaceID, deploymentID, taskType)
 		_ = json.Unmarshal(metaBytes, &rec.Metadata)
 	}
 	return &rec, nil
+}
+
+func listTaskTypesSince(ctx context.Context, db *sql.DB, window time.Duration) ([]string, error) {
+	if db == nil {
+		return nil, errDBUnavailable
+	}
+	since := time.Now().Add(-window)
+	rows, err := db.QueryContext(ctx, `SELECT DISTINCT task_type
+FROM sf_tasks
+WHERE created_at >= $1
+ORDER BY task_type ASC`, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []string
+	for rows.Next() {
+		var taskType string
+		if err := rows.Scan(&taskType); err != nil {
+			return nil, err
+		}
+		taskType = strings.TrimSpace(taskType)
+		if taskType != "" {
+			out = append(out, taskType)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func listTaskStatusCounts(ctx context.Context, db *sql.DB, status string) ([]taskStatusCountRow, error) {
+	if db == nil {
+		return nil, errDBUnavailable
+	}
+	status = strings.TrimSpace(status)
+	if status == "" {
+		return nil, errors.New("status is required")
+	}
+	rows, err := db.QueryContext(ctx, `SELECT task_type,
+  COUNT(*) AS cnt,
+  COALESCE(EXTRACT(EPOCH FROM (NOW() - MIN(created_at))), 0) AS oldest_age
+FROM sf_tasks
+WHERE status = $1
+GROUP BY task_type
+ORDER BY task_type ASC`, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []taskStatusCountRow{}
+	for rows.Next() {
+		var row taskStatusCountRow
+		if err := rows.Scan(&row.TaskType, &row.Count, &row.OldestAgeSeconds); err != nil {
+			return nil, err
+		}
+		row.TaskType = strings.TrimSpace(row.TaskType)
+		if row.TaskType == "" {
+			continue
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func listTaskLogs(ctx context.Context, db *sql.DB, taskID int, limit int) ([]TaskLogEntry, error) {

@@ -30,7 +30,7 @@ var (
 	workspaceSyncManualRequests = metrics.NewCounter[uint64]("skyforge_workspace_sync_manual_requests_total", metrics.CounterConfig{})
 	workspaceSyncAdminRequests  = metrics.NewCounter[uint64]("skyforge_workspace_sync_admin_requests_total", metrics.CounterConfig{})
 	workspaceSyncFailures       = metrics.NewCounter[uint64]("skyforge_workspace_sync_failures_total", metrics.CounterConfig{})
-	workspaceSyncErrors  = metrics.NewCounter[uint64]("skyforge_workspace_sync_errors_total", metrics.CounterConfig{})
+	workspaceSyncErrors         = metrics.NewCounter[uint64]("skyforge_workspace_sync_errors_total", metrics.CounterConfig{})
 	workspaceSyncBackgroundRuns = metrics.NewCounter[uint64]("skyforge_workspace_sync_background_runs_total", metrics.CounterConfig{})
 
 	taskQueuedTotal   = metrics.NewCounterGroup[taskTypeLabels, uint64]("skyforge_tasks_queued_total", metrics.CounterConfig{})
@@ -41,4 +41,12 @@ var (
 	taskRunDurationSecondsLast   = metrics.NewGaugeGroup[taskTypeLabels, float64]("skyforge_task_run_duration_seconds_last", metrics.GaugeConfig{})
 	taskQueueLatencySecondsTotal = metrics.NewCounterGroup[taskTypeLabels, float64]("skyforge_task_queue_latency_seconds_total", metrics.CounterConfig{})
 	taskRunDurationSecondsTotal  = metrics.NewCounterGroup[taskTypeLabels, float64]("skyforge_task_run_duration_seconds_total", metrics.CounterConfig{})
+
+	taskQueuedCurrentTotal          = metrics.NewGauge[float64]("skyforge_tasks_queued_current_total", metrics.GaugeConfig{})
+	taskRunningCurrentTotal         = metrics.NewGauge[float64]("skyforge_tasks_running_current_total", metrics.GaugeConfig{})
+	taskQueuedOldestAgeSecondsTotal = metrics.NewGauge[float64]("skyforge_tasks_queued_oldest_age_seconds_total", metrics.GaugeConfig{})
+
+	taskQueuedCurrent          = metrics.NewGaugeGroup[taskTypeLabels, float64]("skyforge_tasks_queued_current", metrics.GaugeConfig{})
+	taskQueuedOldestAgeSeconds = metrics.NewGaugeGroup[taskTypeLabels, float64]("skyforge_tasks_queued_oldest_age_seconds", metrics.GaugeConfig{})
+	taskRunningCurrent         = metrics.NewGaugeGroup[taskTypeLabels, float64]("skyforge_tasks_running_current", metrics.GaugeConfig{})
 )
