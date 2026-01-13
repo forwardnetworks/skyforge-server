@@ -130,7 +130,6 @@ type Config struct {
 	DNSURL                    string
 	DNSAdminUsername          string
 	DNSUserZoneSuffix         string
-	TaskWorkerEnabled         bool
 }
 
 type OIDCConfig struct {
@@ -900,8 +899,6 @@ func loadConfig() Config {
 	dnsUserZoneSuffix := strings.TrimSpace(getenv("SKYFORGE_DNS_USER_ZONE_SUFFIX", "skyforge"))
 	dnsUserZoneSuffix = strings.TrimPrefix(dnsUserZoneSuffix, ".")
 
-	taskWorkerEnabled := getenv("SKYFORGE_TASK_WORKER_ENABLED", "true") == "true"
-
 	eveServersRaw := strings.TrimSpace(os.Getenv("SKYFORGE_EVE_SERVERS_JSON"))
 	if eveServersRaw == "" {
 		eveServersRaw = readOptionalFile(getenv("SKYFORGE_EVE_SERVERS_FILE", ""))
@@ -1110,7 +1107,6 @@ func loadConfig() Config {
 		DNSURL:                    dnsURL,
 		DNSAdminUsername:          dnsAdminUsername,
 		DNSUserZoneSuffix:         dnsUserZoneSuffix,
-		TaskWorkerEnabled:         taskWorkerEnabled,
 	}
 }
 

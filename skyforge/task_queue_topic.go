@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 
 	"encore.dev/cron"
 	"encore.dev/pubsub"
@@ -22,13 +21,6 @@ type taskEnqueuedEvent struct {
 var taskQueueTopic = pubsub.NewTopic[*taskEnqueuedEvent]("skyforge-task-queue", pubsub.TopicConfig{
 	DeliveryGuarantee: pubsub.AtLeastOnce,
 	OrderingAttribute: "key",
-})
-
-var _ = pubsub.NewSubscription(taskQueueTopic, "skyforge-task-worker", pubsub.SubscriptionConfig[*taskEnqueuedEvent]{
-	Handler:        pubsub.MethodHandler((*Service).handleTaskEnqueued),
-	MaxConcurrency: 8,
-	// Tasks can be long-running (netlab/terraform). Keep ack generous.
-	AckDeadline: 2 * time.Hour,
 })
 
 // Reconcile queued tasks periodically so they aren't stranded if a publish fails
@@ -100,16 +92,4 @@ func (s *Service) enqueueTask(ctx context.Context, task *TaskRecord) {
 	if _, err := taskQueueTopic.Publish(ctx, &taskEnqueuedEvent{TaskID: task.ID, Key: key}); err != nil {
 		log.Printf("task enqueue publish failed: task=%d err=%v", task.ID, err)
 	}
-}
-
-func (s *Service) handleTaskEnqueued(ctx context.Context, msg *taskEnqueuedEvent) error {
-	if s == nil || s.db == nil || msg == nil || msg.TaskID <= 0 {
-		return nil
-	}
-	if !s.cfg.TaskWorkerEnabled {
-		// Return an error so the message is not ACKed by non-worker pods.
-		// This allows dedicated worker deployments to drain the queue.
-		return fmt.Errorf("task worker disabled")
-	}
-	return s.processQueuedTask(ctx, msg.TaskID)
 }
