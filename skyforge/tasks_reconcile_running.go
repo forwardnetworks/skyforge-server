@@ -8,16 +8,7 @@ import (
 	"time"
 
 	"encore.dev/beta/errs"
-	"encore.dev/cron"
 )
-
-// Reconcile running tasks periodically so they aren't stranded if the server
-// restarts mid-run or a runner crashes without reporting completion.
-var _ = cron.NewJob("skyforge-reconcile-running-tasks", cron.JobConfig{
-	Title:    "Mark stuck running Skyforge tasks as failed",
-	Every:    10 * cron.Minute,
-	Endpoint: ReconcileRunningTasks,
-})
 
 // ReconcileRunningTasks finds long-running tasks that appear stuck and marks them failed.
 //

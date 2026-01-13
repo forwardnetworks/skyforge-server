@@ -3545,6 +3545,7 @@ func initService() (*Service, error) {
 		db:             db,
 	}
 	svc.startTaskQueueMetricsLoop()
+	svc.startTaskReconcileLoops()
 	defaultService = svc
 	return svc, nil
 }

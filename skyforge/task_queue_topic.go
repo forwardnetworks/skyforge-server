@@ -7,17 +7,8 @@ import (
 	"strings"
 
 	"encore.app/internal/taskqueue"
-	"encore.dev/cron"
 	"encore.dev/rlog"
 )
-
-// Reconcile queued tasks periodically so they aren't stranded if a publish fails
-// or the server restarts mid-request.
-var _ = cron.NewJob("skyforge-reconcile-queued-tasks", cron.JobConfig{
-	Title:    "Requeue queued Skyforge tasks",
-	Every:    1 * cron.Minute,
-	Endpoint: ReconcileQueuedTasks,
-})
 
 // ReconcileQueuedTasks republishes queue events for tasks stuck in the "queued" state.
 //
@@ -26,7 +17,14 @@ func ReconcileQueuedTasks(ctx context.Context) error {
 	if defaultService == nil || defaultService.db == nil {
 		return nil
 	}
-	db := defaultService.db
+	return reconcileQueuedTasks(ctx, defaultService)
+}
+
+func reconcileQueuedTasks(ctx context.Context, svc *Service) error {
+	if svc == nil || svc.db == nil {
+		return nil
+	}
+	db := svc.db
 	rows, err := db.QueryContext(ctx, `SELECT id, workspace_id, deployment_id
 FROM sf_tasks
 WHERE status='queued'
