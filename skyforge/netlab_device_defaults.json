@@ -188,7 +188,7 @@
       "credentials": [
         {
           "username": "root",
-          "password": ""
+          "password": "admin"
         }
       ],
       "image_prefix": "python"
