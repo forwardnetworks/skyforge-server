@@ -143,6 +143,7 @@ type labppTaskSpec struct {
 	EveServer         string            `json:"eveServer,omitempty"`
 	EveURL            string            `json:"eveUrl,omitempty"`
 	EveUsername       string            `json:"eveUsername,omitempty"`
+	EvePasswordEnc    string            `json:"evePasswordEnc,omitempty"`
 	Deployment        string            `json:"deployment,omitempty"`
 	DeploymentID      string            `json:"deploymentId,omitempty"`
 	TemplatesRoot     string            `json:"templatesRoot,omitempty"`
@@ -191,8 +192,15 @@ func (s *Service) dispatchLabppTask(ctx context.Context, task *TaskRecord, log *
 		eveUsername = strings.TrimSpace(pc.claims.Username)
 	}
 	evePassword := ""
-	if cached, ok := getCachedLDAPPassword(pc.claims.Username); ok {
-		evePassword = strings.TrimSpace(cached)
+	if enc := strings.TrimSpace(specIn.EvePasswordEnc); enc != "" {
+		if plaintext, err := decryptUserSecret(enc); err == nil {
+			evePassword = strings.TrimSpace(plaintext)
+		}
+	}
+	if evePassword == "" {
+		if cached, ok := getCachedLDAPPassword(pc.claims.Username); ok {
+			evePassword = strings.TrimSpace(cached)
+		}
 	}
 	if strings.TrimSpace(eveUsername) == "" || strings.TrimSpace(evePassword) == "" {
 		return fmt.Errorf("eve credentials are required (login again to refresh cached password)")

@@ -765,6 +765,12 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 	}
 	envAny, _ := fromJSONMap(req.Environment)
 	envMap := parseEnvMap(envAny)
+	evePasswordEnc := ""
+	// Under OIDC there is no LDAP password to reuse for EVE; the user supplies an
+	// EVE password at run-time. Never store plaintext passwords in task metadata.
+	if strings.TrimSpace(req.EvePassword) != "" {
+		evePasswordEnc = encryptUserSecret(strings.TrimSpace(req.EvePassword))
+	}
 	meta, err := toJSONMap(map[string]any{
 		"action":     action,
 		"server":     eveServer.Name,
@@ -776,6 +782,7 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 			"eveServer":         eveServer.Name,
 			"eveUrl":            eveURL,
 			"eveUsername":       eveUsername,
+			"evePasswordEnc":    evePasswordEnc,
 			"deployment":        deployment,
 			"deploymentId":      strings.TrimSpace(req.DeploymentID),
 			"templatesRoot":     templatesRoot,

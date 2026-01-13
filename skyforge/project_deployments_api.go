@@ -434,6 +434,14 @@ func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req 
 		if strings.TrimSpace(getString("labPath")) == "" {
 			cfgAny["labPath"] = labppLabPath(pc.claims.Username, name, template, time.Now())
 		}
+		// Never persist plaintext passwords in deployment config; store an encrypted
+		// version instead for worker-side use.
+		if pwd := strings.TrimSpace(getString("evePassword")); pwd != "" {
+			if enc := encryptUserSecret(pwd); enc != "" {
+				cfgAny["evePasswordEnc"] = enc
+			}
+			delete(cfgAny, "evePassword")
+		}
 	case "clabernetes":
 		template := strings.TrimSpace(getString("template"))
 		if template == "" {
@@ -605,7 +613,28 @@ func (s *Service) UpdateWorkspaceDeployment(ctx context.Context, id, deploymentI
 		fields = append(fields, "name="+arg(name))
 	}
 	if req.Config != nil {
-		cfgBytes, _ := json.Marshal(req.Config)
+		cfg := req.Config
+		// Sanitize config updates based on existing deployment type.
+		existing, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+		if err != nil {
+			return nil, err
+		}
+		if existing != nil && existing.Type == "labpp" {
+			cfgAny, _ := fromJSONMap(cfg)
+			if cfgAny == nil {
+				cfgAny = map[string]any{}
+			}
+			if rawPwd, ok := cfgAny["evePassword"].(string); ok {
+				if pwd := strings.TrimSpace(rawPwd); pwd != "" {
+					if enc := encryptUserSecret(pwd); enc != "" {
+						cfgAny["evePasswordEnc"] = enc
+					}
+				}
+				delete(cfgAny, "evePassword")
+			}
+			cfg, _ = toJSONMap(cfgAny)
+		}
+		cfgBytes, _ := json.Marshal(cfg)
 		fields = append(fields, "config="+arg(cfgBytes))
 	}
 	fields = append(fields, "updated_at=now()")
@@ -902,6 +931,12 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 		threadCount, _ := cfgAny["threadCount"].(float64)
 		eveUsername, _ := cfgAny["eveUsername"].(string)
 		evePassword, _ := cfgAny["evePassword"].(string)
+		evePasswordEnc, _ := cfgAny["evePasswordEnc"].(string)
+		if strings.TrimSpace(evePassword) == "" && strings.TrimSpace(evePasswordEnc) != "" {
+			if plaintext, err := decryptUserSecret(evePasswordEnc); err == nil {
+				evePassword = plaintext
+			}
+		}
 
 		eveServer = strings.TrimSpace(eveServer)
 		if eveServer == "" {
@@ -2029,6 +2064,12 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 		threadCount, _ := cfgAny["threadCount"].(float64)
 		eveUsername, _ := cfgAny["eveUsername"].(string)
 		evePassword, _ := cfgAny["evePassword"].(string)
+		evePasswordEnc, _ := cfgAny["evePasswordEnc"].(string)
+		if strings.TrimSpace(evePassword) == "" && strings.TrimSpace(evePasswordEnc) != "" {
+			if plaintext, err := decryptUserSecret(evePasswordEnc); err == nil {
+				evePassword = plaintext
+			}
+		}
 
 		labppAction := "e2e"
 		switch mode {
