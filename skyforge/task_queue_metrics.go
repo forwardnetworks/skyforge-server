@@ -8,22 +8,6 @@ import (
 	"encore.dev/rlog"
 )
 
-func (s *Service) startTaskQueueMetricsLoop() {
-	if s == nil || s.db == nil || !s.cfg.TaskWorkerEnabled {
-		return
-	}
-	interval := 1 * time.Minute
-	go func() {
-		rlog.Info("task queue metrics loop enabled", "interval", interval.String())
-		_ = s.updateTaskQueueMetrics(context.Background())
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for range ticker.C {
-			_ = s.updateTaskQueueMetrics(context.Background())
-		}
-	}()
-}
-
 func (s *Service) updateTaskQueueMetrics(ctx context.Context) error {
 	if s == nil || s.db == nil {
 		return nil
