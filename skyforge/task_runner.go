@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	stdlog "log"
 	"net"
 	"net/http"
 	"net/url"
@@ -30,6 +29,7 @@ import (
 
 	secretreader "encore.app/internal/secrets"
 	"encore.app/storage"
+	"encore.dev/rlog"
 )
 
 func (s *Service) notifyTaskEvent(ctx context.Context, task *TaskRecord, status string, errMsg string) error {
@@ -236,7 +236,7 @@ func (s *Service) processQueuedTask(ctx context.Context, taskID int) error {
 			for {
 				ok, err := pgTryAdvisoryLock(ctx, s.db, lockKey)
 				if err != nil {
-					stdlog.Printf("deployment lock error: %v", err)
+					rlog.Error("deployment lock error", "err", err)
 					time.Sleep(750 * time.Millisecond)
 					continue
 				}
@@ -248,7 +248,7 @@ func (s *Service) processQueuedTask(ctx context.Context, taskID int) error {
 				oldestQueuedID, err := getOldestQueuedDeploymentTaskID(ctx, s.db, workspaceID, deploymentID)
 				if err != nil {
 					_ = pgAdvisoryUnlock(context.Background(), s.db, lockKey)
-					stdlog.Printf("deployment queue check error: %v", err)
+					rlog.Error("deployment queue check error", "err", err)
 					time.Sleep(750 * time.Millisecond)
 					continue
 				}
@@ -269,7 +269,7 @@ func (s *Service) processQueuedTask(ctx context.Context, taskID int) error {
 			for {
 				ok, err := pgTryAdvisoryLock(ctx, s.db, lockKey)
 				if err != nil {
-					stdlog.Printf("workspace lock error: %v", err)
+					rlog.Error("workspace lock error", "err", err)
 					time.Sleep(750 * time.Millisecond)
 					continue
 				}
@@ -281,7 +281,7 @@ func (s *Service) processQueuedTask(ctx context.Context, taskID int) error {
 				oldestQueuedID, err := getOldestQueuedWorkspaceTaskID(ctx, s.db, workspaceID)
 				if err != nil {
 					_ = pgAdvisoryUnlock(context.Background(), s.db, lockKey)
-					stdlog.Printf("workspace queue check error: %v", err)
+					rlog.Error("workspace queue check error", "err", err)
 					time.Sleep(750 * time.Millisecond)
 					continue
 				}
@@ -300,12 +300,12 @@ func (s *Service) processQueuedTask(ctx context.Context, taskID int) error {
 	// If the task was canceled while waiting in the queue, exit early without running it.
 	if rec, err := getTask(ctx, s.db, task.ID); err == nil && rec != nil && strings.EqualFold(rec.Status, "canceled") {
 		if err := s.notifyTaskEvent(ctx, task, "canceled", ""); err != nil {
-			stdlog.Printf("task cancel notification failed: %v", err)
+			rlog.Error("task cancel notification failed", "task_id", task.ID, "err", err)
 		}
 		if task.DeploymentID.Valid {
 			finishedAt := time.Now().UTC()
 			if err := s.updateDeploymentStatus(ctx, task.WorkspaceID, task.DeploymentID.String, "canceled", &finishedAt); err != nil {
-				stdlog.Printf("deployment status update failed: %v", err)
+				rlog.Error("deployment status update failed", "deployment_id", task.DeploymentID.String, "err", err)
 			}
 		}
 		unlock()
@@ -313,7 +313,7 @@ func (s *Service) processQueuedTask(ctx context.Context, taskID int) error {
 	}
 
 	if ok, err := markTaskStarted(ctx, s.db, task.ID); err != nil {
-		stdlog.Printf("task start update failed: %v", err)
+		rlog.Error("task start update failed", "task_id", task.ID, "err", err)
 		unlock()
 		return nil
 	} else if !ok {
@@ -322,7 +322,7 @@ func (s *Service) processQueuedTask(ctx context.Context, taskID int) error {
 		return nil
 	}
 	if err := s.notifyTaskEvent(ctx, task, "running", ""); err != nil {
-		stdlog.Printf("task start notification failed: %v", err)
+		rlog.Error("task start notification failed", "task_id", task.ID, "err", err)
 	}
 	taskStartedTotal.With(taskTypeLabels{TaskType: strings.TrimSpace(task.TaskType)}).Increment()
 	startedAt := time.Now().UTC()
@@ -349,7 +349,7 @@ func (s *Service) processQueuedTask(ctx context.Context, taskID int) error {
 	}
 	if status != "canceled" {
 		if err := finishTask(ctx, s.db, task.ID, status, errMsg); err != nil {
-			stdlog.Printf("task finish update failed: %v", err)
+			rlog.Error("task finish update failed", "task_id", task.ID, "err", err)
 		}
 	}
 	finishType := strings.TrimSpace(task.TaskType)
@@ -363,12 +363,12 @@ func (s *Service) processQueuedTask(ctx context.Context, taskID int) error {
 		}
 	}
 	if err := s.notifyTaskEvent(ctx, task, status, errMsg); err != nil {
-		stdlog.Printf("task finish notification failed: %v", err)
+		rlog.Error("task finish notification failed", "task_id", task.ID, "err", err)
 	}
 	if task.DeploymentID.Valid {
 		finishedAt := time.Now().UTC()
 		if err := s.updateDeploymentStatus(ctx, task.WorkspaceID, task.DeploymentID.String, status, &finishedAt); err != nil {
-			stdlog.Printf("deployment status update failed: %v", err)
+			rlog.Error("deployment status update failed", "deployment_id", task.DeploymentID.String, "err", err)
 		}
 	}
 	unlock()
@@ -462,11 +462,11 @@ func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *ta
 		metaAny := map[string]any{"netlabJobId": job.ID}
 		metaJSON, err := toJSONMap(metaAny)
 		if err != nil {
-			stdlog.Printf("netlab metadata encode: %v", err)
+			rlog.Error("netlab metadata encode", "err", err)
 		} else {
 			metaCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			if err := updateTaskMetadata(metaCtx, s.db, spec.TaskID, metaJSON); err != nil {
-				stdlog.Printf("netlab metadata update: %v", err)
+				rlog.Error("netlab metadata update", "task_id", spec.TaskID, "err", err)
 			}
 			cancel()
 		}
@@ -937,13 +937,13 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		dataSourcesDir := filepath.Join(strings.TrimSpace(s.cfg.PlatformDataDir), "labpp", "data-sources", spec.DeploymentID)
 		csvPath, err := s.generateLabppDataSourcesCSV(ctx, spec.DeploymentID, templateDir, configDirBase, configFile, labPath, dataSourcesDir, log, eveHost)
 		if err != nil {
-			stdlog.Printf("labpp data_sources.csv generation failed: %v", err)
+			rlog.Error("labpp data_sources.csv generation failed", "task_id", spec.TaskID, "err", err)
 		} else {
 			dataSourcesPath = csvPath
 			forwardOverride := forwardOverridesFromEnv(spec.Environment)
 			startCollection := action == ""
 			if err := s.syncForwardLabppDevicesFromCSV(ctx, spec.TaskID, spec.WorkspaceCtx, spec.DeploymentID, csvPath, startCollection, forwardOverride); err != nil {
-				stdlog.Printf("forward labpp sync: %v", err)
+				rlog.Error("forward labpp sync", "task_id", spec.TaskID, "err", err)
 			}
 		}
 	}
@@ -963,7 +963,7 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 			spec.Metadata = metaUpdated
 			metaCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			if err := updateTaskMetadata(metaCtx, s.db, spec.TaskID, metaUpdated); err != nil {
-				stdlog.Printf("labpp metadata update: %v", err)
+				rlog.Error("labpp metadata update", "task_id", spec.TaskID, "err", err)
 			}
 			cancel()
 		}

@@ -4,11 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 	"strings"
 
 	"encore.dev/cron"
 	"encore.dev/pubsub"
+	"encore.dev/rlog"
 )
 
 type taskEnqueuedEvent struct {
@@ -74,7 +74,7 @@ LIMIT 200`)
 			key = fmt.Sprintf("%s:%s", strings.TrimSpace(q.workspaceID), strings.TrimSpace(q.deploymentID.String))
 		}
 		if _, err := taskQueueTopic.Publish(ctx, &taskEnqueuedEvent{TaskID: q.id, Key: key}); err != nil {
-			log.Printf("task reconcile publish failed: task=%d err=%v", q.id, err)
+			rlog.Error("task reconcile publish failed", "task_id", q.id, "err", err)
 		}
 	}
 
@@ -90,6 +90,6 @@ func (s *Service) enqueueTask(ctx context.Context, task *TaskRecord) {
 		key = fmt.Sprintf("%s:%s", strings.TrimSpace(task.WorkspaceID), strings.TrimSpace(task.DeploymentID.String))
 	}
 	if _, err := taskQueueTopic.Publish(ctx, &taskEnqueuedEvent{TaskID: task.ID, Key: key}); err != nil {
-		log.Printf("task enqueue publish failed: task=%d err=%v", task.ID, err)
+		rlog.Error("task enqueue publish failed", "task_id", task.ID, "err", err)
 	}
 }
