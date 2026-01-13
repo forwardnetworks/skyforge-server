@@ -3544,6 +3544,7 @@ func initService() (*Service, error) {
 		box:            box,
 		db:             db,
 	}
+	svc.startTaskQueueMetricsLoop()
 	defaultService = svc
 	return svc, nil
 }

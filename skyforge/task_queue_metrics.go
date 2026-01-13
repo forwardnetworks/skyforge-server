@@ -5,27 +5,30 @@ import (
 	"strings"
 	"time"
 
-	"encore.dev/cron"
 	"encore.dev/rlog"
 )
 
-// Periodically update task queue gauges so operational dashboards can show
-// whether jobs are piling up (or running) without having to infer state from
-// counters.
-var _ = cron.NewJob("skyforge-task-queue-metrics", cron.JobConfig{
-	Title:    "Update task queue metrics",
-	Every:    1 * cron.Minute,
-	Endpoint: UpdateTaskQueueMetrics,
-})
+func (s *Service) startTaskQueueMetricsLoop() {
+	if s == nil || s.db == nil || !s.cfg.TaskWorkerEnabled {
+		return
+	}
+	interval := 1 * time.Minute
+	go func() {
+		rlog.Info("task queue metrics loop enabled", "interval", interval.String())
+		_ = s.updateTaskQueueMetrics(context.Background())
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			_ = s.updateTaskQueueMetrics(context.Background())
+		}
+	}()
+}
 
-// UpdateTaskQueueMetrics refreshes gauges for queued/running tasks.
-//
-//encore:api private method=POST path=/internal/tasks/metrics
-func UpdateTaskQueueMetrics(ctx context.Context) error {
-	if defaultService == nil || defaultService.db == nil {
+func (s *Service) updateTaskQueueMetrics(ctx context.Context) error {
+	if s == nil || s.db == nil {
 		return nil
 	}
-	db := defaultService.db
+	db := s.db
 
 	ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
 	taskTypes, err := listTaskTypesSince(ctxReq, db, 30*24*time.Hour)
