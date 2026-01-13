@@ -177,7 +177,47 @@ func giteaDo(cfg Config, method, path string, payload any) (*http.Response, []by
 }
 
 func getGiteaRepoDefaultBranch(cfg Config, owner, repo string) (string, error) {
-	return giteaClientFor(cfg).GetRepoDefaultBranch(owner, repo)
+	owner = strings.TrimSpace(owner)
+	repo = strings.TrimSpace(repo)
+	if owner == "" || repo == "" {
+		return "", fmt.Errorf("missing owner or repo")
+	}
+
+	if redisClient != nil {
+		prefix := strings.TrimSpace(cfg.Redis.KeyPrefix)
+		if prefix == "" {
+			prefix = "skyforge"
+		}
+		cacheKey := prefix + ":gitea-default-branch:" + owner + ":" + repo
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		cached, err := redisClient.Get(ctx, cacheKey).Result()
+		cancel()
+		if err == nil && strings.TrimSpace(cached) != "" {
+			return strings.TrimSpace(cached), nil
+		}
+	}
+
+	branch, err := giteaClientFor(cfg).GetRepoDefaultBranch(owner, repo)
+	if err != nil {
+		return "", err
+	}
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		branch = "main"
+	}
+
+	if redisClient != nil {
+		prefix := strings.TrimSpace(cfg.Redis.KeyPrefix)
+		if prefix == "" {
+			prefix = "skyforge"
+		}
+		cacheKey := prefix + ":gitea-default-branch:" + owner + ":" + repo
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_ = redisClient.Set(ctx, cacheKey, branch, 10*time.Minute).Err()
+		cancel()
+	}
+
+	return branch, nil
 }
 
 type giteaContentEntry = gitea.ContentEntry

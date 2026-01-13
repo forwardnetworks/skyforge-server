@@ -112,8 +112,13 @@ func (s *Service) GetWorkspaceNetlabTemplates(ctx context.Context, id string, re
 		}
 	}
 
+	cacheKey := ""
+	lockKey := ""
+	lockAcquired := false
 	if redisClient != nil {
-		cacheKey := redisNetlabTemplatesKey(s.cfg, owner, repo, branch, dir)
+		cacheKey = redisNetlabTemplatesKey(s.cfg, owner, repo, branch, dir)
+		lockKey = cacheKey + ":lock"
+
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		cached, err := redisClient.Get(ctx, cacheKey).Result()
 		cancel()
@@ -130,20 +135,52 @@ func (s *Service) GetWorkspaceNetlabTemplates(ctx context.Context, id string, re
 				}, nil
 			}
 		}
+
+		// Stampede protection: try to acquire a short-lived lock for this directory.
+		// If another request holds it, wait briefly for it to populate the cache.
+		ctx, cancel = context.WithTimeout(ctx, 2*time.Second)
+		lockAcquired, _ = redisClient.SetNX(ctx, lockKey, "1", 10*time.Second).Result()
+		cancel()
+		if !lockAcquired {
+			for i := 0; i < 10; i++ {
+				time.Sleep(200 * time.Millisecond)
+				ctx, cancel = context.WithTimeout(ctx, 2*time.Second)
+				cached, err = redisClient.Get(ctx, cacheKey).Result()
+				cancel()
+				if err == nil && strings.TrimSpace(cached) != "" {
+					var templates []string
+					if err := json.Unmarshal([]byte(cached), &templates); err == nil && len(templates) > 0 {
+						sort.Strings(templates)
+						return &WorkspaceNetlabTemplatesResponse{
+							WorkspaceID: pc.workspace.ID,
+							Repo:        fmt.Sprintf("%s/%s", owner, repo),
+							Branch:      branch,
+							Dir:         dir,
+							Templates:   templates,
+						}, nil
+					}
+				}
+			}
+		}
 	}
 
-	templates, err := listNetlabTemplatesRecursive(s.cfg, owner, repo, branch, dir, "", 4, false)
+	templates, err := listNetlabTemplatesRecursive(s.cfg, owner, repo, branch, dir, "", 4, false, 2000)
 	if err != nil {
 		log.Printf("netlab templates list: %v", err)
+		if strings.Contains(strings.ToLower(err.Error()), "too many templates") {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("too many templates in this folder; choose a narrower dir").Err()
+		}
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to query templates").Err()
 	}
 	sort.Strings(templates)
 
-	if redisClient != nil && len(templates) > 0 {
+	if redisClient != nil && cacheKey != "" && len(templates) > 0 {
 		if payload, err := json.Marshal(templates); err == nil {
-			cacheKey := redisNetlabTemplatesKey(s.cfg, owner, repo, branch, dir)
 			ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-			_ = redisClient.Set(ctx, cacheKey, string(payload), 2*time.Minute).Err()
+			_ = redisClient.Set(ctx, cacheKey, string(payload), 10*time.Minute).Err()
+			if lockAcquired && lockKey != "" {
+				_ = redisClient.Del(ctx, lockKey).Err()
+			}
 			cancel()
 		}
 	}
@@ -158,7 +195,7 @@ func (s *Service) GetWorkspaceNetlabTemplates(ctx context.Context, id string, re
 	}, nil
 }
 
-func listNetlabTemplatesRecursive(cfg Config, owner, repo, branch, repoPath, relBase string, depth int, nested bool) ([]string, error) {
+func listNetlabTemplatesRecursive(cfg Config, owner, repo, branch, repoPath, relBase string, depth int, nested bool, maxResults int) ([]string, error) {
 	if depth < 0 {
 		return nil, nil
 	}
@@ -179,21 +216,30 @@ func listNetlabTemplatesRecursive(cfg Config, owner, repo, branch, repoPath, rel
 			if nested {
 				if name == "topology.yml" || name == "topology.yaml" {
 					results = append(results, rel)
+					if maxResults > 0 && len(results) >= maxResults {
+						return nil, fmt.Errorf("too many templates")
+					}
 				}
 				continue
 			}
 			if strings.HasSuffix(name, ".yml") || strings.HasSuffix(name, ".yaml") {
 				results = append(results, rel)
+				if maxResults > 0 && len(results) >= maxResults {
+					return nil, fmt.Errorf("too many templates")
+				}
 			}
 		case "dir":
 			if depth == 0 {
 				continue
 			}
-			child, err := listNetlabTemplatesRecursive(cfg, owner, repo, branch, entryPath, rel, depth-1, true)
+			child, err := listNetlabTemplatesRecursive(cfg, owner, repo, branch, entryPath, rel, depth-1, true, maxResults)
 			if err != nil {
 				return nil, err
 			}
 			results = append(results, child...)
+			if maxResults > 0 && len(results) >= maxResults {
+				return nil, fmt.Errorf("too many templates")
+			}
 		}
 	}
 	return results, nil

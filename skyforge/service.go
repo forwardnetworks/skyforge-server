@@ -3519,6 +3519,7 @@ func initService() (*Service, error) {
 		db:             db,
 	}
 	defaultService = svc
+	startTaskWorkerHeartbeat(cfg)
 	return svc, nil
 }
 

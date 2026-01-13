@@ -49,4 +49,6 @@ var (
 	taskQueuedCurrent          = metrics.NewGaugeGroup[taskTypeLabels, float64]("skyforge_tasks_queued_current", metrics.GaugeConfig{})
 	taskQueuedOldestAgeSeconds = metrics.NewGaugeGroup[taskTypeLabels, float64]("skyforge_tasks_queued_oldest_age_seconds", metrics.GaugeConfig{})
 	taskRunningCurrent         = metrics.NewGaugeGroup[taskTypeLabels, float64]("skyforge_tasks_running_current", metrics.GaugeConfig{})
+
+	taskWorkersAliveCurrent = metrics.NewGauge[float64]("skyforge_task_workers_alive_current", metrics.GaugeConfig{})
 )
