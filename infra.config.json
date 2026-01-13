@@ -49,6 +49,14 @@
               "name": "skyforge-task-worker"
             }
           }
+        },
+        "skyforge-maintenance": {
+          "name": "skyforge-maintenance",
+          "subscriptions": {
+            "skyforge-maintenance-worker": {
+              "name": "skyforge-maintenance-worker"
+            }
+          }
         }
       }
     }
