@@ -2,6 +2,8 @@ package skyforge
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -318,6 +320,16 @@ func (s *Service) technitiumCreateUserToken(ctx context.Context, username, passw
 	return token, nil
 }
 
+func randomTechnitiumPassword() (string, error) {
+	// Use a hex-encoded random value to avoid special characters that some setups reject.
+	// 24 bytes => 48 hex chars + prefix.
+	buf := make([]byte, 24)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return "sf-" + hex.EncodeToString(buf), nil
+}
+
 // DNSToken mints a Technitium session token for the current Skyforge user session.
 // The token is stored client-side (localStorage) by the DNS SSO bridge.
 //
@@ -347,9 +359,6 @@ func (s *Service) DNSBootstrap(ctx context.Context, req *DNSBootstrapRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	if req == nil || strings.TrimSpace(req.Password) == "" {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("password is required").Err()
-	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
@@ -369,14 +378,25 @@ func (s *Service) DNSBootstrap(ctx context.Context, req *DNSBootstrapRequest) (*
 	suffix = strings.TrimPrefix(suffix, ".")
 	zone := username + "." + suffix
 
+	password := ""
+	if req != nil {
+		password = strings.TrimSpace(req.Password)
+	}
+	if password == "" {
+		password, err = randomTechnitiumPassword()
+		if err != nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to generate dns password").Err()
+		}
+	}
+
 	adminToken, err := s.mintTechnitiumAdminToken(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.ensureTechnitiumUserAndZone(ctx, adminToken, username, strings.TrimSpace(user.DisplayName), req.Password, zone); err != nil {
+	if err := s.ensureTechnitiumUserAndZone(ctx, adminToken, username, strings.TrimSpace(user.DisplayName), password, zone); err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to provision dns account").Err()
 	}
-	token, err := s.technitiumCreateUserToken(ctx, username, req.Password)
+	token, err := s.technitiumCreateUserToken(ctx, username, password)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to mint dns token").Err()
 	}
@@ -437,14 +457,10 @@ func (s *Service) DNSSSO(w http.ResponseWriter, r *http.Request) {
     <style>
       body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; padding: 24px; }
       .card { max-width: 520px; border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; padding: 16px; }
-      label { display: block; font-size: 12px; opacity: 0.8; margin-top: 10px; }
-      input { width: 100%; padding: 10px; margin-top: 6px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.18); background: transparent; color: inherit; }
       button { margin-top: 12px; padding: 10px 12px; border-radius: 8px; border: 0; background: #2563eb; color: white; font-weight: 600; cursor: pointer; }
       .muted { font-size: 12px; opacity: 0.75; margin-top: 8px; }
       .error { color: #ef4444; margin-top: 10px; font-size: 13px; }
       .hidden { display: none; }
-      .row { display: flex; gap: 8px; align-items: center; }
-      .row > * { flex: 1; }
     </style>
   </head>
   <body>
@@ -453,15 +469,9 @@ func (s *Service) DNSSSO(w http.ResponseWriter, r *http.Request) {
       <p id="status" style="margin:0 0 10px 0;">Signing you into DNS…</p>
       <div id="setup" class="hidden">
         <p class="muted" style="margin:0 0 10px 0;">
-          First-time setup: enter your Technitium password to provision <code>` + escapedZone + `</code> zone access and create a long-lived API token for SSO.
-          You can choose to match your LDAP password, but Skyforge will not store it.
+          Setting up DNS SSO for <code>` + escapedZone + `</code>…
         </p>
-        <label for="pass">Technitium password</label>
-        <input id="pass" type="password" autocomplete="current-password" />
-        <div class="row">
-          <button id="submit" type="button">Enable DNS SSO</button>
-          <button id="skip" type="button" style="background:#475569;">Continue without SSO</button>
-        </div>
+        <button id="skip" type="button" style="background:#475569;">Continue without SSO</button>
         <div id="err" class="error hidden"></div>
       </div>
     </div>
@@ -479,36 +489,26 @@ func (s *Service) DNSSSO(w http.ResponseWriter, r *http.Request) {
           }
           document.getElementById("status").textContent = "DNS setup required";
           document.getElementById("setup").classList.remove("hidden");
-          const submit = document.getElementById("submit");
           const skip = document.getElementById("skip");
-          const pass = document.getElementById("pass");
           const err = document.getElementById("err");
           const showErr = (msg) => { err.textContent = msg; err.classList.remove("hidden"); };
           skip.addEventListener("click", () => window.location.replace("` + escapedNext + `"));
-          submit.addEventListener("click", async () => {
-            err.classList.add("hidden");
-            const password = String(pass.value || "").trim();
-            if (!password) { showErr("Password is required."); return; }
-            submit.disabled = true;
-            submit.textContent = "Working…";
-            try {
-              const r = await fetch("/api/skyforge/api/dns/bootstrap", {
-                method: "POST",
-                credentials: "include",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ password })
-              });
-              if (!r.ok) throw new Error(await r.text());
-              const out = await r.json();
-              if (!out || !out.token) throw new Error("Missing token.");
-              localStorage.setItem("token", String(out.token));
-              window.location.replace("` + escapedNext + `");
-            } catch (e) {
-              showErr(String(e && e.message ? e.message : e));
-              submit.disabled = false;
-              submit.textContent = "Enable DNS SSO";
-            }
-          });
+          try {
+            const r = await fetch("/api/skyforge/api/dns/bootstrap", {
+              method: "POST",
+              credentials: "include",
+              headers: { "content-type": "application/json" },
+              body: "{}"
+            });
+            if (!r.ok) throw new Error(await r.text());
+            const out = await r.json();
+            if (!out || !out.token) throw new Error("Missing token.");
+            localStorage.setItem("token", String(out.token));
+            window.location.replace("` + escapedNext + `");
+          } catch (e) {
+            showErr(String(e && e.message ? e.message : e));
+            document.getElementById("status").textContent = "DNS setup failed";
+          }
         } catch (e) {
           window.location.replace("` + escapedNext + `");
         }
