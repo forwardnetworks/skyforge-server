@@ -338,7 +338,10 @@ func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *wor
 		deviceUsername = defaultNetlabDeviceUsername
 		devicePassword = defaultNetlabDevicePassword
 	}
-	if cliCredentialID == "" && deviceUsername != "" && devicePassword != "" {
+	// For Netlab deployments, we prefer per-device credentials (created during sync based on the
+	// discovered device types) over a single default credential. Keep the legacy default credential
+	// behavior for other deployment types.
+	if cliCredentialID == "" && deviceUsername != "" && devicePassword != "" && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(dep.Type)), "netlab") {
 		cred, err := forwardCreateCliCredentialNamed(ctx, client, networkID, credentialName, deviceUsername, devicePassword)
 		if err != nil {
 			if strings.Contains(err.Error(), "No collector configured") {
@@ -529,7 +532,11 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *
 			"networkId": networkID,
 		})
 	}
-	credentialName := strings.TrimSpace(getString(forwardNetworkNameKey))
+	deploymentName := strings.TrimSpace(dep.Name)
+	credentialBase := deploymentName
+	if credentialBase == "" {
+		credentialBase = strings.TrimSpace(getString(forwardNetworkNameKey))
+	}
 	jumpServerID := getString(forwardJumpServerIDKey)
 	defaultCliCredentialID := getString(forwardCliCredentialIDKey)
 	snmpCredentialID := getString(forwardSnmpCredentialIDKey)
@@ -542,6 +549,43 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *
 				}
 			}
 		}
+	}
+
+	sanitizeCredentialComponent := func(value string) string {
+		value = strings.ToLower(strings.TrimSpace(value))
+		value = strings.Map(func(r rune) rune {
+			switch {
+			case r >= 'a' && r <= 'z':
+				return r
+			case r >= '0' && r <= '9':
+				return r
+			case r == '-' || r == '_' || r == '.':
+				return r
+			default:
+				return '-'
+			}
+		}, value)
+		value = strings.Trim(value, "-")
+		for strings.Contains(value, "--") {
+			value = strings.ReplaceAll(value, "--", "-")
+		}
+		if value == "" {
+			return "deployment"
+		}
+		return value
+	}
+	credentialNameForDevice := func(deviceKey string) string {
+		base := sanitizeCredentialComponent(credentialBase)
+		device := sanitizeCredentialComponent(deviceKey)
+		if device == "" {
+			device = "default"
+		}
+		name := fmt.Sprintf("%s-%s", base, device)
+		if len(name) > 80 {
+			name = name[:80]
+			name = strings.TrimRight(name, "-")
+		}
+		return name
 	}
 
 	devices := []forwardClassicDevice{}
@@ -566,15 +610,14 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *
 		if !ok && defaultCliCredentialID == "" {
 			continue
 		}
+
 		cliCredentialID := ""
 		if deviceKey != "" {
 			cliCredentialID = credentialIDsByDevice[deviceKey]
 		}
-		if cliCredentialID == "" {
-			cliCredentialID = defaultCliCredentialID
-		}
-		if cliCredentialID == "" && strings.TrimSpace(cred.Username) != "" {
-			created, err := forwardCreateCliCredentialNamed(ctx, client, networkID, credentialName, cred.Username, cred.Password)
+		// Prefer per-device credentials over the legacy default credential.
+		if cliCredentialID == "" && strings.TrimSpace(cred.Username) != "" && strings.TrimSpace(cred.Password) != "" {
+			created, err := forwardCreateCliCredentialNamed(ctx, client, networkID, credentialNameForDevice(deviceKey), cred.Username, cred.Password)
 			if err != nil {
 				if strings.Contains(err.Error(), "No collector configured") {
 					log.Printf("forward cli credential skipped: %v", err)
@@ -588,6 +631,9 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *
 					changed = true
 				}
 			}
+		}
+		if cliCredentialID == "" {
+			cliCredentialID = defaultCliCredentialID
 		}
 		devices = append(devices, forwardClassicDevice{
 			Name:                     name,
