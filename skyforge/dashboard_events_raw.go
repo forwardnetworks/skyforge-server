@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	redis "github.com/redis/go-redis/v9"
 )
 
 type dashboardSnapshot struct {
@@ -287,38 +289,61 @@ func DashboardEvents(w http.ResponseWriter, req *http.Request) {
 
 	lastPayload := ""
 	id := int64(0)
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
+
+	var sub *redis.PubSub
+	var updates <-chan *redis.Message
+	if redisClient != nil {
+		sub = redisClient.Subscribe(ctx, dashboardUpdateChannel())
+		defer func() { _ = sub.Close() }()
+		ctxSub, cancel := context.WithTimeout(ctx, 2*time.Second)
+		_, _ = sub.Receive(ctxSub)
+		cancel()
+		updates = sub.Channel()
+	}
 
 	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			snap, err := loadDashboardSnapshot(ctx, defaultService, claims)
-			if err != nil {
-				write(": retry\n\n")
-				flusher.Flush()
-				continue
-			}
+		snap, err := loadDashboardSnapshot(ctx, defaultService, claims)
+		if err != nil {
+			write(": retry\n\n")
+			flusher.Flush()
+		} else {
 			payloadBytes, _ := json.Marshal(snap)
 			payload := strings.TrimSpace(string(payloadBytes))
 			if payload == "" {
 				write(": retry\n\n")
 				flusher.Flush()
-				continue
+			} else if payload != lastPayload {
+				lastPayload = payload
+				id++
+				write("id: %d\n", id)
+				write("event: snapshot\n")
+				write("data: %s\n\n", payload)
+				flusher.Flush()
+			} else {
+				write(": ping\n\n")
+				flusher.Flush()
 			}
-			if payload == lastPayload {
+		}
+
+		// Block until a dashboard update arrives (or periodically send keep-alives).
+		if updates != nil {
+			select {
+			case <-ctx.Done():
+				return
+			case <-updates:
+				continue
+			case <-time.After(30 * time.Second):
 				write(": ping\n\n")
 				flusher.Flush()
 				continue
 			}
-			lastPayload = payload
-			id++
-			write("id: %d\n", id)
-			write("event: snapshot\n")
-			write("data: %s\n\n", payload)
-			flusher.Flush()
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(5 * time.Second):
+			continue
 		}
 	}
 }
