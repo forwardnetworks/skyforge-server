@@ -150,10 +150,10 @@ func normalizeDeploymentName(name string) (string, error) {
 func normalizeDeploymentType(raw string) (string, error) {
 	t := strings.ToLower(strings.TrimSpace(raw))
 	switch t {
-	case "terraform", "netlab", "labpp", "containerlab", "clabernetes":
+	case "terraform", "netlab", "netlab-c9s", "labpp", "containerlab", "clabernetes":
 		return t, nil
 	default:
-		return "", errs.B().Code(errs.InvalidArgument).Msg("deployment type must be terraform, netlab, labpp, containerlab, or clabernetes").Err()
+		return "", errs.B().Code(errs.InvalidArgument).Msg("deployment type must be terraform, netlab, netlab-c9s, labpp, containerlab, or clabernetes").Err()
 	}
 }
 
@@ -917,6 +917,60 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 			TemplatesDir:     strings.TrimSpace(templatesDir),
 			Template:         strings.TrimSpace(template),
 		})
+		if err != nil {
+			return nil, err
+		}
+	case "netlab-c9s":
+		netlabServer, _ := cfgAny["netlabServer"].(string)
+		templateSource, _ := cfgAny["templateSource"].(string)
+		templateRepo, _ := cfgAny["templateRepo"].(string)
+		templatesDir, _ := cfgAny["templatesDir"].(string)
+		template, _ := cfgAny["template"].(string)
+		labName, _ := cfgAny["labName"].(string)
+		k8sNamespace, _ := cfgAny["k8sNamespace"].(string)
+
+		netlabServer = strings.TrimSpace(netlabServer)
+		if netlabServer == "" {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
+		}
+		if strings.TrimSpace(template) == "" && op != "destroy" && op != "stop" {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab template is required").Err()
+		}
+		if (op == "start" || op == "stop") && !infraCreated {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab-c9s deployment must be created before start/stop").Err()
+		}
+		if strings.TrimSpace(labName) == "" {
+			labName = containerlabLabName(pc.workspace.Slug, dep.Name)
+			cfgAny["labName"] = labName
+		}
+		if strings.TrimSpace(k8sNamespace) == "" {
+			k8sNamespace = clabernetesWorkspaceNamespace(pc.workspace.Slug)
+			cfgAny["k8sNamespace"] = k8sNamespace
+		}
+		cfgAny["topologyName"] = clabernetesTopologyName(labName)
+
+		c9sAction := "deploy"
+		switch op {
+		case "create", "start":
+			c9sAction = "deploy"
+		case "stop", "destroy":
+			c9sAction = "destroy"
+		}
+
+		run, err = s.runNetlabC9sDeploymentAction(
+			ctx,
+			pc,
+			dep,
+			envJSON,
+			c9sAction,
+			netlabServer,
+			strings.TrimSpace(templateSource),
+			strings.TrimSpace(templateRepo),
+			strings.TrimSpace(templatesDir),
+			strings.TrimSpace(template),
+			strings.TrimSpace(labName),
+			strings.TrimSpace(k8sNamespace),
+		)
 		if err != nil {
 			return nil, err
 		}

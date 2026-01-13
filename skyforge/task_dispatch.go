@@ -80,6 +80,26 @@ type netlabTaskSpec struct {
 	Environment     map[string]string `json:"environment,omitempty"`
 }
 
+type netlabC9sTaskSpec struct {
+	Action          string            `json:"action,omitempty"` // deploy|destroy
+	Server          string            `json:"server,omitempty"`
+	Deployment      string            `json:"deployment,omitempty"`
+	DeploymentID    string            `json:"deploymentId,omitempty"`
+	WorkspaceRoot   string            `json:"workspaceRoot,omitempty"`
+	TemplateSource  string            `json:"templateSource,omitempty"`
+	TemplateRepo    string            `json:"templateRepo,omitempty"`
+	TemplatesDir    string            `json:"templatesDir,omitempty"`
+	Template        string            `json:"template,omitempty"`
+	WorkspaceDir    string            `json:"workspaceDir,omitempty"`
+	MultilabNumeric int               `json:"multilabNumeric,omitempty"`
+	TopologyPath    string            `json:"topologyPath,omitempty"`
+	ClabTarball     string            `json:"clabTarball,omitempty"`
+	K8sNamespace    string            `json:"k8sNamespace,omitempty"`
+	LabName         string            `json:"labName,omitempty"`
+	TopologyName    string            `json:"topologyName,omitempty"`
+	Environment     map[string]string `json:"environment,omitempty"`
+}
+
 func (s *Service) dispatchNetlabTask(ctx context.Context, task *TaskRecord, log *taskLogger) error {
 	var specIn netlabTaskSpec
 	if err := decodeTaskSpec(task, &specIn); err != nil {
@@ -135,6 +155,63 @@ func (s *Service) dispatchNetlabTask(ctx context.Context, task *TaskRecord, log 
 	}
 	return s.withTaskStep(ctx, task.ID, "netlab."+action, func() error {
 		return s.runNetlabTask(ctx, runSpec, log)
+	})
+}
+
+func (s *Service) dispatchNetlabC9sTask(ctx context.Context, task *TaskRecord, log *taskLogger) error {
+	var specIn netlabC9sTaskSpec
+	if err := decodeTaskSpec(task, &specIn); err != nil {
+		return err
+	}
+	pc, err := s.systemWorkspaceContext(ctx, task.WorkspaceID, task.CreatedBy)
+	if err != nil {
+		return err
+	}
+	serverName := strings.TrimSpace(specIn.Server)
+	if serverName == "" {
+		serverName = strings.TrimSpace(pc.workspace.NetlabServer)
+	}
+	if serverName == "" {
+		serverName = strings.TrimSpace(pc.workspace.EveServer)
+	}
+	server, _ := resolveNetlabServer(s.cfg, serverName)
+	if server == nil {
+		return fmt.Errorf("netlab runner is not configured")
+	}
+	if strings.TrimSpace(specIn.TemplateSource) == "" {
+		specIn.TemplateSource = "blueprints"
+	}
+
+	runSpec := netlabC9sRunSpec{
+		TaskID:          task.ID,
+		WorkspaceCtx:    pc,
+		WorkspaceSlug:   pc.workspace.Slug,
+		Username:        strings.TrimSpace(task.CreatedBy),
+		Environment:     specIn.Environment,
+		Action:          strings.TrimSpace(specIn.Action),
+		Deployment:      strings.TrimSpace(specIn.Deployment),
+		DeploymentID:    strings.TrimSpace(specIn.DeploymentID),
+		WorkspaceRoot:   strings.TrimSpace(specIn.WorkspaceRoot),
+		TemplateSource:  strings.TrimSpace(specIn.TemplateSource),
+		TemplateRepo:    strings.TrimSpace(specIn.TemplateRepo),
+		TemplatesDir:    strings.TrimSpace(specIn.TemplatesDir),
+		Template:        strings.TrimSpace(specIn.Template),
+		WorkspaceDir:    strings.TrimSpace(specIn.WorkspaceDir),
+		MultilabNumeric: specIn.MultilabNumeric,
+		StateRoot:       strings.TrimSpace(server.StateRoot),
+		Server:          *server,
+		TopologyPath:    strings.TrimSpace(specIn.TopologyPath),
+		ClabTarball:     strings.TrimSpace(specIn.ClabTarball),
+		K8sNamespace:    strings.TrimSpace(specIn.K8sNamespace),
+		LabName:         strings.TrimSpace(specIn.LabName),
+		TopologyName:    strings.TrimSpace(specIn.TopologyName),
+	}
+	action := strings.ToLower(strings.TrimSpace(runSpec.Action))
+	if action == "" {
+		action = "run"
+	}
+	return s.withTaskStep(ctx, task.ID, "netlab.c9s."+action, func() error {
+		return s.runNetlabC9sTask(ctx, runSpec, log)
 	})
 }
 
@@ -361,13 +438,14 @@ func (s *Service) dispatchContainerlabTask(ctx context.Context, task *TaskRecord
 }
 
 type clabernetesTaskSpec struct {
-	Action       string            `json:"action,omitempty"`
-	Namespace    string            `json:"namespace,omitempty"`
-	TopologyName string            `json:"topologyName,omitempty"`
-	LabName      string            `json:"labName,omitempty"`
-	Template     string            `json:"template,omitempty"`
-	TopologyYAML string            `json:"topologyYAML,omitempty"`
-	Environment  map[string]string `json:"environment,omitempty"`
+	Action             string                            `json:"action,omitempty"`
+	Namespace          string                            `json:"namespace,omitempty"`
+	TopologyName       string                            `json:"topologyName,omitempty"`
+	LabName            string                            `json:"labName,omitempty"`
+	Template           string                            `json:"template,omitempty"`
+	TopologyYAML       string                            `json:"topologyYAML,omitempty"`
+	Environment        map[string]string                 `json:"environment,omitempty"`
+	FilesFromConfigMap map[string][]c9sFileFromConfigMap `json:"filesFromConfigMap,omitempty"`
 }
 
 func (s *Service) dispatchClabernetesTask(ctx context.Context, task *TaskRecord, log *taskLogger) error {
@@ -376,14 +454,15 @@ func (s *Service) dispatchClabernetesTask(ctx context.Context, task *TaskRecord,
 		return err
 	}
 	runSpec := clabernetesRunSpec{
-		TaskID:       task.ID,
-		Action:       strings.TrimSpace(specIn.Action),
-		Namespace:    strings.TrimSpace(specIn.Namespace),
-		TopologyName: strings.TrimSpace(specIn.TopologyName),
-		LabName:      strings.TrimSpace(specIn.LabName),
-		Template:     strings.TrimSpace(specIn.Template),
-		TopologyYAML: strings.TrimSpace(specIn.TopologyYAML),
-		Environment:  specIn.Environment,
+		TaskID:             task.ID,
+		Action:             strings.TrimSpace(specIn.Action),
+		Namespace:          strings.TrimSpace(specIn.Namespace),
+		TopologyName:       strings.TrimSpace(specIn.TopologyName),
+		LabName:            strings.TrimSpace(specIn.LabName),
+		Template:           strings.TrimSpace(specIn.Template),
+		TopologyYAML:       strings.TrimSpace(specIn.TopologyYAML),
+		Environment:        specIn.Environment,
+		FilesFromConfigMap: specIn.FilesFromConfigMap,
 	}
 	action := strings.ToLower(strings.TrimSpace(runSpec.Action))
 	if action == "" {
@@ -501,6 +580,8 @@ func (s *Service) dispatchTask(ctx context.Context, task *TaskRecord, log *taskL
 	switch {
 	case typ == "netlab-run":
 		return s.dispatchNetlabTask(ctx, task, log)
+	case typ == "netlab-c9s-run":
+		return s.dispatchNetlabC9sTask(ctx, task, log)
 	case typ == "labpp-run":
 		return s.dispatchLabppTask(ctx, task, log)
 	case typ == "containerlab-run":

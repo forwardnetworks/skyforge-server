@@ -1,8 +1,10 @@
 package skyforge
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
@@ -26,6 +28,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-exec/tfexec"
+	"gopkg.in/yaml.v3"
 
 	secretreader "encore.app/internal/secrets"
 	"encore.app/storage"
@@ -400,6 +403,31 @@ type netlabRunSpec struct {
 	ClabCleanup     bool
 }
 
+type netlabC9sRunSpec struct {
+	TaskID          int
+	WorkspaceCtx    *workspaceContext
+	WorkspaceSlug   string
+	Username        string
+	Environment     map[string]string
+	Action          string // deploy|destroy
+	Deployment      string
+	DeploymentID    string
+	WorkspaceRoot   string
+	TemplateSource  string
+	TemplateRepo    string
+	TemplatesDir    string
+	Template        string
+	WorkspaceDir    string
+	MultilabNumeric int
+	StateRoot       string
+	Server          NetlabServerConfig
+	TopologyPath    string
+	ClabTarball     string
+	K8sNamespace    string
+	LabName         string
+	TopologyName    string
+}
+
 func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *taskLogger) error {
 	if spec.Template != "" {
 		log.Infof("Syncing netlab template %s", spec.Template)
@@ -536,7 +564,7 @@ func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *ta
 				return fmt.Errorf("netlab job %s", state)
 			}
 			if strings.EqualFold(spec.Action, "clab-tarball") {
-				if err := s.publishNetlabClabTarball(ctx, spec, log); err != nil {
+				if _, _, err := s.publishNetlabClabTarball(ctx, spec, log, true); err != nil {
 					return err
 				}
 			}
@@ -550,6 +578,370 @@ func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *ta
 
 		time.Sleep(2 * time.Second)
 	}
+}
+
+type netlabC9sTarball struct {
+	ClabYAML   []byte
+	NodeFiles  map[string]map[string][]byte // node -> relative path -> bytes
+	RawPaths   []string
+	TotalBytes int
+}
+
+func extractNetlabC9sTarball(data []byte) (*netlabC9sTarball, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("netlab tarball is empty")
+	}
+
+	rd := bytes.NewReader(data)
+	var tr *tar.Reader
+	if len(data) >= 2 && data[0] == 0x1f && data[1] == 0x8b {
+		gz, err := gzip.NewReader(rd)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read gzip tarball: %w", err)
+		}
+		defer gz.Close()
+		tr = tar.NewReader(gz)
+	} else {
+		tr = tar.NewReader(rd)
+	}
+
+	out := &netlabC9sTarball{
+		NodeFiles: map[string]map[string][]byte{},
+		RawPaths:  []string{},
+	}
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to read tarball: %w", err)
+		}
+		if hdr == nil || hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		name := strings.TrimPrefix(strings.TrimSpace(hdr.Name), "./")
+		if name == "" {
+			continue
+		}
+		out.RawPaths = append(out.RawPaths, name)
+
+		// Hard cap to avoid OOM on unexpected tarballs.
+		if hdr.Size > 8<<20 {
+			continue
+		}
+		payload, err := io.ReadAll(io.LimitReader(tr, 8<<20))
+		if err != nil {
+			return nil, fmt.Errorf("failed to read tar entry %s: %w", name, err)
+		}
+		out.TotalBytes += len(payload)
+
+		if out.ClabYAML == nil && path.Base(name) == "clab.yml" {
+			out.ClabYAML = payload
+			continue
+		}
+
+		idx := strings.Index(name, "node_files/")
+		if idx < 0 {
+			continue
+		}
+		rel := strings.TrimPrefix(name[idx+len("node_files/"):], "/")
+		parts := strings.SplitN(rel, "/", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		node := strings.TrimSpace(parts[0])
+		nodeRel := strings.TrimSpace(parts[1])
+		if node == "" || nodeRel == "" {
+			continue
+		}
+		m := out.NodeFiles[node]
+		if m == nil {
+			m = map[string][]byte{}
+			out.NodeFiles[node] = m
+		}
+		m[nodeRel] = payload
+	}
+
+	if len(out.ClabYAML) == 0 {
+		return nil, fmt.Errorf("netlab tarball missing clab.yml")
+	}
+	if len(out.NodeFiles) == 0 {
+		return nil, fmt.Errorf("netlab tarball missing node_files/")
+	}
+	return out, nil
+}
+
+func c9sConfigMapName(topologyName, node string) string {
+	base := strings.TrimSpace(fmt.Sprintf("c9s-%s-%s-files", topologyName, node))
+	return sanitizeKubeNameFallback(base, "c9s-files")
+}
+
+func (s *Service) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, log *taskLogger) error {
+	if spec.TaskID > 0 {
+		canceled, _ := s.taskCanceled(ctx, spec.TaskID)
+		if canceled {
+			return fmt.Errorf("netlab c9s job canceled")
+		}
+	}
+	if spec.WorkspaceCtx == nil {
+		return fmt.Errorf("workspace context unavailable")
+	}
+
+	action := strings.ToLower(strings.TrimSpace(spec.Action))
+	switch action {
+	case "", "deploy", "create", "start", "up":
+		action = "deploy"
+	case "destroy", "delete", "down", "stop":
+		action = "destroy"
+	default:
+		return fmt.Errorf("invalid netlab c9s action (use deploy or destroy)")
+	}
+
+	ns := strings.TrimSpace(spec.K8sNamespace)
+	if ns == "" {
+		ns = clabernetesWorkspaceNamespace(spec.WorkspaceCtx.workspace.Slug)
+	}
+	labName := strings.TrimSpace(spec.LabName)
+	if labName == "" {
+		labName = containerlabLabName(spec.WorkspaceCtx.workspace.Slug, spec.Deployment)
+	}
+	topologyName := strings.TrimSpace(spec.TopologyName)
+	if topologyName == "" {
+		topologyName = clabernetesTopologyName(labName)
+	}
+
+	if action == "destroy" {
+		clabSpec := clabernetesRunSpec{
+			TaskID:       spec.TaskID,
+			Action:       "destroy",
+			Namespace:    ns,
+			TopologyName: topologyName,
+			LabName:      labName,
+		}
+		if err := s.runClabernetesTask(ctx, clabSpec, log); err != nil {
+			return err
+		}
+		deleted, err := kubeDeleteConfigMapsByLabel(ctx, ns, map[string]string{
+			"skyforge-c9s-topology": topologyName,
+		})
+		if err != nil {
+			return err
+		}
+		if deleted > 0 {
+			log.Infof("C9s configmaps deleted: %d", deleted)
+		}
+		return nil
+	}
+
+	if strings.TrimSpace(spec.Template) == "" {
+		return fmt.Errorf("netlab template is required")
+	}
+
+	if err := kubeEnsureNamespace(ctx, ns); err != nil {
+		return err
+	}
+
+	// 1) Sync template directory onto the netlab runner (workdir root contains topology.yml).
+	topologyPath := strings.TrimSpace(spec.TopologyPath)
+	if topologyPath == "" {
+		log.Infof("Syncing netlab template %s", spec.Template)
+		p, err := s.syncNetlabTopologyFile(ctx, spec.WorkspaceCtx, &spec.Server, spec.TemplateSource, spec.TemplateRepo, spec.TemplatesDir, spec.Template, spec.WorkspaceDir, spec.Username)
+		if err != nil {
+			return err
+		}
+		topologyPath = p
+	}
+
+	// 2) Run netlab create to generate clab.yml + node_files.
+	netlabCreate := netlabRunSpec{
+		TaskID:          spec.TaskID,
+		WorkspaceCtx:    spec.WorkspaceCtx,
+		WorkspaceSlug:   spec.WorkspaceSlug,
+		Username:        spec.Username,
+		Environment:     spec.Environment,
+		Action:          "create",
+		Deployment:      spec.Deployment,
+		DeploymentID:    spec.DeploymentID,
+		WorkspaceRoot:   spec.WorkspaceRoot,
+		TemplateSource:  spec.TemplateSource,
+		TemplateRepo:    spec.TemplateRepo,
+		TemplatesDir:    spec.TemplatesDir,
+		WorkspaceDir:    spec.WorkspaceDir,
+		MultilabNumeric: spec.MultilabNumeric,
+		StateRoot:       spec.StateRoot,
+		Server:          spec.Server,
+		TopologyPath:    topologyPath,
+	}
+	if err := s.withTaskStep(ctx, spec.TaskID, "netlab.create", func() error {
+		return s.runNetlabTask(ctx, netlabCreate, log)
+	}); err != nil {
+		return err
+	}
+
+	// 3) Export the clab tarball from the runner.
+	tarballName := strings.TrimSpace(spec.ClabTarball)
+	if tarballName == "" {
+		tarballName = fmt.Sprintf("containerlab-%s.tar.gz", strings.TrimSpace(spec.Deployment))
+	}
+	netlabTar := netlabRunSpec{
+		TaskID:          spec.TaskID,
+		WorkspaceCtx:    spec.WorkspaceCtx,
+		WorkspaceSlug:   spec.WorkspaceSlug,
+		Username:        spec.Username,
+		Environment:     spec.Environment,
+		Action:          "clab-tarball",
+		Deployment:      spec.Deployment,
+		DeploymentID:    spec.DeploymentID,
+		WorkspaceRoot:   spec.WorkspaceRoot,
+		TemplateSource:  spec.TemplateSource,
+		TemplateRepo:    spec.TemplateRepo,
+		TemplatesDir:    spec.TemplatesDir,
+		WorkspaceDir:    spec.WorkspaceDir,
+		MultilabNumeric: spec.MultilabNumeric,
+		StateRoot:       spec.StateRoot,
+		Server:          spec.Server,
+		TopologyPath:    topologyPath,
+		ClabTarball:     tarballName,
+	}
+	if err := s.withTaskStep(ctx, spec.TaskID, "netlab.clab-tarball", func() error {
+		return s.runNetlabTask(ctx, netlabTar, log)
+	}); err != nil {
+		return err
+	}
+
+	_, tarBytes, err := s.publishNetlabClabTarball(ctx, netlabTar, log, false)
+	if err != nil {
+		return err
+	}
+	tarball, err := extractNetlabC9sTarball(tarBytes)
+	if err != nil {
+		return err
+	}
+
+	// 4) Prepare containerlab topology for C9s. Set lab name and rewrite node_files binds to absolute paths.
+	var topo map[string]any
+	if err := yaml.Unmarshal(tarball.ClabYAML, &topo); err != nil {
+		return fmt.Errorf("failed to parse clab.yml: %w", err)
+	}
+	if topo == nil {
+		topo = map[string]any{}
+	}
+	topo["name"] = labName
+
+	mountRoot := path.Join("/tmp/skyforge-c9s", topologyName)
+	nodeMounts := map[string][]c9sFileFromConfigMap{}
+	for node, files := range tarball.NodeFiles {
+		if len(files) == 0 {
+			continue
+		}
+		total := 0
+		cmData := map[string]string{}
+		mounts := make([]c9sFileFromConfigMap, 0, len(files))
+		for rel, payload := range files {
+			rel = strings.TrimSpace(rel)
+			if rel == "" || len(payload) == 0 {
+				continue
+			}
+			total += len(payload)
+			key := strings.NewReplacer("/", "__", ":", "_", "\\", "_").Replace(rel)
+			if key == "" {
+				continue
+			}
+			if _, exists := cmData[key]; exists {
+				continue
+			}
+			cmData[key] = string(payload)
+			mountPath := path.Join(mountRoot, "node_files", node, rel)
+			mounts = append(mounts, c9sFileFromConfigMap{
+				ConfigMapName: c9sConfigMapName(topologyName, node),
+				ConfigMapPath: key,
+				FilePath:      mountPath,
+				Mode:          "read",
+			})
+		}
+		if total > 900<<10 {
+			return fmt.Errorf("node_files for %s too large for a ConfigMap (%d bytes)", node, total)
+		}
+		if len(cmData) == 0 || len(mounts) == 0 {
+			continue
+		}
+		if err := kubeUpsertConfigMap(ctx, ns, c9sConfigMapName(topologyName, node), cmData, map[string]string{
+			"skyforge-c9s-topology": topologyName,
+			"skyforge-c9s-node":     node,
+		}); err != nil {
+			return err
+		}
+		nodeMounts[node] = mounts
+	}
+
+	// Rewrite bind sources to the mounted file paths (only for node_files paths).
+	if topology, ok := topo["topology"].(map[string]any); ok {
+		if nodes, ok := topology["nodes"].(map[string]any); ok {
+			for node, nodeAny := range nodes {
+				nodeName := strings.TrimSpace(fmt.Sprintf("%v", node))
+				cfg, ok := nodeAny.(map[string]any)
+				if !ok || cfg == nil {
+					continue
+				}
+				bindsAny, ok := cfg["binds"]
+				if !ok {
+					continue
+				}
+				rawBinds, ok := bindsAny.([]any)
+				if !ok || len(rawBinds) == 0 {
+					continue
+				}
+				out := make([]any, 0, len(rawBinds))
+				for _, bindAny := range rawBinds {
+					bind := strings.TrimSpace(fmt.Sprintf("%v", bindAny))
+					if bind == "" {
+						continue
+					}
+					parts := strings.SplitN(bind, ":", 2)
+					if len(parts) != 2 {
+						out = append(out, bind)
+						continue
+					}
+					hostPath := strings.TrimSpace(parts[0])
+					rest := parts[1]
+					hostPath = strings.TrimPrefix(hostPath, "./")
+					if strings.HasPrefix(hostPath, "node_files/") {
+						newHost := path.Join(mountRoot, hostPath)
+						out = append(out, newHost+":"+rest)
+						continue
+					}
+					if !strings.HasPrefix(hostPath, "/") && hostPath != "" {
+						s.appendTaskWarning(spec.TaskID, fmt.Sprintf("c9s: bind path %q for node %s is relative and not under node_files", hostPath, nodeName))
+					}
+					out = append(out, bind)
+				}
+				cfg["binds"] = out
+				nodes[node] = cfg
+			}
+			topology["nodes"] = nodes
+		}
+		topo["topology"] = topology
+	}
+
+	topologyBytes, err := yaml.Marshal(topo)
+	if err != nil {
+		return fmt.Errorf("failed to encode clab.yml: %w", err)
+	}
+
+	clabSpec := clabernetesRunSpec{
+		TaskID:             spec.TaskID,
+		Action:             "deploy",
+		Namespace:          ns,
+		TopologyName:       topologyName,
+		LabName:            labName,
+		TopologyYAML:       string(topologyBytes),
+		Environment:        spec.Environment,
+		FilesFromConfigMap: nodeMounts,
+	}
+	return s.withTaskStep(ctx, spec.TaskID, "c9s.deploy", func() error {
+		return s.runClabernetesTask(ctx, clabSpec, log)
+	})
 }
 
 func (s *Service) maybeSyncForwardNetlabAfterRun(ctx context.Context, spec netlabRunSpec, log *taskLogger, apiURL string) error {
@@ -668,13 +1060,13 @@ func isNetlabBenignFailure(action string, errText string, logs string) bool {
 	return false
 }
 
-func (s *Service) publishNetlabClabTarball(ctx context.Context, spec netlabRunSpec, log *taskLogger) error {
+func (s *Service) publishNetlabClabTarball(ctx context.Context, spec netlabRunSpec, log *taskLogger, store bool) (string, []byte, error) {
 	if spec.WorkspaceCtx == nil {
-		return fmt.Errorf("workspace context unavailable")
+		return "", nil, fmt.Errorf("workspace context unavailable")
 	}
 	tarball := strings.TrimSpace(spec.ClabTarball)
 	if tarball == "" {
-		return nil
+		return "", nil, nil
 	}
 	remotePath := tarball
 	if !strings.HasPrefix(remotePath, "/") {
@@ -689,13 +1081,13 @@ func (s *Service) publishNetlabClabTarball(ctx context.Context, spec netlabRunSp
 	}
 	client, err := dialSSH(sshCfg)
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 	defer client.Close()
 
 	out, err := runSSHCommand(client, fmt.Sprintf("base64 %q", remotePath), 2*time.Minute)
 	if err != nil {
-		return fmt.Errorf("failed to read clab tarball: %w", err)
+		return "", nil, fmt.Errorf("failed to read clab tarball: %w", err)
 	}
 	compact := strings.Map(func(r rune) rune {
 		switch r {
@@ -707,16 +1099,18 @@ func (s *Service) publishNetlabClabTarball(ctx context.Context, spec netlabRunSp
 	}, out)
 	payload, err := base64.StdEncoding.DecodeString(compact)
 	if err != nil {
-		return fmt.Errorf("failed to decode clab tarball: %w", err)
+		return "", nil, fmt.Errorf("failed to decode clab tarball: %w", err)
 	}
 
 	key := path.Join("netlab", spec.Deployment, path.Base(remotePath))
-	objectName := artifactObjectName(spec.WorkspaceCtx.workspace.ID, key)
-	if err := storage.Write(ctx, &storage.WriteRequest{ObjectName: objectName, Data: payload}); err != nil {
-		return fmt.Errorf("failed to upload clab tarball: %w", err)
+	if store {
+		objectName := artifactObjectName(spec.WorkspaceCtx.workspace.ID, key)
+		if err := storage.Write(ctx, &storage.WriteRequest{ObjectName: objectName, Data: payload}); err != nil {
+			return "", nil, fmt.Errorf("failed to upload clab tarball: %w", err)
+		}
+		log.Infof("SKYFORGE_ARTIFACT clab_tarball=%s", key)
 	}
-	log.Infof("SKYFORGE_ARTIFACT clab_tarball=%s", key)
-	return nil
+	return key, payload, nil
 }
 
 type labppRunSpec struct {
@@ -1334,14 +1728,22 @@ func (s *Service) runContainerlabTask(ctx context.Context, spec containerlabRunS
 }
 
 type clabernetesRunSpec struct {
-	TaskID       int
-	Action       string
-	Namespace    string
-	TopologyName string
-	LabName      string
-	Template     string
-	TopologyYAML string
-	Environment  map[string]string
+	TaskID             int
+	Action             string
+	Namespace          string
+	TopologyName       string
+	LabName            string
+	Template           string
+	TopologyYAML       string
+	Environment        map[string]string
+	FilesFromConfigMap map[string][]c9sFileFromConfigMap
+}
+
+type c9sFileFromConfigMap struct {
+	ConfigMapName string `json:"configMapName,omitempty"`
+	ConfigMapPath string `json:"configMapPath,omitempty"`
+	FilePath      string `json:"filePath,omitempty"`
+	Mode          string `json:"mode,omitempty"` // read|execute
 }
 
 func (s *Service) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec, log *taskLogger) error {
@@ -1369,6 +1771,9 @@ func (s *Service) runClabernetesTask(ctx context.Context, spec clabernetesRunSpe
 		if _, err := kubeDeleteClabernetesTopology(ctx, ns, name); err != nil {
 			return err
 		}
+		if len(spec.FilesFromConfigMap) > 0 {
+			log.Infof("Clabernetes file mounts: nodes=%d", len(spec.FilesFromConfigMap))
+		}
 		payload := map[string]any{
 			"apiVersion": "clabernetes.containerlab.dev/v1alpha1",
 			"kind":       "Topology",
@@ -1384,6 +1789,41 @@ func (s *Service) runClabernetesTask(ctx context.Context, spec clabernetesRunSpe
 					"containerlab": spec.TopologyYAML,
 				},
 			},
+		}
+		if len(spec.FilesFromConfigMap) > 0 {
+			files := map[string]any{}
+			for node, entries := range spec.FilesFromConfigMap {
+				node = strings.TrimSpace(node)
+				if node == "" || len(entries) == 0 {
+					continue
+				}
+				out := make([]any, 0, len(entries))
+				for _, entry := range entries {
+					if strings.TrimSpace(entry.ConfigMapName) == "" || strings.TrimSpace(entry.FilePath) == "" {
+						continue
+					}
+					item := map[string]any{
+						"configMapName": strings.TrimSpace(entry.ConfigMapName),
+						"filePath":      strings.TrimSpace(entry.FilePath),
+					}
+					if strings.TrimSpace(entry.ConfigMapPath) != "" {
+						item["configMapPath"] = strings.TrimSpace(entry.ConfigMapPath)
+					}
+					if strings.TrimSpace(entry.Mode) != "" {
+						item["mode"] = strings.TrimSpace(entry.Mode)
+					}
+					out = append(out, item)
+				}
+				if len(out) > 0 {
+					files[node] = out
+				}
+			}
+			if len(files) > 0 {
+				specAny := payload["spec"].(map[string]any)
+				specAny["deployment"] = map[string]any{
+					"filesFromConfigMap": files,
+				}
+			}
 		}
 		if err := kubeCreateClabernetesTopology(ctx, ns, payload); err != nil {
 			return err
