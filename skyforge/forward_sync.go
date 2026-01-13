@@ -592,19 +592,7 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *
 	seen := map[string]bool{}
 	changed := false
 	for _, row := range parseNetlabStatusOutput(logText) {
-		mgmt := strings.TrimSpace(row.MgmtIPv4)
-		if mgmt == "" || mgmt == "—" {
-			continue
-		}
-		key := strings.ToLower(mgmt)
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
 		name := strings.TrimSpace(row.Node)
-		if name == "" {
-			name = mgmt
-		}
 		deviceKey := strings.ToLower(strings.TrimSpace(row.Device))
 		cred, ok := netlabCredentialForDevice(row.Device, row.Image)
 		if !ok && defaultCliCredentialID == "" {
@@ -634,6 +622,22 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *
 		}
 		if cliCredentialID == "" {
 			cliCredentialID = defaultCliCredentialID
+		}
+
+		// Create-only runs can produce device type/image data without management IPs yet.
+		// Still create (and persist) the per-device credentials so the subsequent `up`
+		// can reuse them without needing a default credential.
+		mgmt := strings.TrimSpace(row.MgmtIPv4)
+		if mgmt == "" || mgmt == "—" {
+			continue
+		}
+		key := strings.ToLower(mgmt)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		if name == "" {
+			name = mgmt
 		}
 		devices = append(devices, forwardClassicDevice{
 			Name:                     name,

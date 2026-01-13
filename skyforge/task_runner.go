@@ -568,7 +568,10 @@ func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *ta
 					return err
 				}
 			}
-			if strings.EqualFold(spec.Action, "up") || strings.EqualFold(spec.Action, "restart") {
+			if strings.EqualFold(spec.Action, "up") || strings.EqualFold(spec.Action, "restart") || strings.EqualFold(spec.Action, "create") {
+				// For deployment-backed runs, ensure Forward credentials/devices are synced as soon as we have
+				// a usable netlab status output. `create` runs can establish the per-device credential mapping
+				// even before the nodes come up.
 				if err := s.maybeSyncForwardNetlabAfterRun(ctx, spec, log, apiURL); err != nil {
 					log.Infof("forward netlab sync skipped: %v", err)
 				}
