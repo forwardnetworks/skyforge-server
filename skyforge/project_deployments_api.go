@@ -1287,7 +1287,7 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 			go func() {
 				ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 				defer cancel()
-				if err := s.syncForwardNetlabDevices(ctx, pc, dep, resp.Log); err != nil {
+				if err := s.syncForwardNetlabDevices(ctx, 0, pc, dep, resp.Log); err != nil {
 					log.Printf("forward netlab sync: %v", err)
 				}
 			}()
@@ -1509,7 +1509,7 @@ func (s *Service) SyncWorkspaceDeploymentForward(ctx context.Context, id, deploy
 
 	syncCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	if err := s.syncForwardLabppDevicesFromCSV(syncCtx, pc, dep.ID, csvPath, true, nil); err != nil {
+	if err := s.syncForwardLabppDevicesFromCSV(syncCtx, 0, pc, dep.ID, csvPath, true, nil); err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg(err.Error()).Err()
 	}
 	return &WorkspaceDeploymentActionResponse{

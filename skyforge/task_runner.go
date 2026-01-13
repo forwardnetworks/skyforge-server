@@ -578,7 +578,7 @@ func (s *Service) maybeSyncForwardNetlabAfterRun(ctx context.Context, spec netla
 		return fmt.Errorf("netlab status log unavailable")
 	}
 
-	if err := s.syncForwardNetlabDevices(ctxReq, spec.WorkspaceCtx, dep, statusLog); err != nil {
+	if err := s.syncForwardNetlabDevices(ctxReq, spec.TaskID, spec.WorkspaceCtx, dep, statusLog); err != nil {
 		return err
 	}
 	log.Infof("Forward netlab sync completed.")
@@ -883,7 +883,7 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 			dataSourcesPath = csvPath
 			forwardOverride := forwardOverridesFromEnv(spec.Environment)
 			startCollection := action == ""
-			if err := s.syncForwardLabppDevicesFromCSV(ctx, spec.WorkspaceCtx, spec.DeploymentID, csvPath, startCollection, forwardOverride); err != nil {
+			if err := s.syncForwardLabppDevicesFromCSV(ctx, spec.TaskID, spec.WorkspaceCtx, spec.DeploymentID, csvPath, startCollection, forwardOverride); err != nil {
 				stdlog.Printf("forward labpp sync: %v", err)
 			}
 		}

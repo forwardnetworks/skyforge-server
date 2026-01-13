@@ -487,7 +487,7 @@ func isForwardJumpServerMissing(err error) bool {
 	return strings.Contains(msg, "jump server") && strings.Contains(msg, "not found")
 }
 
-func (s *Service) syncForwardNetlabDevices(ctx context.Context, pc *workspaceContext, dep *WorkspaceDeployment, logText string) error {
+func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *workspaceContext, dep *WorkspaceDeployment, logText string) error {
 	cfgAny, _ := fromJSONMap(dep.Config)
 	if cfgAny == nil {
 		cfgAny = map[string]any{}
@@ -520,6 +520,12 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, pc *workspaceCon
 	networkID := getString(forwardNetworkIDKey)
 	if networkID == "" {
 		return nil
+	}
+	if s != nil && s.db != nil && taskID > 0 {
+		_ = appendTaskEvent(context.Background(), s.db, taskID, "forward.devices.upload.started", map[string]any{
+			"source":    "netlab",
+			"networkId": networkID,
+		})
 	}
 	credentialName := strings.TrimSpace(getString(forwardNetworkNameKey))
 	jumpServerID := getString(forwardJumpServerIDKey)
@@ -615,6 +621,13 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, pc *workspaceCon
 			}
 			changed = true
 		} else {
+			if s != nil && s.db != nil && taskID > 0 {
+				_ = appendTaskEvent(context.Background(), s.db, taskID, "forward.devices.upload.failed", map[string]any{
+					"source":    "netlab",
+					"networkId": networkID,
+					"error":     strings.TrimSpace(err.Error()),
+				})
+			}
 			return err
 		}
 	}
@@ -628,6 +641,13 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, pc *workspaceCon
 			break
 		}
 		break
+	}
+	if s != nil && s.db != nil && taskID > 0 {
+		_ = appendTaskEvent(context.Background(), s.db, taskID, "forward.devices.upload.succeeded", map[string]any{
+			"source":      "netlab",
+			"networkId":   networkID,
+			"deviceCount": len(devices),
+		})
 	}
 	if changed {
 		cfgAny[forwardCliCredentialMap] = credentialIDsByDevice
@@ -774,7 +794,7 @@ func firstNonEmptyTrimmed(values ...string) string {
 	return ""
 }
 
-func (s *Service) syncForwardLabppDevicesFromCSV(ctx context.Context, pc *workspaceContext, deploymentID, csvPath string, startCollection bool, override *forwardCredentials) error {
+func (s *Service) syncForwardLabppDevicesFromCSV(ctx context.Context, taskID int, pc *workspaceContext, deploymentID, csvPath string, startCollection bool, override *forwardCredentials) error {
 	if pc == nil {
 		return fmt.Errorf("workspace context unavailable")
 	}
@@ -814,7 +834,7 @@ func (s *Service) syncForwardLabppDevicesFromCSV(ctx context.Context, pc *worksp
 	}
 	deviceUsername := strings.TrimSpace(forwardCfg.DeviceUsername)
 	devicePassword := strings.TrimSpace(forwardCfg.DevicePassword)
-	return s.syncForwardLabppDevicesWithList(ctx, pc, dep, cfgAny, client, deviceUsername, devicePassword, devices, startCollection)
+	return s.syncForwardLabppDevicesWithList(ctx, taskID, pc, dep, cfgAny, client, deviceUsername, devicePassword, devices, startCollection)
 }
 
 func applyForwardOverrides(base *forwardCredentials, override *forwardCredentials) *forwardCredentials {
@@ -845,7 +865,7 @@ func applyForwardOverrides(base *forwardCredentials, override *forwardCredential
 	return base
 }
 
-func (s *Service) syncForwardLabppDevicesWithList(ctx context.Context, pc *workspaceContext, dep *WorkspaceDeployment, cfgAny map[string]any, client *forwardClient, deviceUsername, devicePassword string, devicesResp []labppDeviceInfo, startCollection bool) error {
+func (s *Service) syncForwardLabppDevicesWithList(ctx context.Context, taskID int, pc *workspaceContext, dep *WorkspaceDeployment, cfgAny map[string]any, client *forwardClient, deviceUsername, devicePassword string, devicesResp []labppDeviceInfo, startCollection bool) error {
 	if pc == nil || dep == nil {
 		return fmt.Errorf("workspace context unavailable")
 	}
@@ -868,6 +888,12 @@ func (s *Service) syncForwardLabppDevicesWithList(ctx context.Context, pc *works
 	networkID := getString(forwardNetworkIDKey)
 	if networkID == "" {
 		return fmt.Errorf("forward network missing for deployment")
+	}
+	if s != nil && s.db != nil && taskID > 0 {
+		_ = appendTaskEvent(context.Background(), s.db, taskID, "forward.devices.upload.started", map[string]any{
+			"source":    "labpp",
+			"networkId": networkID,
+		})
 	}
 	credentialName := strings.TrimSpace(getString(forwardNetworkNameKey))
 	jumpServerID := getString(forwardJumpServerIDKey)
@@ -959,6 +985,13 @@ func (s *Service) syncForwardLabppDevicesWithList(ctx context.Context, pc *works
 				return retryErr
 			}
 		} else {
+			if s != nil && s.db != nil && taskID > 0 {
+				_ = appendTaskEvent(context.Background(), s.db, taskID, "forward.devices.upload.failed", map[string]any{
+					"source":    "labpp",
+					"networkId": networkID,
+					"error":     strings.TrimSpace(err.Error()),
+				})
+			}
 			return err
 		}
 	}
@@ -966,6 +999,13 @@ func (s *Service) syncForwardLabppDevicesWithList(ctx context.Context, pc *works
 		if err := forwardStartCollection(ctx, client, networkID); err != nil {
 			log.Printf("forward start collection: %v", err)
 		}
+	}
+	if s != nil && s.db != nil && taskID > 0 {
+		_ = appendTaskEvent(context.Background(), s.db, taskID, "forward.devices.upload.succeeded", map[string]any{
+			"source":      "labpp",
+			"networkId":   networkID,
+			"deviceCount": len(devices),
+		})
 	}
 	cfgAny[forwardCliCredentialMap] = credentialIDsByDevice
 	if err := s.updateDeploymentConfig(ctx, pc.workspace.ID, dep.ID, cfgAny); err != nil {
