@@ -1,5 +1,3 @@
-//go:build skyforge_worker
-
 package skyforge
 
 import (
@@ -10,7 +8,7 @@ import (
 	"encore.dev/pubsub"
 )
 
-var _ = pubsub.NewSubscription(taskqueue.Topic, "skyforge-task-worker", pubsub.SubscriptionConfig[*taskqueue.TaskEnqueuedEvent]{
+var taskQueueSubscription = pubsub.NewSubscription(taskqueue.Topic, "skyforge-task-worker", pubsub.SubscriptionConfig[*taskqueue.TaskEnqueuedEvent]{
 	Handler:        pubsub.MethodHandler((*Service).handleTaskEnqueued),
 	MaxConcurrency: 8,
 	// Tasks can be long-running (netlab/terraform). Keep ack generous.
@@ -23,3 +21,4 @@ func (s *Service) handleTaskEnqueued(ctx context.Context, msg *taskqueue.TaskEnq
 	}
 	return s.processQueuedTask(ctx, msg.TaskID)
 }
+
