@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	redis "github.com/redis/go-redis/v9"
 )
 
 // TaskLifecycleEvents streams structured task lifecycle events as Server-Sent Events (SSE).
@@ -86,14 +88,22 @@ func TaskLifecycleEvents(w http.ResponseWriter, req *http.Request) {
 	write(": ok\n\n")
 	flusher.Flush()
 
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
+	var sub *redis.PubSub
+	var updates <-chan *redis.Message
+	if redisClient != nil {
+		sub = redisClient.Subscribe(ctx, taskUpdateChannel(taskID))
+		defer func() { _ = sub.Close() }()
+		ctxSub, cancel := context.WithTimeout(ctx, 2*time.Second)
+		_, _ = sub.Receive(ctxSub)
+		cancel()
+		updates = sub.Channel()
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		default:
 			ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
 			rows, err := listTaskEventsAfter(ctxReq, defaultService.db, taskID, lastID, 500)
 			cancel()
@@ -103,6 +113,19 @@ func TaskLifecycleEvents(w http.ResponseWriter, req *http.Request) {
 				continue
 			}
 			if len(rows) == 0 {
+				if updates != nil {
+					select {
+					case <-ctx.Done():
+						return
+					case <-updates:
+						continue
+					case <-time.After(30 * time.Second):
+						write(": ping\n\n")
+						flusher.Flush()
+						continue
+					}
+				}
+				time.Sleep(2 * time.Second)
 				write(": ping\n\n")
 				flusher.Flush()
 				continue

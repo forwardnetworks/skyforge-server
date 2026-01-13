@@ -348,6 +348,9 @@ func appendTaskLog(ctx context.Context, db *sql.DB, taskID int, stream string, o
 		stream = "stdout"
 	}
 	_, err := db.ExecContext(ctx, `INSERT INTO sf_task_logs (task_id, stream, output) VALUES ($1,$2,$3)`, taskID, stream, output)
+	if err == nil {
+		publishTaskUpdate(taskID)
+	}
 	return err
 }
 
@@ -367,6 +370,9 @@ func appendTaskEvent(ctx context.Context, db *sql.DB, taskID int, eventType stri
 		return err
 	}
 	_, err = db.ExecContext(ctx, `INSERT INTO sf_task_events (task_id, event_type, payload) VALUES ($1,$2,$3)`, taskID, eventType, payloadBytes)
+	if err == nil {
+		publishTaskUpdate(taskID)
+	}
 	return err
 }
 

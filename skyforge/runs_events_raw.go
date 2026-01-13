@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	redis "github.com/redis/go-redis/v9"
 )
 
 // RunEvents streams task output as Server-Sent Events (SSE).
@@ -89,14 +91,23 @@ func RunEvents(w http.ResponseWriter, req *http.Request) {
 	write(": ok\n\n")
 	flusher.Flush()
 
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
+	var sub *redis.PubSub
+	var updates <-chan *redis.Message
+	if redisClient != nil {
+		sub = redisClient.Subscribe(ctx, taskUpdateChannel(taskID))
+		defer func() { _ = sub.Close() }()
+		// Best-effort: wait for subscription to be active.
+		ctxSub, cancel := context.WithTimeout(ctx, 2*time.Second)
+		_, _ = sub.Receive(ctxSub)
+		cancel()
+		updates = sub.Channel()
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		default:
 			// If canceled, stop streaming.
 			ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
 			rows, err := listTaskLogsAfter(ctxReq, defaultService.db, taskID, lastID, 500)
@@ -107,6 +118,20 @@ func RunEvents(w http.ResponseWriter, req *http.Request) {
 				continue
 			}
 			if len(rows) == 0 {
+				// Block until we see an update (or periodically emit keep-alives).
+				if updates != nil {
+					select {
+					case <-ctx.Done():
+						return
+					case <-updates:
+						continue
+					case <-time.After(30 * time.Second):
+						write(": ping\n\n")
+						flusher.Flush()
+						continue
+					}
+				}
+				time.Sleep(2 * time.Second)
 				write(": ping\n\n")
 				flusher.Flush()
 				continue
