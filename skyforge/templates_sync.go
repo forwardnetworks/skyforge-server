@@ -161,26 +161,40 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 	}
 	defer client.Close()
 
-	destRoot := path.Join(workdir, "netlab")
+	// For better operator ergonomics, copy the selected template directory contents into the
+	// workdir root. This ensures users can `cd <workdir> && netlab up` without having to pass
+	// a topology path or deal with nested `netlab/<template>` directories.
+	destRoot := strings.TrimRight(strings.TrimSpace(workdir), "/")
+	if destRoot == "" {
+		return "", fmt.Errorf("workdir is required")
+	}
 	if _, err := runSSHCommand(client, fmt.Sprintf("install -d -m 0755 %q", destRoot), 10*time.Second); err != nil {
 		return "", err
 	}
+	// Remove the legacy nested sync directory to avoid confusing mixes of old + new layouts.
+	_, _ = runSSHCommand(client, fmt.Sprintf("rm -rf %q >/dev/null 2>&1 || true", path.Join(destRoot, "netlab")), 30*time.Second)
 
-	// Preserve the full directory layout under the netlab root, but avoid syncing more than needed.
-	// Syncing the entire netlab templates tree can take 30–60s due to per-file API calls + SSH round-trips.
-	// In practice we only need the directory containing the selected topology file (and its children).
-	syncStartPath := rootPath
 	templatePath := strings.TrimPrefix(path.Join(templatesDir, templateFile), "/")
-	if templatePath != "" {
-		if dir := strings.Trim(strings.TrimSpace(path.Dir(templatePath)), "/"); dir != "" && dir != "." {
-			// Only narrow the sync start path if it's still within the computed rootPath.
-			if strings.HasPrefix(dir+"/", strings.Trim(rootPath, "/")+"/") || dir == strings.Trim(rootPath, "/") {
-				syncStartPath = dir
-			}
-		}
+	if templatePath == "" {
+		return "", fmt.Errorf("template path is required")
+	}
+	// Copy only the directory containing the selected topology file (and its children).
+	// Example: templatesDir=netlab templateFile=EVPN/ebgp/topology.yml => templateDir=netlab/EVPN/ebgp
+	templateDir := strings.Trim(strings.TrimSpace(path.Dir(templatePath)), "/")
+	if templateDir == "" || templateDir == "." {
+		templateDir = strings.Trim(strings.TrimSpace(rootPath), "/")
+	}
+	// We strip the template directory prefix so its contents land in the workdir root.
+	stripPrefix := strings.Trim(strings.TrimSpace(templateDir), "/")
+	syncStartPath := stripPrefix
+
+	// The resulting topology file lives at the workdir root.
+	topologyPath = path.Base(templateFile)
+	if topologyPath == "" {
+		topologyPath = "topology.yml"
 	}
 
-	lockKey := strings.Join([]string{workdir, ref.Owner, ref.Repo, ref.Branch, rootPath}, "|")
+	lockKey := strings.Join([]string{workdir, ref.Owner, ref.Repo, ref.Branch, stripPrefix}, "|")
 	if err := withNetlabSyncLock(lockKey, func() error {
 		// If the repo hasn't changed since last sync, avoid re-copying the entire netlab directory.
 		// This makes consecutive create→start runs fast and also prevents redundant syncs when
@@ -200,7 +214,7 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 				"repo=" + ref.Owner + "/" + ref.Repo,
 				"branch=" + ref.Branch,
 				"sha=" + sha,
-				"root=" + rootPath,
+				"root=" + stripPrefix,
 			}, "\n"))
 			existsOut, _ := runSSHCommand(client, fmt.Sprintf("test -f %q && echo ok || true", required), 5*time.Second)
 			if strings.TrimSpace(existsOut) == "ok" && current == expected {
@@ -223,7 +237,7 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 					continue
 				}
 				entryPath := strings.TrimPrefix(strings.TrimSpace(entry.Path), "/")
-				rel := strings.TrimPrefix(entryPath, rootPath)
+				rel := strings.TrimPrefix(entryPath, stripPrefix)
 				rel = strings.TrimPrefix(rel, "/")
 				dest := path.Join(destRoot, rel)
 				switch entry.Type {
@@ -274,8 +288,12 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 					if err == nil && resp != nil {
 						defer resp.Body.Close()
 						if resp.StatusCode == http.StatusOK {
-							stripComponents := 1 + strings.Count(strings.Trim(rootPath, "/"), "/") + 1
-							pattern := fmt.Sprintf("*/%s/*", strings.Trim(syncStartPath, "/"))
+							trimmed := strings.Trim(syncStartPath, "/")
+							stripComponents := 1
+							if trimmed != "" {
+								stripComponents += strings.Count(trimmed, "/") + 1
+							}
+							pattern := fmt.Sprintf("*/%s/*", trimmed)
 							cmd := fmt.Sprintf("tar -xzf - -C %q --strip-components=%d --wildcards %q", destRoot, stripComponents, pattern)
 							if _, err := runSSHCommandWithReader(client, cmd, resp.Body, 4*time.Minute); err == nil {
 								syncedViaArchive = true
@@ -294,18 +312,16 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 			}
 		}
 
-		templatePath := strings.TrimPrefix(path.Join(templatesDir, templateFile), "/")
-		if templatePath != "" {
-			if _, err := readGiteaFileBytes(s.cfg, ref.Owner, ref.Repo, templatePath, ref.Branch); err != nil {
-				return fmt.Errorf("failed to read template %s: %w", templatePath, err)
-			}
+		// Validate that the selected topology exists in the source repo and should now exist in the workdir root.
+		if _, err := readGiteaFileBytes(s.cfg, ref.Owner, ref.Repo, strings.TrimPrefix(path.Join(templatesDir, templateFile), "/"), ref.Branch); err != nil {
+			return fmt.Errorf("failed to read template %s: %w", strings.TrimPrefix(path.Join(templatesDir, templateFile), "/"), err)
 		}
 		if sha != "" {
 			expected := strings.TrimSpace(strings.Join([]string{
 				"repo=" + ref.Owner + "/" + ref.Repo,
 				"branch=" + ref.Branch,
 				"sha=" + sha,
-				"root=" + rootPath,
+				"root=" + stripPrefix,
 			}, "\n"))
 			// Use a heredoc to avoid complex quoting/escaping.
 			writeCmd := fmt.Sprintf("cat > %q <<'__SKYFORGE__'\n%s\n__SKYFORGE__\n", stampPath, expected)
