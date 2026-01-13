@@ -22,6 +22,44 @@ func decodeTaskSpec[T any](task *TaskRecord, out *T) error {
 	return nil
 }
 
+func (s *Service) withTaskStep(ctx context.Context, taskID int, stepKey string, fn func() error) error {
+	if s == nil || s.db == nil || taskID <= 0 {
+		if fn == nil {
+			return nil
+		}
+		return fn()
+	}
+	stepKey = strings.TrimSpace(stepKey)
+	if stepKey == "" {
+		stepKey = "step"
+	}
+	startedAt := time.Now()
+	_ = appendTaskEvent(context.Background(), s.db, taskID, "task.step.started", map[string]any{
+		"step": stepKey,
+	})
+	if fn == nil {
+		_ = appendTaskEvent(context.Background(), s.db, taskID, "task.step.succeeded", map[string]any{
+			"step":        stepKey,
+			"duration_ms": time.Since(startedAt).Milliseconds(),
+		})
+		return nil
+	}
+	err := fn()
+	if err != nil {
+		_ = appendTaskEvent(context.Background(), s.db, taskID, "task.step.failed", map[string]any{
+			"step":        stepKey,
+			"duration_ms": time.Since(startedAt).Milliseconds(),
+			"error":       strings.TrimSpace(err.Error()),
+		})
+		return err
+	}
+	_ = appendTaskEvent(context.Background(), s.db, taskID, "task.step.succeeded", map[string]any{
+		"step":        stepKey,
+		"duration_ms": time.Since(startedAt).Milliseconds(),
+	})
+	return nil
+}
+
 type netlabTaskSpec struct {
 	Action          string            `json:"action,omitempty"`
 	Server          string            `json:"server,omitempty"`
@@ -91,7 +129,13 @@ func (s *Service) dispatchNetlabTask(ctx context.Context, task *TaskRecord, log 
 		ClabConfigDir:   strings.TrimSpace(specIn.ClabConfigDir),
 		ClabCleanup:     specIn.ClabCleanup,
 	}
-	return s.runNetlabTask(ctx, runSpec, log)
+	action := strings.ToLower(strings.TrimSpace(runSpec.Action))
+	if action == "" {
+		action = "run"
+	}
+	return s.withTaskStep(ctx, task.ID, "netlab."+action, func() error {
+		return s.runNetlabTask(ctx, runSpec, log)
+	})
 }
 
 type labppTaskSpec struct {
@@ -165,20 +209,24 @@ func (s *Service) dispatchLabppTask(ctx context.Context, task *TaskRecord, log *
 		if source == "" {
 			source = "blueprints"
 		}
-		syncedRoot, err := s.syncLabppTemplateDir(
-			ctx,
-			pc,
-			eveServer,
-			source,
-			strings.TrimSpace(specIn.TemplateRepo),
-			strings.TrimSpace(specIn.TemplatesDir),
-			template,
-			strings.TrimSpace(specIn.TemplatesDestRoot),
-		)
-		if err != nil {
+		syncedRoot := ""
+		if err := s.withTaskStep(ctx, task.ID, "labpp.sync-template", func() error {
+			out, err := s.syncLabppTemplateDir(
+				ctx,
+				pc,
+				eveServer,
+				source,
+				strings.TrimSpace(specIn.TemplateRepo),
+				strings.TrimSpace(specIn.TemplatesDir),
+				template,
+				strings.TrimSpace(specIn.TemplatesDestRoot),
+			)
+			syncedRoot = strings.TrimSpace(out)
+			return err
+		}); err != nil {
 			return fmt.Errorf("failed to sync labpp template: %w", err)
 		}
-		templatesRoot = strings.TrimSpace(syncedRoot)
+		templatesRoot = syncedRoot
 	}
 
 	labPath := strings.TrimSpace(specIn.LabPath)
@@ -215,7 +263,13 @@ func (s *Service) dispatchLabppTask(ctx context.Context, task *TaskRecord, log *
 		MaxSeconds:    maxSeconds,
 		Metadata:      task.Metadata,
 	}
-	return s.runLabppTask(ctx, runSpec, log)
+	action := strings.ToLower(strings.TrimSpace(runSpec.Action))
+	if action == "" {
+		action = "run"
+	}
+	return s.withTaskStep(ctx, task.ID, "labpp."+action, func() error {
+		return s.runLabppTask(ctx, runSpec, log)
+	})
 }
 
 type containerlabTaskSpec struct {
@@ -289,7 +343,13 @@ func (s *Service) dispatchContainerlabTask(ctx context.Context, task *TaskRecord
 			return fmt.Errorf("failed to decode containerlab topology")
 		}
 	}
-	return s.runContainerlabTask(ctx, runSpec, log)
+	action := strings.ToLower(strings.TrimSpace(runSpec.Action))
+	if action == "" {
+		action = "run"
+	}
+	return s.withTaskStep(ctx, task.ID, "containerlab."+action, func() error {
+		return s.runContainerlabTask(ctx, runSpec, log)
+	})
 }
 
 type clabernetesTaskSpec struct {
@@ -317,7 +377,13 @@ func (s *Service) dispatchClabernetesTask(ctx context.Context, task *TaskRecord,
 		TopologyYAML: strings.TrimSpace(specIn.TopologyYAML),
 		Environment:  specIn.Environment,
 	}
-	return s.runClabernetesTask(ctx, runSpec, log)
+	action := strings.ToLower(strings.TrimSpace(runSpec.Action))
+	if action == "" {
+		action = "run"
+	}
+	return s.withTaskStep(ctx, task.ID, "clabernetes."+action, func() error {
+		return s.runClabernetesTask(ctx, runSpec, log)
+	})
 }
 
 type terraformTaskSpec struct {
@@ -407,7 +473,13 @@ func (s *Service) dispatchTerraformTask(ctx context.Context, task *TaskRecord, l
 		Template:       strings.TrimSpace(specIn.Template),
 		Environment:    env,
 	}
-	return s.runTerraformTask(ctx, runSpec, log)
+	action = strings.ToLower(strings.TrimSpace(runSpec.Action))
+	if action == "" {
+		action = "run"
+	}
+	return s.withTaskStep(ctx, task.ID, "terraform."+action, func() error {
+		return s.runTerraformTask(ctx, runSpec, log)
+	})
 }
 
 func (s *Service) dispatchTask(ctx context.Context, task *TaskRecord, log *taskLogger) error {
