@@ -41,10 +41,18 @@ func (s *Service) handleMaintenanceEvent(ctx context.Context, msg *maintenance.M
 			return reconcileRunningTasks(ctxReq, s)
 		})
 	case "queue_metrics":
-		return s.runWithAdvisoryLock(ctx, 74003, func(ctx context.Context) error {
-			ctxReq, cancel := context.WithTimeout(ctx, 10*time.Second)
-			defer cancel()
-			return s.updateTaskQueueMetrics(ctxReq)
+		// Deprecated: metrics refresh is now executed directly by InternalRefreshTaskQueueMetrics
+		// so metrics are updated in the skyforge-server process (which is typically scraped).
+		return nil
+	case "workspace_sync":
+		return s.runWithAdvisoryLock(ctx, 74004, func(ctx context.Context) error {
+			runWorkspaceSync(s.cfg, s.workspaceStore, s.db)
+			return nil
+		})
+	case "cloud_credential_checks":
+		return s.runWithAdvisoryLock(ctx, 74005, func(ctx context.Context) error {
+			runCloudCredentialChecks(s.cfg, s.workspaceStore, s.awsStore, s.db)
+			return nil
 		})
 	default:
 		rlog.Info("maintenance: ignoring unknown job kind", "kind", kind)

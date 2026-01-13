@@ -3505,33 +3505,7 @@ func initService() (*Service, error) {
 		userStore = fileUserStore
 	}
 
-	if cfg.WorkspaceSyncSeconds > 0 {
-		interval := time.Duration(cfg.WorkspaceSyncSeconds) * time.Second
-		go func() {
-			log.Printf("workspace sync enabled: every %s", interval)
-			runWorkspaceSync(cfg, workspaceStore, db)
-			ticker := time.NewTicker(interval)
-			defer ticker.Stop()
-			for range ticker.C {
-				runWorkspaceSync(cfg, workspaceStore, db)
-			}
-		}()
-	}
-	if cfg.NotificationsEnabled && cfg.CloudCredentialChecks > 0 {
-		interval := cfg.CloudCredentialChecks
-		if interval < 5*time.Minute {
-			interval = 5 * time.Minute
-		}
-		go func() {
-			log.Printf("cloud credential checks enabled: every %s", interval)
-			runCloudCredentialChecks(cfg, workspaceStore, awsStore, db)
-			ticker := time.NewTicker(interval)
-			defer ticker.Stop()
-			for range ticker.C {
-				runCloudCredentialChecks(cfg, workspaceStore, awsStore, db)
-			}
-		}()
-	}
+	// Background loops are scheduled externally (e.g. Kubernetes CronJobs) and enqueued for worker execution.
 
 	svc := &Service{
 		cfg:            cfg,
