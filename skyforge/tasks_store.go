@@ -243,6 +243,27 @@ LIMIT 1`, workspaceID, deploymentID).Scan(&id)
 	return id, nil
 }
 
+func getOldestQueuedWorkspaceTaskID(ctx context.Context, db *sql.DB, workspaceID string) (int, error) {
+	if db == nil {
+		return 0, errDBUnavailable
+	}
+	var id int
+	err := db.QueryRowContext(ctx, `SELECT id
+FROM sf_tasks
+WHERE workspace_id=$1
+  AND deployment_id IS NULL
+  AND status='queued'
+ORDER BY id ASC
+LIMIT 1`, workspaceID).Scan(&id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return id, nil
+}
+
 type deploymentQueueSummary struct {
 	QueueDepth       int
 	ActiveTaskID     int
@@ -296,15 +317,22 @@ WHERE workspace_id=$1
 	return out, nil
 }
 
-func markTaskStarted(ctx context.Context, db *sql.DB, taskID int) error {
+func markTaskStarted(ctx context.Context, db *sql.DB, taskID int) (bool, error) {
 	if db == nil {
-		return errDBUnavailable
+		return false, errDBUnavailable
 	}
-	_, err := db.ExecContext(ctx, `UPDATE sf_tasks SET status='running', started_at=now() WHERE id=$1`, taskID)
-	if err == nil {
-		_ = appendTaskEvent(context.Background(), db, taskID, "task.started", map[string]any{"status": "running"})
+	res, err := db.ExecContext(ctx, `UPDATE sf_tasks
+SET status='running', started_at=now()
+WHERE id=$1 AND status='queued'`, taskID)
+	if err != nil {
+		return false, err
 	}
-	return err
+	n, _ := res.RowsAffected()
+	if n <= 0 {
+		return false, nil
+	}
+	_ = appendTaskEvent(context.Background(), db, taskID, "task.started", map[string]any{"status": "running"})
+	return true, nil
 }
 
 func finishTask(ctx context.Context, db *sql.DB, taskID int, status string, errMsg string) error {

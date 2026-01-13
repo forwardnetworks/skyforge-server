@@ -3541,6 +3541,9 @@ func initService() (*Service, error) {
 		db:             db,
 	}
 	defaultService = svc
+	if strings.EqualFold(strings.TrimSpace(cfg.StateBackend), "postgres") {
+		svc.startTaskWorkerPoller()
+	}
 	return svc, nil
 }
 

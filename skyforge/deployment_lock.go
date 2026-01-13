@@ -14,6 +14,12 @@ func deploymentAdvisoryLockKey(workspaceID, deploymentID string) int64 {
 	return int64(u)
 }
 
+func workspaceAdvisoryLockKey(workspaceID string) int64 {
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:__workspace__", workspaceID)))
+	u := binary.LittleEndian.Uint64(sum[:8])
+	return int64(u)
+}
+
 func pgTryAdvisoryLock(ctx context.Context, db *sql.DB, key int64) (bool, error) {
 	if db == nil {
 		return false, fmt.Errorf("db unavailable")
@@ -35,4 +41,3 @@ func pgAdvisoryUnlock(ctx context.Context, db *sql.DB, key int64) error {
 	}
 	return nil
 }
-

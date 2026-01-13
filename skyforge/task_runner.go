@@ -262,6 +262,39 @@ func (s *Service) processQueuedTask(ctx context.Context, taskID int) error {
 				break
 			}
 		}
+	} else {
+		workspaceID := strings.TrimSpace(task.WorkspaceID)
+		if workspaceID != "" {
+			lockKey := workspaceAdvisoryLockKey(workspaceID)
+			for {
+				ok, err := pgTryAdvisoryLock(ctx, s.db, lockKey)
+				if err != nil {
+					stdlog.Printf("workspace lock error: %v", err)
+					time.Sleep(750 * time.Millisecond)
+					continue
+				}
+				if !ok {
+					time.Sleep(750 * time.Millisecond)
+					continue
+				}
+
+				oldestQueuedID, err := getOldestQueuedWorkspaceTaskID(ctx, s.db, workspaceID)
+				if err != nil {
+					_ = pgAdvisoryUnlock(context.Background(), s.db, lockKey)
+					stdlog.Printf("workspace queue check error: %v", err)
+					time.Sleep(750 * time.Millisecond)
+					continue
+				}
+				if oldestQueuedID != 0 && oldestQueuedID != task.ID {
+					_ = pgAdvisoryUnlock(context.Background(), s.db, lockKey)
+					time.Sleep(750 * time.Millisecond)
+					continue
+				}
+
+				unlock = func() { _ = pgAdvisoryUnlock(context.Background(), s.db, lockKey) }
+				break
+			}
+		}
 	}
 
 	// If the task was canceled while waiting in the queue, exit early without running it.
@@ -279,8 +312,14 @@ func (s *Service) processQueuedTask(ctx context.Context, taskID int) error {
 		return nil
 	}
 
-	if err := markTaskStarted(ctx, s.db, task.ID); err != nil {
+	if ok, err := markTaskStarted(ctx, s.db, task.ID); err != nil {
 		stdlog.Printf("task start update failed: %v", err)
+		unlock()
+		return nil
+	} else if !ok {
+		// Another worker started it (or it is no longer queued).
+		unlock()
+		return nil
 	}
 	if err := s.notifyTaskEvent(ctx, task, "running", ""); err != nil {
 		stdlog.Printf("task start notification failed: %v", err)
