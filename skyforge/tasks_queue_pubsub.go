@@ -106,5 +106,8 @@ func (s *Service) handleTaskEnqueued(ctx context.Context, msg *taskEnqueuedEvent
 	if s == nil || s.db == nil || msg == nil || msg.TaskID <= 0 {
 		return nil
 	}
+	if !s.cfg.TaskWorkerEnabled {
+		return nil
+	}
 	return s.processQueuedTask(ctx, msg.TaskID)
 }

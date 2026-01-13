@@ -324,6 +324,16 @@ func (s *Service) processQueuedTask(ctx context.Context, taskID int) error {
 	if err := s.notifyTaskEvent(ctx, task, "running", ""); err != nil {
 		stdlog.Printf("task start notification failed: %v", err)
 	}
+	taskStartedTotal.With(taskTypeLabels{TaskType: strings.TrimSpace(task.TaskType)}).Increment()
+	startedAt := time.Now().UTC()
+	if !task.CreatedAt.IsZero() {
+		latency := startedAt.Sub(task.CreatedAt)
+		if latency >= 0 {
+			secs := latency.Seconds()
+			taskQueueLatencySecondsLast.With(taskTypeLabels{TaskType: strings.TrimSpace(task.TaskType)}).Set(secs)
+			taskQueueLatencySecondsTotal.With(taskTypeLabels{TaskType: strings.TrimSpace(task.TaskType)}).Add(secs)
+		}
+	}
 	logger := &taskLogger{svc: s, taskID: task.ID}
 	runErr := s.dispatchTask(ctx, task, logger)
 	status := "success"
@@ -340,6 +350,16 @@ func (s *Service) processQueuedTask(ctx context.Context, taskID int) error {
 	if status != "canceled" {
 		if err := finishTask(ctx, s.db, task.ID, status, errMsg); err != nil {
 			stdlog.Printf("task finish update failed: %v", err)
+		}
+	}
+	finishType := strings.TrimSpace(task.TaskType)
+	taskFinishedTotal.With(taskFinishLabels{TaskType: finishType, Status: status}).Increment()
+	if status != "canceled" && !startedAt.IsZero() {
+		duration := time.Since(startedAt)
+		if duration >= 0 {
+			secs := duration.Seconds()
+			taskRunDurationSecondsLast.With(taskTypeLabels{TaskType: finishType}).Set(secs)
+			taskRunDurationSecondsTotal.With(taskTypeLabels{TaskType: finishType}).Add(secs)
 		}
 	}
 	if err := s.notifyTaskEvent(ctx, task, status, errMsg); err != nil {

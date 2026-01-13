@@ -113,6 +113,7 @@ RETURNING id, created_at`, workspaceID, dep, taskType, "queued", msg, metaBytes,
 	if err := row.Scan(&rec.ID, &rec.CreatedAt); err != nil {
 		return nil, err
 	}
+	taskQueuedTotal.With(taskTypeLabels{TaskType: taskType}).Increment()
 	_ = appendTaskEvent(context.Background(), db, rec.ID, "task.queued", map[string]any{
 		"status":       "queued",
 		"taskType":     taskType,

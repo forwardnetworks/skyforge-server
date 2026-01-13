@@ -2,6 +2,15 @@ package skyforge
 
 import "encore.dev/metrics"
 
+type taskTypeLabels struct {
+	TaskType string
+}
+
+type taskFinishLabels struct {
+	TaskType string
+	Status   string
+}
+
 var (
 	loginAttempts = metrics.NewCounter[uint64]("skyforge_login_attempts_total", metrics.CounterConfig{})
 	loginFailures = metrics.NewCounter[uint64]("skyforge_login_failures_total", metrics.CounterConfig{})
@@ -23,4 +32,13 @@ var (
 	workspaceSyncFailures       = metrics.NewCounter[uint64]("skyforge_workspace_sync_failures_total", metrics.CounterConfig{})
 	workspaceSyncErrors  = metrics.NewCounter[uint64]("skyforge_workspace_sync_errors_total", metrics.CounterConfig{})
 	workspaceSyncBackgroundRuns = metrics.NewCounter[uint64]("skyforge_workspace_sync_background_runs_total", metrics.CounterConfig{})
+
+	taskQueuedTotal   = metrics.NewCounterGroup[taskTypeLabels, uint64]("skyforge_tasks_queued_total", metrics.CounterConfig{})
+	taskStartedTotal  = metrics.NewCounterGroup[taskTypeLabels, uint64]("skyforge_tasks_started_total", metrics.CounterConfig{})
+	taskFinishedTotal = metrics.NewCounterGroup[taskFinishLabels, uint64]("skyforge_tasks_finished_total", metrics.CounterConfig{})
+
+	taskQueueLatencySecondsLast  = metrics.NewGaugeGroup[taskTypeLabels, float64]("skyforge_task_queue_latency_seconds_last", metrics.GaugeConfig{})
+	taskRunDurationSecondsLast   = metrics.NewGaugeGroup[taskTypeLabels, float64]("skyforge_task_run_duration_seconds_last", metrics.GaugeConfig{})
+	taskQueueLatencySecondsTotal = metrics.NewCounterGroup[taskTypeLabels, float64]("skyforge_task_queue_latency_seconds_total", metrics.CounterConfig{})
+	taskRunDurationSecondsTotal  = metrics.NewCounterGroup[taskTypeLabels, float64]("skyforge_task_run_duration_seconds_total", metrics.CounterConfig{})
 )
