@@ -2,12 +2,14 @@ package skyforge
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/url"
 	"path"
 	"sort"
 	"strings"
+	"time"
 
 	"encore.dev/beta/errs"
 )
@@ -110,12 +112,42 @@ func (s *Service) GetWorkspaceNetlabTemplates(ctx context.Context, id string, re
 		}
 	}
 
+	if redisClient != nil {
+		cacheKey := redisNetlabTemplatesKey(s.cfg, owner, repo, branch, dir)
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		cached, err := redisClient.Get(ctx, cacheKey).Result()
+		cancel()
+		if err == nil && strings.TrimSpace(cached) != "" {
+			var templates []string
+			if err := json.Unmarshal([]byte(cached), &templates); err == nil && len(templates) > 0 {
+				sort.Strings(templates)
+				return &WorkspaceNetlabTemplatesResponse{
+					WorkspaceID: pc.workspace.ID,
+					Repo:        fmt.Sprintf("%s/%s", owner, repo),
+					Branch:      branch,
+					Dir:         dir,
+					Templates:   templates,
+				}, nil
+			}
+		}
+	}
+
 	templates, err := listNetlabTemplatesRecursive(s.cfg, owner, repo, branch, dir, "", 4, false)
 	if err != nil {
 		log.Printf("netlab templates list: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to query templates").Err()
 	}
 	sort.Strings(templates)
+
+	if redisClient != nil && len(templates) > 0 {
+		if payload, err := json.Marshal(templates); err == nil {
+			cacheKey := redisNetlabTemplatesKey(s.cfg, owner, repo, branch, dir)
+			ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			_ = redisClient.Set(ctx, cacheKey, string(payload), 2*time.Minute).Err()
+			cancel()
+		}
+	}
+
 	_ = ctx
 	return &WorkspaceNetlabTemplatesResponse{
 		WorkspaceID: pc.workspace.ID,

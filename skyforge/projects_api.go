@@ -585,6 +585,11 @@ func (s *Service) SyncWorkspaceBlueprint(ctx context.Context, workspaceID string
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to sync blueprint").Err()
 		}
 	}
+
+	// Netlab template listing walks the repo tree via Gitea API; cache it in Redis for speed.
+	// Since this sync mutates the workspace repo, invalidate any cached listings.
+	invalidateNetlabTemplatesCacheForRepoBranch(s.cfg, pc.workspace.GiteaOwner, pc.workspace.GiteaRepo, targetBranch)
+
 	_ = ctx
 	return &BlueprintSyncResponse{Status: "ok"}, nil
 }
