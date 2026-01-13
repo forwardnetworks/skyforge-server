@@ -32,6 +32,12 @@ type TaskLogEntry struct {
 	Stream string `json:"stream,omitempty"`
 }
 
+type TaskEventEntry struct {
+	Type    string         `json:"type"`
+	Time    string         `json:"time"`
+	Payload map[string]any `json:"payload,omitempty"`
+}
+
 func createTask(ctx context.Context, db *sql.DB, workspaceID string, deploymentID *string, taskType string, message string, createdBy string, metadata JSONMap) (*TaskRecord, error) {
 	return createTaskWithActiveCheck(ctx, db, workspaceID, deploymentID, taskType, message, createdBy, metadata, false)
 }
@@ -107,6 +113,11 @@ RETURNING id, created_at`, workspaceID, dep, taskType, "queued", msg, metaBytes,
 	if err := row.Scan(&rec.ID, &rec.CreatedAt); err != nil {
 		return nil, err
 	}
+	_ = appendTaskEvent(context.Background(), db, rec.ID, "task.queued", map[string]any{
+		"status":       "queued",
+		"taskType":     taskType,
+		"deploymentId": strings.TrimSpace(dep.String),
+	})
 	return rec, nil
 }
 
@@ -290,6 +301,9 @@ func markTaskStarted(ctx context.Context, db *sql.DB, taskID int) error {
 		return errDBUnavailable
 	}
 	_, err := db.ExecContext(ctx, `UPDATE sf_tasks SET status='running', started_at=now() WHERE id=$1`, taskID)
+	if err == nil {
+		_ = appendTaskEvent(context.Background(), db, taskID, "task.started", map[string]any{"status": "running"})
+	}
 	return err
 }
 
@@ -302,6 +316,13 @@ func finishTask(ctx context.Context, db *sql.DB, taskID int, status string, errM
 		errVal = sql.NullString{String: errMsg, Valid: true}
 	}
 	_, err := db.ExecContext(ctx, `UPDATE sf_tasks SET status=$1, finished_at=now(), error=$2 WHERE id=$3`, status, errVal, taskID)
+	if err == nil {
+		payload := map[string]any{"status": status}
+		if strings.TrimSpace(errMsg) != "" {
+			payload["error"] = strings.TrimSpace(errMsg)
+		}
+		_ = appendTaskEvent(context.Background(), db, taskID, "task.finished", payload)
+	}
 	return err
 }
 
@@ -310,6 +331,9 @@ func cancelTask(ctx context.Context, db *sql.DB, taskID int) error {
 		return errDBUnavailable
 	}
 	_, err := db.ExecContext(ctx, `UPDATE sf_tasks SET status='canceled', finished_at=now() WHERE id=$1`, taskID)
+	if err == nil {
+		_ = appendTaskEvent(context.Background(), db, taskID, "task.canceled", map[string]any{"status": "canceled"})
+	}
 	return err
 }
 
@@ -324,6 +348,25 @@ func appendTaskLog(ctx context.Context, db *sql.DB, taskID int, stream string, o
 		stream = "stdout"
 	}
 	_, err := db.ExecContext(ctx, `INSERT INTO sf_task_logs (task_id, stream, output) VALUES ($1,$2,$3)`, taskID, stream, output)
+	return err
+}
+
+func appendTaskEvent(ctx context.Context, db *sql.DB, taskID int, eventType string, payload map[string]any) error {
+	if db == nil {
+		return errDBUnavailable
+	}
+	eventType = strings.TrimSpace(eventType)
+	if eventType == "" {
+		return nil
+	}
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	_, err = db.ExecContext(ctx, `INSERT INTO sf_task_events (task_id, event_type, payload) VALUES ($1,$2,$3)`, taskID, eventType, payloadBytes)
 	return err
 }
 
@@ -456,6 +499,11 @@ type taskLogRow struct {
 	Entry TaskLogEntry
 }
 
+type taskEventRow struct {
+	ID    int64
+	Entry TaskEventEntry
+}
+
 func listTaskLogsAfter(ctx context.Context, db *sql.DB, taskID int, afterID int64, limit int) ([]taskLogRow, error) {
 	if db == nil {
 		return nil, errDBUnavailable
@@ -488,6 +536,56 @@ LIMIT $3`, taskID, afterID, limit)
 		out = append(out, taskLogRow{
 			ID:    id,
 			Entry: TaskLogEntry{Output: output, Time: createdAt.UTC().Format(time.RFC3339), Stream: stream},
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func listTaskEventsAfter(ctx context.Context, db *sql.DB, taskID int, afterID int64, limit int) ([]taskEventRow, error) {
+	if db == nil {
+		return nil, errDBUnavailable
+	}
+	if limit <= 0 {
+		limit = 500
+	}
+	if afterID < 0 {
+		afterID = 0
+	}
+	rows, err := db.QueryContext(ctx, `SELECT id, created_at, event_type, payload
+FROM sf_task_events
+WHERE task_id=$1
+  AND id > $2
+ORDER BY id ASC
+LIMIT $3`, taskID, afterID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []taskEventRow{}
+	for rows.Next() {
+		var (
+			id         int64
+			createdAt  time.Time
+			eventType  string
+			payload    []byte
+			payloadMap map[string]any
+		)
+		if err := rows.Scan(&id, &createdAt, &eventType, &payload); err != nil {
+			return nil, err
+		}
+		if len(payload) > 0 {
+			_ = json.Unmarshal(payload, &payloadMap)
+		}
+		out = append(out, taskEventRow{
+			ID: id,
+			Entry: TaskEventEntry{
+				Type:    eventType,
+				Time:    createdAt.UTC().Format(time.RFC3339),
+				Payload: payloadMap,
+			},
 		})
 	}
 	if err := rows.Err(); err != nil {
