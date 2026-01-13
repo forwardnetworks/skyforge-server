@@ -54,6 +54,41 @@ type netlabDeviceDefaults struct {
 
 var netlabDefaults = loadNetlabDeviceDefaults()
 
+func (s *Service) forwardDeviceTypes(ctx context.Context) map[string]string {
+	out := map[string]string{
+		"linux": "linux_os_ssh",
+		"eos":   "arista_eos_ssh",
+	}
+	if s == nil || s.db == nil {
+		return out
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	rows, err := s.db.QueryContext(ctx, `SELECT device_key, forward_type FROM sf_forward_device_types`)
+	if err != nil {
+		// During rollout, migrations may not have run yet. Fall back to built-ins.
+		if strings.Contains(strings.ToLower(err.Error()), "does not exist") {
+			return out
+		}
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var deviceKey string
+		var forwardType string
+		if scanErr := rows.Scan(&deviceKey, &forwardType); scanErr != nil {
+			continue
+		}
+		deviceKey = strings.ToLower(strings.TrimSpace(deviceKey))
+		forwardType = strings.TrimSpace(forwardType)
+		if deviceKey == "" || forwardType == "" {
+			continue
+		}
+		out[deviceKey] = forwardType
+	}
+	return out
+}
+
 func loadNetlabDeviceDefaults() netlabDeviceDefaults {
 	var catalog netlabDeviceDefaults
 	if len(netlabDeviceDefaultsJSON) == 0 {
@@ -540,6 +575,7 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *
 	jumpServerID := getString(forwardJumpServerIDKey)
 	defaultCliCredentialID := getString(forwardCliCredentialIDKey)
 	snmpCredentialID := getString(forwardSnmpCredentialIDKey)
+	forwardTypes := s.forwardDeviceTypes(ctx)
 	credentialIDsByDevice := map[string]string{}
 	if raw, ok := cfgAny[forwardCliCredentialMap]; ok {
 		if parsed, ok := raw.(map[string]any); ok {
@@ -639,8 +675,13 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *
 		if name == "" {
 			name = mgmt
 		}
+		forwardType := ""
+		if deviceKey != "" {
+			forwardType = forwardTypes[deviceKey]
+		}
 		devices = append(devices, forwardClassicDevice{
 			Name:                     name,
+			Type:                     forwardType,
 			Host:                     mgmt,
 			Port:                     22,
 			CliCredentialID:          cliCredentialID,

@@ -57,6 +57,7 @@ type forwardCollectorStatus struct {
 
 type forwardClassicDevice struct {
 	Name                     string `json:"name"`
+	Type                     string `json:"type,omitempty"`
 	Host                     string `json:"host"`
 	Port                     int    `json:"port,omitempty"`
 	CliCredentialID          string `json:"cliCredentialId,omitempty"`
