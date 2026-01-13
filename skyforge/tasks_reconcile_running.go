@@ -26,7 +26,13 @@ func ReconcileRunningTasks(ctx context.Context) error {
 	if defaultService == nil || defaultService.db == nil {
 		return nil
 	}
-	svc := defaultService
+	return reconcileRunningTasks(ctx, defaultService)
+}
+
+func reconcileRunningTasks(ctx context.Context, svc *Service) error {
+	if svc == nil || svc.db == nil {
+		return nil
+	}
 	db := svc.db
 
 	type running struct {

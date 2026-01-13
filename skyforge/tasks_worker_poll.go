@@ -19,7 +19,7 @@ func (s *Service) startTaskWorkerPoller() {
 		// Best-effort cleanup so stuck tasks don't block perceived progress.
 		{
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			_ = ReconcileRunningTasks(ctx)
+			_ = reconcileRunningTasks(ctx, s)
 			cancel()
 		}
 
@@ -39,7 +39,7 @@ func (s *Service) startTaskWorkerPoller() {
 		defer ticker.Stop()
 		for range ticker.C {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			_ = ReconcileRunningTasks(ctx)
+			_ = reconcileRunningTasks(ctx, s)
 			cancel()
 		}
 	}()
@@ -109,4 +109,3 @@ LIMIT $1`, limit)
 	}
 	return out, nil
 }
-
