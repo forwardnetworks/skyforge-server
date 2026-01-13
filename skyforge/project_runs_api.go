@@ -131,6 +131,16 @@ func (s *Service) RunWorkspaceTerraformPlan(ctx context.Context, id string) (*Wo
 		"deployment": dep.Name,
 		"cloud":      cloud,
 		"template":   template,
+		"spec": map[string]any{
+			"action":         "plan",
+			"cloud":          cloud,
+			"templateSource": strings.TrimSpace(templateSource),
+			"templateRepo":   strings.TrimSpace(templateRepo),
+			"templatesDir":   strings.TrimSpace(templatesDir),
+			"template":       strings.TrimSpace(template),
+			"deployment":     strings.TrimSpace(dep.Name),
+			"deploymentId":   strings.TrimSpace(dep.ID),
+		},
 	})
 	if err != nil {
 		log.Printf("terraform plan meta encode: %v", err)
@@ -308,6 +318,14 @@ func (s *Service) RunWorkspaceTerraformApply(ctx context.Context, id string, par
 		"cloud":    cloud,
 		"template": templateName,
 		"action":   action,
+		"spec": map[string]any{
+			"action":         action,
+			"cloud":          cloud,
+			"templateSource": strings.TrimSpace(templateSource),
+			"templateRepo":   strings.TrimSpace(templateRepo),
+			"templatesDir":   strings.TrimSpace(templatesDir),
+			"template":       strings.TrimSpace(templateName),
+		},
 	})
 	if err != nil {
 		log.Printf("terraform apply meta encode: %v", err)
@@ -509,11 +527,31 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
+	envAny, _ := fromJSONMap(req.Environment)
+	envMap := parseEnvMap(envAny)
 	meta, err := toJSONMap(map[string]any{
 		"action":     action,
 		"server":     server.Name,
 		"deployment": deploymentName,
 		"dedupeKey":  fmt.Sprintf("netlab:%s:%s:%s", pc.workspace.ID, action, deploymentName),
+		"spec": map[string]any{
+			"action":          action,
+			"server":          server.Name,
+			"deployment":      deploymentName,
+			"deploymentId":    strings.TrimSpace(req.NetlabMultilabID),
+			"workspaceRoot":   workspaceRoot,
+			"templateSource":  strings.TrimSpace(req.TemplateSource),
+			"templateRepo":    strings.TrimSpace(req.TemplateRepo),
+			"templatesDir":    strings.TrimSpace(req.TemplatesDir),
+			"template":        strings.TrimSpace(req.Template),
+			"workspaceDir":    strings.TrimSpace(workspaceDir),
+			"multilabNumeric": multilabNumericID,
+			"cleanup":         req.Cleanup,
+			"clabTarball":     clabTarball,
+			"clabConfigDir":   strings.TrimSpace(req.ClabConfigDir),
+			"clabCleanup":     req.ClabCleanup,
+			"environment":     envMap,
+		},
 	})
 	if err != nil {
 		log.Printf("netlab meta encode: %v", err)
@@ -529,8 +567,6 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 	if err != nil {
 		return nil, err
 	}
-	envAny, _ := fromJSONMap(req.Environment)
-	envMap := parseEnvMap(envAny)
 	templateSource := strings.TrimSpace(req.TemplateSource)
 	if templateSource == "" {
 		templateSource = "blueprints"
@@ -727,12 +763,32 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
+	envAny, _ := fromJSONMap(req.Environment)
+	envMap := parseEnvMap(envAny)
 	meta, err := toJSONMap(map[string]any{
 		"action":     action,
 		"server":     eveServer.Name,
 		"deployment": deployment,
 		"template":   template,
 		"dedupeKey":  fmt.Sprintf("labpp:%s:%s:%s:%s", pc.workspace.ID, strings.TrimSpace(req.DeploymentID), action, template),
+		"spec": map[string]any{
+			"action":            action,
+			"eveServer":         eveServer.Name,
+			"eveUrl":            eveURL,
+			"eveUsername":       eveUsername,
+			"deployment":        deployment,
+			"deploymentId":      strings.TrimSpace(req.DeploymentID),
+			"templatesRoot":     templatesRoot,
+			"template":          template,
+			"labPath":           labPath,
+			"threadCount":       threadCount,
+			"maxSeconds":        1200,
+			"environment":       envMap,
+			"templateSource":    source,
+			"templateRepo":      repo,
+			"templatesDir":      dir,
+			"templatesDestRoot": destRoot,
+		},
 	})
 	if err != nil {
 		log.Printf("labpp meta encode: %v", err)
@@ -749,8 +805,6 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 	if err != nil {
 		return nil, err
 	}
-	envAny, _ := fromJSONMap(req.Environment)
-	envMap := parseEnvMap(envAny)
 	spec := labppRunSpec{
 		TaskID:        task.ID,
 		WorkspaceCtx:  pc,
@@ -913,11 +967,22 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
+	envAny, _ := fromJSONMap(req.Environment)
+	envMap := parseEnvMap(envAny)
 	meta, err := toJSONMap(map[string]any{
 		"action":   action,
 		"server":   server.Name,
 		"labName":  labName,
 		"template": template,
+		"spec": map[string]any{
+			"action":       action,
+			"netlabServer": server.Name,
+			"deployment":   deploymentName,
+			"labName":      labName,
+			"reconfigure":  reconfigure,
+			"topologyJSON": topologyJSON,
+			"environment":  envMap,
+		},
 	})
 	if err != nil {
 		log.Printf("containerlab meta encode: %v", err)
@@ -939,8 +1004,6 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 			return nil, errs.B().Code(errs.Internal).Msg("failed to decode topology").Err()
 		}
 	}
-	envAny, _ := fromJSONMap(req.Environment)
-	envMap := parseEnvMap(envAny)
 	spec := containerlabRunSpec{
 		TaskID:      task.ID,
 		APIURL:      apiURL,

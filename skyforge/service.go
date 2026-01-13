@@ -3391,6 +3391,10 @@ type storageObjectSummary struct {
 	ContentType  string `json:"contentType,omitempty"`
 }
 
+// defaultService is set once at startup by initService and is used by raw endpoints
+// (SSE/webhooks) and cron jobs which don't have direct access to the Service instance.
+var defaultService *Service
+
 func initService() (*Service, error) {
 	hydrateSecretEnv(
 		"SKYFORGE_SESSION_SECRET",
@@ -3525,7 +3529,7 @@ func initService() (*Service, error) {
 		}()
 	}
 
-	return &Service{
+	svc := &Service{
 		cfg:            cfg,
 		auth:           auth,
 		oidc:           oidcClient,
@@ -3535,7 +3539,9 @@ func initService() (*Service, error) {
 		userStore:      userStore,
 		box:            box,
 		db:             db,
-	}, nil
+	}
+	defaultService = svc
+	return svc, nil
 }
 
 // Session + Auth types

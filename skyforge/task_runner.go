@@ -205,96 +205,115 @@ func (s *Service) cancelNetlabJob(ctx context.Context, apiURL, jobID string, log
 }
 
 func (s *Service) queueTask(task *TaskRecord, runner func(ctx context.Context, log *taskLogger) error) {
-	go func() {
-		ctx := context.Background()
-		unlock := func() {}
-		if task != nil && task.DeploymentID.Valid && s != nil && s.db != nil {
-			workspaceID := strings.TrimSpace(task.WorkspaceID)
-			deploymentID := strings.TrimSpace(task.DeploymentID.String)
-			if workspaceID != "" && deploymentID != "" {
-				lockKey := deploymentAdvisoryLockKey(workspaceID, deploymentID)
-				for {
-					ok, err := pgTryAdvisoryLock(ctx, s.db, lockKey)
-					if err != nil {
-						stdlog.Printf("deployment lock error: %v", err)
-						time.Sleep(750 * time.Millisecond)
-						continue
-					}
-					if !ok {
-						time.Sleep(750 * time.Millisecond)
-						continue
-					}
+	_ = runner
+	if s == nil || task == nil {
+		return
+	}
+	s.enqueueTask(context.Background(), task)
+}
 
-					// Preserve ordering: only the oldest queued deployment task may start.
-					oldestQueuedID, err := getOldestQueuedDeploymentTaskID(ctx, s.db, workspaceID, deploymentID)
-					if err != nil {
-						_ = pgAdvisoryUnlock(context.Background(), s.db, lockKey)
-						stdlog.Printf("deployment queue check error: %v", err)
-						time.Sleep(750 * time.Millisecond)
-						continue
-					}
-					if oldestQueuedID != 0 && oldestQueuedID != task.ID {
-						_ = pgAdvisoryUnlock(context.Background(), s.db, lockKey)
-						time.Sleep(750 * time.Millisecond)
-						continue
-					}
+func (s *Service) processQueuedTask(ctx context.Context, taskID int) error {
+	if s == nil || s.db == nil || taskID <= 0 {
+		return nil
+	}
+	task, err := getTask(ctx, s.db, taskID)
+	if err != nil {
+		return err
+	}
+	if task == nil {
+		return nil
+	}
+	if !strings.EqualFold(strings.TrimSpace(task.Status), "queued") {
+		return nil
+	}
 
-					unlock = func() { _ = pgAdvisoryUnlock(context.Background(), s.db, lockKey) }
-					break
+	unlock := func() {}
+	if task.DeploymentID.Valid {
+		workspaceID := strings.TrimSpace(task.WorkspaceID)
+		deploymentID := strings.TrimSpace(task.DeploymentID.String)
+		if workspaceID != "" && deploymentID != "" {
+			lockKey := deploymentAdvisoryLockKey(workspaceID, deploymentID)
+			for {
+				ok, err := pgTryAdvisoryLock(ctx, s.db, lockKey)
+				if err != nil {
+					stdlog.Printf("deployment lock error: %v", err)
+					time.Sleep(750 * time.Millisecond)
+					continue
 				}
-			}
-		}
-
-		// If the task was canceled while waiting in the queue, exit early without running it.
-		if rec, err := getTask(ctx, s.db, task.ID); err == nil && rec != nil && strings.EqualFold(rec.Status, "canceled") {
-			if err := s.notifyTaskEvent(ctx, task, "canceled", ""); err != nil {
-				stdlog.Printf("task cancel notification failed: %v", err)
-			}
-			if task.DeploymentID.Valid {
-				finishedAt := time.Now().UTC()
-				if err := s.updateDeploymentStatus(ctx, task.WorkspaceID, task.DeploymentID.String, "canceled", &finishedAt); err != nil {
-					stdlog.Printf("deployment status update failed: %v", err)
+				if !ok {
+					time.Sleep(750 * time.Millisecond)
+					continue
 				}
-			}
-			unlock()
-			return
-		}
 
-		if err := markTaskStarted(ctx, s.db, task.ID); err != nil {
-			stdlog.Printf("task start update failed: %v", err)
-		}
-		if err := s.notifyTaskEvent(ctx, task, "running", ""); err != nil {
-			stdlog.Printf("task start notification failed: %v", err)
-		}
-		logger := &taskLogger{svc: s, taskID: task.ID}
-		err := runner(ctx, logger)
-		status := "success"
-		errMsg := ""
-		if err != nil {
-			status = "failed"
-			errMsg = err.Error()
-			logger.Errorf("ERROR: %s", errMsg)
-		}
-		if rec, recErr := getTask(ctx, s.db, task.ID); recErr == nil && rec != nil && strings.EqualFold(rec.Status, "canceled") {
-			status = "canceled"
-			errMsg = ""
-		}
-		if status != "canceled" {
-			if err := finishTask(ctx, s.db, task.ID, status, errMsg); err != nil {
-				stdlog.Printf("task finish update failed: %v", err)
+				oldestQueuedID, err := getOldestQueuedDeploymentTaskID(ctx, s.db, workspaceID, deploymentID)
+				if err != nil {
+					_ = pgAdvisoryUnlock(context.Background(), s.db, lockKey)
+					stdlog.Printf("deployment queue check error: %v", err)
+					time.Sleep(750 * time.Millisecond)
+					continue
+				}
+				if oldestQueuedID != 0 && oldestQueuedID != task.ID {
+					_ = pgAdvisoryUnlock(context.Background(), s.db, lockKey)
+					time.Sleep(750 * time.Millisecond)
+					continue
+				}
+
+				unlock = func() { _ = pgAdvisoryUnlock(context.Background(), s.db, lockKey) }
+				break
 			}
 		}
-		if err := s.notifyTaskEvent(ctx, task, status, errMsg); err != nil {
-			stdlog.Printf("task finish notification failed: %v", err)
+	}
+
+	// If the task was canceled while waiting in the queue, exit early without running it.
+	if rec, err := getTask(ctx, s.db, task.ID); err == nil && rec != nil && strings.EqualFold(rec.Status, "canceled") {
+		if err := s.notifyTaskEvent(ctx, task, "canceled", ""); err != nil {
+			stdlog.Printf("task cancel notification failed: %v", err)
 		}
 		if task.DeploymentID.Valid {
 			finishedAt := time.Now().UTC()
-			if err := s.updateDeploymentStatus(ctx, task.WorkspaceID, task.DeploymentID.String, status, &finishedAt); err != nil {
+			if err := s.updateDeploymentStatus(ctx, task.WorkspaceID, task.DeploymentID.String, "canceled", &finishedAt); err != nil {
 				stdlog.Printf("deployment status update failed: %v", err)
 			}
 		}
 		unlock()
-	}()
+		return nil
+	}
+
+	if err := markTaskStarted(ctx, s.db, task.ID); err != nil {
+		stdlog.Printf("task start update failed: %v", err)
+	}
+	if err := s.notifyTaskEvent(ctx, task, "running", ""); err != nil {
+		stdlog.Printf("task start notification failed: %v", err)
+	}
+	logger := &taskLogger{svc: s, taskID: task.ID}
+	runErr := s.dispatchTask(ctx, task, logger)
+	status := "success"
+	errMsg := ""
+	if runErr != nil {
+		status = "failed"
+		errMsg = runErr.Error()
+		logger.Errorf("ERROR: %s", errMsg)
+	}
+	if rec, recErr := getTask(ctx, s.db, task.ID); recErr == nil && rec != nil && strings.EqualFold(rec.Status, "canceled") {
+		status = "canceled"
+		errMsg = ""
+	}
+	if status != "canceled" {
+		if err := finishTask(ctx, s.db, task.ID, status, errMsg); err != nil {
+			stdlog.Printf("task finish update failed: %v", err)
+		}
+	}
+	if err := s.notifyTaskEvent(ctx, task, status, errMsg); err != nil {
+		stdlog.Printf("task finish notification failed: %v", err)
+	}
+	if task.DeploymentID.Valid {
+		finishedAt := time.Now().UTC()
+		if err := s.updateDeploymentStatus(ctx, task.WorkspaceID, task.DeploymentID.String, status, &finishedAt); err != nil {
+			stdlog.Printf("deployment status update failed: %v", err)
+		}
+	}
+	unlock()
+	return nil
 }
 
 type netlabRunSpec struct {

@@ -37,6 +37,22 @@
       }
     }
   ],
+  "pubsub": [
+    {
+      "type": "nsq",
+      "hosts": "nsq:4150",
+      "topics": {
+        "skyforge-task-queue": {
+          "name": "skyforge-task-queue",
+          "subscriptions": {
+            "skyforge-task-worker": {
+              "name": "skyforge-task-worker"
+            }
+          }
+        }
+      }
+    }
+  ],
   "graceful_shutdown": {
     "total": 30,
     "shutdown_hooks": 10,

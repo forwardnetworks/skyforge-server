@@ -125,6 +125,9 @@ func (s *Service) runClabernetesDeploymentAction(
 		)
 	}
 
+	envAny, _ := fromJSONMap(envJSON)
+	envMap := parseEnvMap(envAny)
+
 	meta, err := toJSONMap(map[string]any{
 		"action":       action,
 		"deployment":   dep.Name,
@@ -133,6 +136,15 @@ func (s *Service) runClabernetesDeploymentAction(
 		"labName":      labName,
 		"namespace":    k8sNamespace,
 		"topologyName": topologyName,
+		"spec": map[string]any{
+			"action":       action,
+			"namespace":    k8sNamespace,
+			"topologyName": topologyName,
+			"labName":      labName,
+			"template":     template,
+			"topologyYAML": topologyYAML,
+			"environment":  envMap,
+		},
 	})
 	if err != nil {
 		log.Printf("clabernetes meta encode: %v", err)
@@ -150,18 +162,15 @@ func (s *Service) runClabernetesDeploymentAction(
 		return nil, err
 	}
 
-	envAny, _ := fromJSONMap(envJSON)
-	envMap := parseEnvMap(envAny)
-
 	spec := clabernetesRunSpec{
-		TaskID:      task.ID,
-		Action:      action,
-		Namespace:   k8sNamespace,
+		TaskID:       task.ID,
+		Action:       action,
+		Namespace:    k8sNamespace,
 		TopologyName: topologyName,
-		LabName:     labName,
-		Template:    template,
+		LabName:      labName,
+		Template:     template,
 		TopologyYAML: topologyYAML,
-		Environment: envMap,
+		Environment:  envMap,
 	}
 	s.queueTask(task, func(ctx context.Context, log *taskLogger) error {
 		return s.runClabernetesTask(ctx, spec, log)

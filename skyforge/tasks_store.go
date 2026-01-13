@@ -451,6 +451,51 @@ LIMIT $2`, taskID, limit)
 	return out, nil
 }
 
+type taskLogRow struct {
+	ID    int64
+	Entry TaskLogEntry
+}
+
+func listTaskLogsAfter(ctx context.Context, db *sql.DB, taskID int, afterID int64, limit int) ([]taskLogRow, error) {
+	if db == nil {
+		return nil, errDBUnavailable
+	}
+	if limit <= 0 {
+		limit = 500
+	}
+	if afterID < 0 {
+		afterID = 0
+	}
+	rows, err := db.QueryContext(ctx, `SELECT id, created_at, stream, output
+FROM sf_task_logs
+WHERE task_id=$1
+  AND id > $2
+ORDER BY id ASC
+LIMIT $3`, taskID, afterID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []taskLogRow{}
+	for rows.Next() {
+		var id int64
+		var createdAt time.Time
+		var stream string
+		var output string
+		if err := rows.Scan(&id, &createdAt, &stream, &output); err != nil {
+			return nil, err
+		}
+		out = append(out, taskLogRow{
+			ID:    id,
+			Entry: TaskLogEntry{Output: output, Time: createdAt.UTC().Format(time.RFC3339), Stream: stream},
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func taskToRunInfo(task TaskRecord) map[string]any {
 	run := map[string]any{
 		"id":        task.ID,
