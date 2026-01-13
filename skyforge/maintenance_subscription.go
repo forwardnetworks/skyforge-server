@@ -3,6 +3,7 @@ package skyforge
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -11,11 +12,20 @@ import (
 	"encore.dev/rlog"
 )
 
-var maintenanceSubscription = pubsub.NewSubscription(maintenance.Topic, "skyforge-maintenance-worker", pubsub.SubscriptionConfig[*maintenance.MaintenanceEvent]{
-	Handler:        pubsub.MethodHandler((*Service).handleMaintenanceEvent),
-	MaxConcurrency: 1,
-	AckDeadline:    10 * time.Minute,
-})
+func init() {
+	// Same rationale as task queue subscription: do not register maintenance subscriptions
+	// in non-worker pods.
+	enabled := strings.TrimSpace(os.Getenv("SKYFORGE_TASK_WORKER_ENABLED"))
+	if enabled != "" && enabled != "true" {
+		return
+	}
+
+	_ = pubsub.NewSubscription(maintenance.Topic, "skyforge-maintenance-worker", pubsub.SubscriptionConfig[*maintenance.MaintenanceEvent]{
+		Handler:        pubsub.MethodHandler((*Service).handleMaintenanceEvent),
+		MaxConcurrency: 1,
+		AckDeadline:    10 * time.Minute,
+	})
+}
 
 func (s *Service) handleMaintenanceEvent(ctx context.Context, msg *maintenance.MaintenanceEvent) error {
 	if s == nil || s.db == nil || msg == nil {
