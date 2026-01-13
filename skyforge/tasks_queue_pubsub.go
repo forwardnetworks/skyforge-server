@@ -107,7 +107,9 @@ func (s *Service) handleTaskEnqueued(ctx context.Context, msg *taskEnqueuedEvent
 		return nil
 	}
 	if !s.cfg.TaskWorkerEnabled {
-		return nil
+		// Return an error so the message is not ACKed by non-worker pods.
+		// This allows dedicated worker deployments to drain the queue.
+		return fmt.Errorf("task worker disabled")
 	}
 	return s.processQueuedTask(ctx, msg.TaskID)
 }
