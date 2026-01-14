@@ -192,11 +192,46 @@ func (s *Service) CancelRun(ctx context.Context, id int, params *RunsOutputParam
 		jobID := strings.TrimSpace(labppMetaString(meta, "netlabJobId"))
 		if jobID != "" {
 			serverName := strings.TrimSpace(labppMetaString(meta, "server"))
-			server, _ := resolveNetlabServer(s.cfg, serverName)
-			if server != nil && strings.TrimSpace(server.SSHHost) != "" {
-				apiURL := strings.TrimRight("https://"+strings.TrimSpace(server.SSHHost)+"/netlab", "/")
-				log := &taskLogger{svc: s, taskID: task.ID}
-				s.cancelNetlabJob(ctx, apiURL, jobID, log)
+			if serverName == "" {
+				var spec netlabTaskSpec
+				if err := decodeTaskSpec(task, &spec); err == nil {
+					serverName = strings.TrimSpace(spec.Server)
+				} else {
+					var specC9s netlabC9sTaskSpec
+					if err := decodeTaskSpec(task, &specC9s); err == nil {
+						serverName = strings.TrimSpace(specC9s.Server)
+					}
+				}
+			}
+			var server *NetlabServerConfig
+			if serverID, ok := parseWorkspaceServerRef(serverName); ok {
+				if s.db != nil {
+					rec, err := getWorkspaceNetlabServerByID(ctx, s.db, s.box, workspace.ID, serverID)
+					if err == nil && rec != nil {
+						custom := NetlabServerConfig{
+							Name:        strings.TrimSpace(rec.Name),
+							APIURL:      strings.TrimSpace(rec.APIURL),
+							APIInsecure: rec.APIInsecure,
+							APIToken:    strings.TrimSpace(rec.APIToken),
+							StateRoot:   strings.TrimSpace(s.cfg.Netlab.StateRoot),
+						}
+						custom = normalizeNetlabServer(custom, s.cfg.Netlab)
+						server = &custom
+					}
+				}
+			} else {
+				srv, _ := resolveNetlabServer(s.cfg, serverName)
+				server = srv
+			}
+			if server != nil {
+				apiURL := strings.TrimSpace(server.APIURL)
+				if apiURL == "" && strings.TrimSpace(server.SSHHost) != "" {
+					apiURL = strings.TrimRight("https://"+strings.TrimSpace(server.SSHHost)+"/netlab", "/")
+				}
+				if apiURL != "" {
+					log := &taskLogger{svc: s, taskID: task.ID}
+					s.cancelNetlabJob(ctx, apiURL, jobID, server.APIInsecure, strings.TrimSpace(server.APIToken), log)
+				}
 			}
 		}
 	}

@@ -185,13 +185,13 @@ func labppMetaString(meta map[string]any, key string) string {
 	return strings.TrimSpace(fmt.Sprintf("%v", raw))
 }
 
-func (s *Service) cancelNetlabJob(ctx context.Context, apiURL, jobID string, log *taskLogger) {
+func (s *Service) cancelNetlabJob(ctx context.Context, apiURL, jobID string, insecure bool, token string, log *taskLogger) {
 	if strings.TrimSpace(jobID) == "" {
 		return
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	resp, body, err := netlabAPIDo(ctxReq, fmt.Sprintf("%s/jobs/%s/cancel", strings.TrimRight(apiURL, "/"), jobID), nil)
+	resp, body, err := netlabAPIDo(ctxReq, fmt.Sprintf("%s/jobs/%s/cancel", strings.TrimRight(apiURL, "/"), jobID), nil, insecure, token)
 	if err != nil {
 		log.Errorf("Netlab cancel failed: %v", err)
 		return
@@ -428,19 +428,26 @@ type netlabC9sRunSpec struct {
 }
 
 func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *taskLogger) error {
+	bundleB64 := ""
 	if spec.Template != "" {
 		log.Infof("Syncing netlab template %s", spec.Template)
 		if spec.WorkspaceCtx == nil {
 			return fmt.Errorf("workspace context unavailable")
 		}
-		topologyPath, err := s.syncNetlabTopologyFile(ctx, spec.WorkspaceCtx, &spec.Server, spec.TemplateSource, spec.TemplateRepo, spec.TemplatesDir, spec.Template, spec.WorkspaceDir, spec.Username)
+		payloadB64, err := s.buildNetlabTopologyBundleB64(ctx, spec.WorkspaceCtx, spec.TemplateSource, spec.TemplateRepo, spec.TemplatesDir, spec.Template)
 		if err != nil {
 			return err
 		}
-		spec.TopologyPath = topologyPath
+		spec.TopologyPath = "topology.yml"
+		bundleB64 = payloadB64
 	}
 
-	apiURL := strings.TrimRight(fmt.Sprintf("https://%s/netlab", strings.TrimSpace(spec.Server.SSHHost)), "/")
+	apiURL := strings.TrimSpace(spec.Server.APIURL)
+	if apiURL == "" {
+		apiURL = strings.TrimRight(fmt.Sprintf("https://%s/netlab", strings.TrimSpace(spec.Server.SSHHost)), "/")
+	}
+	insecure := spec.Server.APIInsecure
+	token := strings.TrimSpace(spec.Server.APIToken)
 	payload := map[string]any{
 		"action":        spec.Action,
 		"user":          spec.Username,
@@ -454,6 +461,9 @@ func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *ta
 	}
 	if strings.TrimSpace(spec.TopologyPath) != "" {
 		payload["topologyPath"] = strings.TrimSpace(spec.TopologyPath)
+	}
+	if strings.TrimSpace(bundleB64) != "" {
+		payload["topologyBundleB64"] = strings.TrimSpace(bundleB64)
 	}
 	if strings.TrimSpace(spec.ClabTarball) != "" {
 		payload["clabTarball"] = strings.TrimSpace(spec.ClabTarball)
@@ -474,7 +484,7 @@ func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *ta
 	log.Infof("Starting netlab job (%s)", spec.Action)
 	ctxReq, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	resp, body, err := netlabAPIDo(ctxReq, apiURL+"/jobs", payload)
+	resp, body, err := netlabAPIDo(ctxReq, apiURL+"/jobs", payload, insecure, token)
 	if err != nil {
 		return fmt.Errorf("failed to reach netlab API: %w", err)
 	}
@@ -505,7 +515,7 @@ func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *ta
 		if spec.TaskID > 0 {
 			canceled, _ := s.taskCanceled(ctx, spec.TaskID)
 			if canceled {
-				s.cancelNetlabJob(ctx, apiURL, job.ID, log)
+				s.cancelNetlabJob(ctx, apiURL, job.ID, insecure, token, log)
 				return fmt.Errorf("netlab job canceled")
 			}
 		}
@@ -513,11 +523,11 @@ func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *ta
 			return fmt.Errorf("netlab job timed out")
 		}
 
-		getResp, getBody, err := netlabAPIGet(ctx, fmt.Sprintf("%s/jobs/%s", apiURL, job.ID))
+		getResp, getBody, err := netlabAPIGet(ctx, fmt.Sprintf("%s/jobs/%s", apiURL, job.ID), insecure, token)
 		if err == nil && getResp != nil && getResp.StatusCode >= 200 && getResp.StatusCode < 300 {
 			_ = json.Unmarshal(getBody, &job)
 		}
-		logResp, logBody, err := netlabAPIGet(ctx, fmt.Sprintf("%s/jobs/%s/log", apiURL, job.ID))
+		logResp, logBody, err := netlabAPIGet(ctx, fmt.Sprintf("%s/jobs/%s/log", apiURL, job.ID), insecure, token)
 		if err == nil && logResp != nil && logResp.StatusCode >= 200 && logResp.StatusCode < 300 {
 			var lr netlabAPILog
 			if err := json.Unmarshal(logBody, &lr); err == nil {
@@ -1012,6 +1022,8 @@ func (s *Service) maybeSyncForwardNetlabAfterRun(ctx context.Context, spec netla
 
 	ctxReq, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
+	insecure := spec.Server.APIInsecure
+	token := strings.TrimSpace(spec.Server.APIToken)
 	payload := map[string]any{
 		"action":        "status",
 		"user":          spec.Username,
@@ -1027,7 +1039,7 @@ func (s *Service) maybeSyncForwardNetlabAfterRun(ctx context.Context, spec netla
 		payload["topologyPath"] = strings.TrimSpace(spec.TopologyPath)
 	}
 
-	postResp, body, err := netlabAPIDo(ctxReq, apiURL+"/jobs", payload)
+	postResp, body, err := netlabAPIDo(ctxReq, apiURL+"/jobs", payload, insecure, token)
 	if err != nil {
 		return fmt.Errorf("failed to reach netlab API: %w", err)
 	}
@@ -1046,12 +1058,12 @@ func (s *Service) maybeSyncForwardNetlabAfterRun(ctx context.Context, spec netla
 			break
 		}
 
-		getResp, getBody, err := netlabAPIGet(ctxReq, fmt.Sprintf("%s/jobs/%s", apiURL, statusJob.ID))
+			getResp, getBody, err := netlabAPIGet(ctxReq, fmt.Sprintf("%s/jobs/%s", apiURL, statusJob.ID), insecure, token)
 		if err == nil && getResp != nil && getResp.StatusCode >= 200 && getResp.StatusCode < 300 {
 			_ = json.Unmarshal(getBody, &statusJob)
 		}
 
-		logResp, logBody, err := netlabAPIGet(ctxReq, fmt.Sprintf("%s/jobs/%s/log", apiURL, statusJob.ID))
+			logResp, logBody, err := netlabAPIGet(ctxReq, fmt.Sprintf("%s/jobs/%s/log", apiURL, statusJob.ID), insecure, token)
 		if err == nil && logResp != nil && logResp.StatusCode >= 200 && logResp.StatusCode < 300 {
 			var lr netlabAPILog
 			if err := json.Unmarshal(logBody, &lr); err == nil {
@@ -1172,6 +1184,10 @@ type labppRunSpec struct {
 	EveURL        string
 	EveUsername   string
 	EvePassword   string
+	EveSSHHost    string
+	EveSSHUser    string
+	EveSSHKey     string
+	EveSkipTLS    bool
 	MaxSeconds    int
 	Metadata      JSONMap
 }
@@ -1266,6 +1282,15 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 	if eveHost == "" {
 		return fmt.Errorf("eve host unavailable for labpp")
 	}
+	sshHost := strings.TrimSpace(spec.EveSSHHost)
+	if sshHost == "" {
+		sshHost = eveHost
+	}
+	sshUser := strings.TrimSpace(spec.EveSSHUser)
+	if sshUser == "" {
+		sshUser = s.cfg.Labs.EveSSHUser
+	}
+	sshKey := strings.TrimSpace(spec.EveSSHKey)
 	configFile, err := s.writeLabppConfigFile(eveHost, spec.EveUsername, spec.EvePassword)
 	if err != nil {
 		return err
@@ -1303,14 +1328,18 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		"LABPP_TEMPLATES_DIR":      templateDir,
 		"LABPP_LAB_PATH":           labppRunnerPath,
 		"LABPP_ACTION":             action,
-		"LABPP_EVE_SSH_HOST":       eveHost,
-		"LABPP_EVE_SSH_USER":       s.cfg.Labs.EveSSHUser,
+		"LABPP_EVE_SSH_HOST":       sshHost,
+		"LABPP_EVE_SSH_USER":       sshUser,
 		"LABPP_EVE_SSH_KEY_FILE":   s.cfg.Labs.EveSSHKeyFile,
 		"LABPP_EVE_SSH_PORT":       "22",
 		"LABPP_EVE_SSH_TUNNEL":     fmt.Sprintf("%v", s.cfg.Labs.EveSSHTunnel),
 		"LABPP_EVE_SSH_NO_PROXY":   "localhost|127.0.0.1|minio|netbox|nautobot|gitea|skyforge-server|*.svc|*.cluster.local",
 		"LABPP_SKIP_FORWARD":       "true",
 		"LABPP_DEPLOYMENT_ID":      strings.TrimSpace(spec.DeploymentID),
+	}
+	if sshKey != "" {
+		jobEnv["LABPP_EVE_SSH_KEY_FILE"] = ""
+		jobEnv["LABPP_EVE_SSH_KEY"] = sshKey
 	}
 	jobEnv["LABPP_NETBOX_USERNAME"] = s.cfg.LabppNetboxUsername
 	jobEnv["LABPP_NETBOX_PASSWORD"] = s.cfg.LabppNetboxPassword

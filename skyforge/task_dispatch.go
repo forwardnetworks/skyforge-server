@@ -116,9 +116,33 @@ func (s *Service) dispatchNetlabTask(ctx context.Context, task *TaskRecord, log 
 	if serverName == "" {
 		serverName = strings.TrimSpace(pc.workspace.EveServer)
 	}
-	server, _ := resolveNetlabServer(s.cfg, serverName)
-	if server == nil {
-		return fmt.Errorf("netlab runner is not configured")
+	var server *NetlabServerConfig
+	if serverID, ok := parseWorkspaceServerRef(serverName); ok {
+		if s.db == nil {
+			return fmt.Errorf("database unavailable")
+		}
+		rec, err := getWorkspaceNetlabServerByID(ctx, s.db, s.box, pc.workspace.ID, serverID)
+		if err != nil {
+			return fmt.Errorf("failed to load workspace netlab server")
+		}
+		if rec == nil {
+			return fmt.Errorf("workspace netlab server not found")
+		}
+		custom := NetlabServerConfig{
+			Name:        strings.TrimSpace(rec.Name),
+			APIURL:      strings.TrimSpace(rec.APIURL),
+			APIInsecure: rec.APIInsecure,
+			APIToken:    strings.TrimSpace(rec.APIToken),
+			StateRoot:   strings.TrimSpace(s.cfg.Netlab.StateRoot),
+		}
+		custom = normalizeNetlabServer(custom, s.cfg.Netlab)
+		server = &custom
+	} else {
+		srv, _ := resolveNetlabServer(s.cfg, serverName)
+		if srv == nil {
+			return fmt.Errorf("netlab runner is not configured")
+		}
+		server = srv
 	}
 
 	if strings.TrimSpace(specIn.TemplateSource) == "" {
@@ -174,9 +198,33 @@ func (s *Service) dispatchNetlabC9sTask(ctx context.Context, task *TaskRecord, l
 	if serverName == "" {
 		serverName = strings.TrimSpace(pc.workspace.EveServer)
 	}
-	server, _ := resolveNetlabServer(s.cfg, serverName)
-	if server == nil {
-		return fmt.Errorf("netlab runner is not configured")
+	var server *NetlabServerConfig
+	if serverID, ok := parseWorkspaceServerRef(serverName); ok {
+		if s.db == nil {
+			return fmt.Errorf("database unavailable")
+		}
+		rec, err := getWorkspaceNetlabServerByID(ctx, s.db, s.box, pc.workspace.ID, serverID)
+		if err != nil {
+			return fmt.Errorf("failed to load workspace netlab server")
+		}
+		if rec == nil {
+			return fmt.Errorf("workspace netlab server not found")
+		}
+		custom := NetlabServerConfig{
+			Name:        strings.TrimSpace(rec.Name),
+			APIURL:      strings.TrimSpace(rec.APIURL),
+			APIInsecure: rec.APIInsecure,
+			APIToken:    strings.TrimSpace(rec.APIToken),
+			StateRoot:   strings.TrimSpace(s.cfg.Netlab.StateRoot),
+		}
+		custom = normalizeNetlabServer(custom, s.cfg.Netlab)
+		server = &custom
+	} else {
+		srv, _ := resolveNetlabServer(s.cfg, serverName)
+		if srv == nil {
+			return fmt.Errorf("netlab runner is not configured")
+		}
+		server = srv
 	}
 	if strings.TrimSpace(specIn.TemplateSource) == "" {
 		specIn.TemplateSource = "blueprints"
@@ -247,14 +295,46 @@ func (s *Service) dispatchLabppTask(ctx context.Context, task *TaskRecord, log *
 
 	serverName := strings.TrimSpace(specIn.EveServer)
 	var eveServer *EveServerConfig
-	if serverName != "" {
-		eveServer = eveServerByName(s.cfg.EveServers, serverName)
-	}
-	if eveServer == nil && len(s.cfg.EveServers) > 0 {
-		eveServer = &s.cfg.EveServers[0]
-	}
-	if eveServer == nil {
-		return fmt.Errorf("eve server is not configured")
+	sshHostOverride := ""
+	sshUserOverride := ""
+	sshKeyOverride := ""
+	skipTLSOverride := false
+	if serverID, ok := parseWorkspaceServerRef(serverName); ok {
+		if s.db == nil {
+			return fmt.Errorf("database unavailable")
+		}
+		rec, err := getWorkspaceEveServerByID(ctx, s.db, s.box, pc.workspace.ID, serverID)
+		if err != nil {
+			return fmt.Errorf("failed to load workspace EVE server")
+		}
+		if rec == nil {
+			return fmt.Errorf("workspace EVE server not found")
+		}
+		eveServer = &EveServerConfig{
+			Name:          strings.TrimSpace(rec.Name),
+			APIURL:        strings.TrimSpace(rec.APIURL),
+			WebURL:        strings.TrimSpace(rec.WebURL),
+			SkipTLSVerify: rec.SkipTLSVerify,
+			SSHHost:       strings.TrimSpace(rec.SSHHost),
+			SSHUser:       strings.TrimSpace(rec.SSHUser),
+		}
+		sshHostOverride = strings.TrimSpace(rec.SSHHost)
+		sshUserOverride = strings.TrimSpace(rec.SSHUser)
+		sshKeyOverride = strings.TrimSpace(rec.SSHKey)
+		skipTLSOverride = rec.SkipTLSVerify
+	} else {
+		if serverName != "" {
+			eveServer = eveServerByName(s.cfg.EveServers, serverName)
+		}
+		if eveServer == nil && len(s.cfg.EveServers) > 0 {
+			eveServer = &s.cfg.EveServers[0]
+		}
+		if eveServer == nil {
+			return fmt.Errorf("eve server is not configured")
+		}
+		normalized := normalizeEveServer(*eveServer, s.cfg.Labs)
+		eveServer = &normalized
+		skipTLSOverride = normalized.SkipTLSVerify
 	}
 
 	eveURL := strings.TrimSpace(specIn.EveURL)
@@ -345,6 +425,10 @@ func (s *Service) dispatchLabppTask(ctx context.Context, task *TaskRecord, log *
 		EveURL:        eveURL,
 		EveUsername:   eveUsername,
 		EvePassword:   evePassword,
+		EveSSHHost:    sshHostOverride,
+		EveSSHUser:    sshUserOverride,
+		EveSSHKey:     sshKeyOverride,
+		EveSkipTLS:    skipTLSOverride,
 		MaxSeconds:    maxSeconds,
 		Metadata:      task.Metadata,
 	}

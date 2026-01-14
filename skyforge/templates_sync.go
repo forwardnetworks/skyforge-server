@@ -1,7 +1,11 @@
 package skyforge
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -336,6 +340,126 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 		_, _ = runSSHCommand(client, fmt.Sprintf("chown -R %q:%q %q >/dev/null 2>&1 || true", owner, owner, workdir), 8*time.Second)
 	}
 	return topologyPath, nil
+}
+
+func (s *Service) buildNetlabTopologyBundleB64(ctx context.Context, pc *workspaceContext, templateSource, templateRepo, templatesDir, templateFile string) (string, error) {
+	if s == nil {
+		return "", fmt.Errorf("service unavailable")
+	}
+	if pc == nil {
+		return "", fmt.Errorf("workspace context unavailable")
+	}
+	templatesDir, templateFile, rootPath, _ := normalizeNetlabTemplateSelectionWithSource(templateSource, templatesDir, templateFile)
+	if templateFile == "" {
+		return "", nil
+	}
+	if !isSafeRelativePath(templatesDir) {
+		return "", fmt.Errorf("templatesDir must be a safe repo-relative path")
+	}
+	ref, err := resolveTemplateRepoForProject(s.cfg, pc, templateSource, templateRepo)
+	if err != nil {
+		return "", err
+	}
+	templatePath := strings.TrimPrefix(path.Join(templatesDir, templateFile), "/")
+	if templatePath == "" {
+		return "", fmt.Errorf("template path is required")
+	}
+	templateDir := strings.Trim(strings.TrimSpace(path.Dir(templatePath)), "/")
+	if templateDir == "" || templateDir == "." {
+		templateDir = strings.Trim(strings.TrimSpace(rootPath), "/")
+	}
+	if templateDir == "" {
+		return "", fmt.Errorf("template dir is required")
+	}
+
+	sha := ""
+	if ref.Owner != "" && ref.Repo != "" && ref.Branch != "" {
+		if got, err := getGiteaBranchHeadSHA(s.cfg, ref.Owner, ref.Repo, ref.Branch); err == nil {
+			sha = strings.TrimSpace(got)
+		}
+	}
+	lockKey := strings.Join([]string{ref.Owner, ref.Repo, ref.Branch, templateDir, sha}, "|")
+	var out string
+	if err := withNetlabSyncLock(lockKey, func() error {
+		var buf bytes.Buffer
+		gz := gzip.NewWriter(&buf)
+		tw := tar.NewWriter(gz)
+		defer func() {
+			_ = tw.Close()
+			_ = gz.Close()
+		}()
+
+		var walkDir func(repoDir string) error
+		walkDir = func(repoDir string) error {
+			entries, err := listGiteaDirectory(s.cfg, ref.Owner, ref.Repo, repoDir, ref.Branch)
+			if err != nil {
+				return err
+			}
+			if len(entries) == 0 {
+				return fmt.Errorf("netlab template directory is empty: %s", repoDir)
+			}
+			for _, entry := range entries {
+				name := strings.TrimSpace(entry.Name)
+				if name == "" || strings.HasPrefix(name, ".") {
+					continue
+				}
+				entryPath := strings.TrimPrefix(strings.TrimSpace(entry.Path), "/")
+				switch entry.Type {
+				case "dir":
+					if err := walkDir(entryPath); err != nil {
+						return err
+					}
+					continue
+				case "file":
+					// ok
+				default:
+					continue
+				}
+				data, err := readGiteaFileBytes(s.cfg, ref.Owner, ref.Repo, entryPath, ref.Branch)
+				if err != nil {
+					return err
+				}
+				rel := strings.TrimPrefix(entryPath, templateDir)
+				rel = strings.TrimPrefix(rel, "/")
+				tarName := rel
+				if entryPath == templatePath {
+					tarName = "topology.yml"
+				}
+				tarName = path.Clean(strings.TrimPrefix(tarName, "/"))
+				if tarName == "." || tarName == "" || strings.HasPrefix(tarName, "..") {
+					continue
+				}
+				hdr := &tar.Header{
+					Name:    tarName,
+					Mode:    0o644,
+					Size:    int64(len(data)),
+					ModTime: time.Now(),
+				}
+				if err := tw.WriteHeader(hdr); err != nil {
+					return err
+				}
+				if _, err := tw.Write(data); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+
+		if err := walkDir(templateDir); err != nil {
+			return err
+		}
+		if err := tw.Close(); err != nil {
+			return err
+		}
+		if err := gz.Close(); err != nil {
+			return err
+		}
+		out = base64.StdEncoding.EncodeToString(buf.Bytes())
+		return nil
+	}); err != nil {
+		return "", err
+	}
+	return out, nil
 }
 
 func resolveTemplateRepoForProject(cfg Config, pc *workspaceContext, source string, customRepo string) (templateRepoRef, error) {

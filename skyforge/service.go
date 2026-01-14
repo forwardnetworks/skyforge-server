@@ -219,6 +219,9 @@ type NetlabServerConfig struct {
 	SSHUser                   string `json:"sshUser,omitempty"`
 	SSHKeyFile                string `json:"sshKeyFile,omitempty"`
 	StateRoot                 string `json:"stateRoot,omitempty"`
+	APIURL                    string `json:"apiUrl,omitempty"`
+	APIInsecure               bool   `json:"apiInsecure,omitempty"`
+	APIToken                  string `json:"apiToken,omitempty"`
 	ContainerlabAPIURL        string `json:"containerlabApiUrl,omitempty"`
 	ContainerlabSkipTLSVerify bool   `json:"containerlabSkipTlsVerify,omitempty"`
 }
@@ -515,17 +518,41 @@ func parseNetlabServers(raw string) ([]NetlabServerConfig, error) {
 	switch v := decoded.(type) {
 	case []any:
 		payload, _ := json.Marshal(v)
-		var servers []NetlabServerConfig
-		if err := json.Unmarshal(payload, &servers); err != nil {
+		var rawServers []map[string]any
+		if err := json.Unmarshal(payload, &rawServers); err != nil {
 			return nil, err
+		}
+		servers := make([]NetlabServerConfig, 0, len(rawServers))
+		for _, entry := range rawServers {
+			b, _ := json.Marshal(entry)
+			var s NetlabServerConfig
+			if err := json.Unmarshal(b, &s); err != nil {
+				return nil, err
+			}
+			if _, ok := entry["apiInsecure"]; !ok {
+				s.APIInsecure = true
+			}
+			servers = append(servers, s)
 		}
 		return servers, nil
 	case map[string]any:
 		if serversRaw, ok := v["servers"]; ok {
 			payload, _ := json.Marshal(serversRaw)
-			var servers []NetlabServerConfig
-			if err := json.Unmarshal(payload, &servers); err != nil {
+			var rawServers []map[string]any
+			if err := json.Unmarshal(payload, &rawServers); err != nil {
 				return nil, err
+			}
+			servers := make([]NetlabServerConfig, 0, len(rawServers))
+			for _, entry := range rawServers {
+				b, _ := json.Marshal(entry)
+				var s NetlabServerConfig
+				if err := json.Unmarshal(b, &s); err != nil {
+					return nil, err
+				}
+				if _, ok := entry["apiInsecure"]; !ok {
+					s.APIInsecure = true
+				}
+				servers = append(servers, s)
 			}
 			return servers, nil
 		}
@@ -597,6 +624,7 @@ func normalizeNetlabServer(s NetlabServerConfig, fallback NetlabConfig) NetlabSe
 	s.SSHUser = strings.TrimSpace(s.SSHUser)
 	s.SSHKeyFile = strings.TrimSpace(s.SSHKeyFile)
 	s.StateRoot = strings.TrimSpace(s.StateRoot)
+	s.APIURL = strings.TrimRight(strings.TrimSpace(s.APIURL), "/")
 	s.ContainerlabAPIURL = strings.TrimRight(strings.TrimSpace(s.ContainerlabAPIURL), "/")
 
 	if s.SSHUser == "" {
@@ -607,6 +635,9 @@ func normalizeNetlabServer(s NetlabServerConfig, fallback NetlabConfig) NetlabSe
 	}
 	if s.StateRoot == "" {
 		s.StateRoot = strings.TrimSpace(fallback.StateRoot)
+	}
+	if s.APIURL == "" && s.SSHHost != "" {
+		s.APIURL = strings.TrimRight(fmt.Sprintf("https://%s/netlab", s.SSHHost), "/")
 	}
 	if s.Name == "" {
 		if s.SSHHost != "" {
@@ -652,6 +683,7 @@ func netlabServerFromEve(server EveServerConfig, fallback NetlabConfig, labsCfg 
 		SSHUser:    strings.TrimSpace(eve.SSHUser),
 		SSHKeyFile: strings.TrimSpace(fallback.SSHKeyFile),
 		StateRoot:  strings.TrimSpace(fallback.StateRoot),
+		APIInsecure: true,
 	}
 	return normalizeNetlabServer(netlab, fallback)
 }
@@ -721,6 +753,7 @@ func resolveNetlabServer(cfg Config, name string) (*NetlabServerConfig, string) 
 			SSHUser:    cfg.Netlab.SSHUser,
 			SSHKeyFile: cfg.Netlab.SSHKeyFile,
 			StateRoot:  cfg.Netlab.StateRoot,
+			APIInsecure: true,
 		}, cfg.Netlab)
 		return &s, s.Name
 	}
