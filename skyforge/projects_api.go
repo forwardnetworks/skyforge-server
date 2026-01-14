@@ -68,6 +68,7 @@ func (s *Service) ensureDefaultWorkspace(ctx context.Context, user *AuthUser) (*
 	slug := baseSlug
 	for _, w := range workspaces {
 		if strings.EqualFold(w.CreatedBy, user.Username) && strings.EqualFold(w.Slug, baseSlug) {
+			s.maybeQueueUserBootstrap(ctx, w.ID, user)
 			return &w, nil
 		}
 		if strings.EqualFold(w.Slug, slug) && !strings.EqualFold(w.CreatedBy, user.Username) {
@@ -83,7 +84,47 @@ func (s *Service) ensureDefaultWorkspace(ctx context.Context, user *AuthUser) (*
 	if err != nil {
 		return nil, err
 	}
+	if created != nil {
+		s.maybeQueueUserBootstrap(ctx, created.ID, user)
+	}
 	return created, nil
+}
+
+func (s *Service) maybeQueueUserBootstrap(ctx context.Context, workspaceID string, user *AuthUser) {
+	if s == nil || s.db == nil || user == nil || !s.cfg.TaskWorkerEnabled {
+		return
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return
+	}
+	username := strings.TrimSpace(user.Username)
+	if username == "" {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	dedupeKey := fmt.Sprintf("user-bootstrap:%s", strings.ToLower(username))
+	if recent, err := hasRecentTaskByDedupeKey(ctx, s.db, "user-bootstrap", dedupeKey, 30*time.Minute); err == nil && recent {
+		return
+	}
+	meta, err := toJSONMap(map[string]any{
+		"dedupeKey": dedupeKey,
+		"spec": map[string]any{
+			"username":    username,
+			"displayName": strings.TrimSpace(user.DisplayName),
+			"email":       strings.TrimSpace(user.Email),
+		},
+	})
+	if err != nil {
+		return
+	}
+	task, err := createTask(ctx, s.db, workspaceID, nil, "user-bootstrap", "Skyforge user bootstrap", username, meta)
+	if err != nil {
+		return
+	}
+	s.queueTask(task)
 }
 
 func (s *Service) resolveWorkspaceForUser(ctx context.Context, user *AuthUser, workspaceKey string) (*SkyforgeWorkspace, error) {
@@ -249,11 +290,9 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 	}
 	// Provisioning the Gitea user is a best-effort side-effect. Workspace creation
 	// should succeed even if the downstream integration is temporarily unavailable.
-	go func() {
-		if err := ensureGiteaUserFromProfile(s.cfg, profile); err != nil {
-			log.Printf("ensureGiteaUserFromProfile: %v", err)
-		}
-	}()
+	if err := ensureGiteaUserFromProfile(s.cfg, profile); err != nil {
+		log.Printf("ensureGiteaUserFromProfile: %v", err)
+	}
 
 	blueprint := strings.TrimSpace(req.Blueprint)
 	if blueprint == "" {
@@ -288,162 +327,6 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 			defaultBranch = branch
 		}
 	}
-	// Sync the shared blueprint catalog into the user's repo (best-effort).
-	go func() {
-		if err := syncBlueprintCatalogIntoWorkspaceRepo(s.cfg, giteaCfg, owner, repo, defaultBlueprintCatalog, defaultBranch, claims); err != nil {
-			log.Printf("syncBlueprintCatalogIntoWorkspaceRepo: %v", err)
-		}
-	}()
-
-	storageEndpoint := strings.TrimSpace(s.cfg.Workspaces.ObjectStorageEndpoint)
-	if storageEndpoint == "" {
-		storageEndpoint = "minio:9000"
-	}
-	if !strings.Contains(storageEndpoint, "://") {
-		storageEndpoint = "http://" + storageEndpoint
-	}
-
-	backendTF := fmt.Sprintf(`terraform {
-  backend "s3" {
-    endpoint                    = "%s"
-    bucket                      = "terraform-state"
-    key                         = "%s"
-    region                      = "us-east-1"
-    skip_region_validation      = true
-    skip_credentials_validation = true
-    use_path_style              = true
-  }
-}
-`, storageEndpoint, terraformStateKey)
-
-	compatTFVars := `variable "TF_IN_AUTOMATION" {
-  type    = string
-  default = ""
-}
-variable "AWS_EC2_METADATA_DISABLED" {
-  type    = string
-  default = ""
-}
-variable "AWS_SDK_LOAD_CONFIG" {
-  type    = string
-  default = ""
-}
-variable "AWS_PROFILE" {
-  type    = string
-  default = ""
-}
-variable "AWS_ACCESS_KEY_ID" {
-  type    = string
-  default = ""
-}
-variable "AWS_SECRET_ACCESS_KEY" {
-  type    = string
-  default = ""
-}
-variable "AWS_SESSION_TOKEN" {
-  type    = string
-  default = ""
-}
-variable "AWS_REGION" {
-  type    = string
-  default = ""
-}
-variable "TF_VAR_aws_region" {
-  type    = string
-  default = ""
-}
-variable "TF_VAR_aws_access_key_id" {
-  type    = string
-  default = ""
-}
-variable "TF_VAR_aws_secret_access_key" {
-  type    = string
-  default = ""
-}
-variable "TF_VAR_aws_session_token" {
-  type    = string
-  default = ""
-}
-variable "TF_VAR_scenario" {
-  type    = string
-  default = ""
-}
-variable "TF_VAR_artifacts_bucket" {
-  type    = string
-  default = ""
-}
-variable "TF_VAR_ssh_key_name" {
-  type    = string
-  default = ""
-}
-variable "ARM_TENANT_ID" {
-  type    = string
-  default = ""
-}
-variable "ARM_CLIENT_ID" {
-  type    = string
-  default = ""
-}
-variable "ARM_CLIENT_SECRET" {
-  type    = string
-  default = ""
-}
-variable "ARM_SUBSCRIPTION_ID" {
-  type    = string
-  default = ""
-}
-variable "TF_VAR_azure_subscription_id" {
-  type    = string
-  default = ""
-}
-variable "TF_VAR_azure_region" {
-  type    = string
-  default = ""
-}
-variable "GOOGLE_CREDENTIALS" {
-  type    = string
-  default = ""
-}
-variable "GOOGLE_PROJECT" {
-  type    = string
-  default = ""
-}
-variable "TF_VAR_gcp_project" {
-  type    = string
-  default = ""
-}
-variable "TF_VAR_gcp_region" {
-  type    = string
-  default = ""
-}
-`
-	desc := strings.TrimSpace(req.Description)
-	if desc == "" {
-		desc = "Provisioned by Skyforge."
-	}
-	playbookYML := `- name: Skyforge placeholder playbook
-  hosts: localhost
-  connection: local
-  gather_facts: false
-  tasks:
-    - name: Placeholder
-      debug:
-        msg: "Replace playbook.yml with your Ansible automation."
-`
-	go func() {
-		if err := ensureGiteaFile(s.cfg, owner, repo, "backend.tf", backendTF, "chore: configure terraform backend", defaultBranch, claims); err != nil {
-			log.Printf("ensureGiteaFile backend.tf: %v", err)
-		}
-		if err := ensureGiteaFile(s.cfg, owner, repo, "skyforge-compat.tf", compatTFVars, "chore: add skyforge terraform env compatibility", defaultBranch, claims); err != nil {
-			log.Printf("ensureGiteaFile skyforge-compat.tf: %v", err)
-		}
-		if err := ensureGiteaFile(giteaCfg, owner, repo, "README.md", fmt.Sprintf("# %s\n\n%s\n", name, desc), "docs: add README", defaultBranch, claims); err != nil {
-			log.Printf("ensureGiteaFile README.md: %v", err)
-		}
-		if err := ensureGiteaFile(giteaCfg, owner, repo, "playbook.yml", playbookYML, "chore: add placeholder ansible playbook", defaultBranch, claims); err != nil {
-			log.Printf("ensureGiteaFile playbook.yml: %v", err)
-		}
-	}()
 
 	legacyWorkspaceID := nextLegacyWorkspaceID(workspaces)
 	terraformInitID := 0
@@ -527,6 +410,25 @@ variable "TF_VAR_gcp_region" {
 		)
 	}
 	syncGiteaCollaboratorsForWorkspace(giteaCfg, created)
+
+	// Offload repo seeding + blueprint sync to the task queue for durability/retries.
+	// Workspace creation should succeed even if downstream provisioning is temporarily unavailable.
+	if s.db != nil {
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		meta, err := toJSONMap(map[string]any{
+			"dedupeKey": fmt.Sprintf("workspace-bootstrap:%s", strings.TrimSpace(created.ID)),
+			"spec":      map[string]any{},
+		})
+		if err != nil {
+			log.Printf("workspace bootstrap meta encode: %v", err)
+		} else if task, err := createTask(ctx, s.db, created.ID, nil, "workspace-bootstrap", "Skyforge workspace bootstrap", user.Username, meta); err != nil {
+			log.Printf("workspace bootstrap task create: %v", err)
+		} else {
+			s.queueTask(task)
+		}
+	}
+
 	return &created, nil
 }
 

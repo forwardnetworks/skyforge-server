@@ -263,6 +263,247 @@ func (s *Service) dispatchNetlabC9sTask(ctx context.Context, task *TaskRecord, l
 	})
 }
 
+type userBootstrapTaskSpec struct {
+	Username    string `json:"username,omitempty"`
+	DisplayName string `json:"displayName,omitempty"`
+	Email       string `json:"email,omitempty"`
+}
+
+func (s *Service) dispatchUserBootstrapTask(ctx context.Context, task *TaskRecord, log *taskLogger) error {
+	var specIn userBootstrapTaskSpec
+	_ = decodeTaskSpec(task, &specIn)
+
+	username := strings.TrimSpace(specIn.Username)
+	if username == "" {
+		username = strings.TrimSpace(task.CreatedBy)
+	}
+	if username == "" {
+		return fmt.Errorf("username missing")
+	}
+	displayName := strings.TrimSpace(specIn.DisplayName)
+	if displayName == "" {
+		displayName = username
+	}
+	email := strings.TrimSpace(specIn.Email)
+	if email == "" && strings.TrimSpace(s.cfg.CorpEmailDomain) != "" {
+		email = fmt.Sprintf("%s@%s", username, strings.TrimSpace(s.cfg.CorpEmailDomain))
+	}
+
+	profile := &UserProfile{
+		Authenticated: true,
+		Username:      username,
+		DisplayName:   displayName,
+		Email:         email,
+		IsAdmin:       isAdminUser(s.cfg, username),
+	}
+
+	if err := s.withTaskStep(ctx, task.ID, "gitea.ensure_user", func() error {
+		return ensureGiteaUserFromProfile(s.cfg, profile)
+	}); err != nil {
+		return err
+	}
+
+	// Best-effort: this bootstraps local workspace folders and shared lab repos for the user's
+	// Coder environment. It logs warnings internally and is rate-limited.
+	_ = s.withTaskStep(ctx, task.ID, "user.bootstrap_labs", func() error {
+		s.bootstrapUserLabs(username)
+		return nil
+	})
+
+	log.Infof("User bootstrap completed for %s", username)
+	return nil
+}
+
+func (s *Service) dispatchWorkspaceBootstrapTask(ctx context.Context, task *TaskRecord, log *taskLogger) error {
+	pc, err := s.systemWorkspaceContext(ctx, task.WorkspaceID, task.CreatedBy)
+	if err != nil {
+		return err
+	}
+
+	owner := strings.TrimSpace(pc.workspace.GiteaOwner)
+	repo := strings.TrimSpace(pc.workspace.GiteaRepo)
+	if owner == "" || repo == "" {
+		return fmt.Errorf("gitea owner/repo not configured for workspace")
+	}
+
+	branch := strings.TrimSpace(pc.workspace.DefaultBranch)
+	if branch == "" {
+		branch = "main"
+	}
+
+	stateKey := strings.TrimSpace(pc.workspace.TerraformStateKey)
+	if stateKey == "" {
+		stateKey = fmt.Sprintf("tf-%s/primary.tfstate", strings.TrimSpace(pc.workspace.Slug))
+	}
+	storageEndpoint := strings.TrimSpace(s.cfg.Workspaces.ObjectStorageEndpoint)
+	if storageEndpoint == "" {
+		storageEndpoint = "minio:9000"
+	}
+	if !strings.Contains(storageEndpoint, "://") {
+		storageEndpoint = "http://" + storageEndpoint
+	}
+	backendTF := fmt.Sprintf(`terraform {
+  backend "s3" {
+    endpoint                    = "%s"
+    bucket                      = "terraform-state"
+    key                         = "%s"
+    region                      = "us-east-1"
+    skip_region_validation      = true
+    skip_credentials_validation = true
+    use_path_style              = true
+  }
+}
+`, storageEndpoint, stateKey)
+
+	compatTFVars := `variable "TF_IN_AUTOMATION" {
+  type    = string
+  default = ""
+}
+variable "AWS_EC2_METADATA_DISABLED" {
+  type    = string
+  default = ""
+}
+variable "AWS_SDK_LOAD_CONFIG" {
+  type    = string
+  default = ""
+}
+variable "AWS_PROFILE" {
+  type    = string
+  default = ""
+}
+variable "AWS_ACCESS_KEY_ID" {
+  type    = string
+  default = ""
+}
+variable "AWS_SECRET_ACCESS_KEY" {
+  type    = string
+  default = ""
+}
+variable "AWS_SESSION_TOKEN" {
+  type    = string
+  default = ""
+}
+variable "AWS_REGION" {
+  type    = string
+  default = ""
+}
+variable "TF_VAR_aws_region" {
+  type    = string
+  default = ""
+}
+variable "TF_VAR_aws_access_key_id" {
+  type    = string
+  default = ""
+}
+variable "TF_VAR_aws_secret_access_key" {
+  type    = string
+  default = ""
+}
+variable "TF_VAR_aws_session_token" {
+  type    = string
+  default = ""
+}
+variable "TF_VAR_scenario" {
+  type    = string
+  default = ""
+}
+variable "TF_VAR_artifacts_bucket" {
+  type    = string
+  default = ""
+}
+variable "TF_VAR_ssh_key_name" {
+  type    = string
+  default = ""
+}
+variable "ARM_TENANT_ID" {
+  type    = string
+  default = ""
+}
+variable "ARM_CLIENT_ID" {
+  type    = string
+  default = ""
+}
+variable "ARM_CLIENT_SECRET" {
+  type    = string
+  default = ""
+}
+variable "ARM_SUBSCRIPTION_ID" {
+  type    = string
+  default = ""
+}
+variable "TF_VAR_azure_subscription_id" {
+  type    = string
+  default = ""
+}
+variable "TF_VAR_azure_region" {
+  type    = string
+  default = ""
+}
+variable "GOOGLE_CREDENTIALS" {
+  type    = string
+  default = ""
+}
+variable "GOOGLE_PROJECT" {
+  type    = string
+  default = ""
+}
+variable "TF_VAR_gcp_project" {
+  type    = string
+  default = ""
+}
+variable "TF_VAR_gcp_region" {
+  type    = string
+  default = ""
+}
+`
+
+	desc := strings.TrimSpace(pc.workspace.Description)
+	if desc == "" {
+		desc = "Provisioned by Skyforge."
+	}
+	readme := fmt.Sprintf("# %s\n\n%s\n", strings.TrimSpace(pc.workspace.Name), desc)
+
+	playbookYML := `- name: Skyforge placeholder playbook
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Placeholder
+      debug:
+        msg: "Replace playbook.yml with your Ansible automation."
+`
+
+	if err := s.withTaskStep(ctx, task.ID, "workspace.seed_repo", func() error {
+		if err := ensureGiteaFile(s.cfg, owner, repo, "backend.tf", backendTF, "chore: configure terraform backend", branch, pc.claims); err != nil {
+			return err
+		}
+		if err := ensureGiteaFile(s.cfg, owner, repo, "skyforge-compat.tf", compatTFVars, "chore: add skyforge terraform env compatibility", branch, pc.claims); err != nil {
+			return err
+		}
+		if err := ensureGiteaFile(s.cfg, owner, repo, "README.md", readme, "docs: add README", branch, pc.claims); err != nil {
+			return err
+		}
+		if err := ensureGiteaFile(s.cfg, owner, repo, "playbook.yml", playbookYML, "chore: add placeholder ansible playbook", branch, pc.claims); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	if err := s.withTaskStep(ctx, task.ID, "workspace.sync_blueprints", func() error {
+		if err := ensureBlueprintCatalogRepo(s.cfg, defaultBlueprintCatalog); err != nil {
+			return err
+		}
+		return syncBlueprintCatalogIntoWorkspaceRepo(s.cfg, s.cfg, owner, repo, defaultBlueprintCatalog, branch, pc.claims)
+	}); err != nil {
+		return err
+	}
+
+	log.Infof("Workspace bootstrap completed for %s/%s", owner, repo)
+	return nil
+}
+
 type labppTaskSpec struct {
 	Action            string            `json:"action,omitempty"`
 	EveServer         string            `json:"eveServer,omitempty"`
@@ -668,6 +909,10 @@ func (s *Service) dispatchTask(ctx context.Context, task *TaskRecord, log *taskL
 	}
 	typ := strings.TrimSpace(task.TaskType)
 	switch {
+	case typ == "user-bootstrap":
+		return s.dispatchUserBootstrapTask(ctx, task, log)
+	case typ == "workspace-bootstrap":
+		return s.dispatchWorkspaceBootstrapTask(ctx, task, log)
 	case typ == "netlab-run":
 		return s.dispatchNetlabTask(ctx, task, log)
 	case typ == "netlab-c9s-run":

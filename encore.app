@@ -3,6 +3,7 @@
   "description": "Encore service for Skyforge",
   "services": [
     "skyforge",
+    "worker",
     "health",
     "storage"
   ],

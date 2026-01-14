@@ -157,12 +157,6 @@ func (s *Service) Login(ctx context.Context, req *LoginRequest) (*LoginResponse,
 			return nil, errs.B().Code(errs.Internal).Msg("failed to create session").Err()
 		}
 		cacheLDAPPassword(s.db, profile.Username, req.Password, s.cfg.SessionTTL)
-		go s.bootstrapUserLabs(profile.Username)
-		go func() {
-			if err := ensureGiteaUserFromProfile(s.cfg, profile); err != nil {
-				rlog.Warn("gitea user provision failed", "username", profile.Username, "error", err)
-			}
-		}()
 
 		if err := s.userStore.upsert(profile.Username); err != nil {
 			rlog.Warn("user store upsert failed", "error", err)
@@ -196,12 +190,6 @@ func (s *Service) Login(ctx context.Context, req *LoginRequest) (*LoginResponse,
 		return nil, errs.B().Code(errs.Internal).Msg("failed to create session").Err()
 	}
 	cacheLDAPPassword(s.db, profile.Username, req.Password, s.cfg.SessionTTL)
-	go s.bootstrapUserLabs(profile.Username)
-	go func() {
-		if err := ensureGiteaUserFromProfile(s.cfg, profile); err != nil {
-			rlog.Warn("gitea user provision failed", "username", profile.Username, "error", err)
-		}
-	}()
 
 	if err := s.userStore.upsert(profile.Username); err != nil {
 		rlog.Warn("user store upsert failed", "error", err)

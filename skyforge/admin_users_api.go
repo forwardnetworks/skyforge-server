@@ -74,13 +74,13 @@ func (s *Service) PurgeUser(ctx context.Context, req *PurgeUserRequest) (*PurgeU
 	}
 
 	// Best-effort cleanup of Gitea user and repos.
-	go func() {
+	{
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		if err := purgeGiteaUser(cleanupCtx, s.cfg, username); err != nil {
 			log.Printf("purgeGiteaUser(%s): %v", username, err)
 		}
-	}()
+	}
 
 	return &PurgeUserResponse{
 		Status:            "ok",

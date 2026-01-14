@@ -300,7 +300,16 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 							pattern := fmt.Sprintf("*/%s/*", trimmed)
 							cmd := fmt.Sprintf("tar -xzf - -C %q --strip-components=%d --wildcards %q", destRoot, stripComponents, pattern)
 							if _, err := runSSHCommandWithReader(client, cmd, resp.Body, 4*time.Minute); err == nil {
-								syncedViaArchive = true
+								// Some tar implementations can report success even if wildcard extraction
+								// didn't produce the expected topology file; fall back to per-file sync in
+								// that case to avoid confusing "topology.yml missing" failures later.
+								required := path.Join(workdir, topologyPath)
+								out, _ := runSSHCommand(client, fmt.Sprintf("test -f %q && echo ok || true", required), 5*time.Second)
+								if strings.TrimSpace(out) == "ok" {
+									syncedViaArchive = true
+								} else {
+									log.Printf("netlab archive sync did not produce %s; falling back to per-file sync", required)
+								}
 							}
 						} else {
 							_, _ = io.Copy(io.Discard, resp.Body)
@@ -314,6 +323,13 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 			if err := syncDir(syncStartPath); err != nil {
 				return err
 			}
+		}
+
+		// Ensure the selected topology file is present at the workdir root (the netlab runner expects this).
+		required := path.Join(workdir, topologyPath)
+		out, _ := runSSHCommand(client, fmt.Sprintf("test -f %q && echo ok || true", required), 5*time.Second)
+		if strings.TrimSpace(out) != "ok" {
+			return fmt.Errorf("synced topology file missing: %s", required)
 		}
 
 		// Validate that the selected topology exists in the source repo and should now exist in the workdir root.

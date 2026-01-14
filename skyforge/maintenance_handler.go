@@ -1,5 +1,3 @@
-//go:build skyforge_worker
-
 package skyforge
 
 import (
@@ -9,15 +7,8 @@ import (
 	"time"
 
 	"encore.app/internal/maintenance"
-	"encore.dev/pubsub"
 	"encore.dev/rlog"
 )
-
-var maintenanceSubscription = pubsub.NewSubscription(maintenance.Topic, "skyforge-maintenance-worker", pubsub.SubscriptionConfig[*maintenance.MaintenanceEvent]{
-	Handler:        pubsub.MethodHandler((*Service).handleMaintenanceEvent),
-	MaxConcurrency: 1,
-	AckDeadline:    10 * time.Minute,
-})
 
 func (s *Service) handleMaintenanceEvent(ctx context.Context, msg *maintenance.MaintenanceEvent) error {
 	if s == nil || s.db == nil || msg == nil {

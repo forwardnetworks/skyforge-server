@@ -527,41 +527,13 @@ func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req 
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to create Forward network").Err()
 		}
 		if typ == "netlab" {
-			// Prefetch/sync netlab template files on "deployment definition create" so a subsequent
-			// start has less work to do.
-			netlabServer := strings.TrimSpace(getString("netlabServer"))
-			templateSource := strings.TrimSpace(getString("templateSource"))
-			templateRepo := strings.TrimSpace(getString("templateRepo"))
-			templatesDir := strings.TrimSpace(getString("templatesDir"))
-			template := strings.TrimSpace(getString("template"))
-			workspaceSlug := strings.TrimSpace(pc.workspace.Slug)
-			deploymentName := strings.TrimSpace(dep.Name)
-			owner := strings.TrimSpace(pc.claims.Username)
-
-			if netlabServer != "" && template != "" && workspaceSlug != "" && deploymentName != "" && owner != "" {
-				go func() {
-					ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
-					defer cancel()
-
-					server, _ := resolveNetlabServer(s.cfg, netlabServer)
-					if server == nil {
-						return
-					}
-					// Match runNetlabTask default workspace dir.
-					workdir := fmt.Sprintf("/home/%s/netlab/%s/%s", owner, workspaceSlug, deploymentName)
-					_, _ = s.syncNetlabTopologyFile(ctx, pc, server, templateSource, templateRepo, templatesDir, template, workdir, owner)
-				}()
-			}
-
-			// Also kick off a `netlab create` run immediately so `start` has less work to do.
+			// Kick off a `netlab create` run immediately so a subsequent start has less work to do.
 			// This is best-effort: keep the deployment even if the create run fails.
-			go func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-				defer cancel()
-				if _, err := s.RunWorkspaceDeploymentAction(ctx, id, deploymentID, &WorkspaceDeploymentOpRequest{Action: "create"}); err != nil {
-					log.Printf("netlab create on deployment create: %v", err)
-				}
-			}()
+			ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			if _, err := s.RunWorkspaceDeploymentAction(ctx, id, deploymentID, &WorkspaceDeploymentOpRequest{Action: "create"}); err != nil {
+				log.Printf("netlab create on deployment create: %v", err)
+			}
 		}
 		if typ == "labpp" {
 			_, err := s.RunWorkspaceDeploymentAction(ctx, id, deploymentID, &WorkspaceDeploymentOpRequest{Action: "create"})
@@ -1300,26 +1272,26 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
 		}
 
-			server, _ := resolveNetlabServer(s.cfg, netlabServer)
-			if server == nil {
-				return nil, errs.B().Code(errs.Unavailable).Msg("netlab runner is not configured").Err()
-			}
+		server, _ := resolveNetlabServer(s.cfg, netlabServer)
+		if server == nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("netlab runner is not configured").Err()
+		}
 
 		multilabID := dep.ID
 		h := fnv.New32a()
 		_, _ = h.Write([]byte(multilabID))
 		multilabNumericID := int(h.Sum32()%199) + 1
 
-			workspaceRoot := fmt.Sprintf("/home/%s/netlab", pc.claims.Username)
-			apiURL := strings.TrimSpace(server.APIURL)
-			if apiURL == "" {
-				apiURL = strings.TrimRight(fmt.Sprintf("https://%s/netlab", strings.TrimSpace(server.SSHHost)), "/")
-			}
-			if apiURL == "" {
-				return nil, errs.B().Code(errs.Unavailable).Msg("netlab API URL is not configured").Err()
-			}
-			insecure := server.APIInsecure
-			token := strings.TrimSpace(server.APIToken)
+		workspaceRoot := fmt.Sprintf("/home/%s/netlab", pc.claims.Username)
+		apiURL := strings.TrimSpace(server.APIURL)
+		if apiURL == "" {
+			apiURL = strings.TrimRight(fmt.Sprintf("https://%s/netlab", strings.TrimSpace(server.SSHHost)), "/")
+		}
+		if apiURL == "" {
+			return nil, errs.B().Code(errs.Unavailable).Msg("netlab API URL is not configured").Err()
+		}
+		insecure := server.APIInsecure
+		token := strings.TrimSpace(server.APIToken)
 
 		payload := map[string]any{
 			"action":        "status",
@@ -1339,7 +1311,7 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
 
-			postResp, body, err := netlabAPIDo(ctx, apiURL+"/jobs", payload, insecure, token)
+		postResp, body, err := netlabAPIDo(ctx, apiURL+"/jobs", payload, insecure, token)
 		if err != nil {
 			log.Printf("netlab info: %v", err)
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to reach netlab API").Err()
@@ -1354,11 +1326,11 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 
 		deadline := time.Now().Add(25 * time.Second)
 		for {
-				getResp, getBody, err := netlabAPIGet(ctx, fmt.Sprintf("%s/jobs/%s", apiURL, job.ID), insecure, token)
+			getResp, getBody, err := netlabAPIGet(ctx, fmt.Sprintf("%s/jobs/%s", apiURL, job.ID), insecure, token)
 			if err == nil && getResp != nil && getResp.StatusCode >= 200 && getResp.StatusCode < 300 {
 				_ = json.Unmarshal(getBody, &job)
 			}
-				logResp, logBody, err := netlabAPIGet(ctx, fmt.Sprintf("%s/jobs/%s/log", apiURL, job.ID), insecure, token)
+			logResp, logBody, err := netlabAPIGet(ctx, fmt.Sprintf("%s/jobs/%s/log", apiURL, job.ID), insecure, token)
 			if err == nil && logResp != nil && logResp.StatusCode >= 200 && logResp.StatusCode < 300 {
 				var lr netlabAPILog
 				if err := json.Unmarshal(logBody, &lr); err == nil {
@@ -1385,15 +1357,6 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 			JobID:      job.ID,
 			MultilabID: multilabNumericID,
 			APIURL:     apiURL,
-		}
-		if strings.TrimSpace(resp.Log) != "" {
-			go func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-				defer cancel()
-				if err := s.syncForwardNetlabDevices(ctx, 0, pc, dep, resp.Log); err != nil {
-					log.Printf("forward netlab sync: %v", err)
-				}
-			}()
 		}
 		return resp, nil
 	case "labpp":
@@ -1745,26 +1708,26 @@ func (s *Service) NetlabConnect(ctx context.Context, id, deploymentID string, re
 	if netlabServer == "" {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
 	}
-		server, _ := resolveNetlabServer(s.cfg, netlabServer)
-		if server == nil {
-			return nil, errs.B().Code(errs.Unavailable).Msg("netlab runner is not configured").Err()
-		}
+	server, _ := resolveNetlabServer(s.cfg, netlabServer)
+	if server == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("netlab runner is not configured").Err()
+	}
 
 	multilabID := dep.ID
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(multilabID))
 	multilabNumericID := int(h.Sum32()%199) + 1
 
-		workspaceRoot := fmt.Sprintf("/home/%s/netlab", pc.claims.Username)
-		apiURL := strings.TrimSpace(server.APIURL)
-		if apiURL == "" {
-			apiURL = strings.TrimRight(fmt.Sprintf("https://%s/netlab", strings.TrimSpace(server.SSHHost)), "/")
-		}
-		if apiURL == "" {
-			return nil, errs.B().Code(errs.Unavailable).Msg("netlab API URL is not configured").Err()
-		}
-		insecure := server.APIInsecure
-		token := strings.TrimSpace(server.APIToken)
+	workspaceRoot := fmt.Sprintf("/home/%s/netlab", pc.claims.Username)
+	apiURL := strings.TrimSpace(server.APIURL)
+	if apiURL == "" {
+		apiURL = strings.TrimRight(fmt.Sprintf("https://%s/netlab", strings.TrimSpace(server.SSHHost)), "/")
+	}
+	if apiURL == "" {
+		return nil, errs.B().Code(errs.Unavailable).Msg("netlab API URL is not configured").Err()
+	}
+	insecure := server.APIInsecure
+	token := strings.TrimSpace(server.APIToken)
 
 	payload := map[string]any{
 		"user":          strings.TrimSpace(pc.claims.Username),
@@ -1786,7 +1749,7 @@ func (s *Service) NetlabConnect(ctx context.Context, id, deploymentID string, re
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-		postResp, body, err := netlabAPIDo(ctx, apiURL+"/connect", payload, insecure, token)
+	postResp, body, err := netlabAPIDo(ctx, apiURL+"/connect", payload, insecure, token)
 	if err != nil {
 		log.Printf("netlab connect: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to reach netlab API").Err()
@@ -1844,26 +1807,26 @@ func (s *Service) GetWorkspaceDeploymentNetlabGraph(ctx context.Context, id, dep
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
 	}
 
-		server, _ := resolveNetlabServer(s.cfg, netlabServer)
-		if server == nil {
-			return nil, errs.B().Code(errs.Unavailable).Msg("netlab runner is not configured").Err()
-		}
+	server, _ := resolveNetlabServer(s.cfg, netlabServer)
+	if server == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("netlab runner is not configured").Err()
+	}
 
 	multilabID := dep.ID
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(multilabID))
 	multilabNumericID := int(h.Sum32()%199) + 1
 
-		workspaceRoot := fmt.Sprintf("/home/%s/netlab", pc.claims.Username)
-		apiURL := strings.TrimSpace(server.APIURL)
-		if apiURL == "" {
-			apiURL = strings.TrimRight(fmt.Sprintf("https://%s/netlab", strings.TrimSpace(server.SSHHost)), "/")
-		}
-		if apiURL == "" {
-			return nil, errs.B().Code(errs.Unavailable).Msg("netlab API URL is not configured").Err()
-		}
-		insecure := server.APIInsecure
-		token := strings.TrimSpace(server.APIToken)
+	workspaceRoot := fmt.Sprintf("/home/%s/netlab", pc.claims.Username)
+	apiURL := strings.TrimSpace(server.APIURL)
+	if apiURL == "" {
+		apiURL = strings.TrimRight(fmt.Sprintf("https://%s/netlab", strings.TrimSpace(server.SSHHost)), "/")
+	}
+	if apiURL == "" {
+		return nil, errs.B().Code(errs.Unavailable).Msg("netlab API URL is not configured").Err()
+	}
+	insecure := server.APIInsecure
+	token := strings.TrimSpace(server.APIToken)
 	payload := map[string]any{
 		"user":          strings.TrimSpace(pc.claims.Username),
 		"workspace":     strings.TrimSpace(pc.workspace.Slug),
@@ -1881,7 +1844,7 @@ func (s *Service) GetWorkspaceDeploymentNetlabGraph(ctx context.Context, id, dep
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-		postResp, body, err := netlabAPIDo(ctx, apiURL+"/graph", payload, insecure, token)
+	postResp, body, err := netlabAPIDo(ctx, apiURL+"/graph", payload, insecure, token)
 	if err != nil {
 		log.Printf("netlab graph: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to reach netlab API").Err()

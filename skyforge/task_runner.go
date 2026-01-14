@@ -428,18 +428,22 @@ type netlabC9sRunSpec struct {
 }
 
 func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *taskLogger) error {
-	bundleB64 := ""
 	if spec.Template != "" {
 		log.Infof("Syncing netlab template %s", spec.Template)
 		if spec.WorkspaceCtx == nil {
 			return fmt.Errorf("workspace context unavailable")
 		}
-		payloadB64, err := s.buildNetlabTopologyBundleB64(ctx, spec.WorkspaceCtx, spec.TemplateSource, spec.TemplateRepo, spec.TemplatesDir, spec.Template)
+		// Ensure the selected template subtree is present in the runner workdir so
+		// `netlab create/up` can run using a local topology file.
+		p, err := s.syncNetlabTopologyFile(ctx, spec.WorkspaceCtx, &spec.Server, spec.TemplateSource, spec.TemplateRepo, spec.TemplatesDir, spec.Template, spec.WorkspaceDir, spec.Username)
 		if err != nil {
 			return err
 		}
-		spec.TopologyPath = "topology.yml"
-		bundleB64 = payloadB64
+		if strings.TrimSpace(p) != "" {
+			spec.TopologyPath = strings.TrimSpace(p)
+		} else if strings.TrimSpace(spec.TopologyPath) == "" {
+			spec.TopologyPath = "topology.yml"
+		}
 	}
 
 	apiURL := strings.TrimSpace(spec.Server.APIURL)
@@ -461,9 +465,6 @@ func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *ta
 	}
 	if strings.TrimSpace(spec.TopologyPath) != "" {
 		payload["topologyPath"] = strings.TrimSpace(spec.TopologyPath)
-	}
-	if strings.TrimSpace(bundleB64) != "" {
-		payload["topologyBundleB64"] = strings.TrimSpace(bundleB64)
 	}
 	if strings.TrimSpace(spec.ClabTarball) != "" {
 		payload["clabTarball"] = strings.TrimSpace(spec.ClabTarball)
@@ -1058,12 +1059,12 @@ func (s *Service) maybeSyncForwardNetlabAfterRun(ctx context.Context, spec netla
 			break
 		}
 
-			getResp, getBody, err := netlabAPIGet(ctxReq, fmt.Sprintf("%s/jobs/%s", apiURL, statusJob.ID), insecure, token)
+		getResp, getBody, err := netlabAPIGet(ctxReq, fmt.Sprintf("%s/jobs/%s", apiURL, statusJob.ID), insecure, token)
 		if err == nil && getResp != nil && getResp.StatusCode >= 200 && getResp.StatusCode < 300 {
 			_ = json.Unmarshal(getBody, &statusJob)
 		}
 
-			logResp, logBody, err := netlabAPIGet(ctxReq, fmt.Sprintf("%s/jobs/%s/log", apiURL, statusJob.ID), insecure, token)
+		logResp, logBody, err := netlabAPIGet(ctxReq, fmt.Sprintf("%s/jobs/%s/log", apiURL, statusJob.ID), insecure, token)
 		if err == nil && logResp != nil && logResp.StatusCode >= 200 && logResp.StatusCode < 300 {
 			var lr netlabAPILog
 			if err := json.Unmarshal(logBody, &lr); err == nil {
@@ -1084,10 +1085,15 @@ func (s *Service) maybeSyncForwardNetlabAfterRun(ctx context.Context, spec netla
 		return fmt.Errorf("netlab status log unavailable")
 	}
 
-	if err := s.syncForwardNetlabDevices(ctxReq, spec.TaskID, spec.WorkspaceCtx, dep, statusLog); err != nil {
+	deviceCount, err := s.syncForwardNetlabDevices(ctxReq, spec.TaskID, spec.WorkspaceCtx, dep, statusLog)
+	if err != nil {
 		return err
 	}
-	log.Infof("Forward netlab sync completed.")
+	if deviceCount > 0 {
+		log.Infof("Forward netlab sync completed (%d devices).", deviceCount)
+	} else {
+		log.Infof("Forward netlab sync skipped (Forward not configured or no devices).")
+	}
 	return nil
 }
 

@@ -205,12 +205,6 @@ func (s *Service) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	clearOIDCCookie(w, s.sessionManager, oidcNextCookie)
 
-	go s.bootstrapUserLabs(profile.Username)
-	go func() {
-		if err := ensureGiteaUserFromProfile(s.cfg, profile); err != nil {
-			rlog.Warn("gitea user provision failed", "username", profile.Username, "error", err)
-		}
-	}()
 	if err := s.userStore.upsert(profile.Username); err != nil {
 		rlog.Warn("user store upsert failed", "error", err)
 	}

@@ -2,9 +2,12 @@ package skyforge
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -44,6 +47,19 @@ type taskStatusCountRow struct {
 	OldestAgeSeconds float64
 }
 
+func taskDedupeLockKey(workspaceID string, deploymentID *string, taskType, dedupeKey string) int64 {
+	workspaceID = strings.TrimSpace(workspaceID)
+	taskType = strings.TrimSpace(taskType)
+	dedupeKey = strings.TrimSpace(dedupeKey)
+	dep := ""
+	if deploymentID != nil {
+		dep = strings.TrimSpace(*deploymentID)
+	}
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%s:%s", workspaceID, dep, taskType, dedupeKey)))
+	u := binary.LittleEndian.Uint64(sum[:8])
+	return int64(u)
+}
+
 func createTask(ctx context.Context, db *sql.DB, workspaceID string, deploymentID *string, taskType string, message string, createdBy string, metadata JSONMap) (*TaskRecord, error) {
 	return createTaskWithActiveCheck(ctx, db, workspaceID, deploymentID, taskType, message, createdBy, metadata, false)
 }
@@ -62,6 +78,30 @@ func createTaskWithActiveCheck(ctx context.Context, db *sql.DB, workspaceID stri
 
 	dedupeKey := strings.TrimSpace(getJSONMapString(metadata, "dedupeKey"))
 	if dedupeKey != "" {
+		// Serialize "dedupeKey" task creation to avoid thundering herds creating many tasks before
+		// the first insert becomes visible to subsequent requests.
+		lockKey := taskDedupeLockKey(workspaceID, deploymentID, taskType, dedupeKey)
+		locked := false
+		for {
+			ok, err := pgTryAdvisoryLock(ctx, db, lockKey)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				locked = true
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			default:
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if locked {
+			defer func() { _ = pgAdvisoryUnlock(context.Background(), db, lockKey) }()
+		}
+
 		rec, err := findActiveTaskByDedupeKey(ctx, db, workspaceID, deploymentID, taskType, dedupeKey)
 		if err != nil {
 			return nil, err
@@ -142,6 +182,31 @@ WHERE workspace_id=$1
 		return 0, err
 	}
 	return count, nil
+}
+
+func hasRecentTaskByDedupeKey(ctx context.Context, db *sql.DB, taskType, dedupeKey string, maxAge time.Duration) (bool, error) {
+	if db == nil {
+		return false, errDBUnavailable
+	}
+	taskType = strings.TrimSpace(taskType)
+	dedupeKey = strings.TrimSpace(dedupeKey)
+	if taskType == "" || dedupeKey == "" {
+		return false, nil
+	}
+	seconds := int(maxAge.Seconds())
+	if seconds <= 0 {
+		return false, nil
+	}
+	var ok bool
+	err := db.QueryRowContext(ctx, `SELECT EXISTS(
+  SELECT 1
+  FROM sf_tasks
+  WHERE task_type = $1
+    AND metadata->>'dedupeKey' = $2
+    AND created_at > now() - ($3 * interval '1 second')
+  LIMIT 1
+)`, taskType, dedupeKey, seconds).Scan(&ok)
+	return ok, err
 }
 
 func findActiveTaskByDedupeKey(ctx context.Context, db *sql.DB, workspaceID string, deploymentID *string, taskType string, dedupeKey string) (*TaskRecord, error) {
