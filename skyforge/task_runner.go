@@ -207,8 +207,7 @@ func (s *Service) cancelNetlabJob(ctx context.Context, apiURL, jobID string, log
 	log.Infof("Netlab cancel requested for job %s", jobID)
 }
 
-func (s *Service) queueTask(task *TaskRecord, runner func(ctx context.Context, log *taskLogger) error) {
-	_ = runner
+func (s *Service) queueTask(task *TaskRecord) {
 	if s == nil || task == nil {
 		return
 	}

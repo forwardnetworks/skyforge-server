@@ -61,6 +61,13 @@
       }
     }
   ],
+  "redis": {
+    "default": {
+      "host": "redis:6379",
+      "database_index": 0,
+      "key_prefix": "skyforge"
+    }
+  },
   "graceful_shutdown": {
     "total": 30,
     "shutdown_hooks": 10,
@@ -75,7 +82,6 @@
     "SKYFORGE_LDAP_LOOKUP_BINDDN": {},
     "SKYFORGE_LDAP_LOOKUP_BINDPASSWORD": {},
     "SKYFORGE_DB_PASSWORD": {},
-    "SKYFORGE_REDIS_PASSWORD": {},
     "SKYFORGE_GITEA_PASSWORD": {},
     "SKYFORGE_OBJECT_STORAGE_ROOT_USER": {},
     "SKYFORGE_OBJECT_STORAGE_ROOT_PASSWORD": {},
@@ -89,7 +95,6 @@
     "SKYFORGE_DB_NAME": "skyforge_server",
     "SKYFORGE_DB_USER": "skyforge_server",
     "SKYFORGE_DB_SSLMODE": "disable",
-    "SKYFORGE_REDIS_ADDR": "redis:6379",
     "SKYFORGE_OBJECT_STORAGE_ENDPOINT": "minio:9000",
     "SKYFORGE_OBJECT_STORAGE_USE_SSL": "false",
     "APP_VERSION": "${APP_VERSION}",

@@ -10,8 +10,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	redis "github.com/redis/go-redis/v9"
 )
 
 type dashboardSnapshot struct {
@@ -290,17 +288,6 @@ func DashboardEvents(w http.ResponseWriter, req *http.Request) {
 	lastPayload := ""
 	id := int64(0)
 
-	var sub *redis.PubSub
-	var updates <-chan *redis.Message
-	if redisClient != nil {
-		sub = redisClient.Subscribe(ctx, dashboardUpdateChannel())
-		defer func() { _ = sub.Close() }()
-		ctxSub, cancel := context.WithTimeout(ctx, 2*time.Second)
-		_, _ = sub.Receive(ctxSub)
-		cancel()
-		updates = sub.Channel()
-	}
-
 	for {
 		snap, err := loadDashboardSnapshot(ctx, defaultService, claims)
 		if err != nil {
@@ -326,24 +313,13 @@ func DashboardEvents(w http.ResponseWriter, req *http.Request) {
 		}
 
 		// Block until a dashboard update arrives (or periodically send keep-alives).
-		if updates != nil {
-			select {
-			case <-ctx.Done():
-				return
-			case <-updates:
-				continue
-			case <-time.After(30 * time.Second):
-				write(": ping\n\n")
-				flusher.Flush()
-				continue
-			}
-		}
-
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(5 * time.Second):
+		waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		updated := waitForDashboardUpdateSignal(waitCtx, defaultService.db)
+		cancel()
+		if updated {
 			continue
 		}
+		write(": ping\n\n")
+		flusher.Flush()
 	}
 }

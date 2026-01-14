@@ -3,6 +3,7 @@ package skyforge
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"encore.dev/beta/errs"
+	"encore.dev/storage/cache"
 )
 
 type WorkspaceNetlabTemplatesResponse struct {
@@ -112,52 +114,64 @@ func (s *Service) GetWorkspaceNetlabTemplates(ctx context.Context, id string, re
 		}
 	}
 
-	cacheKey := ""
-	lockKey := ""
-	lockAcquired := false
-	if redisClient != nil {
-		cacheKey = redisNetlabTemplatesKey(s.cfg, owner, repo, branch, dir)
-		lockKey = cacheKey + ":lock"
-
-		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		cached, err := redisClient.Get(ctx, cacheKey).Result()
-		cancel()
-		if err == nil && strings.TrimSpace(cached) != "" {
-			var templates []string
-			if err := json.Unmarshal([]byte(cached), &templates); err == nil && len(templates) > 0 {
-				sort.Strings(templates)
-				return &WorkspaceNetlabTemplatesResponse{
-					WorkspaceID: pc.workspace.ID,
-					Repo:        fmt.Sprintf("%s/%s", owner, repo),
-					Branch:      branch,
-					Dir:         dir,
-					Templates:   templates,
-				}, nil
+	usedEncoreCache := false
+	encoreLockAcquired := false
+	if !envDisableEncoreCache() {
+		if caches := getEncoreCachesSafe(); caches != nil {
+			usedEncoreCache = true
+			verKey := netlabTemplatesVersionKey{Owner: strings.TrimSpace(owner), Repo: strings.TrimSpace(repo), Branch: strings.TrimSpace(branch)}
+			cacheVersion, err := caches.netlabTemplatesVer.Get(ctx, verKey)
+			if err != nil {
+				cacheVersion = 0
 			}
-		}
 
-		// Stampede protection: try to acquire a short-lived lock for this directory.
-		// If another request holds it, wait briefly for it to populate the cache.
-		ctx, cancel = context.WithTimeout(ctx, 2*time.Second)
-		lockAcquired, _ = redisClient.SetNX(ctx, lockKey, "1", 10*time.Second).Result()
-		cancel()
-		if !lockAcquired {
-			for i := 0; i < 10; i++ {
-				time.Sleep(200 * time.Millisecond)
-				ctx, cancel = context.WithTimeout(ctx, 2*time.Second)
-				cached, err = redisClient.Get(ctx, cacheKey).Result()
-				cancel()
-				if err == nil && strings.TrimSpace(cached) != "" {
-					var templates []string
-					if err := json.Unmarshal([]byte(cached), &templates); err == nil && len(templates) > 0 {
-						sort.Strings(templates)
-						return &WorkspaceNetlabTemplatesResponse{
-							WorkspaceID: pc.workspace.ID,
-							Repo:        fmt.Sprintf("%s/%s", owner, repo),
-							Branch:      branch,
-							Dir:         dir,
-							Templates:   templates,
-						}, nil
+			cacheKeyStruct := netlabTemplatesKey{
+				Owner:   strings.TrimSpace(owner),
+				Repo:    strings.TrimSpace(repo),
+				Branch:  strings.TrimSpace(branch),
+				Version: cacheVersion,
+				Dir:     cacheDirKey(dir),
+			}
+
+			ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
+			cached, err := caches.netlabTemplates.Get(ctxReq, cacheKeyStruct)
+			cancel()
+			if err == nil && strings.TrimSpace(cached) != "" {
+				var templates []string
+				if err := json.Unmarshal([]byte(cached), &templates); err == nil && len(templates) > 0 {
+					sort.Strings(templates)
+					return &WorkspaceNetlabTemplatesResponse{
+						WorkspaceID: pc.workspace.ID,
+						Repo:        fmt.Sprintf("%s/%s", owner, repo),
+						Branch:      branch,
+						Dir:         dir,
+						Templates:   templates,
+					}, nil
+				}
+			}
+
+			ctxReq, cancel = context.WithTimeout(ctx, 2*time.Second)
+			lockErr := caches.netlabTemplatesLock.SetIfNotExists(ctxReq, cacheKeyStruct, "1")
+			cancel()
+			encoreLockAcquired = lockErr == nil
+			if !encoreLockAcquired && errors.Is(lockErr, cache.KeyExists) {
+				for i := 0; i < 10; i++ {
+					time.Sleep(200 * time.Millisecond)
+					ctxReq, cancel = context.WithTimeout(ctx, 2*time.Second)
+					cached, err = caches.netlabTemplates.Get(ctxReq, cacheKeyStruct)
+					cancel()
+					if err == nil && strings.TrimSpace(cached) != "" {
+						var templates []string
+						if err := json.Unmarshal([]byte(cached), &templates); err == nil && len(templates) > 0 {
+							sort.Strings(templates)
+							return &WorkspaceNetlabTemplatesResponse{
+								WorkspaceID: pc.workspace.ID,
+								Repo:        fmt.Sprintf("%s/%s", owner, repo),
+								Branch:      branch,
+								Dir:         dir,
+								Templates:   templates,
+							}, nil
+						}
 					}
 				}
 			}
@@ -174,14 +188,30 @@ func (s *Service) GetWorkspaceNetlabTemplates(ctx context.Context, id string, re
 	}
 	sort.Strings(templates)
 
-	if redisClient != nil && cacheKey != "" && len(templates) > 0 {
-		if payload, err := json.Marshal(templates); err == nil {
-			ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-			_ = redisClient.Set(ctx, cacheKey, string(payload), 10*time.Minute).Err()
-			if lockAcquired && lockKey != "" {
-				_ = redisClient.Del(ctx, lockKey).Err()
+	if len(templates) > 0 {
+		if usedEncoreCache && !envDisableEncoreCache() {
+			if caches := getEncoreCachesSafe(); caches != nil {
+				verKey := netlabTemplatesVersionKey{Owner: strings.TrimSpace(owner), Repo: strings.TrimSpace(repo), Branch: strings.TrimSpace(branch)}
+				cacheVersion, err := caches.netlabTemplatesVer.Get(ctx, verKey)
+				if err != nil {
+					cacheVersion = 0
+				}
+				cacheKeyStruct := netlabTemplatesKey{
+					Owner:   strings.TrimSpace(owner),
+					Repo:    strings.TrimSpace(repo),
+					Branch:  strings.TrimSpace(branch),
+					Version: cacheVersion,
+					Dir:     cacheDirKey(dir),
+				}
+				if payload, err := json.Marshal(templates); err == nil {
+					ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
+					_ = caches.netlabTemplates.Set(ctxReq, cacheKeyStruct, string(payload))
+					if encoreLockAcquired {
+						_, _ = caches.netlabTemplatesLock.Delete(ctxReq, cacheKeyStruct)
+					}
+					cancel()
+				}
 			}
-			cancel()
 		}
 	}
 

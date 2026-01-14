@@ -1,3 +1,5 @@
+//go:build skyforge_worker
+
 package skyforge
 
 import (

@@ -17,7 +17,6 @@ require (
 	github.com/hashicorp/terraform-exec v0.24.0
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/minio/minio-go/v7 v7.0.97
-	github.com/redis/go-redis/v9 v9.12.1
 	golang.org/x/crypto v0.38.0
 	golang.org/x/oauth2 v0.34.0
 )
@@ -58,8 +57,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/signin v1.0.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.5
 	github.com/aws/smithy-go v1.24.0 // indirect
-	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-asn1-ber/asn1-ber v1.5.8-0.20250403174932-29230038a667 // indirect
 	github.com/go-git/go-git/v5 v5.14.0

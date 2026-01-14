@@ -275,7 +275,7 @@ func (s *Service) dispatchLabppTask(ctx context.Context, task *TaskRecord, log *
 		}
 	}
 	if evePassword == "" {
-		if cached, ok := getCachedLDAPPassword(pc.claims.Username); ok {
+		if cached, ok := getCachedLDAPPassword(s.db, pc.claims.Username); ok {
 			evePassword = strings.TrimSpace(cached)
 		}
 	}
@@ -474,14 +474,15 @@ func (s *Service) dispatchClabernetesTask(ctx context.Context, task *TaskRecord,
 }
 
 type terraformTaskSpec struct {
-	Action         string `json:"action,omitempty"` // plan/apply/destroy
-	Cloud          string `json:"cloud,omitempty"`
-	TemplateSource string `json:"templateSource,omitempty"`
-	TemplateRepo   string `json:"templateRepo,omitempty"`
-	TemplatesDir   string `json:"templatesDir,omitempty"`
-	Template       string `json:"template,omitempty"`
-	Deployment     string `json:"deployment,omitempty"`
-	DeploymentID   string `json:"deploymentId,omitempty"`
+	Action         string         `json:"action,omitempty"` // plan/apply/destroy
+	Cloud          string         `json:"cloud,omitempty"`
+	TemplateSource string         `json:"templateSource,omitempty"`
+	TemplateRepo   string         `json:"templateRepo,omitempty"`
+	TemplatesDir   string         `json:"templatesDir,omitempty"`
+	Template       string         `json:"template,omitempty"`
+	Deployment     string         `json:"deployment,omitempty"`
+	DeploymentID   string         `json:"deploymentId,omitempty"`
+	Environment    map[string]any `json:"environment,omitempty"`
 }
 
 func (s *Service) dispatchTerraformTask(ctx context.Context, task *TaskRecord, log *taskLogger) error {
@@ -545,6 +546,11 @@ func (s *Service) dispatchTerraformTask(ctx context.Context, task *TaskRecord, l
 				env[k] = v
 			}
 		}
+	}
+
+	// Merge request-provided environment (stored in task spec).
+	for k, v := range specIn.Environment {
+		env[k] = v
 	}
 
 	runSpec := terraformRunSpec{

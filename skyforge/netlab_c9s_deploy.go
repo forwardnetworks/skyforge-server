@@ -171,9 +171,7 @@ func (s *Service) runNetlabC9sDeploymentAction(
 		return nil, err
 	}
 
-	s.queueTask(task, func(ctx context.Context, log *taskLogger) error {
-		return nil
-	})
+	s.queueTask(task)
 
 	taskJSON, err := toJSONMap(taskToRunInfo(*task))
 	if err != nil {

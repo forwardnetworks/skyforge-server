@@ -82,7 +82,7 @@ func (s *Service) updateTaskQueueMetrics(ctx context.Context) error {
 	taskRunningCurrentTotal.Set(runningTotal)
 	taskQueuedOldestAgeSecondsTotal.Set(oldestQueuedAge)
 
-	workersAlive := float64(countTaskWorkerHeartbeats(s.cfg))
+	workersAlive := float64(countTaskWorkerHeartbeats(s.cfg, s.db))
 	taskWorkersAliveCurrent.Set(workersAlive)
 	if queuedTotal > 0 && workersAlive <= 0 {
 		rlog.Warn("queued tasks but no task workers observed", "queued", queuedTotal)

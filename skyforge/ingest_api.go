@@ -33,15 +33,15 @@ func (s *Service) requireInternalIngest(token string) error {
 type IngestSyslogParams struct {
 	Token string `header:"X-Skyforge-Internal-Token" json:"-"`
 
-	SourceIP  string `json:"source_ip"`
-	Hostname  string `json:"hostname,omitempty"`
-	AppName   string `json:"app_name,omitempty"`
-	ProcID    string `json:"proc_id,omitempty"`
-	MsgID     string `json:"msg_id,omitempty"`
-	Facility  *int   `json:"facility,omitempty"`
-	Severity  *int   `json:"severity,omitempty"`
-	Message   string `json:"message,omitempty"`
-	Raw       string `json:"raw,omitempty"`
+	SourceIP   string `json:"source_ip"`
+	Hostname   string `json:"hostname,omitempty"`
+	AppName    string `json:"app_name,omitempty"`
+	ProcID     string `json:"proc_id,omitempty"`
+	MsgID      string `json:"msg_id,omitempty"`
+	Facility   *int   `json:"facility,omitempty"`
+	Severity   *int   `json:"severity,omitempty"`
+	Message    string `json:"message,omitempty"`
+	Raw        string `json:"raw,omitempty"`
 	ReceivedAt string `json:"received_at,omitempty"`
 }
 
@@ -110,10 +110,10 @@ func nullableInt(v *int) sql.NullInt64 {
 type IngestTelegrafMetricParams struct {
 	Token string `header:"X-Skyforge-Internal-Token" json:"-"`
 
-	Name      string                 `json:"name"`
-	Tags      map[string]string      `json:"tags"`
+	Name      string                     `json:"name"`
+	Tags      map[string]string          `json:"tags"`
 	Fields    map[string]json.RawMessage `json:"fields"`
-	Timestamp *int64                 `json:"timestamp,omitempty"`
+	Timestamp *int64                     `json:"timestamp,omitempty"`
 }
 
 // IngestSNMPTrap accepts SNMP trap events from in-cluster collectors (Telegraf).
@@ -212,9 +212,6 @@ func (s *Service) IngestNodeMetric(ctx context.Context, params *IngestTelegrafMe
 	if params == nil {
 		return errs.B().Code(errs.InvalidArgument).Msg("invalid payload").Err()
 	}
-	if redisClient == nil {
-		return errs.B().Code(errs.Unavailable).Msg("redis unavailable").Err()
-	}
 
 	node := strings.TrimSpace(firstNonEmptyMetric(
 		getTag(params.Tags, "node"),
@@ -240,16 +237,13 @@ func (s *Service) IngestNodeMetric(ctx context.Context, params *IngestTelegrafMe
 		return errs.B().Code(errs.InvalidArgument).Msg("invalid payload").Err()
 	}
 
-	key := redisNodeMetricsKey(s.cfg, node)
-	now := time.Now().UTC().Format(time.RFC3339)
-
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	if err := redisClient.HSet(ctx, key, "__updated_at", now, "m:"+name, string(raw)).Err(); err != nil {
-		return errs.B().Code(errs.Internal).Msg("failed to store node metric").Err()
+	if s.db == nil {
+		return errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	if err := redisClient.Expire(ctx, key, 90*time.Second).Err(); err != nil {
-		return errs.B().Code(errs.Internal).Msg("failed to expire node metric").Err()
+	ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if err := upsertNodeMetricSnapshot(ctxReq, s.db, node, name, time.Now(), string(raw)); err != nil {
+		return errs.B().Code(errs.Internal).Msg("failed to store node metric").Err()
 	}
 	return nil
 }
@@ -323,13 +317,4 @@ func (s *Service) lookupSnmpTrapOwner(ctx context.Context, community string) (st
 		return "", errs.B().Code(errs.Internal).Msg("failed to scan snmp trap tokens").Err()
 	}
 	return "", nil
-}
-
-func redisNodeMetricsKey(cfg Config, node string) string {
-	prefix := strings.TrimSpace(cfg.Redis.KeyPrefix)
-	if prefix == "" {
-		prefix = "skyforge"
-	}
-	node = strings.TrimSpace(node)
-	return prefix + ":node-metrics:" + node
 }

@@ -1418,7 +1418,7 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 		}
 
 		username := strings.TrimSpace(pc.claims.Username)
-		password, ok := getCachedLDAPPassword(pc.claims.Username)
+		password, ok := getCachedLDAPPassword(s.db, pc.claims.Username)
 		if !ok {
 			username = strings.TrimSpace(eveServer.Username)
 			password = strings.TrimSpace(eveServer.Password)

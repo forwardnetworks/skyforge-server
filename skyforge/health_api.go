@@ -37,25 +37,6 @@ func (s *Service) GetAPIHealth(ctx context.Context) (*APIHealthResponse, error) 
 				Err()
 		}
 	}
-	if s.cfg.Redis.Enabled && redisClient == nil {
-		return nil, errs.B().
-			Code(errs.Unavailable).
-			Msg("redis unavailable").
-			Meta("redis", "down").
-			Err()
-	}
-	if s.cfg.Redis.Enabled && redisClient != nil {
-		pingCtx, cancel := context.WithTimeout(ctx, 750*time.Millisecond)
-		defer cancel()
-		if err := redisClient.Ping(pingCtx).Err(); err != nil {
-			return nil, errs.B().
-				Code(errs.Unavailable).
-				Msg("redis unavailable").
-				Meta("redis", "down").
-				Meta("error", sanitizeError(err)).
-				Err()
-		}
-	}
 	return &APIHealthResponse{
 		Status: "ok",
 		Time:   time.Now().UTC().Format(time.RFC3339),

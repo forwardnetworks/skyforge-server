@@ -51,7 +51,7 @@ func (s *Service) EveSSO(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	password, ok := getCachedLDAPPassword(user.Username)
+	password, ok := getCachedLDAPPassword(s.db, user.Username)
 	loginUser := user.Username
 	if !ok {
 		serverUser := strings.TrimSpace(server.Username)

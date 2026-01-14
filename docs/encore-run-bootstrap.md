@@ -47,8 +47,8 @@ kubectl -n skyforge port-forward svc/redis 6379:6379
 ```
 
 ```bash
-export SKYFORGE_REDIS_ENABLED=true
-export SKYFORGE_REDIS_ADDR=127.0.0.1:6379
+## Cache (Redis)
+Encore cache keyspaces use the `redis.default` cluster in `infra.config.json`.
 ```
 
 Then start Encore:
@@ -63,6 +63,6 @@ encore run --watch=false --browser=never --port=4000
 
 ## Notes
 
-- The Skyforge server uses explicit `SKYFORGE_DB_*` and `SKYFORGE_REDIS_*` env vars (not Encore `sqldb` APIs), so port-forwarding works cleanly.
+- The Skyforge server uses explicit `SKYFORGE_DB_*` env vars (not Encore `sqldb` APIs), so port-forwarding works cleanly.
 - The Encore storage API used for artifacts is configured via `infra.config.json` for production builds (k8s/MinIO). In `encore run`, Encore may use its local storage backend instead.
 - This repo runs `server/encore.app` in “unlinked” mode to avoid requiring Encore Cloud auth during development.

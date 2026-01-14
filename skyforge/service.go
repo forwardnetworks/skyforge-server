@@ -45,10 +45,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
-	redis "github.com/redis/go-redis/v9"
 )
 
-var redisClient *redis.Client
 var cloudCredentialStatusCache struct {
 	mu    sync.Mutex
 	items map[string]bool
@@ -98,7 +96,6 @@ type Config struct {
 	LDAPLookupBindDN          string
 	LDAPLookupBindPassword    string
 	Workspaces                WorkspacesConfig
-	Redis                     RedisConfig
 	EveServers                []EveServerConfig
 	LabppRunnerImage          string
 	LabppRunnerPullPolicy     string
@@ -263,15 +260,6 @@ type WorkspacesConfig struct {
 	ObjectStorageUseSSL             bool
 	ObjectStorageTerraformAccessKey string
 	ObjectStorageTerraformSecretKey string
-}
-
-type RedisConfig struct {
-	Enabled      bool
-	Addr         string
-	DB           int
-	Password     string
-	PasswordFile string
-	KeyPrefix    string
 }
 
 type SkyforgeWorkspace struct {
@@ -444,8 +432,6 @@ func secretFileNameForEnv(key string) string {
 		return "skyforge-ldap-lookup-bindpassword"
 	case "SKYFORGE_DB_PASSWORD":
 		return "db-skyforge-server-password"
-	case "SKYFORGE_REDIS_PASSWORD":
-		return "skyforge-redis-password"
 	case "SKYFORGE_GITEA_PASSWORD":
 		return "gitea-admin-password"
 	case "SKYFORGE_CONTAINERLAB_JWT_SECRET":
@@ -805,15 +791,6 @@ func loadConfig() Config {
 	dbPasswordFile := strings.TrimSpace(getenv("SKYFORGE_DB_PASSWORD_FILE", ""))
 	dbSSLMode := strings.TrimSpace(getenv("SKYFORGE_DB_SSLMODE", "disable"))
 
-	redisDB := 0
-	if raw := strings.TrimSpace(getenv("SKYFORGE_REDIS_DB", "")); raw != "" {
-		if v, err := strconv.Atoi(raw); err == nil && v >= 0 && v <= 63 {
-			redisDB = v
-		}
-	}
-	redisPassword := strings.TrimSpace(getOptionalSecret("SKYFORGE_REDIS_PASSWORD"))
-	redisPasswordFile := strings.TrimSpace(getenv("SKYFORGE_REDIS_PASSWORD_FILE", ""))
-
 	ldapURL := strings.TrimSpace(getOptionalSecret("SKYFORGE_LDAP_URL"))
 	ldapBindTemplate := strings.TrimSpace(getOptionalSecret("SKYFORGE_LDAP_BIND_TEMPLATE"))
 	ldapCfg := LDAPConfig{
@@ -978,15 +955,6 @@ func loadConfig() Config {
 		ObjectStorageTerraformSecretKey: strings.TrimSpace(getOptionalSecret("SKYFORGE_OBJECT_STORAGE_TERRAFORM_SECRET_KEY")),
 	}
 
-	redisCfg := RedisConfig{
-		Enabled:      getenv("SKYFORGE_REDIS_ENABLED", "false") == "true",
-		Addr:         strings.TrimSpace(getenv("SKYFORGE_REDIS_ADDR", "redis:6379")),
-		DB:           redisDB,
-		Password:     redisPassword,
-		PasswordFile: redisPasswordFile,
-		KeyPrefix:    strings.TrimSpace(getenv("SKYFORGE_REDIS_KEY_PREFIX", "skyforge")),
-	}
-
 	workspaceSyncSeconds := 0
 	if raw := strings.TrimSpace(getenv("SKYFORGE_WORKSPACE_SYNC_SECONDS", getenv("SKYFORGE_PROJECT_SYNC_SECONDS", "0"))); raw != "" {
 		if val, err := strconv.Atoi(raw); err == nil {
@@ -1078,7 +1046,6 @@ func loadConfig() Config {
 		LDAPLookupBindDN:          ldapLookupBindDN,
 		LDAPLookupBindPassword:    ldapLookupBindPassword,
 		Workspaces:                workspacesCfg,
-		Redis:                     redisCfg,
 		EveServers:                filteredEveServers,
 		LabppRunnerImage:          labppRunnerImage,
 		LabppRunnerPullPolicy:     labppRunnerPullPolicy,
@@ -3409,7 +3376,6 @@ func initService() (*Service, error) {
 		"SKYFORGE_LDAP_LOOKUP_BINDDN",
 		"SKYFORGE_LDAP_LOOKUP_BINDPASSWORD",
 		"SKYFORGE_DB_PASSWORD",
-		"SKYFORGE_REDIS_PASSWORD",
 		"SKYFORGE_GITEA_PASSWORD",
 		"SKYFORGE_OBJECT_STORAGE_TERRAFORM_ACCESS_KEY",
 		"SKYFORGE_OBJECT_STORAGE_TERRAFORM_SECRET_KEY",
@@ -3439,22 +3405,6 @@ func initService() (*Service, error) {
 	oidcClient, err := initOIDCClient(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("oidc init failed: %w", err)
-	}
-	if cfg.Redis.Enabled {
-		client := redis.NewClient(&redis.Options{
-			Addr:     cfg.Redis.Addr,
-			Password: cfg.Redis.Password,
-			DB:       cfg.Redis.DB,
-		})
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		defer cancel()
-		if err := client.Ping(ctx).Err(); err != nil {
-			log.Printf("redis disabled (ping failed): %v", err)
-			_ = client.Close()
-		} else {
-			redisClient = client
-			log.Printf("redis enabled: %s db=%d", cfg.Redis.Addr, cfg.Redis.DB)
-		}
 	}
 	var (
 		workspaceStore workspacesStore
@@ -3519,7 +3469,7 @@ func initService() (*Service, error) {
 		db:             db,
 	}
 	defaultService = svc
-	startTaskWorkerHeartbeat(cfg)
+	startTaskWorkerHeartbeat(cfg, db)
 	return svc, nil
 }
 

@@ -2,6 +2,7 @@ package skyforge
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
 	"os"
@@ -27,11 +28,7 @@ var (
 
 var ldapPasswordBox *secretBox
 
-func ldapPasswordRedisKey(username string) string {
-	return "skyforge:ldap-password:" + strings.ToLower(strings.TrimSpace(username))
-}
-
-func cacheLDAPPassword(username, password string, ttl time.Duration) {
+func cacheLDAPPassword(db *sql.DB, username, password string, ttl time.Duration) {
 	if strings.TrimSpace(username) == "" || strings.TrimSpace(password) == "" {
 		return
 	}
@@ -45,19 +42,24 @@ func cacheLDAPPassword(username, password string, ttl time.Duration) {
 	}
 	ldapPasswordCache.mu.Unlock()
 
-	if redisClient == nil || ldapPasswordBox == nil {
+	if ldapPasswordBox == nil {
 		return
 	}
 	enc, err := ldapPasswordBox.encrypt(password)
 	if err != nil || strings.TrimSpace(enc) == "" {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	_ = redisClient.Set(ctx, ldapPasswordRedisKey(username), enc, ttl).Err()
-	cancel()
+	if db != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		_ = upsertLDAPPasswordCache(ctx, db, strings.TrimSpace(username), enc, time.Now().Add(ttl))
+		cancel()
+		return
+	}
+
+	_ = db
 }
 
-func getCachedLDAPPassword(username string) (string, bool) {
+func getCachedLDAPPassword(db *sql.DB, username string) (string, bool) {
 	ldapPasswordCache.mu.Lock()
 	defer ldapPasswordCache.mu.Unlock()
 	if ldapPasswordCache.items == nil {
@@ -65,17 +67,24 @@ func getCachedLDAPPassword(username string) (string, bool) {
 	}
 	entry, ok := ldapPasswordCache.items[strings.ToLower(username)]
 	if !ok {
-		if redisClient == nil || ldapPasswordBox == nil {
+		if ldapPasswordBox == nil {
 			return "", false
 		}
 		ldapPasswordCache.mu.Unlock()
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		raw, err := redisClient.Get(ctx, ldapPasswordRedisKey(username)).Result()
-		cancel()
-		ldapPasswordCache.mu.Lock()
-		if err != nil || strings.TrimSpace(raw) == "" {
+		raw := ""
+		if db != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			raw, _, ok, _ = getLDAPPasswordCache(ctx, db, strings.TrimSpace(username))
+			cancel()
+			if !ok || strings.TrimSpace(raw) == "" {
+				ldapPasswordCache.mu.Lock()
+				return "", false
+			}
+		} else {
+			ldapPasswordCache.mu.Lock()
 			return "", false
 		}
+		ldapPasswordCache.mu.Lock()
 		plaintext, err := ldapPasswordBox.decrypt(raw)
 		if err != nil || strings.TrimSpace(plaintext) == "" {
 			return "", false
@@ -94,7 +103,7 @@ func getCachedLDAPPassword(username string) (string, bool) {
 	return entry.password, true
 }
 
-func clearCachedLDAPPassword(username string) {
+func clearCachedLDAPPassword(db *sql.DB, username string) {
 	ldapPasswordCache.mu.Lock()
 	if ldapPasswordCache.items == nil {
 		ldapPasswordCache.mu.Unlock()
@@ -102,9 +111,9 @@ func clearCachedLDAPPassword(username string) {
 	}
 	delete(ldapPasswordCache.items, strings.ToLower(username))
 	ldapPasswordCache.mu.Unlock()
-	if redisClient != nil {
+	if db != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		_ = redisClient.Del(ctx, ldapPasswordRedisKey(username)).Err()
+		_ = deleteLDAPPasswordCache(ctx, db, strings.TrimSpace(username))
 		cancel()
 	}
 }

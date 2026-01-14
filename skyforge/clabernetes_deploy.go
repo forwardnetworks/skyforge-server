@@ -162,19 +162,7 @@ func (s *Service) runClabernetesDeploymentAction(
 		return nil, err
 	}
 
-	spec := clabernetesRunSpec{
-		TaskID:       task.ID,
-		Action:       action,
-		Namespace:    k8sNamespace,
-		TopologyName: topologyName,
-		LabName:      labName,
-		Template:     template,
-		TopologyYAML: topologyYAML,
-		Environment:  envMap,
-	}
-	s.queueTask(task, func(ctx context.Context, log *taskLogger) error {
-		return s.runClabernetesTask(ctx, spec, log)
-	})
+	s.queueTask(task)
 
 	taskJSON, err := toJSONMap(taskToRunInfo(*task))
 	if err != nil {

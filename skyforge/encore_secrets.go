@@ -15,7 +15,6 @@ var secrets struct {
 	SKYFORGE_LDAP_LOOKUP_BINDDN                  string
 	SKYFORGE_LDAP_LOOKUP_BINDPASSWORD            string
 	SKYFORGE_DB_PASSWORD                         string
-	SKYFORGE_REDIS_PASSWORD                      string
 	SKYFORGE_GITEA_PASSWORD                      string
 	SKYFORGE_OBJECT_STORAGE_TERRAFORM_ACCESS_KEY string
 	SKYFORGE_OBJECT_STORAGE_TERRAFORM_SECRET_KEY string
@@ -40,8 +39,6 @@ func getEncoreSecret(key string) string {
 		return strings.TrimSpace(secrets.SKYFORGE_LDAP_LOOKUP_BINDPASSWORD)
 	case "SKYFORGE_DB_PASSWORD":
 		return strings.TrimSpace(secrets.SKYFORGE_DB_PASSWORD)
-	case "SKYFORGE_REDIS_PASSWORD":
-		return strings.TrimSpace(secrets.SKYFORGE_REDIS_PASSWORD)
 	case "SKYFORGE_GITEA_PASSWORD":
 		return strings.TrimSpace(secrets.SKYFORGE_GITEA_PASSWORD)
 	case "SKYFORGE_OBJECT_STORAGE_TERRAFORM_ACCESS_KEY":

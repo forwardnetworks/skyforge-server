@@ -2,6 +2,7 @@ package skyforge
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"strings"
 	"time"
@@ -9,49 +10,21 @@ import (
 	"encore.dev/rlog"
 )
 
-func redisTaskWorkerHeartbeatKey(cfg Config, instance string) string {
-	prefix := strings.TrimSpace(cfg.Redis.KeyPrefix)
-	if prefix == "" {
-		prefix = "skyforge"
-	}
-	instance = strings.TrimSpace(instance)
-	if instance == "" {
-		instance = "unknown"
-	}
-	return prefix + ":taskworker-heartbeat:" + instance
-}
-
-func countTaskWorkerHeartbeats(cfg Config) int {
-	if redisClient == nil {
-		return 0
-	}
-	prefix := strings.TrimSpace(cfg.Redis.KeyPrefix)
-	if prefix == "" {
-		prefix = "skyforge"
-	}
-	pattern := prefix + ":taskworker-heartbeat:*"
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	var cursor uint64
-	count := 0
-	for {
-		keys, next, err := redisClient.Scan(ctx, cursor, pattern, 200).Result()
-		if err != nil {
-			return 0
-		}
-		count += len(keys)
-		cursor = next
-		if cursor == 0 || count > 1000 {
-			break
+func countTaskWorkerHeartbeats(cfg Config, db *sql.DB) int {
+	if db != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		n, err := countRecentTaskWorkerHeartbeats(ctx, db, 45*time.Second)
+		if err == nil {
+			return n
 		}
 	}
-	return count
+
+	return 0
 }
 
-func startTaskWorkerHeartbeat(cfg Config) {
-	if !cfg.TaskWorkerEnabled || redisClient == nil {
+func startTaskWorkerHeartbeat(cfg Config, db *sql.DB) {
+	if !cfg.TaskWorkerEnabled || db == nil {
 		return
 	}
 	instance := strings.TrimSpace(os.Getenv("POD_NAME"))
@@ -63,16 +36,15 @@ func startTaskWorkerHeartbeat(cfg Config) {
 			instance = strings.TrimSpace(h)
 		}
 	}
-	key := redisTaskWorkerHeartbeatKey(cfg, instance)
 
-	// Keep this lightweight: a small Redis write every 15s with TTL 45s.
+	// Keep this lightweight: a small write every 15s.
 	go func() {
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
 
 		for {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			_ = redisClient.Set(ctx, key, time.Now().UTC().Format(time.RFC3339Nano), 45*time.Second).Err()
+			_ = upsertTaskWorkerHeartbeat(ctx, db, instance, time.Now())
 			cancel()
 			select {
 			case <-ticker.C:

@@ -156,7 +156,7 @@ func (s *Service) Login(ctx context.Context, req *LoginRequest) (*LoginResponse,
 		if err != nil {
 			return nil, errs.B().Code(errs.Internal).Msg("failed to create session").Err()
 		}
-		cacheLDAPPassword(profile.Username, req.Password, s.cfg.SessionTTL)
+		cacheLDAPPassword(s.db, profile.Username, req.Password, s.cfg.SessionTTL)
 		go s.bootstrapUserLabs(profile.Username)
 		go func() {
 			if err := ensureGiteaUserFromProfile(s.cfg, profile); err != nil {
@@ -195,7 +195,7 @@ func (s *Service) Login(ctx context.Context, req *LoginRequest) (*LoginResponse,
 	if err != nil {
 		return nil, errs.B().Code(errs.Internal).Msg("failed to create session").Err()
 	}
-	cacheLDAPPassword(profile.Username, req.Password, s.cfg.SessionTTL)
+	cacheLDAPPassword(s.db, profile.Username, req.Password, s.cfg.SessionTTL)
 	go s.bootstrapUserLabs(profile.Username)
 	go func() {
 		if err := ensureGiteaUserFromProfile(s.cfg, profile); err != nil {
@@ -225,7 +225,7 @@ func (s *Service) Logout(ctx context.Context) (*LogoutResponse, error) {
 	if s.db != nil {
 		if claims := claimsFromCookie(s.sessionManager, currentHeaders().Get("Cookie")); claims != nil {
 			writeAuditEvent(ctx, s.db, claims.Username, isAdminUser(s.cfg, claims.Username), "", "auth.logout", "", auditDetailsFromEncore(encore.CurrentRequest()))
-			clearCachedLDAPPassword(claims.Username)
+			clearCachedLDAPPassword(s.db, claims.Username)
 		}
 	}
 	resp := &LogoutResponse{Status: "logged out"}
@@ -247,7 +247,7 @@ func (s *Service) Reauth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if claims := claimsFromCookie(s.sessionManager, r.Header.Get("Cookie")); claims != nil {
-		clearCachedLDAPPassword(claims.Username)
+		clearCachedLDAPPassword(s.db, claims.Username)
 	}
 	http.SetCookie(w, s.sessionManager.ClearCookie())
 	if s.oidc != nil {

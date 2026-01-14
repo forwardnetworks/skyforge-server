@@ -140,6 +140,7 @@ func (s *Service) RunWorkspaceTerraformPlan(ctx context.Context, id string) (*Wo
 			"template":       strings.TrimSpace(template),
 			"deployment":     strings.TrimSpace(dep.Name),
 			"deploymentId":   strings.TrimSpace(dep.ID),
+			"environment":    envMap,
 		},
 	})
 	if err != nil {
@@ -150,22 +151,7 @@ func (s *Service) RunWorkspaceTerraformPlan(ctx context.Context, id string) (*Wo
 	if err != nil {
 		return nil, err
 	}
-	spec := terraformRunSpec{
-		TaskID:         task.ID,
-		WorkspaceCtx:   pc,
-		WorkspaceSlug:  pc.workspace.Slug,
-		Username:       pc.claims.Username,
-		Cloud:          strings.ToLower(strings.TrimSpace(cloud)),
-		Action:         "plan",
-		TemplateSource: strings.TrimSpace(templateSource),
-		TemplateRepo:   strings.TrimSpace(templateRepo),
-		TemplatesDir:   strings.TrimSpace(templatesDir),
-		Template:       strings.TrimSpace(template),
-		Environment:    envMap,
-	}
-	s.queueTask(task, func(ctx context.Context, log *taskLogger) error {
-		return s.runTerraformTask(ctx, spec, log)
-	})
+	s.queueTask(task)
 
 	taskJSON, err := toJSONMap(taskToRunInfo(*task))
 	if err != nil {
@@ -325,6 +311,7 @@ func (s *Service) RunWorkspaceTerraformApply(ctx context.Context, id string, par
 			"templateRepo":   strings.TrimSpace(templateRepo),
 			"templatesDir":   strings.TrimSpace(templatesDir),
 			"template":       strings.TrimSpace(templateName),
+			"environment":    envMap,
 		},
 	})
 	if err != nil {
@@ -335,22 +322,7 @@ func (s *Service) RunWorkspaceTerraformApply(ctx context.Context, id string, par
 	if err != nil {
 		return nil, err
 	}
-	spec := terraformRunSpec{
-		TaskID:         task.ID,
-		WorkspaceCtx:   pc,
-		WorkspaceSlug:  pc.workspace.Slug,
-		Username:       pc.claims.Username,
-		Cloud:          strings.ToLower(strings.TrimSpace(cloud)),
-		Action:         action,
-		TemplateSource: templateSource,
-		TemplateRepo:   templateRepo,
-		TemplatesDir:   templatesDir,
-		Template:       templateName,
-		Environment:    envMap,
-	}
-	s.queueTask(task, func(ctx context.Context, log *taskLogger) error {
-		return s.runTerraformTask(ctx, spec, log)
-	})
+	s.queueTask(task)
 
 	taskJSON, err := toJSONMap(taskToRunInfo(*task))
 	if err != nil {
@@ -567,36 +539,7 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 	if err != nil {
 		return nil, err
 	}
-	templateSource := strings.TrimSpace(req.TemplateSource)
-	if templateSource == "" {
-		templateSource = "blueprints"
-	}
-	spec := netlabRunSpec{
-		TaskID:          task.ID,
-		WorkspaceCtx:    pc,
-		WorkspaceSlug:   pc.workspace.Slug,
-		Username:        strings.TrimSpace(pc.claims.Username),
-		Environment:     envMap,
-		Action:          action,
-		Deployment:      deploymentName,
-		DeploymentID:    strings.TrimSpace(req.NetlabMultilabID),
-		WorkspaceRoot:   workspaceRoot,
-		TemplateSource:  templateSource,
-		TemplateRepo:    strings.TrimSpace(req.TemplateRepo),
-		TemplatesDir:    strings.TrimSpace(req.TemplatesDir),
-		Template:        strings.TrimSpace(req.Template),
-		WorkspaceDir:    workspaceDir,
-		MultilabNumeric: multilabNumericID,
-		StateRoot:       strings.TrimSpace(server.StateRoot),
-		Cleanup:         req.Cleanup,
-		Server:          *server,
-		ClabTarball:     clabTarball,
-		ClabConfigDir:   strings.TrimSpace(req.ClabConfigDir),
-		ClabCleanup:     req.ClabCleanup,
-	}
-	s.queueTask(task, func(ctx context.Context, log *taskLogger) error {
-		return s.runNetlabTask(ctx, spec, log)
-	})
+	s.queueTask(task)
 
 	taskJSON, err := toJSONMap(taskToRunInfo(*task))
 	if err != nil {
@@ -663,7 +606,7 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 		eveUsername = strings.TrimSpace(pc.claims.Username)
 	}
 	if evePassword == "" {
-		cached, ok := getCachedLDAPPassword(pc.claims.Username)
+		cached, ok := getCachedLDAPPassword(s.db, pc.claims.Username)
 		if ok {
 			evePassword = strings.TrimSpace(cached)
 		}
@@ -812,28 +755,7 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 	if err != nil {
 		return nil, err
 	}
-	spec := labppRunSpec{
-		TaskID:        task.ID,
-		WorkspaceCtx:  pc,
-		DeploymentID:  deploymentID,
-		Action:        action,
-		WorkspaceSlug: strings.TrimSpace(pc.workspace.Slug),
-		Username:      pc.claims.Username,
-		Deployment:    deployment,
-		Environment:   envMap,
-		TemplatesRoot: templatesRoot,
-		Template:      template,
-		LabPath:       labPath,
-		ThreadCount:   threadCount,
-		EveURL:        eveURL,
-		EveUsername:   eveUsername,
-		EvePassword:   evePassword,
-		MaxSeconds:    1200,
-		Metadata:      meta,
-	}
-	s.queueTask(task, func(ctx context.Context, log *taskLogger) error {
-		return s.runLabppTask(ctx, spec, log)
-	})
+	s.queueTask(task)
 
 	taskJSON, err := toJSONMap(taskToRunInfo(*task))
 	if err != nil {
@@ -881,12 +803,10 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 		return nil, errs.B().Code(errs.Unavailable).Msg("containerlab runner is not configured").Err()
 	}
 
-	apiURL := containerlabAPIURL(s.cfg, *server)
-	if apiURL == "" {
+	if containerlabAPIURL(s.cfg, *server) == "" {
 		return nil, errs.B().Code(errs.Unavailable).Msg("containerlab api url is not configured").Err()
 	}
-	token, err := containerlabTokenForUser(s.cfg, pc.claims.Username)
-	if err != nil {
+	if _, err := containerlabTokenForUser(s.cfg, pc.claims.Username); err != nil {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("containerlab jwt secret is not configured").Err()
 	}
 
@@ -1005,26 +925,13 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 	if err != nil {
 		return nil, err
 	}
-	var topo map[string]any
 	if topologyJSON != "" {
+		var topo map[string]any
 		if err := json.Unmarshal([]byte(topologyJSON), &topo); err != nil {
 			return nil, errs.B().Code(errs.Internal).Msg("failed to decode topology").Err()
 		}
 	}
-	spec := containerlabRunSpec{
-		TaskID:      task.ID,
-		APIURL:      apiURL,
-		Token:       token,
-		Action:      action,
-		LabName:     labName,
-		Environment: envMap,
-		Topology:    topo,
-		Reconfigure: reconfigure,
-		SkipTLS:     containerlabSkipTLS(s.cfg, *server),
-	}
-	s.queueTask(task, func(ctx context.Context, log *taskLogger) error {
-		return s.runContainerlabTask(ctx, spec, log)
-	})
+	s.queueTask(task)
 
 	taskJSON, err := toJSONMap(taskToRunInfo(*task))
 	if err != nil {

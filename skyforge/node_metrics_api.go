@@ -2,6 +2,7 @@ package skyforge
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"sort"
 	"strconv"
@@ -12,11 +13,11 @@ import (
 )
 
 type NodeMetricSnapshot struct {
-	Node      string  `json:"node"`
-	UpdatedAt string  `json:"updatedAt"`
-	CPUActive *float64 `json:"cpuActive,omitempty"`
-	MemUsed   *float64 `json:"memUsed,omitempty"`
-	DiskUsed  *float64 `json:"diskUsed,omitempty"`
+	Node      string                     `json:"node"`
+	UpdatedAt string                     `json:"updatedAt"`
+	CPUActive *float64                   `json:"cpuActive,omitempty"`
+	MemUsed   *float64                   `json:"memUsed,omitempty"`
+	DiskUsed  *float64                   `json:"diskUsed,omitempty"`
 	Raw       map[string]json.RawMessage `json:"raw,omitempty"`
 }
 
@@ -37,63 +38,51 @@ func (s *Service) ListNodeMetrics(ctx context.Context) (*NodeMetricsResponse, er
 	if !user.IsAdmin || user.SelectedRole != "ADMIN" {
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("admin required").Err()
 	}
-	if redisClient == nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("redis unavailable").Err()
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-
-	prefix := strings.TrimSpace(s.cfg.Redis.KeyPrefix)
-	if prefix == "" {
-		prefix = "skyforge"
+	ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
+	rows, err := listRecentNodeMetricSnapshots(ctxReq, s.db, 2*time.Minute, 2000)
+	cancel()
+	if err != nil && err != sql.ErrConnDone {
+		return nil, errs.B().Code(errs.Internal).Msg("failed to query node metrics").Err()
 	}
-	pattern := prefix + ":node-metrics:*"
-
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-
-	var cursor uint64
-	keys := make([]string, 0, 64)
-	for {
-		out, next, err := redisClient.Scan(ctx, cursor, pattern, 100).Result()
-		if err != nil {
-			return nil, errs.B().Code(errs.Internal).Msg("failed to scan node metrics").Err()
-		}
-		keys = append(keys, out...)
-		cursor = next
-		if cursor == 0 || len(keys) > 200 {
-			break
-		}
-	}
-
-	nodes := make([]NodeMetricSnapshot, 0, len(keys))
-	for _, key := range keys {
-		node := strings.TrimPrefix(key, prefix+":node-metrics:")
-		h, err := redisClient.HGetAll(ctx, key).Result()
-		if err != nil {
+	nodesByName := map[string]*NodeMetricSnapshot{}
+	for _, row := range rows {
+		node := strings.TrimSpace(row.Node)
+		if node == "" {
 			continue
 		}
-		if len(h) == 0 {
+		snap := nodesByName[node]
+		if snap == nil {
+			snap = &NodeMetricSnapshot{Node: node, Raw: map[string]json.RawMessage{}}
+			nodesByName[node] = snap
+		}
+		if snap.UpdatedAt == "" || row.UpdatedAt.After(mustParseTime(snap.UpdatedAt)) {
+			snap.UpdatedAt = row.UpdatedAt.UTC().Format(time.RFC3339Nano)
+		}
+		raw := strings.TrimSpace(row.RawJSON)
+		if raw == "" {
 			continue
 		}
-
-		snap := NodeMetricSnapshot{Node: node, UpdatedAt: strings.TrimSpace(h["__updated_at"]), Raw: map[string]json.RawMessage{}}
-
-		// Parse a few well-known metrics if present.
-		if raw := h["m:cpu"]; raw != "" {
+		switch strings.TrimSpace(row.Metric) {
+		case "cpu":
 			snap.CPUActive = extractFloatField(raw, "usage_active")
 			snap.Raw["cpu"] = json.RawMessage(raw)
-		}
-		if raw := h["m:mem"]; raw != "" {
+		case "mem":
 			snap.MemUsed = extractFloatField(raw, "used_percent")
 			snap.Raw["mem"] = json.RawMessage(raw)
-		}
-		if raw := h["m:disk"]; raw != "" {
+		case "disk":
 			snap.DiskUsed = extractFloatField(raw, "used_percent")
 			snap.Raw["disk"] = json.RawMessage(raw)
+		default:
+			snap.Raw[row.Metric] = json.RawMessage(raw)
 		}
-
-		nodes = append(nodes, snap)
 	}
-
+	nodes := make([]NodeMetricSnapshot, 0, len(nodesByName))
+	for _, snap := range nodesByName {
+		nodes = append(nodes, *snap)
+	}
 	sort.Slice(nodes, func(i, j int) bool { return nodes[i].Node < nodes[j].Node })
 	return &NodeMetricsResponse{Nodes: nodes}, nil
 }
@@ -129,3 +118,7 @@ func extractFloatField(raw string, field string) *float64 {
 	return nil
 }
 
+func mustParseTime(v string) time.Time {
+	t, _ := time.Parse(time.RFC3339Nano, strings.TrimSpace(v))
+	return t
+}

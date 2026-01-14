@@ -1,4 +1,4 @@
-h1:Kq7USOoT/Pk0wKOKrAYKAOQSksST22MYR4+MXvMIdP0=
+h1:F6knd2DjT7k8I4tu/4yKd9BdSk+hyW1pOnNmv3lRNSE=
 20251220000100_init.up.sql h1:ZR4Y0ICXFcjlVW2XKzVYoSNksZP2tQ0ajHHNnh/1IoM=
 20251221000100_cloud_credentials.up.sql h1:Xb5agfyv110UYW/49J7WKrDhUCDZeS7EiMKgQUf+Tvs=
 20251222000100_project_visibility.up.sql h1:PDVyAxeOyGa1iSj+KXN2dlV1G2jxBK9A49c/1gXv4PQ=
@@ -18,3 +18,7 @@ h1:Kq7USOoT/Pk0wKOKrAYKAOQSksST22MYR4+MXvMIdP0=
 20260102000600_pki_ssh_certs.up.sql h1:HuOwauibGEjWiJWF9oEMNkai+769epYXAPEQ7epAQ3Y=
 20260103000100_workspace_rename.up.sql h1:q4ttxNo49clCFnVEaNuG41ll/k0qKB/0YKK+pQXZcbQ=
 20260110120000_rename_tofu_to_terraform.up.sql h1:/dic8pIb/fzn8TB3EHeqyJ8TgOupH2Jh1sR4OOWGc7Y=
+20260112000100_task_events.up.sql h1:Z0dqhyzNJPZ8Yc4OiItZMzXew4SyvypbJs0tnuB0RcA=
+20260113000300_forward_device_types.up.sql h1:oXUDEFllD1rRIqYkLbcOKp3HVxnmgIxBQ2Egg6fOw1Q=
+20260114000100_node_metrics_and_heartbeats.up.sql h1:rMDwaItn9ALP2nDTJ9Bf6eVGU1K70ZMoBab2CKAMMxg=
+20260114000200_ldap_password_cache.up.sql h1:+XgF42Mwxtvgq6gTJtZazCLf8TrTOVmwrd7NQoMoZjE=

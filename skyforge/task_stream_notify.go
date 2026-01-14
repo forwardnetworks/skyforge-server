@@ -2,8 +2,8 @@ package skyforge
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
-	"time"
 )
 
 func taskUpdateChannel(taskID int) string {
@@ -14,12 +14,13 @@ func dashboardUpdateChannel() string {
 	return "skyforge:dashboard"
 }
 
-func publishTaskUpdate(taskID int) {
-	if taskID <= 0 || redisClient == nil {
+func publishTaskUpdate(ctx context.Context, db *sql.DB, taskID int) {
+	if taskID <= 0 {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
-	defer cancel()
-	_ = redisClient.Publish(ctx, taskUpdateChannel(taskID), "1").Err()
-	_ = redisClient.Publish(ctx, dashboardUpdateChannel(), "1").Err()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	_ = notifyTaskUpdatePG(ctx, db, taskID)
+	_ = notifyDashboardUpdatePG(ctx, db)
 }
