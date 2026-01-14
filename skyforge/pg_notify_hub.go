@@ -15,6 +15,7 @@ import (
 const (
 	pgNotifyTasksChannel     = "skyforge_task_updates"
 	pgNotifyDashboardChannel = "skyforge_dashboard_updates"
+	pgNotifyNotificationsChannel = "skyforge_notification_updates"
 )
 
 type pgNotification struct {
@@ -121,6 +122,9 @@ func (h *pgNotifyHub) listenOnce(ctx context.Context) error {
 		if _, err := conn.Exec(ctx, "LISTEN "+pgNotifyDashboardChannel); err != nil {
 			return err
 		}
+		if _, err := conn.Exec(ctx, "LISTEN "+pgNotifyNotificationsChannel); err != nil {
+			return err
+		}
 
 		for {
 			n, err := conn.WaitForNotification(ctx)
@@ -152,6 +156,17 @@ func notifyDashboardUpdatePG(ctx context.Context, db *sql.DB) error {
 	ctxReq, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
 	_, err := db.ExecContext(ctxReq, "SELECT pg_notify($1, $2)", pgNotifyDashboardChannel, "1")
+	return err
+}
+
+func notifyNotificationUpdatePG(ctx context.Context, db *sql.DB, username string) error {
+	username = strings.ToLower(strings.TrimSpace(username))
+	if db == nil || username == "" {
+		return nil
+	}
+	ctxReq, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+	_, err := db.ExecContext(ctxReq, "SELECT pg_notify($1, $2)", pgNotifyNotificationsChannel, username)
 	return err
 }
 
@@ -191,6 +206,31 @@ func waitForDashboardUpdateSignal(ctx context.Context, db *sql.DB) bool {
 				return false
 			}
 			if n.Channel == pgNotifyDashboardChannel {
+				return true
+			}
+		}
+	}
+}
+
+func waitForNotificationUpdateSignal(ctx context.Context, db *sql.DB, username string) bool {
+	username = strings.ToLower(strings.TrimSpace(username))
+	if username == "" {
+		return false
+	}
+	hub := ensurePGNotifyHub(db)
+	ch := hub.subscribe(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case n, ok := <-ch:
+			if !ok {
+				return false
+			}
+			if n.Channel != pgNotifyNotificationsChannel {
+				continue
+			}
+			if strings.TrimSpace(n.Payload) == username {
 				return true
 			}
 		}

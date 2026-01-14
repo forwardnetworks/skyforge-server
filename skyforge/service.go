@@ -4215,13 +4215,15 @@ func markNotificationRead(ctx context.Context, db *sql.DB, username, id string) 
 	if db == nil {
 		return nil
 	}
-	res, err := db.ExecContext(ctx, `UPDATE sf_notifications SET is_read=true, updated_at=now() WHERE id=$1 AND username=$2`, id, strings.ToLower(strings.TrimSpace(username)))
+	username = strings.ToLower(strings.TrimSpace(username))
+	res, err := db.ExecContext(ctx, `UPDATE sf_notifications SET is_read=true, updated_at=now() WHERE id=$1 AND username=$2`, id, username)
 	if err != nil {
 		return err
 	}
 	if rows, _ := res.RowsAffected(); rows == 0 {
 		return sql.ErrNoRows
 	}
+	_ = notifyNotificationUpdatePG(ctx, db, username)
 	return nil
 }
 
@@ -4229,7 +4231,11 @@ func markAllNotificationsRead(ctx context.Context, db *sql.DB, username string) 
 	if db == nil {
 		return nil
 	}
-	_, err := db.ExecContext(ctx, `UPDATE sf_notifications SET is_read=true, updated_at=now() WHERE username=$1 AND is_read=false`, strings.ToLower(strings.TrimSpace(username)))
+	username = strings.ToLower(strings.TrimSpace(username))
+	_, err := db.ExecContext(ctx, `UPDATE sf_notifications SET is_read=true, updated_at=now() WHERE username=$1 AND is_read=false`, username)
+	if err == nil {
+		_ = notifyNotificationUpdatePG(ctx, db, username)
+	}
 	return err
 }
 
@@ -4237,13 +4243,15 @@ func deleteNotification(ctx context.Context, db *sql.DB, username, id string) er
 	if db == nil {
 		return nil
 	}
-	res, err := db.ExecContext(ctx, `DELETE FROM sf_notifications WHERE id=$1 AND username=$2`, id, strings.ToLower(strings.TrimSpace(username)))
+	username = strings.ToLower(strings.TrimSpace(username))
+	res, err := db.ExecContext(ctx, `DELETE FROM sf_notifications WHERE id=$1 AND username=$2`, id, username)
 	if err != nil {
 		return err
 	}
 	if rows, _ := res.RowsAffected(); rows == 0 {
 		return sql.ErrNoRows
 	}
+	_ = notifyNotificationUpdatePG(ctx, db, username)
 	return nil
 }
 
@@ -4268,11 +4276,12 @@ func createNotification(ctx context.Context, db *sql.DB, username, title, messag
 	ensureAuditActor(ctx, db, username)
 	id := uuid.NewString()
 	_, err := db.ExecContext(ctx, `INSERT INTO sf_notifications (
-  id, username, title, message, type, category, reference_id, priority
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, id, username, title, strings.TrimSpace(message), strings.TrimSpace(typ), nullIfEmpty(strings.TrimSpace(category)), nullIfEmpty(strings.TrimSpace(referenceID)), nullIfEmpty(strings.TrimSpace(priority)))
+	  id, username, title, message, type, category, reference_id, priority
+	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, id, username, title, strings.TrimSpace(message), strings.TrimSpace(typ), nullIfEmpty(strings.TrimSpace(category)), nullIfEmpty(strings.TrimSpace(referenceID)), nullIfEmpty(strings.TrimSpace(priority)))
 	if err != nil {
 		return "", err
 	}
+	_ = notifyNotificationUpdatePG(ctx, db, username)
 	return id, nil
 }
 

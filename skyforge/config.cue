@@ -1,6 +1,6 @@
 // Skyforge service configuration (Encore).
 //
-// These defaults can be overridden at deploy time using ENCORE_RUNTIME_CONFIG.
+// These defaults can be overridden at deploy time using ENCORE_CFG_SKYFORGE.
 // We keep environment-variable parsing as a compatibility layer for now.
 
 TaskWorkerEnabled: false
@@ -44,7 +44,7 @@ Labpp: {
 }
 
 // General service defaults (non-secret). These can be overridden at deploy time
-// with env vars or ENCORE_RUNTIME_CONFIG.
+// with env vars or ENCORE_CFG_SKYFORGE.
 Integrations: {
 	GiteaBaseURL:   ""
 	NetboxBaseURL:  ""
