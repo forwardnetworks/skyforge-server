@@ -2,18 +2,20 @@ package skyforge
 
 import "encore.dev/config"
 
+type encoreEveRunningScanConfig struct {
+	Limit                int
+	Workers              int
+	BudgetSeconds        int
+	PerLabTimeoutSeconds int
+}
+
 type encoreSkyforgeConfig struct {
-	TaskWorkerEnabled bool `json:"taskWorkerEnabled"`
+	TaskWorkerEnabled bool
 
-	NotificationsIntervalSeconds int `json:"notificationsIntervalSeconds"`
-	CloudCheckIntervalMinutes    int `json:"cloudCheckIntervalMinutes"`
+	NotificationsIntervalSeconds int
+	CloudCheckIntervalMinutes    int
 
-	EveRunningScan struct {
-		Limit                int `json:"limit"`
-		Workers              int `json:"workers"`
-		BudgetSeconds        int `json:"budgetSeconds"`
-		PerLabTimeoutSeconds int `json:"perLabTimeoutSeconds"`
-	} `json:"eveRunningScan"`
+	EveRunningScan encoreEveRunningScanConfig
 }
 
 var skyforgeEncoreCfg = config.Load[encoreSkyforgeConfig]()
