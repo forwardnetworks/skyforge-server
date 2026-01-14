@@ -18,3 +18,27 @@ EveRunningScan: {
 	BudgetSeconds:        4
 	PerLabTimeoutSeconds: 3
 }
+
+// Netlab defaults (legacy env vars can override).
+Netlab: {
+	SSHHost:    ""
+	SSHUser:    ""
+	SSHKeyFile: ""
+	StateRoot:  "/var/lib/skyforge/netlab"
+}
+
+// LabPP defaults (legacy env vars can override). Secrets still come from env/secrets.
+Labpp: {
+	RunnerImage:        ""
+	RunnerPullPolicy:   "IfNotPresent"
+	RunnerPVCName:      "skyforge-server-data"
+	ConfigDirBase:      "/var/lib/skyforge/labpp/configs"
+	ConfigVersion:      "1.0"
+	NetboxURL:          ""
+	NetboxMgmtSubnet:   ""
+	S3Region:           ""
+	S3BucketName:       ""
+	S3Endpoint:         ""
+	S3DisableSSL:       true
+	S3DisableChecksum:  false
+}

@@ -840,10 +840,10 @@ func loadConfig() Config {
 	ldapLookupBindPassword := getOptionalSecret("SKYFORGE_LDAP_LOOKUP_BINDPASSWORD")
 
 	netlabCfg := NetlabConfig{
-		SSHHost:    getenv("SKYFORGE_NETLAB_SSH_HOST", ""),
-		SSHUser:    getenv("SKYFORGE_NETLAB_SSH_USER", ""),
-		SSHKeyFile: getenv("SKYFORGE_NETLAB_SSH_KEY_FILE", ""),
-		StateRoot:  getenv("SKYFORGE_NETLAB_STATE_ROOT", "/var/lib/skyforge/netlab"),
+		SSHHost:    getenv("SKYFORGE_NETLAB_SSH_HOST", strings.TrimSpace(skyforgeEncoreCfg.Netlab.SSHHost)),
+		SSHUser:    getenv("SKYFORGE_NETLAB_SSH_USER", strings.TrimSpace(skyforgeEncoreCfg.Netlab.SSHUser)),
+		SSHKeyFile: getenv("SKYFORGE_NETLAB_SSH_KEY_FILE", strings.TrimSpace(skyforgeEncoreCfg.Netlab.SSHKeyFile)),
+		StateRoot:  getenv("SKYFORGE_NETLAB_STATE_ROOT", strings.TrimSpace(skyforgeEncoreCfg.Netlab.StateRoot)),
 	}
 
 	labsCfg := LabsConfig{
@@ -859,23 +859,23 @@ func loadConfig() Config {
 		EveTmpPath:       getenv("SKYFORGE_EVE_TMP_PATH", "/opt/unetlab/tmp"),
 	}
 
-	labppRunnerImage := strings.TrimSpace(getenv("SKYFORGE_LABPP_RUNNER_IMAGE", ""))
-	labppRunnerPullPolicy := strings.TrimSpace(getenv("SKYFORGE_LABPP_RUNNER_PULL_POLICY", "IfNotPresent"))
-	labppRunnerPVCName := strings.TrimSpace(getenv("SKYFORGE_LABPP_RUNNER_PVC", "skyforge-server-data"))
-	labppConfigDirBase := strings.TrimSpace(getenv("SKYFORGE_LABPP_CONFIG_DIR_BASE", "/var/lib/skyforge/labpp/configs"))
-	labppConfigVersion := strings.TrimSpace(getenv("SKYFORGE_LABPP_CONFIG_VERSION", "1.0"))
-	labppNetboxURL := strings.TrimSpace(getenv("SKYFORGE_LABPP_NETBOX_URL", ""))
+	labppRunnerImage := strings.TrimSpace(getenv("SKYFORGE_LABPP_RUNNER_IMAGE", strings.TrimSpace(skyforgeEncoreCfg.Labpp.RunnerImage)))
+	labppRunnerPullPolicy := strings.TrimSpace(getenv("SKYFORGE_LABPP_RUNNER_PULL_POLICY", strings.TrimSpace(skyforgeEncoreCfg.Labpp.RunnerPullPolicy)))
+	labppRunnerPVCName := strings.TrimSpace(getenv("SKYFORGE_LABPP_RUNNER_PVC", strings.TrimSpace(skyforgeEncoreCfg.Labpp.RunnerPVCName)))
+	labppConfigDirBase := strings.TrimSpace(getenv("SKYFORGE_LABPP_CONFIG_DIR_BASE", strings.TrimSpace(skyforgeEncoreCfg.Labpp.ConfigDirBase)))
+	labppConfigVersion := strings.TrimSpace(getenv("SKYFORGE_LABPP_CONFIG_VERSION", strings.TrimSpace(skyforgeEncoreCfg.Labpp.ConfigVersion)))
+	labppNetboxURL := strings.TrimSpace(getenv("SKYFORGE_LABPP_NETBOX_URL", strings.TrimSpace(skyforgeEncoreCfg.Labpp.NetboxURL)))
 	labppNetboxUsername := strings.TrimSpace(getOptionalSecret("SKYFORGE_LABPP_NETBOX_USERNAME"))
 	labppNetboxPassword := strings.TrimSpace(getOptionalSecret("SKYFORGE_LABPP_NETBOX_PASSWORD"))
 	labppNetboxToken := strings.TrimSpace(getOptionalSecret("SKYFORGE_LABPP_NETBOX_TOKEN"))
-	labppNetboxMgmtSubnet := strings.TrimSpace(getenv("SKYFORGE_LABPP_NETBOX_MGMT_SUBNET", ""))
+	labppNetboxMgmtSubnet := strings.TrimSpace(getenv("SKYFORGE_LABPP_NETBOX_MGMT_SUBNET", strings.TrimSpace(skyforgeEncoreCfg.Labpp.NetboxMgmtSubnet)))
 	labppS3AccessKey := strings.TrimSpace(getOptionalSecret("SKYFORGE_LABPP_S3_ACCESS_KEY"))
 	labppS3SecretKey := strings.TrimSpace(getOptionalSecret("SKYFORGE_LABPP_S3_SECRET_KEY"))
-	labppS3Region := strings.TrimSpace(getenv("SKYFORGE_LABPP_S3_REGION", ""))
-	labppS3BucketName := strings.TrimSpace(getenv("SKYFORGE_LABPP_S3_BUCKET", ""))
-	labppS3Endpoint := strings.TrimSpace(getenv("SKYFORGE_LABPP_S3_ENDPOINT", ""))
-	labppS3DisableSSL := getenvBool("SKYFORGE_LABPP_S3_DISABLE_SSL", true)
-	labppS3DisableChecksum := getenvBool("SKYFORGE_LABPP_S3_DISABLE_CHECKSUM", false)
+	labppS3Region := strings.TrimSpace(getenv("SKYFORGE_LABPP_S3_REGION", strings.TrimSpace(skyforgeEncoreCfg.Labpp.S3Region)))
+	labppS3BucketName := strings.TrimSpace(getenv("SKYFORGE_LABPP_S3_BUCKET", strings.TrimSpace(skyforgeEncoreCfg.Labpp.S3BucketName)))
+	labppS3Endpoint := strings.TrimSpace(getenv("SKYFORGE_LABPP_S3_ENDPOINT", strings.TrimSpace(skyforgeEncoreCfg.Labpp.S3Endpoint)))
+	labppS3DisableSSL := getenvBool("SKYFORGE_LABPP_S3_DISABLE_SSL", skyforgeEncoreCfg.Labpp.S3DisableSSL)
+	labppS3DisableChecksum := getenvBool("SKYFORGE_LABPP_S3_DISABLE_CHECKSUM", skyforgeEncoreCfg.Labpp.S3DisableChecksum)
 	yaadeAdminUsername := strings.TrimSpace(getenv("SKYFORGE_YAADE_ADMIN_USERNAME", getenv("YAADE_ADMIN_USERNAME", "admin")))
 	yaadeAdminPassword := strings.TrimSpace(getOptionalSecret("YAADE_ADMIN_PASSWORD"))
 
