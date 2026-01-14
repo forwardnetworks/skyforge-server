@@ -11,6 +11,7 @@ type UIConfigResponse struct {
 	SupportText      string `json:"supportText"`
 	SupportURL       string `json:"supportUrl"`
 	ThemeDefault     string `json:"themeDefault"`
+	ExternalURL      string `json:"externalUrl"`
 	OIDCEnabled      bool   `json:"oidcEnabled"`
 	OIDCLoginURL     string `json:"oidcLoginUrl"`
 }
@@ -18,7 +19,7 @@ type UIConfigResponse struct {
 // GetUIConfig returns UI configuration values.
 //
 //encore:api public method=GET path=/api/ui/config
-func (s *Service) GetUIConfig(_ context.Context) (*UIConfigResponse, error) {
+func (s *Service) GetUIConfig(ctx context.Context) (*UIConfigResponse, error) {
 	return &UIConfigResponse{
 		ProductName:      s.cfg.UI.ProductName,
 		ProductSubtitle:  s.cfg.UI.ProductSubtitle,
@@ -28,6 +29,7 @@ func (s *Service) GetUIConfig(_ context.Context) (*UIConfigResponse, error) {
 		SupportText:      s.cfg.UI.SupportText,
 		SupportURL:       s.cfg.UI.SupportURL,
 		ThemeDefault:     s.cfg.UI.ThemeDefault,
+		ExternalURL:      detectCloudflaredQuickTunnelURL(ctx),
 		OIDCEnabled:      s.cfg.UI.OIDCEnabled,
 		OIDCLoginURL:     s.cfg.UI.OIDCLoginURL,
 	}, nil
