@@ -678,11 +678,11 @@ func netlabServerByName(servers []NetlabServerConfig, name string) *NetlabServer
 func netlabServerFromEve(server EveServerConfig, fallback NetlabConfig, labsCfg LabsConfig) NetlabServerConfig {
 	eve := normalizeEveServer(server, labsCfg)
 	netlab := NetlabServerConfig{
-		Name:       strings.TrimSpace(eve.Name),
-		SSHHost:    strings.TrimSpace(eve.SSHHost),
-		SSHUser:    strings.TrimSpace(eve.SSHUser),
-		SSHKeyFile: strings.TrimSpace(fallback.SSHKeyFile),
-		StateRoot:  strings.TrimSpace(fallback.StateRoot),
+		Name:        strings.TrimSpace(eve.Name),
+		SSHHost:     strings.TrimSpace(eve.SSHHost),
+		SSHUser:     strings.TrimSpace(eve.SSHUser),
+		SSHKeyFile:  strings.TrimSpace(fallback.SSHKeyFile),
+		StateRoot:   strings.TrimSpace(fallback.StateRoot),
 		APIInsecure: true,
 	}
 	return normalizeNetlabServer(netlab, fallback)
@@ -748,11 +748,11 @@ func resolveNetlabServer(cfg Config, name string) (*NetlabServerConfig, string) 
 			return nil, ""
 		}
 		s := normalizeNetlabServer(NetlabServerConfig{
-			Name:       "netlab-default",
-			SSHHost:    cfg.Netlab.SSHHost,
-			SSHUser:    cfg.Netlab.SSHUser,
-			SSHKeyFile: cfg.Netlab.SSHKeyFile,
-			StateRoot:  cfg.Netlab.StateRoot,
+			Name:        "netlab-default",
+			SSHHost:     cfg.Netlab.SSHHost,
+			SSHUser:     cfg.Netlab.SSHUser,
+			SSHKeyFile:  cfg.Netlab.SSHKeyFile,
+			StateRoot:   cfg.Netlab.StateRoot,
 			APIInsecure: true,
 		}, cfg.Netlab)
 		return &s, s.Name
@@ -910,7 +910,7 @@ func loadConfig() Config {
 	dnsUserZoneSuffix := strings.TrimSpace(getenv("SKYFORGE_DNS_USER_ZONE_SUFFIX", "skyforge"))
 	dnsUserZoneSuffix = strings.TrimPrefix(dnsUserZoneSuffix, ".")
 
-	taskWorkerEnabled := getenv("SKYFORGE_TASK_WORKER_ENABLED", "true") == "true"
+	taskWorkerEnabled := getenv("SKYFORGE_TASK_WORKER_ENABLED", strconv.FormatBool(skyforgeEncoreCfg.TaskWorkerEnabled)) == "true"
 
 	eveServersRaw := strings.TrimSpace(os.Getenv("SKYFORGE_EVE_SERVERS_JSON"))
 	if eveServersRaw == "" {
@@ -1010,6 +1010,9 @@ func loadConfig() Config {
 	}
 	notificationsEnabled := getenv("SKYFORGE_NOTIFICATIONS_ENABLED", "true") == "true"
 	notificationsInterval := 30 * time.Second
+	if skyforgeEncoreCfg.NotificationsIntervalSeconds > 0 && skyforgeEncoreCfg.NotificationsIntervalSeconds <= 3600 {
+		notificationsInterval = time.Duration(skyforgeEncoreCfg.NotificationsIntervalSeconds) * time.Second
+	}
 	if raw := strings.TrimSpace(getenv("SKYFORGE_NOTIFICATIONS_INTERVAL", "")); raw != "" {
 		if dur, err := time.ParseDuration(raw); err == nil {
 			notificationsInterval = dur
@@ -1020,6 +1023,9 @@ func loadConfig() Config {
 		}
 	}
 	cloudCredentialChecks := 30 * time.Minute
+	if skyforgeEncoreCfg.CloudCheckIntervalMinutes > 0 && skyforgeEncoreCfg.CloudCheckIntervalMinutes <= 24*60 {
+		cloudCredentialChecks = time.Duration(skyforgeEncoreCfg.CloudCheckIntervalMinutes) * time.Minute
+	}
 	if raw := strings.TrimSpace(getenv("SKYFORGE_CLOUD_CHECK_INTERVAL", "")); raw != "" {
 		if dur, err := time.ParseDuration(raw); err == nil {
 			cloudCredentialChecks = dur
@@ -5285,6 +5291,9 @@ func eveListLabs(ctx context.Context, client *http.Client, base string, username
 		}
 
 		limit := 25
+		if skyforgeEncoreCfg.EveRunningScan.Limit > 0 && skyforgeEncoreCfg.EveRunningScan.Limit <= 500 {
+			limit = skyforgeEncoreCfg.EveRunningScan.Limit
+		}
 		if raw := strings.TrimSpace(os.Getenv("SKYFORGE_EVE_RUNNING_SCAN_LIMIT")); raw != "" {
 			if v, err := strconv.Atoi(raw); err == nil && v > 0 && v <= 500 {
 				limit = v
@@ -5300,6 +5309,9 @@ func eveListLabs(ctx context.Context, client *http.Client, base string, username
 		}
 
 		workers := 8
+		if skyforgeEncoreCfg.EveRunningScan.Workers > 0 && skyforgeEncoreCfg.EveRunningScan.Workers <= 32 {
+			workers = skyforgeEncoreCfg.EveRunningScan.Workers
+		}
 		if raw := strings.TrimSpace(os.Getenv("SKYFORGE_EVE_RUNNING_SCAN_WORKERS")); raw != "" {
 			if v, err := strconv.Atoi(raw); err == nil && v > 0 && v <= 32 {
 				workers = v
@@ -5307,6 +5319,9 @@ func eveListLabs(ctx context.Context, client *http.Client, base string, username
 		}
 
 		budget := 4 * time.Second
+		if skyforgeEncoreCfg.EveRunningScan.BudgetSeconds > 0 && skyforgeEncoreCfg.EveRunningScan.BudgetSeconds <= 60 {
+			budget = time.Duration(skyforgeEncoreCfg.EveRunningScan.BudgetSeconds) * time.Second
+		}
 		if raw := strings.TrimSpace(os.Getenv("SKYFORGE_EVE_RUNNING_SCAN_BUDGET")); raw != "" {
 			if v, err := time.ParseDuration(raw); err == nil && v > 0 && v <= 60*time.Second {
 				budget = v
@@ -5330,7 +5345,11 @@ func eveListLabs(ctx context.Context, client *http.Client, base string, username
 				defer wg.Done()
 				for idx := range jobs {
 					lab := allLabs[idx]
-					perCall, cancel := context.WithTimeout(scanCtx, 3*time.Second)
+					perLabTimeout := 3 * time.Second
+					if skyforgeEncoreCfg.EveRunningScan.PerLabTimeoutSeconds > 0 && skyforgeEncoreCfg.EveRunningScan.PerLabTimeoutSeconds <= 30 {
+						perLabTimeout = time.Duration(skyforgeEncoreCfg.EveRunningScan.PerLabTimeoutSeconds) * time.Second
+					}
+					perCall, cancel := context.WithTimeout(scanCtx, perLabTimeout)
 					running, _, err := eveLabHasRunningNodes(perCall, client, base, username, lab.ID)
 					cancel()
 					if err != nil {
