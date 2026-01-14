@@ -31,6 +31,28 @@ type encoreLabppDefaultsConfig struct {
 	S3DisableChecksum bool
 }
 
+type encoreIntegrationDefaultsConfig struct {
+	GiteaBaseURL    string
+	NetboxBaseURL   string
+	NautobotBaseURL string
+	YaadeBaseURL    string
+}
+
+type encoreLabsDefaultsConfig struct {
+	EveSSHUser   string
+	EveSSHTunnel bool
+	EveLabsPath  string
+	EveTmpPath   string
+}
+
+type encoreDNSDefaultsConfig struct {
+	URL string
+}
+
+type encoreContainerlabDefaultsConfig struct {
+	APIPath string
+}
+
 type encoreSkyforgeConfig struct {
 	TaskWorkerEnabled bool
 
@@ -40,6 +62,10 @@ type encoreSkyforgeConfig struct {
 	EveRunningScan encoreEveRunningScanConfig
 	Netlab         encoreNetlabDefaultsConfig
 	Labpp          encoreLabppDefaultsConfig
+	Integrations   encoreIntegrationDefaultsConfig
+	Labs           encoreLabsDefaultsConfig
+	DNS            encoreDNSDefaultsConfig
+	Containerlab   encoreContainerlabDefaultsConfig
 }
 
 var skyforgeEncoreCfg = config.Load[encoreSkyforgeConfig]()

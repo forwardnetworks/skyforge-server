@@ -802,10 +802,10 @@ func loadConfig() Config {
 	awsSSORegion := strings.TrimSpace(getenv("SKYFORGE_AWS_SSO_REGION", ""))
 	awsSSOAccountID := strings.TrimSpace(getenv("SKYFORGE_AWS_SSO_ACCOUNT_ID", ""))
 	awsSSORoleName := strings.TrimSpace(getenv("SKYFORGE_AWS_SSO_ROLE_NAME", ""))
-	giteaBaseURL := strings.TrimRight(getenv("SKYFORGE_GITEA_URL", ""), "/")
-	netboxBaseURL := strings.TrimRight(getenv("SKYFORGE_NETBOX_URL", ""), "/")
-	nautobotBaseURL := strings.TrimRight(getenv("SKYFORGE_NAUTOBOT_URL", ""), "/")
-	yaadeBaseURL := strings.TrimRight(getenv("SKYFORGE_YAADE_URL", ""), "/")
+	giteaBaseURL := strings.TrimRight(getenv("SKYFORGE_GITEA_URL", strings.TrimSpace(skyforgeEncoreCfg.Integrations.GiteaBaseURL)), "/")
+	netboxBaseURL := strings.TrimRight(getenv("SKYFORGE_NETBOX_URL", strings.TrimSpace(skyforgeEncoreCfg.Integrations.NetboxBaseURL)), "/")
+	nautobotBaseURL := strings.TrimRight(getenv("SKYFORGE_NAUTOBOT_URL", strings.TrimSpace(skyforgeEncoreCfg.Integrations.NautobotBaseURL)), "/")
+	yaadeBaseURL := strings.TrimRight(getenv("SKYFORGE_YAADE_URL", strings.TrimSpace(skyforgeEncoreCfg.Integrations.YaadeBaseURL)), "/")
 	oidcIssuerURL := strings.TrimSpace(getenv("SKYFORGE_OIDC_ISSUER_URL", ""))
 	oidcClientID := strings.TrimSpace(getOptionalSecret("SKYFORGE_OIDC_CLIENT_ID"))
 	oidcClientSecret := strings.TrimSpace(getOptionalSecret("SKYFORGE_OIDC_CLIENT_SECRET"))
@@ -853,10 +853,10 @@ func loadConfig() Config {
 		EvePassword:      getOptionalSecret("SKYFORGE_EVE_PASSWORD"),
 		EveSkipTLSVerify: getenv("SKYFORGE_EVE_SKIP_TLS_VERIFY", "false") == "true",
 		EveSSHKeyFile:    getenv("SKYFORGE_EVE_SSH_KEY_FILE", ""),
-		EveSSHUser:       getenv("SKYFORGE_EVE_SSH_USER", ""),
-		EveSSHTunnel:     getenv("SKYFORGE_EVE_SSH_TUNNEL_ENABLED", "true") == "true",
-		EveLabsPath:      getenv("SKYFORGE_EVE_LABS_PATH", "/opt/unetlab/labs"),
-		EveTmpPath:       getenv("SKYFORGE_EVE_TMP_PATH", "/opt/unetlab/tmp"),
+		EveSSHUser:       getenv("SKYFORGE_EVE_SSH_USER", strings.TrimSpace(skyforgeEncoreCfg.Labs.EveSSHUser)),
+		EveSSHTunnel:     getenv("SKYFORGE_EVE_SSH_TUNNEL_ENABLED", strconv.FormatBool(skyforgeEncoreCfg.Labs.EveSSHTunnel)) == "true",
+		EveLabsPath:      getenv("SKYFORGE_EVE_LABS_PATH", strings.TrimSpace(skyforgeEncoreCfg.Labs.EveLabsPath)),
+		EveTmpPath:       getenv("SKYFORGE_EVE_TMP_PATH", strings.TrimSpace(skyforgeEncoreCfg.Labs.EveTmpPath)),
 	}
 
 	labppRunnerImage := strings.TrimSpace(getenv("SKYFORGE_LABPP_RUNNER_IMAGE", strings.TrimSpace(skyforgeEncoreCfg.Labpp.RunnerImage)))
@@ -879,7 +879,7 @@ func loadConfig() Config {
 	yaadeAdminUsername := strings.TrimSpace(getenv("SKYFORGE_YAADE_ADMIN_USERNAME", getenv("YAADE_ADMIN_USERNAME", "admin")))
 	yaadeAdminPassword := strings.TrimSpace(getOptionalSecret("YAADE_ADMIN_PASSWORD"))
 
-	containerlabAPIPath := strings.TrimSpace(getenv("SKYFORGE_CONTAINERLAB_API_PATH", "/containerlab"))
+	containerlabAPIPath := strings.TrimSpace(getenv("SKYFORGE_CONTAINERLAB_API_PATH", strings.TrimSpace(skyforgeEncoreCfg.Containerlab.APIPath)))
 	if containerlabAPIPath == "" {
 		containerlabAPIPath = "/containerlab"
 	}
@@ -905,7 +905,7 @@ func loadConfig() Config {
 		}
 	}
 
-	dnsURL := strings.TrimRight(strings.TrimSpace(getenv("SKYFORGE_DNS_URL", "http://technitium-dns:5380")), "/")
+	dnsURL := strings.TrimRight(strings.TrimSpace(getenv("SKYFORGE_DNS_URL", strings.TrimSpace(skyforgeEncoreCfg.DNS.URL))), "/")
 	dnsAdminUsername := strings.TrimSpace(getenv("SKYFORGE_DNS_ADMIN_USERNAME", "admin"))
 	dnsUserZoneSuffix := strings.TrimSpace(getenv("SKYFORGE_DNS_USER_ZONE_SUFFIX", "skyforge"))
 	dnsUserZoneSuffix = strings.TrimPrefix(dnsUserZoneSuffix, ".")

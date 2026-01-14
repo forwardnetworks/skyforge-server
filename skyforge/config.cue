@@ -42,3 +42,27 @@ Labpp: {
 	S3DisableSSL:       true
 	S3DisableChecksum:  false
 }
+
+// General service defaults (non-secret). These can be overridden at deploy time
+// with env vars or ENCORE_RUNTIME_CONFIG.
+Integrations: {
+	GiteaBaseURL:   ""
+	NetboxBaseURL:  ""
+	NautobotBaseURL:""
+	YaadeBaseURL:   ""
+}
+
+Labs: {
+	EveSSHUser:       ""
+	EveSSHTunnel:     true
+	EveLabsPath:      "/opt/unetlab/labs"
+	EveTmpPath:       "/opt/unetlab/tmp"
+}
+
+DNS: {
+	URL: "http://technitium-dns:5380"
+}
+
+Containerlab: {
+	APIPath: "/containerlab"
+}
