@@ -781,8 +781,6 @@ func netlabConfigFromServer(server NetlabServerConfig, fallback NetlabConfig) Ne
 }
 
 func loadConfig() Config {
-	legacyEnv := legacyEnvConfigEnabled()
-
 	sessionTTL := 8 * time.Hour
 	if raw := getenv("SKYFORGE_SESSION_TTL", "8h"); raw != "" {
 		if parsed, err := time.ParseDuration(raw); err == nil {
@@ -814,15 +812,6 @@ func loadConfig() Config {
 	netboxInternalBaseURL := strings.TrimRight(strings.TrimSpace(skyforgeEncoreCfg.Integrations.NetboxInternalBaseURL), "/")
 	nautobotInternalBaseURL := strings.TrimRight(strings.TrimSpace(skyforgeEncoreCfg.Integrations.NautobotInternalBaseURL), "/")
 	yaadeInternalBaseURL := strings.TrimRight(strings.TrimSpace(skyforgeEncoreCfg.Integrations.YaadeInternalBaseURL), "/")
-	if legacyEnv {
-		giteaBaseURL = strings.TrimRight(getenv("SKYFORGE_GITEA_URL", giteaBaseURL), "/")
-		netboxBaseURL = strings.TrimRight(getenv("SKYFORGE_NETBOX_URL", netboxBaseURL), "/")
-		nautobotBaseURL = strings.TrimRight(getenv("SKYFORGE_NAUTOBOT_URL", nautobotBaseURL), "/")
-		yaadeBaseURL = strings.TrimRight(getenv("SKYFORGE_YAADE_URL", yaadeBaseURL), "/")
-		netboxInternalBaseURL = strings.TrimRight(getenv("SKYFORGE_NETBOX_INTERNAL_URL", netboxInternalBaseURL), "/")
-		nautobotInternalBaseURL = strings.TrimRight(getenv("SKYFORGE_NAUTOBOT_INTERNAL_URL", nautobotInternalBaseURL), "/")
-		yaadeInternalBaseURL = strings.TrimRight(getenv("SKYFORGE_YAADE_INTERNAL_URL", yaadeInternalBaseURL), "/")
-	}
 	oidcIssuerURL := strings.TrimSpace(getenv("SKYFORGE_OIDC_ISSUER_URL", ""))
 	oidcClientID := strings.TrimSpace(getOptionalSecret("SKYFORGE_OIDC_CLIENT_ID"))
 	oidcClientSecret := strings.TrimSpace(getOptionalSecret("SKYFORGE_OIDC_CLIENT_SECRET"))
@@ -862,12 +851,6 @@ func loadConfig() Config {
 		SSHKeyFile: strings.TrimSpace(skyforgeEncoreCfg.Netlab.SSHKeyFile),
 		StateRoot:  strings.TrimSpace(skyforgeEncoreCfg.Netlab.StateRoot),
 	}
-	if legacyEnv {
-		netlabCfg.SSHHost = getenv("SKYFORGE_NETLAB_SSH_HOST", netlabCfg.SSHHost)
-		netlabCfg.SSHUser = getenv("SKYFORGE_NETLAB_SSH_USER", netlabCfg.SSHUser)
-		netlabCfg.SSHKeyFile = getenv("SKYFORGE_NETLAB_SSH_KEY_FILE", netlabCfg.SSHKeyFile)
-		netlabCfg.StateRoot = getenv("SKYFORGE_NETLAB_STATE_ROOT", netlabCfg.StateRoot)
-	}
 
 	labsCfg := LabsConfig{
 		PublicURL:        strings.TrimRight(getenv("SKYFORGE_EVE_URL", ""), "/"),
@@ -880,12 +863,6 @@ func loadConfig() Config {
 		EveSSHTunnel:     skyforgeEncoreCfg.Labs.EveSSHTunnel,
 		EveLabsPath:      strings.TrimSpace(skyforgeEncoreCfg.Labs.EveLabsPath),
 		EveTmpPath:       strings.TrimSpace(skyforgeEncoreCfg.Labs.EveTmpPath),
-	}
-	if legacyEnv {
-		labsCfg.EveSSHUser = getenv("SKYFORGE_EVE_SSH_USER", labsCfg.EveSSHUser)
-		labsCfg.EveSSHTunnel = getenv("SKYFORGE_EVE_SSH_TUNNEL_ENABLED", strconv.FormatBool(labsCfg.EveSSHTunnel)) == "true"
-		labsCfg.EveLabsPath = getenv("SKYFORGE_EVE_LABS_PATH", labsCfg.EveLabsPath)
-		labsCfg.EveTmpPath = getenv("SKYFORGE_EVE_TMP_PATH", labsCfg.EveTmpPath)
 	}
 
 	labppRunnerImage := strings.TrimSpace(skyforgeEncoreCfg.Labpp.RunnerImage)
@@ -905,28 +882,11 @@ func loadConfig() Config {
 	labppS3Endpoint := strings.TrimSpace(skyforgeEncoreCfg.Labpp.S3Endpoint)
 	labppS3DisableSSL := skyforgeEncoreCfg.Labpp.S3DisableSSL
 	labppS3DisableChecksum := skyforgeEncoreCfg.Labpp.S3DisableChecksum
-	if legacyEnv {
-		labppRunnerImage = strings.TrimSpace(getenv("SKYFORGE_LABPP_RUNNER_IMAGE", labppRunnerImage))
-		labppRunnerPullPolicy = strings.TrimSpace(getenv("SKYFORGE_LABPP_RUNNER_PULL_POLICY", labppRunnerPullPolicy))
-		labppRunnerPVCName = strings.TrimSpace(getenv("SKYFORGE_LABPP_RUNNER_PVC", labppRunnerPVCName))
-		labppConfigDirBase = strings.TrimSpace(getenv("SKYFORGE_LABPP_CONFIG_DIR_BASE", labppConfigDirBase))
-		labppConfigVersion = strings.TrimSpace(getenv("SKYFORGE_LABPP_CONFIG_VERSION", labppConfigVersion))
-		labppNetboxURL = strings.TrimSpace(getenv("SKYFORGE_LABPP_NETBOX_URL", labppNetboxURL))
-		labppNetboxMgmtSubnet = strings.TrimSpace(getenv("SKYFORGE_LABPP_NETBOX_MGMT_SUBNET", labppNetboxMgmtSubnet))
-		labppS3Region = strings.TrimSpace(getenv("SKYFORGE_LABPP_S3_REGION", labppS3Region))
-		labppS3BucketName = strings.TrimSpace(getenv("SKYFORGE_LABPP_S3_BUCKET", labppS3BucketName))
-		labppS3Endpoint = strings.TrimSpace(getenv("SKYFORGE_LABPP_S3_ENDPOINT", labppS3Endpoint))
-		labppS3DisableSSL = getenvBool("SKYFORGE_LABPP_S3_DISABLE_SSL", labppS3DisableSSL)
-		labppS3DisableChecksum = getenvBool("SKYFORGE_LABPP_S3_DISABLE_CHECKSUM", labppS3DisableChecksum)
-	}
 
 	yaadeAdminUsername := strings.TrimSpace(getenv("SKYFORGE_YAADE_ADMIN_USERNAME", getenv("YAADE_ADMIN_USERNAME", "admin")))
 	yaadeAdminPassword := strings.TrimSpace(getOptionalSecret("YAADE_ADMIN_PASSWORD"))
 
 	containerlabAPIPath := strings.TrimSpace(skyforgeEncoreCfg.Containerlab.APIPath)
-	if legacyEnv {
-		containerlabAPIPath = strings.TrimSpace(getenv("SKYFORGE_CONTAINERLAB_API_PATH", containerlabAPIPath))
-	}
 	if containerlabAPIPath == "" {
 		containerlabAPIPath = "/containerlab"
 	}
@@ -953,17 +913,11 @@ func loadConfig() Config {
 	}
 
 	dnsURL := strings.TrimRight(strings.TrimSpace(skyforgeEncoreCfg.DNS.URL), "/")
-	if legacyEnv {
-		dnsURL = strings.TrimRight(strings.TrimSpace(getenv("SKYFORGE_DNS_URL", dnsURL)), "/")
-	}
 	dnsAdminUsername := strings.TrimSpace(getenv("SKYFORGE_DNS_ADMIN_USERNAME", "admin"))
 	dnsUserZoneSuffix := strings.TrimSpace(getenv("SKYFORGE_DNS_USER_ZONE_SUFFIX", "skyforge"))
 	dnsUserZoneSuffix = strings.TrimPrefix(dnsUserZoneSuffix, ".")
 
 	taskWorkerEnabled := skyforgeEncoreCfg.TaskWorkerEnabled
-	if legacyEnv {
-		taskWorkerEnabled = getenv("SKYFORGE_TASK_WORKER_ENABLED", strconv.FormatBool(taskWorkerEnabled)) == "true"
-	}
 
 	eveServersRaw := strings.TrimSpace(os.Getenv("SKYFORGE_EVE_SERVERS_JSON"))
 	if eveServersRaw == "" {
@@ -1066,31 +1020,9 @@ func loadConfig() Config {
 	if skyforgeEncoreCfg.NotificationsIntervalSeconds > 0 && skyforgeEncoreCfg.NotificationsIntervalSeconds <= 3600 {
 		notificationsInterval = time.Duration(skyforgeEncoreCfg.NotificationsIntervalSeconds) * time.Second
 	}
-	if legacyEnv {
-		if raw := strings.TrimSpace(getenv("SKYFORGE_NOTIFICATIONS_INTERVAL", "")); raw != "" {
-			if dur, err := time.ParseDuration(raw); err == nil {
-				notificationsInterval = dur
-			} else if ms, err := strconv.Atoi(raw); err == nil {
-				notificationsInterval = time.Duration(ms) * time.Millisecond
-			} else {
-				log.Printf("invalid SKYFORGE_NOTIFICATIONS_INTERVAL: %s", raw)
-			}
-		}
-	}
 	cloudCredentialChecks := 30 * time.Minute
 	if skyforgeEncoreCfg.CloudCheckIntervalMinutes > 0 && skyforgeEncoreCfg.CloudCheckIntervalMinutes <= 24*60 {
 		cloudCredentialChecks = time.Duration(skyforgeEncoreCfg.CloudCheckIntervalMinutes) * time.Minute
-	}
-	if legacyEnv {
-		if raw := strings.TrimSpace(getenv("SKYFORGE_CLOUD_CHECK_INTERVAL", "")); raw != "" {
-			if dur, err := time.ParseDuration(raw); err == nil {
-				cloudCredentialChecks = dur
-			} else if ms, err := strconv.Atoi(raw); err == nil {
-				cloudCredentialChecks = time.Duration(ms) * time.Millisecond
-			} else {
-				log.Printf("invalid SKYFORGE_CLOUD_CHECK_INTERVAL: %s", raw)
-			}
-		}
 	}
 
 	return Config{
@@ -4791,13 +4723,6 @@ func listEveLabsViaSSH(ctx context.Context, cfg LabsConfig, server EveServerConf
 	}
 
 	listLimit := 250
-	if legacyEnvConfigEnabled() {
-		if raw := strings.TrimSpace(os.Getenv("SKYFORGE_EVE_SSH_LIST_LIMIT")); raw != "" {
-			if v, err := strconv.Atoi(raw); err == nil && v > 0 && v <= 2000 {
-				listLimit = v
-			}
-		}
-	}
 
 	source := map[string]any{
 		"provider":  "eve-ng",
@@ -5328,10 +5253,8 @@ func eveListLabs(ctx context.Context, client *http.Client, base string, username
 		foldersToQuery = []string{"Running"}
 	} else if strings.TrimSpace(query.Owner) != "" {
 		foldersToQuery = []string{"Users/" + query.Owner}
-		if legacyEnvConfigEnabled() {
-			if strings.EqualFold(strings.TrimSpace(os.Getenv("SKYFORGE_EVE_USER_ROOT_FALLBACK")), "true") {
-				foldersToQuery = append(foldersToQuery, "")
-			}
+		if skyforgeEncoreCfg.EveUserRootFallback {
+			foldersToQuery = append(foldersToQuery, "")
 		}
 	} else {
 		foldersToQuery = []string{""}
@@ -5367,13 +5290,6 @@ func eveListLabs(ctx context.Context, client *http.Client, base string, username
 		if skyforgeEncoreCfg.EveRunningScan.Limit > 0 && skyforgeEncoreCfg.EveRunningScan.Limit <= 500 {
 			limit = skyforgeEncoreCfg.EveRunningScan.Limit
 		}
-		if legacyEnvConfigEnabled() {
-			if raw := strings.TrimSpace(os.Getenv("SKYFORGE_EVE_RUNNING_SCAN_LIMIT")); raw != "" {
-				if v, err := strconv.Atoi(raw); err == nil && v > 0 && v <= 500 {
-					limit = v
-				}
-			}
-		}
 		if len(allLabs) > limit {
 			allLabs = allLabs[:limit]
 		}
@@ -5387,24 +5303,10 @@ func eveListLabs(ctx context.Context, client *http.Client, base string, username
 		if skyforgeEncoreCfg.EveRunningScan.Workers > 0 && skyforgeEncoreCfg.EveRunningScan.Workers <= 32 {
 			workers = skyforgeEncoreCfg.EveRunningScan.Workers
 		}
-		if legacyEnvConfigEnabled() {
-			if raw := strings.TrimSpace(os.Getenv("SKYFORGE_EVE_RUNNING_SCAN_WORKERS")); raw != "" {
-				if v, err := strconv.Atoi(raw); err == nil && v > 0 && v <= 32 {
-					workers = v
-				}
-			}
-		}
 
 		budget := 4 * time.Second
 		if skyforgeEncoreCfg.EveRunningScan.BudgetSeconds > 0 && skyforgeEncoreCfg.EveRunningScan.BudgetSeconds <= 60 {
 			budget = time.Duration(skyforgeEncoreCfg.EveRunningScan.BudgetSeconds) * time.Second
-		}
-		if legacyEnvConfigEnabled() {
-			if raw := strings.TrimSpace(os.Getenv("SKYFORGE_EVE_RUNNING_SCAN_BUDGET")); raw != "" {
-				if v, err := time.ParseDuration(raw); err == nil && v > 0 && v <= 60*time.Second {
-					budget = v
-				}
-			}
 		}
 		scanCtx := ctx
 		if _, hasDeadline := ctx.Deadline(); !hasDeadline {

@@ -61,6 +61,7 @@ type encoreSkyforgeConfig struct {
 
 	NotificationsIntervalSeconds int
 	CloudCheckIntervalMinutes    int
+	EveUserRootFallback          bool
 
 	EveRunningScan encoreEveRunningScanConfig
 	Netlab         encoreNetlabDefaultsConfig

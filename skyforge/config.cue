@@ -1,7 +1,6 @@
 // Skyforge service configuration (Encore).
 //
 // These defaults can be overridden at deploy time using ENCORE_CFG_SKYFORGE.
-// We keep environment-variable parsing as a compatibility layer for now.
 
 TaskWorkerEnabled: false
 
@@ -11,6 +10,10 @@ NotificationsIntervalSeconds: 30
 // Default interval for cloud credential checks (AWS/Azure/GCP).
 CloudCheckIntervalMinutes: 30
 
+// When querying EVE labs for a specific owner, optionally fall back to scanning the root folder.
+// This is useful for EVE installs that don't follow the `Users/<owner>` folder convention.
+EveUserRootFallback: false
+
 // Limits and time budget for the public "running labs" endpoint when scanning EVE-NG.
 EveRunningScan: {
 	Limit:                25
@@ -19,7 +22,7 @@ EveRunningScan: {
 	PerLabTimeoutSeconds: 3
 }
 
-// Netlab defaults (legacy env vars can override).
+// Netlab defaults.
 Netlab: {
 	SSHHost:    ""
 	SSHUser:    ""
@@ -27,7 +30,7 @@ Netlab: {
 	StateRoot:  "/var/lib/skyforge/netlab"
 }
 
-// LabPP defaults (legacy env vars can override). Secrets still come from env/secrets.
+// LabPP defaults. Secrets still come from env/secrets.
 Labpp: {
 	RunnerImage:        ""
 	RunnerPullPolicy:   "IfNotPresent"
