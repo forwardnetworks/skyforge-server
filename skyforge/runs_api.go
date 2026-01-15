@@ -230,7 +230,10 @@ func (s *Service) CancelRun(ctx context.Context, id int, params *RunsOutputParam
 				}
 				if apiURL != "" {
 					log := &taskLogger{svc: s, taskID: task.ID}
-					s.cancelNetlabJob(ctx, apiURL, jobID, server.APIInsecure, strings.TrimSpace(server.APIToken), log)
+					auth, err := s.netlabAPIAuthForUser(user.Username, *server)
+					if err == nil {
+						s.cancelNetlabJob(ctx, apiURL, jobID, server.APIInsecure, auth, log)
+					}
 				}
 			}
 		}

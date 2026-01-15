@@ -32,10 +32,13 @@ type encoreLabppDefaultsConfig struct {
 }
 
 type encoreIntegrationDefaultsConfig struct {
-	GiteaBaseURL    string
-	NetboxBaseURL   string
-	NautobotBaseURL string
-	YaadeBaseURL    string
+	GiteaBaseURL            string
+	NetboxBaseURL           string
+	NetboxInternalBaseURL   string
+	NautobotBaseURL         string
+	NautobotInternalBaseURL string
+	YaadeBaseURL            string
+	YaadeInternalBaseURL    string
 }
 
 type encoreLabsDefaultsConfig struct {

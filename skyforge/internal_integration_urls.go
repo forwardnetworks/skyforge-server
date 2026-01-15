@@ -2,27 +2,26 @@ package skyforge
 
 import "strings"
 
-func internalIntegrationURL(envKey, fallback string) string {
-	raw := strings.TrimSpace(getenv(envKey, ""))
-	if raw == "" {
-		raw = strings.TrimSpace(fallback)
+func internalIntegrationURL(cfgValue string, envKey, fallback string) string {
+	if v := strings.TrimSpace(cfgValue); v != "" {
+		return strings.TrimRight(v, "/")
 	}
-	return strings.TrimRight(raw, "/")
+	if legacyEnvConfigEnabled() {
+		if v := strings.TrimSpace(getenv(envKey, "")); v != "" {
+			return strings.TrimRight(v, "/")
+		}
+	}
+	return strings.TrimRight(strings.TrimSpace(fallback), "/")
 }
 
 func netboxInternalBaseURL(cfg Config) string {
-	_ = cfg
-	return internalIntegrationURL("SKYFORGE_NETBOX_INTERNAL_URL", "http://netbox:8080/netbox")
+	return internalIntegrationURL(cfg.NetboxInternalBaseURL, "SKYFORGE_NETBOX_INTERNAL_URL", "http://netbox:8080/netbox")
 }
 
 func nautobotInternalBaseURL(cfg Config) string {
-	_ = cfg
-	return internalIntegrationURL("SKYFORGE_NAUTOBOT_INTERNAL_URL", "http://nautobot:8080")
+	return internalIntegrationURL(cfg.NautobotInternalBaseURL, "SKYFORGE_NAUTOBOT_INTERNAL_URL", "http://nautobot:8080")
 }
 
 func yaadeInternalBaseURL(cfg Config) string {
-	if strings.TrimSpace(cfg.YaadeBaseURL) != "" {
-		return strings.TrimRight(cfg.YaadeBaseURL, "/")
-	}
-	return internalIntegrationURL("SKYFORGE_YAADE_INTERNAL_URL", "http://yaade")
+	return internalIntegrationURL(cfg.YaadeInternalBaseURL, "SKYFORGE_YAADE_INTERNAL_URL", "http://yaade")
 }

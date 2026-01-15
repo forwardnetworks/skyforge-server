@@ -185,13 +185,13 @@ func labppMetaString(meta map[string]any, key string) string {
 	return strings.TrimSpace(fmt.Sprintf("%v", raw))
 }
 
-func (s *Service) cancelNetlabJob(ctx context.Context, apiURL, jobID string, insecure bool, token string, log *taskLogger) {
+func (s *Service) cancelNetlabJob(ctx context.Context, apiURL, jobID string, insecure bool, auth netlabAPIAuth, log *taskLogger) {
 	if strings.TrimSpace(jobID) == "" {
 		return
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	resp, body, err := netlabAPIDo(ctxReq, fmt.Sprintf("%s/jobs/%s/cancel", strings.TrimRight(apiURL, "/"), jobID), nil, insecure, token)
+	resp, body, err := netlabAPIDo(ctxReq, fmt.Sprintf("%s/jobs/%s/cancel", strings.TrimRight(apiURL, "/"), jobID), nil, insecure, auth)
 	if err != nil {
 		log.Errorf("Netlab cancel failed: %v", err)
 		return
@@ -451,7 +451,10 @@ func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *ta
 		apiURL = strings.TrimRight(fmt.Sprintf("https://%s/netlab", strings.TrimSpace(spec.Server.SSHHost)), "/")
 	}
 	insecure := spec.Server.APIInsecure
-	token := strings.TrimSpace(spec.Server.APIToken)
+	auth, err := s.netlabAPIAuthForUser(spec.Username, spec.Server)
+	if err != nil {
+		return err
+	}
 	payload := map[string]any{
 		"action":        spec.Action,
 		"user":          spec.Username,
@@ -485,7 +488,7 @@ func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *ta
 	log.Infof("Starting netlab job (%s)", spec.Action)
 	ctxReq, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	resp, body, err := netlabAPIDo(ctxReq, apiURL+"/jobs", payload, insecure, token)
+	resp, body, err := netlabAPIDo(ctxReq, apiURL+"/jobs", payload, insecure, auth)
 	if err != nil {
 		return fmt.Errorf("failed to reach netlab API: %w", err)
 	}
@@ -516,7 +519,7 @@ func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *ta
 		if spec.TaskID > 0 {
 			canceled, _ := s.taskCanceled(ctx, spec.TaskID)
 			if canceled {
-				s.cancelNetlabJob(ctx, apiURL, job.ID, insecure, token, log)
+				s.cancelNetlabJob(ctx, apiURL, job.ID, insecure, auth, log)
 				return fmt.Errorf("netlab job canceled")
 			}
 		}
@@ -524,11 +527,11 @@ func (s *Service) runNetlabTask(ctx context.Context, spec netlabRunSpec, log *ta
 			return fmt.Errorf("netlab job timed out")
 		}
 
-		getResp, getBody, err := netlabAPIGet(ctx, fmt.Sprintf("%s/jobs/%s", apiURL, job.ID), insecure, token)
+		getResp, getBody, err := netlabAPIGet(ctx, fmt.Sprintf("%s/jobs/%s", apiURL, job.ID), insecure, auth)
 		if err == nil && getResp != nil && getResp.StatusCode >= 200 && getResp.StatusCode < 300 {
 			_ = json.Unmarshal(getBody, &job)
 		}
-		logResp, logBody, err := netlabAPIGet(ctx, fmt.Sprintf("%s/jobs/%s/log", apiURL, job.ID), insecure, token)
+		logResp, logBody, err := netlabAPIGet(ctx, fmt.Sprintf("%s/jobs/%s/log", apiURL, job.ID), insecure, auth)
 		if err == nil && logResp != nil && logResp.StatusCode >= 200 && logResp.StatusCode < 300 {
 			var lr netlabAPILog
 			if err := json.Unmarshal(logBody, &lr); err == nil {
@@ -1024,7 +1027,10 @@ func (s *Service) maybeSyncForwardNetlabAfterRun(ctx context.Context, spec netla
 	ctxReq, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	insecure := spec.Server.APIInsecure
-	token := strings.TrimSpace(spec.Server.APIToken)
+	auth, err := s.netlabAPIAuthForUser(spec.Username, spec.Server)
+	if err != nil {
+		return err
+	}
 	payload := map[string]any{
 		"action":        "status",
 		"user":          spec.Username,
@@ -1040,7 +1046,7 @@ func (s *Service) maybeSyncForwardNetlabAfterRun(ctx context.Context, spec netla
 		payload["topologyPath"] = strings.TrimSpace(spec.TopologyPath)
 	}
 
-	postResp, body, err := netlabAPIDo(ctxReq, apiURL+"/jobs", payload, insecure, token)
+	postResp, body, err := netlabAPIDo(ctxReq, apiURL+"/jobs", payload, insecure, auth)
 	if err != nil {
 		return fmt.Errorf("failed to reach netlab API: %w", err)
 	}
@@ -1059,12 +1065,12 @@ func (s *Service) maybeSyncForwardNetlabAfterRun(ctx context.Context, spec netla
 			break
 		}
 
-		getResp, getBody, err := netlabAPIGet(ctxReq, fmt.Sprintf("%s/jobs/%s", apiURL, statusJob.ID), insecure, token)
+		getResp, getBody, err := netlabAPIGet(ctxReq, fmt.Sprintf("%s/jobs/%s", apiURL, statusJob.ID), insecure, auth)
 		if err == nil && getResp != nil && getResp.StatusCode >= 200 && getResp.StatusCode < 300 {
 			_ = json.Unmarshal(getBody, &statusJob)
 		}
 
-		logResp, logBody, err := netlabAPIGet(ctxReq, fmt.Sprintf("%s/jobs/%s/log", apiURL, statusJob.ID), insecure, token)
+		logResp, logBody, err := netlabAPIGet(ctxReq, fmt.Sprintf("%s/jobs/%s/log", apiURL, statusJob.ID), insecure, auth)
 		if err == nil && logResp != nil && logResp.StatusCode >= 200 && logResp.StatusCode < 300 {
 			var lr netlabAPILog
 			if err := json.Unmarshal(logBody, &lr); err == nil {
