@@ -23,19 +23,6 @@ type WorkspacesListResponse struct {
 
 const defaultBlueprintCatalog = "skyforge/blueprints"
 
-func nextLegacyWorkspaceID(workspaces []SkyforgeWorkspace) int {
-	maxID := 0
-	for _, w := range workspaces {
-		if w.LegacyWorkspaceID > maxID {
-			maxID = w.LegacyWorkspaceID
-		}
-	}
-	if maxID < 1 {
-		return 1
-	}
-	return maxID + 1
-}
-
 func defaultWorkspaceSlug(username string) string {
 	normalized := strings.ToLower(strings.TrimSpace(username))
 	if normalized == "" {
@@ -328,7 +315,6 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 		}
 	}
 
-	legacyWorkspaceID := nextLegacyWorkspaceID(workspaces)
 	terraformInitID := 0
 	terraformPlanID := 0
 	terraformApplyID := 0
@@ -365,7 +351,6 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 		ArtifactsBucket:           artifactsBucket,
 		EveServer:                 eveServer,
 		NetlabServer:              netlabServer,
-		LegacyWorkspaceID:         legacyWorkspaceID,
 		GiteaOwner:                owner,
 		GiteaRepo:                 repo,
 	}

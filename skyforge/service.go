@@ -299,7 +299,6 @@ type SkyforgeWorkspace struct {
 	ArtifactsBucket           string    `json:"artifactsBucket,omitempty"`
 	EveServer                 string    `json:"eveServer,omitempty"`
 	NetlabServer              string    `json:"netlabServer,omitempty"`
-	LegacyWorkspaceID         int       `json:"-"`
 	GiteaOwner                string    `json:"giteaOwner"`
 	GiteaRepo                 string    `json:"giteaRepo"`
 }
@@ -983,12 +982,12 @@ func loadConfig() Config {
 	}
 
 	workspacesCfg := WorkspacesConfig{
-		DataDir:                         getenv("SKYFORGE_WORKSPACES_DATA_DIR", getenv("SKYFORGE_PROJECTS_DATA_DIR", "/var/lib/skyforge")),
+		DataDir:                         getenv("SKYFORGE_WORKSPACES_DATA_DIR", "/var/lib/skyforge"),
 		GiteaAPIURL:                     strings.TrimRight(getenv("SKYFORGE_GITEA_API_URL", ""), "/"),
 		GiteaUsername:                   getenv("SKYFORGE_GITEA_USERNAME", getenv("GITEA_ADMIN_USER", "skyforge")),
 		GiteaPassword:                   strings.TrimSpace(getOptionalSecret("SKYFORGE_GITEA_PASSWORD")),
 		GiteaRepoPrivate:                getenv("SKYFORGE_GITEA_REPO_PRIVATE", "false") == "true",
-		DeleteMode:                      strings.TrimSpace(getenv("SKYFORGE_WORKSPACE_DELETE_MODE", getenv("SKYFORGE_PROJECT_DELETE_MODE", "live"))),
+		DeleteMode:                      strings.TrimSpace(getenv("SKYFORGE_WORKSPACE_DELETE_MODE", "live")),
 		ObjectStorageEndpoint:           strings.TrimRight(getenv("SKYFORGE_OBJECT_STORAGE_ENDPOINT", "minio:9000"), "/"),
 		ObjectStorageUseSSL:             getenv("SKYFORGE_OBJECT_STORAGE_USE_SSL", "false") == "true",
 		ObjectStorageTerraformAccessKey: strings.TrimSpace(getOptionalSecret("SKYFORGE_OBJECT_STORAGE_TERRAFORM_ACCESS_KEY")),
@@ -996,7 +995,7 @@ func loadConfig() Config {
 	}
 
 	workspaceSyncSeconds := 0
-	if raw := strings.TrimSpace(getenv("SKYFORGE_WORKSPACE_SYNC_SECONDS", getenv("SKYFORGE_PROJECT_SYNC_SECONDS", "0"))); raw != "" {
+	if raw := strings.TrimSpace(getenv("SKYFORGE_WORKSPACE_SYNC_SECONDS", "0")); raw != "" {
 		if val, err := strconv.Atoi(raw); err == nil {
 			workspaceSyncSeconds = val
 		} else {
@@ -2287,10 +2286,10 @@ func deleteWorkspaceGCPCredentials(ctx context.Context, db *sql.DB, workspaceID 
 
 func (s *pgWorkspacesStore) load() ([]SkyforgeWorkspace, error) {
 	rows, err := s.db.Query(`SELECT id, slug, name, description, created_at, created_by,
-		blueprint, default_branch, terraform_state_key, terraform_init_template_id, terraform_plan_template_id, terraform_apply_template_id, ansible_run_template_id, netlab_run_template_id, labpp_run_template_id, containerlab_run_template_id,
-		aws_account_id, aws_role_name, aws_region, aws_auth_method, artifacts_bucket, is_public,
-		eve_server, netlab_server, legacy_workspace_id, gitea_owner, gitea_repo
-	FROM sf_workspaces ORDER BY created_at DESC`)
+			blueprint, default_branch, terraform_state_key, terraform_init_template_id, terraform_plan_template_id, terraform_apply_template_id, ansible_run_template_id, netlab_run_template_id, labpp_run_template_id, containerlab_run_template_id,
+			aws_account_id, aws_role_name, aws_region, aws_auth_method, artifacts_bucket, is_public,
+			eve_server, netlab_server, gitea_owner, gitea_repo
+		FROM sf_workspaces ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -2310,13 +2309,12 @@ func (s *pgWorkspacesStore) load() ([]SkyforgeWorkspace, error) {
 			eveServer                                                                                      sql.NullString
 			netlabServer                                                                                   sql.NullString
 			createdAt                                                                                      time.Time
-			legacyWorkspaceID                                                                              int
 			giteaOwner, giteaRepo                                                                          string
 		)
 		if err := rows.Scan(&id, &slug, &name, &description, &createdAt, &createdBy,
 			&blueprint, &defaultBranch, &terraformStateKey, &terraformInit, &terraformPlan, &terraformApply, &ansibleRun, &netlabRun, &labppRun, &containerlabRun,
 			&awsAccountID, &awsRoleName, &awsRegion, &awsAuthMethod, &artifactsBucket, &isPublic,
-			&eveServer, &netlabServer, &legacyWorkspaceID, &giteaOwner, &giteaRepo,
+			&eveServer, &netlabServer, &giteaOwner, &giteaRepo,
 		); err != nil {
 			return nil, err
 		}
@@ -2345,7 +2343,6 @@ func (s *pgWorkspacesStore) load() ([]SkyforgeWorkspace, error) {
 			IsPublic:                  isPublic,
 			EveServer:                 eveServer.String,
 			NetlabServer:              netlabServer.String,
-			LegacyWorkspaceID:         legacyWorkspaceID,
 			GiteaOwner:                giteaOwner,
 			GiteaRepo:                 giteaRepo,
 		}
@@ -2463,18 +2460,18 @@ func (s *pgWorkspacesStore) save(workspaces []SkyforgeWorkspace) error {
 			return fmt.Errorf("workspace createdBy is required")
 		}
 		if _, err := tx.Exec(`INSERT INTO sf_workspaces (
-		  id, slug, name, description, created_at, created_by,
-		  blueprint, default_branch, terraform_state_key, terraform_init_template_id, terraform_plan_template_id, terraform_apply_template_id, ansible_run_template_id, netlab_run_template_id, labpp_run_template_id, containerlab_run_template_id,
-		  aws_account_id, aws_role_name, aws_region, aws_auth_method, artifacts_bucket, is_public,
-		  eve_server, netlab_server, legacy_workspace_id, gitea_owner, gitea_repo, updated_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,now())`,
+			  id, slug, name, description, created_at, created_by,
+			  blueprint, default_branch, terraform_state_key, terraform_init_template_id, terraform_plan_template_id, terraform_apply_template_id, ansible_run_template_id, netlab_run_template_id, labpp_run_template_id, containerlab_run_template_id,
+			  aws_account_id, aws_role_name, aws_region, aws_auth_method, artifacts_bucket, is_public,
+			  eve_server, netlab_server, gitea_owner, gitea_repo, updated_at
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,now())`,
 			id, slug, strings.TrimSpace(p.Name), nullIfEmpty(strings.TrimSpace(p.Description)), p.CreatedAt.UTC(), createdBy,
 			nullIfEmpty(strings.TrimSpace(p.Blueprint)), nullIfEmpty(strings.TrimSpace(p.DefaultBranch)),
 			nullIfEmpty(strings.TrimSpace(p.TerraformStateKey)), p.TerraformInitTemplateID, p.TerraformPlanTemplateID, p.TerraformApplyTemplateID, p.AnsibleRunTemplateID, p.NetlabRunTemplateID, p.LabppRunTemplateID, p.ContainerlabRunTemplateID,
 			nullIfEmpty(strings.TrimSpace(p.AWSAccountID)), nullIfEmpty(strings.TrimSpace(p.AWSRoleName)), nullIfEmpty(strings.TrimSpace(p.AWSRegion)),
 			nullIfEmpty(strings.TrimSpace(p.AWSAuthMethod)), nullIfEmpty(strings.TrimSpace(p.ArtifactsBucket)), p.IsPublic,
 			nullIfEmpty(strings.TrimSpace(p.EveServer)), nullIfEmpty(strings.TrimSpace(p.NetlabServer)),
-			p.LegacyWorkspaceID, strings.TrimSpace(p.GiteaOwner), strings.TrimSpace(p.GiteaRepo),
+			strings.TrimSpace(p.GiteaOwner), strings.TrimSpace(p.GiteaRepo),
 		); err != nil {
 			return err
 		}
@@ -2626,12 +2623,6 @@ func renameIfExists(path string) error {
 
 func migrateFileStateToPostgres(cfg Config, pgWorkspaces *pgWorkspacesStore, pgUsers *pgUsersStore, pgAWS *pgAWSStore) error {
 	fileWorkspaces := newFileWorkspacesStore(cfg.Workspaces.DataDir)
-	if _, err := os.Stat(fileWorkspaces.path); errors.Is(err, os.ErrNotExist) {
-		legacyPath := filepath.Join(cfg.Workspaces.DataDir, "projects.json")
-		if _, legacyErr := os.Stat(legacyPath); legacyErr == nil {
-			fileWorkspaces.path = legacyPath
-		}
-	}
 	fileUsers := newFileUsersStore(cfg.Workspaces.DataDir)
 	fileAWS := newFileAWSStore(cfg.Workspaces.DataDir, newSecretBox(cfg.SessionSecret))
 
@@ -2683,9 +2674,6 @@ func migrateFileStateToPostgres(cfg Config, pgWorkspaces *pgWorkspacesStore, pgU
 		}
 	}
 
-	if err := renameIfExists(filepath.Join(cfg.Workspaces.DataDir, "projects.json")); err != nil {
-		return err
-	}
 	if err := renameIfExists(filepath.Join(cfg.Workspaces.DataDir, "users.json")); err != nil {
 		return err
 	}
