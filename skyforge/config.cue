@@ -51,8 +51,11 @@ Labpp: {
 Integrations: {
 	GiteaBaseURL:   ""
 	NetboxBaseURL:  ""
+	NetboxInternalBaseURL: ""
 	NautobotBaseURL:""
+	NautobotInternalBaseURL: ""
 	YaadeBaseURL:   ""
+	YaadeInternalBaseURL: ""
 }
 
 Labs: {
