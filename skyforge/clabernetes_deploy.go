@@ -74,10 +74,7 @@ func (s *Service) runClabernetesDeploymentAction(
 		if template == "" {
 			return nil, errs.B().Code(errs.FailedPrecondition).Msg("clabernetes template is required").Err()
 		}
-		templatesDir = strings.Trim(strings.TrimSpace(templatesDir), "/")
-		if templatesDir == "" {
-			templatesDir = "blueprints/containerlab"
-		}
+		templatesDir = normalizeContainerlabTemplatesDir(templateSource, templatesDir)
 		if !isSafeRelativePath(templatesDir) {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("templatesDir must be a safe repo-relative path").Err()
 		}

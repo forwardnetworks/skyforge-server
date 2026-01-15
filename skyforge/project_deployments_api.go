@@ -453,12 +453,23 @@ func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req 
 		}
 		templateRepo := getString("templateRepo")
 		templatesDir := strings.Trim(getString("templatesDir"), "/")
-		if templateSource == "custom" && templateRepo == "" {
-			return nil, errs.B().Code(errs.InvalidArgument).Msg("custom repo is required").Err()
+		switch templateSource {
+		case "custom":
+			if templateRepo == "" {
+				return nil, errs.B().Code(errs.InvalidArgument).Msg("custom repo is required").Err()
+			}
+		case "external":
+			if !pc.workspace.AllowExternalTemplateRepos {
+				return nil, errs.B().Code(errs.FailedPrecondition).Msg("external template repos are disabled for this workspace").Err()
+			}
+			if strings.TrimSpace(templateRepo) == "" {
+				return nil, errs.B().Code(errs.InvalidArgument).Msg("external repo is required").Err()
+			}
+			if externalTemplateRepoByID(&pc.workspace, templateRepo) == nil {
+				return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown external repo").Err()
+			}
 		}
-		if templatesDir == "" {
-			templatesDir = "blueprints/containerlab"
-		}
+		templatesDir = normalizeContainerlabTemplatesDir(templateSource, templatesDir)
 		if !isSafeRelativePath(templatesDir) {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("templatesDir must be a safe repo-relative path").Err()
 		}
@@ -483,12 +494,23 @@ func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req 
 		}
 		templateRepo := getString("templateRepo")
 		templatesDir := strings.Trim(getString("templatesDir"), "/")
-		if templateSource == "custom" && templateRepo == "" {
-			return nil, errs.B().Code(errs.InvalidArgument).Msg("custom repo is required").Err()
+		switch templateSource {
+		case "custom":
+			if templateRepo == "" {
+				return nil, errs.B().Code(errs.InvalidArgument).Msg("custom repo is required").Err()
+			}
+		case "external":
+			if !pc.workspace.AllowExternalTemplateRepos {
+				return nil, errs.B().Code(errs.FailedPrecondition).Msg("external template repos are disabled for this workspace").Err()
+			}
+			if strings.TrimSpace(templateRepo) == "" {
+				return nil, errs.B().Code(errs.InvalidArgument).Msg("external repo is required").Err()
+			}
+			if externalTemplateRepoByID(&pc.workspace, templateRepo) == nil {
+				return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown external repo").Err()
+			}
 		}
-		if templatesDir == "" {
-			templatesDir = "blueprints/containerlab"
-		}
+		templatesDir = normalizeContainerlabTemplatesDir(templateSource, templatesDir)
 		if !isSafeRelativePath(templatesDir) {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("templatesDir must be a safe repo-relative path").Err()
 		}

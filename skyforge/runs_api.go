@@ -266,6 +266,17 @@ func (s *Service) CancelRun(ctx context.Context, id int, params *RunsOutputParam
 		if err := s.updateDeploymentStatus(ctx, task.WorkspaceID, task.DeploymentID.String, "canceled", &finishedAt); err != nil {
 			log.Printf("cancel deployment status: %v", err)
 		}
+
+		// Kick the next queued run for this deployment to avoid "stuck queued" after cancel.
+		workspaceID := strings.TrimSpace(task.WorkspaceID)
+		deploymentID := strings.TrimSpace(task.DeploymentID.String)
+		if workspaceID != "" && deploymentID != "" {
+			if nextID, err := getOldestQueuedDeploymentTaskID(ctx, s.db, workspaceID, deploymentID); err == nil && nextID > 0 {
+				ctxKick, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				s.enqueueTaskID(ctxKick, nextID, workspaceID, deploymentID)
+				cancel()
+			}
+		}
 	}
 
 	taskJSON, err := toJSONMap(taskToRunInfo(*task))

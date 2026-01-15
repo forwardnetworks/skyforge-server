@@ -269,38 +269,65 @@ type WorkspacesConfig struct {
 }
 
 type SkyforgeWorkspace struct {
-	ID                        string    `json:"id"`
-	Slug                      string    `json:"slug"`
-	Name                      string    `json:"name"`
-	Description               string    `json:"description,omitempty"`
-	CreatedAt                 time.Time `json:"createdAt"`
-	CreatedBy                 string    `json:"createdBy"`
-	IsPublic                  bool      `json:"isPublic"`
-	Owners                    []string  `json:"owners,omitempty"`
-	OwnerGroups               []string  `json:"ownerGroups,omitempty"`
-	Editors                   []string  `json:"editors,omitempty"`
-	EditorGroups              []string  `json:"editorGroups,omitempty"`
-	Viewers                   []string  `json:"viewers,omitempty"`
-	ViewerGroups              []string  `json:"viewerGroups,omitempty"`
-	Blueprint                 string    `json:"blueprint,omitempty"`
-	DefaultBranch             string    `json:"defaultBranch,omitempty"`
-	TerraformStateKey         string    `json:"terraformStateKey,omitempty"`
-	TerraformInitTemplateID   int       `json:"terraformInitTemplateId,omitempty"`
-	TerraformPlanTemplateID   int       `json:"terraformPlanTemplateId,omitempty"`
-	TerraformApplyTemplateID  int       `json:"terraformApplyTemplateId,omitempty"`
-	AnsibleRunTemplateID      int       `json:"ansibleRunTemplateId,omitempty"`
-	NetlabRunTemplateID       int       `json:"netlabRunTemplateId,omitempty"`
-	LabppRunTemplateID        int       `json:"labppRunTemplateId,omitempty"`
-	ContainerlabRunTemplateID int       `json:"containerlabRunTemplateId,omitempty"`
-	AWSAccountID              string    `json:"awsAccountId,omitempty"`
-	AWSRoleName               string    `json:"awsRoleName,omitempty"`
-	AWSRegion                 string    `json:"awsRegion,omitempty"`
-	AWSAuthMethod             string    `json:"awsAuthMethod,omitempty"`
-	ArtifactsBucket           string    `json:"artifactsBucket,omitempty"`
-	EveServer                 string    `json:"eveServer,omitempty"`
-	NetlabServer              string    `json:"netlabServer,omitempty"`
-	GiteaOwner                string    `json:"giteaOwner"`
-	GiteaRepo                 string    `json:"giteaRepo"`
+	ID                         string                 `json:"id"`
+	Slug                       string                 `json:"slug"`
+	Name                       string                 `json:"name"`
+	Description                string                 `json:"description,omitempty"`
+	CreatedAt                  time.Time              `json:"createdAt"`
+	CreatedBy                  string                 `json:"createdBy"`
+	IsPublic                   bool                   `json:"isPublic"`
+	Owners                     []string               `json:"owners,omitempty"`
+	OwnerGroups                []string               `json:"ownerGroups,omitempty"`
+	Editors                    []string               `json:"editors,omitempty"`
+	EditorGroups               []string               `json:"editorGroups,omitempty"`
+	Viewers                    []string               `json:"viewers,omitempty"`
+	ViewerGroups               []string               `json:"viewerGroups,omitempty"`
+	Blueprint                  string                 `json:"blueprint,omitempty"`
+	DefaultBranch              string                 `json:"defaultBranch,omitempty"`
+	AllowExternalTemplateRepos bool                   `json:"allowExternalTemplateRepos,omitempty"`
+	AllowCustomEveServers      bool                   `json:"allowCustomEveServers,omitempty"`
+	AllowCustomNetlabServers   bool                   `json:"allowCustomNetlabServers,omitempty"`
+	ExternalTemplateRepos      []ExternalTemplateRepo `json:"externalTemplateRepos,omitempty"`
+	TerraformStateKey          string                 `json:"terraformStateKey,omitempty"`
+	TerraformInitTemplateID    int                    `json:"terraformInitTemplateId,omitempty"`
+	TerraformPlanTemplateID    int                    `json:"terraformPlanTemplateId,omitempty"`
+	TerraformApplyTemplateID   int                    `json:"terraformApplyTemplateId,omitempty"`
+	AnsibleRunTemplateID       int                    `json:"ansibleRunTemplateId,omitempty"`
+	NetlabRunTemplateID        int                    `json:"netlabRunTemplateId,omitempty"`
+	LabppRunTemplateID         int                    `json:"labppRunTemplateId,omitempty"`
+	ContainerlabRunTemplateID  int                    `json:"containerlabRunTemplateId,omitempty"`
+	AWSAccountID               string                 `json:"awsAccountId,omitempty"`
+	AWSRoleName                string                 `json:"awsRoleName,omitempty"`
+	AWSRegion                  string                 `json:"awsRegion,omitempty"`
+	AWSAuthMethod              string                 `json:"awsAuthMethod,omitempty"`
+	ArtifactsBucket            string                 `json:"artifactsBucket,omitempty"`
+	EveServer                  string                 `json:"eveServer,omitempty"`
+	NetlabServer               string                 `json:"netlabServer,omitempty"`
+	GiteaOwner                 string                 `json:"giteaOwner"`
+	GiteaRepo                  string                 `json:"giteaRepo"`
+}
+
+type ExternalTemplateRepo struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Repo          string `json:"repo"` // gitea owner/repo
+	DefaultBranch string `json:"defaultBranch,omitempty"`
+}
+
+func externalTemplateRepoByID(ws *SkyforgeWorkspace, id string) *ExternalTemplateRepo {
+	if ws == nil {
+		return nil
+	}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil
+	}
+	for i := range ws.ExternalTemplateRepos {
+		if strings.EqualFold(strings.TrimSpace(ws.ExternalTemplateRepos[i].ID), id) {
+			return &ws.ExternalTemplateRepos[i]
+		}
+	}
+	return nil
 }
 
 type LabSummary struct {
@@ -2286,10 +2313,10 @@ func deleteWorkspaceGCPCredentials(ctx context.Context, db *sql.DB, workspaceID 
 
 func (s *pgWorkspacesStore) load() ([]SkyforgeWorkspace, error) {
 	rows, err := s.db.Query(`SELECT id, slug, name, description, created_at, created_by,
-			blueprint, default_branch, terraform_state_key, terraform_init_template_id, terraform_plan_template_id, terraform_apply_template_id, ansible_run_template_id, netlab_run_template_id, labpp_run_template_id, containerlab_run_template_id,
-			aws_account_id, aws_role_name, aws_region, aws_auth_method, artifacts_bucket, is_public,
-			eve_server, netlab_server, gitea_owner, gitea_repo
-		FROM sf_workspaces ORDER BY created_at DESC`)
+		blueprint, default_branch, terraform_state_key, terraform_init_template_id, terraform_plan_template_id, terraform_apply_template_id, ansible_run_template_id, netlab_run_template_id, labpp_run_template_id, containerlab_run_template_id,
+		aws_account_id, aws_role_name, aws_region, aws_auth_method, artifacts_bucket, is_public,
+		eve_server, netlab_server, allow_external_template_repos, allow_custom_eve_servers, allow_custom_netlab_servers, external_template_repos, gitea_owner, gitea_repo
+	FROM sf_workspaces ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -2308,43 +2335,55 @@ func (s *pgWorkspacesStore) load() ([]SkyforgeWorkspace, error) {
 			isPublic                                                                                       bool
 			eveServer                                                                                      sql.NullString
 			netlabServer                                                                                   sql.NullString
+			allowExternalTemplateRepos                                                                     bool
+			allowCustomEveServers                                                                          bool
+			allowCustomNetlabServers                                                                       bool
+			externalTemplateReposJSON                                                                      []byte
 			createdAt                                                                                      time.Time
 			giteaOwner, giteaRepo                                                                          string
 		)
 		if err := rows.Scan(&id, &slug, &name, &description, &createdAt, &createdBy,
 			&blueprint, &defaultBranch, &terraformStateKey, &terraformInit, &terraformPlan, &terraformApply, &ansibleRun, &netlabRun, &labppRun, &containerlabRun,
 			&awsAccountID, &awsRoleName, &awsRegion, &awsAuthMethod, &artifactsBucket, &isPublic,
-			&eveServer, &netlabServer, &giteaOwner, &giteaRepo,
+			&eveServer, &netlabServer, &allowExternalTemplateRepos, &allowCustomEveServers, &allowCustomNetlabServers, &externalTemplateReposJSON, &giteaOwner, &giteaRepo,
 		); err != nil {
 			return nil, err
 		}
+		var externalTemplateRepos []ExternalTemplateRepo
+		if len(externalTemplateReposJSON) > 0 {
+			_ = json.Unmarshal(externalTemplateReposJSON, &externalTemplateRepos)
+		}
 		p := SkyforgeWorkspace{
-			ID:                        id,
-			Slug:                      slug,
-			Name:                      name,
-			Description:               description.String,
-			CreatedAt:                 createdAt,
-			CreatedBy:                 createdBy,
-			Blueprint:                 blueprint.String,
-			DefaultBranch:             defaultBranch.String,
-			TerraformStateKey:         terraformStateKey.String,
-			TerraformInitTemplateID:   int(terraformInit.Int64),
-			TerraformPlanTemplateID:   int(terraformPlan.Int64),
-			TerraformApplyTemplateID:  int(terraformApply.Int64),
-			AnsibleRunTemplateID:      int(ansibleRun.Int64),
-			NetlabRunTemplateID:       int(netlabRun.Int64),
-			LabppRunTemplateID:        int(labppRun.Int64),
-			ContainerlabRunTemplateID: int(containerlabRun.Int64),
-			AWSAccountID:              awsAccountID.String,
-			AWSRoleName:               awsRoleName.String,
-			AWSRegion:                 awsRegion.String,
-			AWSAuthMethod:             awsAuthMethod.String,
-			ArtifactsBucket:           artifactsBucket.String,
-			IsPublic:                  isPublic,
-			EveServer:                 eveServer.String,
-			NetlabServer:              netlabServer.String,
-			GiteaOwner:                giteaOwner,
-			GiteaRepo:                 giteaRepo,
+			ID:                         id,
+			Slug:                       slug,
+			Name:                       name,
+			Description:                description.String,
+			CreatedAt:                  createdAt,
+			CreatedBy:                  createdBy,
+			Blueprint:                  blueprint.String,
+			DefaultBranch:              defaultBranch.String,
+			TerraformStateKey:          terraformStateKey.String,
+			TerraformInitTemplateID:    int(terraformInit.Int64),
+			TerraformPlanTemplateID:    int(terraformPlan.Int64),
+			TerraformApplyTemplateID:   int(terraformApply.Int64),
+			AnsibleRunTemplateID:       int(ansibleRun.Int64),
+			NetlabRunTemplateID:        int(netlabRun.Int64),
+			LabppRunTemplateID:         int(labppRun.Int64),
+			ContainerlabRunTemplateID:  int(containerlabRun.Int64),
+			AWSAccountID:               awsAccountID.String,
+			AWSRoleName:                awsRoleName.String,
+			AWSRegion:                  awsRegion.String,
+			AWSAuthMethod:              awsAuthMethod.String,
+			ArtifactsBucket:            artifactsBucket.String,
+			IsPublic:                   isPublic,
+			EveServer:                  eveServer.String,
+			NetlabServer:               netlabServer.String,
+			AllowExternalTemplateRepos: allowExternalTemplateRepos,
+			AllowCustomEveServers:      allowCustomEveServers,
+			AllowCustomNetlabServers:   allowCustomNetlabServers,
+			ExternalTemplateRepos:      externalTemplateRepos,
+			GiteaOwner:                 giteaOwner,
+			GiteaRepo:                  giteaRepo,
 		}
 		workspaces = append(workspaces, p)
 		workspaceByID[id] = &workspaces[len(workspaces)-1]
@@ -2459,13 +2498,19 @@ func (s *pgWorkspacesStore) save(workspaces []SkyforgeWorkspace) error {
 		if createdBy == "" {
 			return fmt.Errorf("workspace createdBy is required")
 		}
+		externalTemplateReposJSON, err := json.Marshal(p.ExternalTemplateRepos)
+		if err != nil {
+			return err
+		}
 		if _, err := tx.Exec(`INSERT INTO sf_workspaces (
 			  id, slug, name, description, created_at, created_by,
+			  allow_external_template_repos, allow_custom_eve_servers, allow_custom_netlab_servers, external_template_repos,
 			  blueprint, default_branch, terraform_state_key, terraform_init_template_id, terraform_plan_template_id, terraform_apply_template_id, ansible_run_template_id, netlab_run_template_id, labpp_run_template_id, containerlab_run_template_id,
 			  aws_account_id, aws_role_name, aws_region, aws_auth_method, artifacts_bucket, is_public,
 			  eve_server, netlab_server, gitea_owner, gitea_repo, updated_at
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,now())`,
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,now())`,
 			id, slug, strings.TrimSpace(p.Name), nullIfEmpty(strings.TrimSpace(p.Description)), p.CreatedAt.UTC(), createdBy,
+			p.AllowExternalTemplateRepos, p.AllowCustomEveServers, p.AllowCustomNetlabServers, string(externalTemplateReposJSON),
 			nullIfEmpty(strings.TrimSpace(p.Blueprint)), nullIfEmpty(strings.TrimSpace(p.DefaultBranch)),
 			nullIfEmpty(strings.TrimSpace(p.TerraformStateKey)), p.TerraformInitTemplateID, p.TerraformPlanTemplateID, p.TerraformApplyTemplateID, p.AnsibleRunTemplateID, p.NetlabRunTemplateID, p.LabppRunTemplateID, p.ContainerlabRunTemplateID,
 			nullIfEmpty(strings.TrimSpace(p.AWSAccountID)), nullIfEmpty(strings.TrimSpace(p.AWSRoleName)), nullIfEmpty(strings.TrimSpace(p.AWSRegion)),

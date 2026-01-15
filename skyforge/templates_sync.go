@@ -49,7 +49,7 @@ func withNetlabSyncLock(key string, fn func() error) error {
 
 func defaultLabppTemplatesDir(source string) string {
 	switch strings.ToLower(strings.TrimSpace(source)) {
-	case "blueprints", "blueprint":
+	case "blueprints", "blueprint", "external":
 		return "labpp"
 	default:
 		return "blueprints/labpp"
@@ -62,7 +62,7 @@ func normalizeLabppTemplatesDir(source, dir string) string {
 		dir = defaultLabppTemplatesDir(source)
 	}
 	switch strings.ToLower(strings.TrimSpace(source)) {
-	case "blueprints", "blueprint":
+	case "blueprints", "blueprint", "external":
 		dir = strings.TrimPrefix(dir, "blueprints/")
 	}
 	return strings.Trim(strings.TrimSpace(dir), "/")
@@ -78,7 +78,7 @@ func giteaDefaultBranch(cfg Config, owner, repo string) string {
 
 func defaultNetlabTemplatesDir(source string) string {
 	switch strings.ToLower(strings.TrimSpace(source)) {
-	case "blueprints", "blueprint":
+	case "blueprints", "blueprint", "external":
 		return "netlab"
 	default:
 		return "blueprints/netlab"
@@ -91,7 +91,28 @@ func normalizeNetlabTemplatesDir(source, dir string) string {
 		dir = defaultNetlabTemplatesDir(source)
 	}
 	switch strings.ToLower(strings.TrimSpace(source)) {
-	case "blueprints", "blueprint":
+	case "blueprints", "blueprint", "external":
+		dir = strings.TrimPrefix(dir, "blueprints/")
+	}
+	return strings.Trim(strings.TrimSpace(dir), "/")
+}
+
+func defaultContainerlabTemplatesDir(source string) string {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "blueprints", "blueprint", "external":
+		return "containerlab"
+	default:
+		return "blueprints/containerlab"
+	}
+}
+
+func normalizeContainerlabTemplatesDir(source, dir string) string {
+	dir = strings.Trim(strings.TrimSpace(dir), "/")
+	if dir == "" {
+		dir = defaultContainerlabTemplatesDir(source)
+	}
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "blueprints", "blueprint", "external":
 		dir = strings.TrimPrefix(dir, "blueprints/")
 	}
 	return strings.Trim(strings.TrimSpace(dir), "/")
@@ -502,7 +523,34 @@ func resolveTemplateRepoForProject(cfg Config, pc *workspaceContext, source stri
 		}
 		owner, repo = parts[0], parts[1]
 		branch = ""
+	case "external":
+		if !pc.workspace.AllowExternalTemplateRepos {
+			return templateRepoRef{}, fmt.Errorf("external template repos are not enabled for this workspace")
+		}
+		repoID := strings.TrimSpace(customRepo)
+		if repoID == "" {
+			return templateRepoRef{}, fmt.Errorf("external repo id is required")
+		}
+		var found *ExternalTemplateRepo
+		for i := range pc.workspace.ExternalTemplateRepos {
+			if strings.TrimSpace(pc.workspace.ExternalTemplateRepos[i].ID) == repoID {
+				found = &pc.workspace.ExternalTemplateRepos[i]
+				break
+			}
+		}
+		if found == nil {
+			return templateRepoRef{}, fmt.Errorf("unknown external template repo")
+		}
+		parts := strings.Split(strings.Trim(strings.TrimSpace(found.Repo), "/"), "/")
+		if len(parts) < 2 {
+			return templateRepoRef{}, fmt.Errorf("external repo must be of form owner/repo")
+		}
+		owner, repo = parts[0], parts[1]
+		branch = strings.TrimSpace(found.DefaultBranch)
 	case "custom":
+		if !pc.workspace.AllowExternalTemplateRepos {
+			return templateRepoRef{}, fmt.Errorf("custom template repos are not enabled for this workspace")
+		}
 		customOwner, customName, err := parseGiteaRepoRef(customRepo)
 		if err != nil {
 			return templateRepoRef{}, err

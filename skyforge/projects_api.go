@@ -191,18 +191,22 @@ func (s *Service) GetWorkspaces(ctx context.Context, params *WorkspacesListParam
 }
 
 type WorkspaceCreateRequest struct {
-	Name          string   `json:"name"`
-	Slug          string   `json:"slug,omitempty"`
-	Description   string   `json:"description,omitempty"`
-	Blueprint     string   `json:"blueprint,omitempty"`
-	IsPublic      bool     `json:"isPublic,omitempty"`
-	SharedUsers   []string `json:"sharedUsers,omitempty"`
-	AWSAccountID  string   `json:"awsAccountId,omitempty"`
-	AWSRoleName   string   `json:"awsRoleName,omitempty"`
-	AWSRegion     string   `json:"awsRegion,omitempty"`
-	AWSAuthMethod string   `json:"awsAuthMethod,omitempty"`
-	EveServer     string   `json:"eveServer,omitempty"`
-	NetlabServer  string   `json:"netlabServer,omitempty"`
+	Name                       string                 `json:"name"`
+	Slug                       string                 `json:"slug,omitempty"`
+	Description                string                 `json:"description,omitempty"`
+	Blueprint                  string                 `json:"blueprint,omitempty"`
+	IsPublic                   bool                   `json:"isPublic,omitempty"`
+	SharedUsers                []string               `json:"sharedUsers,omitempty"`
+	AWSAccountID               string                 `json:"awsAccountId,omitempty"`
+	AWSRoleName                string                 `json:"awsRoleName,omitempty"`
+	AWSRegion                  string                 `json:"awsRegion,omitempty"`
+	AWSAuthMethod              string                 `json:"awsAuthMethod,omitempty"`
+	EveServer                  string                 `json:"eveServer,omitempty"`
+	NetlabServer               string                 `json:"netlabServer,omitempty"`
+	AllowExternalTemplateRepos bool                   `json:"allowExternalTemplateRepos,omitempty"`
+	AllowCustomEveServers      bool                   `json:"allowCustomEveServers,omitempty"`
+	AllowCustomNetlabServers   bool                   `json:"allowCustomNetlabServers,omitempty"`
+	ExternalTemplateRepos      []ExternalTemplateRepo `json:"externalTemplateRepos,omitempty"`
 }
 
 type BlueprintSyncResponse struct {
@@ -239,6 +243,14 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 	netlabServer := strings.TrimSpace(req.NetlabServer)
 	if netlabServer != "" && netlabServerByNameForConfig(s.cfg, netlabServer) == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown netlabServer").Err()
+	}
+	externalRepos := []ExternalTemplateRepo{}
+	if req.AllowExternalTemplateRepos {
+		var err error
+		externalRepos, err = validateExternalTemplateRepos(req.ExternalTemplateRepos)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	giteaCfg := s.cfg
@@ -324,35 +336,39 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 	containerlabRunID := 0
 
 	created := SkyforgeWorkspace{
-		ID:                        fmt.Sprintf("%d-%s", time.Now().Unix(), slug),
-		Slug:                      slug,
-		Name:                      name,
-		Description:               strings.TrimSpace(req.Description),
-		CreatedAt:                 time.Now().UTC(),
-		CreatedBy:                 user.Username,
-		IsPublic:                  req.IsPublic,
-		Owners:                    []string{user.Username},
-		Editors:                   nil,
-		Viewers:                   normalizeUsernameList(req.SharedUsers),
-		Blueprint:                 strings.TrimSpace(req.Blueprint),
-		DefaultBranch:             defaultBranch,
-		TerraformStateKey:         terraformStateKey,
-		TerraformInitTemplateID:   terraformInitID,
-		TerraformPlanTemplateID:   terraformPlanID,
-		TerraformApplyTemplateID:  terraformApplyID,
-		AnsibleRunTemplateID:      ansibleRunID,
-		NetlabRunTemplateID:       netlabRunID,
-		LabppRunTemplateID:        labppRunID,
-		ContainerlabRunTemplateID: containerlabRunID,
-		AWSAccountID:              strings.TrimSpace(req.AWSAccountID),
-		AWSRoleName:               strings.TrimSpace(req.AWSRoleName),
-		AWSRegion:                 strings.TrimSpace(req.AWSRegion),
-		AWSAuthMethod:             strings.TrimSpace(strings.ToLower(req.AWSAuthMethod)),
-		ArtifactsBucket:           artifactsBucket,
-		EveServer:                 eveServer,
-		NetlabServer:              netlabServer,
-		GiteaOwner:                owner,
-		GiteaRepo:                 repo,
+		ID:                         fmt.Sprintf("%d-%s", time.Now().Unix(), slug),
+		Slug:                       slug,
+		Name:                       name,
+		Description:                strings.TrimSpace(req.Description),
+		CreatedAt:                  time.Now().UTC(),
+		CreatedBy:                  user.Username,
+		IsPublic:                   req.IsPublic,
+		Owners:                     []string{user.Username},
+		Editors:                    nil,
+		Viewers:                    normalizeUsernameList(req.SharedUsers),
+		Blueprint:                  strings.TrimSpace(req.Blueprint),
+		DefaultBranch:              defaultBranch,
+		TerraformStateKey:          terraformStateKey,
+		TerraformInitTemplateID:    terraformInitID,
+		TerraformPlanTemplateID:    terraformPlanID,
+		TerraformApplyTemplateID:   terraformApplyID,
+		AnsibleRunTemplateID:       ansibleRunID,
+		NetlabRunTemplateID:        netlabRunID,
+		LabppRunTemplateID:         labppRunID,
+		ContainerlabRunTemplateID:  containerlabRunID,
+		AWSAccountID:               strings.TrimSpace(req.AWSAccountID),
+		AWSRoleName:                strings.TrimSpace(req.AWSRoleName),
+		AWSRegion:                  strings.TrimSpace(req.AWSRegion),
+		AWSAuthMethod:              strings.TrimSpace(strings.ToLower(req.AWSAuthMethod)),
+		ArtifactsBucket:            artifactsBucket,
+		EveServer:                  eveServer,
+		NetlabServer:               netlabServer,
+		AllowExternalTemplateRepos: req.AllowExternalTemplateRepos,
+		AllowCustomEveServers:      req.AllowCustomEveServers,
+		AllowCustomNetlabServers:   req.AllowCustomNetlabServers,
+		ExternalTemplateRepos:      externalRepos,
+		GiteaOwner:                 owner,
+		GiteaRepo:                  repo,
 	}
 	if created.AWSAuthMethod == "" {
 		created.AWSAuthMethod = "sso"

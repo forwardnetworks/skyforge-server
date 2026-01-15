@@ -71,19 +71,33 @@ func (s *Service) GetWorkspaceNetlabTemplates(ctx context.Context, id string, re
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("blueprints repo must be of form owner/repo").Err()
 		}
 		branch = ""
+	case "external":
+		if !pc.workspace.AllowExternalTemplateRepos {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("external template repos are disabled for this workspace").Err()
+		}
+		if req == nil || strings.TrimSpace(req.Repo) == "" {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("external repo id is required").Err()
+		}
+		ref, err := resolveTemplateRepoForProject(s.cfg, pc, "external", strings.TrimSpace(req.Repo))
+		if err != nil {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
+		}
+		owner, repo, branch = ref.Owner, ref.Repo, ref.Branch
 	case "custom":
 		if req == nil || strings.TrimSpace(req.Repo) == "" {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("custom repo is required").Err()
 		}
-		customOwner, customRepo, err := parseGiteaRepoRef(req.Repo)
+		ref, err := resolveTemplateRepoForProject(s.cfg, pc, "custom", strings.TrimSpace(req.Repo))
 		if err != nil {
-			return nil, err
+			if strings.Contains(strings.ToLower(err.Error()), "not enabled") {
+				return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
+			}
+			if strings.Contains(strings.ToLower(err.Error()), "not allowed") {
+				return nil, errs.B().Code(errs.PermissionDenied).Msg(err.Error()).Err()
+			}
+			return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 		}
-		if !isAdminUser(s.cfg, pc.claims.Username) && customOwner != pc.workspace.GiteaOwner && customOwner != "skyforge" {
-			return nil, errs.B().Code(errs.PermissionDenied).Msg("custom repo not allowed").Err()
-		}
-		owner, repo = customOwner, customRepo
-		branch = ""
+		owner, repo, branch = ref.Owner, ref.Repo, ref.Branch
 	case "workspace":
 		// default already set
 	default:
@@ -98,7 +112,7 @@ func (s *Service) GetWorkspaceNetlabTemplates(ctx context.Context, id string, re
 	}
 
 	dir := "blueprints/netlab"
-	if source == "blueprints" || source == "blueprint" {
+	if source == "blueprints" || source == "blueprint" || source == "external" {
 		dir = "netlab"
 	}
 	if req != nil {
@@ -106,7 +120,7 @@ func (s *Service) GetWorkspaceNetlabTemplates(ctx context.Context, id string, re
 			if !isSafeRelativePath(next) {
 				return nil, errs.B().Code(errs.InvalidArgument).Msg("dir must be a safe repo-relative path").Err()
 			}
-			if source == "blueprints" || source == "blueprint" {
+			if source == "blueprints" || source == "blueprint" || source == "external" {
 				next = strings.TrimPrefix(next, "blueprints/")
 				next = strings.Trim(strings.TrimSpace(next), "/")
 			}

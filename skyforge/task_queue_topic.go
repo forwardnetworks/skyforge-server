@@ -71,11 +71,22 @@ func (s *Service) enqueueTask(ctx context.Context, task *TaskRecord) {
 	if s == nil || task == nil || task.ID <= 0 {
 		return
 	}
-	key := strings.TrimSpace(task.WorkspaceID)
-	if task.DeploymentID.Valid && strings.TrimSpace(task.DeploymentID.String) != "" {
-		key = fmt.Sprintf("%s:%s", strings.TrimSpace(task.WorkspaceID), strings.TrimSpace(task.DeploymentID.String))
+	deploymentID := ""
+	if task.DeploymentID.Valid {
+		deploymentID = strings.TrimSpace(task.DeploymentID.String)
 	}
-	if _, err := taskqueue.Topic.Publish(ctx, &taskqueue.TaskEnqueuedEvent{TaskID: task.ID, Key: key}); err != nil {
-		rlog.Error("task enqueue publish failed", "task_id", task.ID, "err", err)
+	s.enqueueTaskID(ctx, task.ID, task.WorkspaceID, deploymentID)
+}
+
+func (s *Service) enqueueTaskID(ctx context.Context, taskID int, workspaceID string, deploymentID string) {
+	if s == nil || taskID <= 0 {
+		return
+	}
+	key := strings.TrimSpace(workspaceID)
+	if strings.TrimSpace(deploymentID) != "" {
+		key = fmt.Sprintf("%s:%s", strings.TrimSpace(workspaceID), strings.TrimSpace(deploymentID))
+	}
+	if _, err := taskqueue.Topic.Publish(ctx, &taskqueue.TaskEnqueuedEvent{TaskID: taskID, Key: key}); err != nil {
+		rlog.Error("task enqueue publish failed", "task_id", taskID, "err", err)
 	}
 }

@@ -373,6 +373,20 @@ func (s *Service) processQueuedTask(ctx context.Context, taskID int) error {
 			rlog.Error("deployment status update failed", "deployment_id", task.DeploymentID.String, "err", err)
 		}
 	}
+
+	// Kick the next queued task for this deployment. This reduces reliance on periodic
+	// reconciliation and avoids "stuck queued" after cancel/worker restarts.
+	if task.DeploymentID.Valid {
+		workspaceID := strings.TrimSpace(task.WorkspaceID)
+		deploymentID := strings.TrimSpace(task.DeploymentID.String)
+		if workspaceID != "" && deploymentID != "" {
+			if nextID, err := getOldestQueuedDeploymentTaskID(ctx, s.db, workspaceID, deploymentID); err == nil && nextID > 0 {
+				ctxKick, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				s.enqueueTaskID(ctxKick, nextID, workspaceID, deploymentID)
+				cancel()
+			}
+		}
+	}
 	unlock()
 	return nil
 }

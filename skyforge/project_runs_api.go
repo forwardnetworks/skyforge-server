@@ -837,11 +837,7 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 
 	var topologyJSON string
 	if action == "deploy" {
-		templatesDir := strings.TrimSpace(req.TemplatesDir)
-		if templatesDir == "" {
-			templatesDir = "blueprints/containerlab"
-		}
-		templatesDir = strings.Trim(strings.TrimSpace(templatesDir), "/")
+		templatesDir := normalizeContainerlabTemplatesDir(req.TemplateSource, req.TemplatesDir)
 		if !isSafeRelativePath(templatesDir) {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("templatesDir must be a safe repo-relative path").Err()
 		}

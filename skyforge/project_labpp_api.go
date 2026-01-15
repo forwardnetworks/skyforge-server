@@ -13,10 +13,10 @@ import (
 
 type WorkspaceLabppTemplatesResponse struct {
 	WorkspaceID string   `json:"workspaceId"`
-	Repo      string   `json:"repo"`
-	Branch    string   `json:"branch"`
-	Dir       string   `json:"dir"`
-	Templates []string `json:"templates"`
+	Repo        string   `json:"repo"`
+	Branch      string   `json:"branch"`
+	Dir         string   `json:"dir"`
+	Templates   []string `json:"templates"`
 }
 
 type WorkspaceLabppTemplatesRequest struct {
@@ -70,19 +70,33 @@ func (s *Service) GetWorkspaceLabppTemplates(ctx context.Context, id string, req
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("blueprints repo must be of form owner/repo").Err()
 		}
 		branch = ""
+	case "external":
+		if !pc.workspace.AllowExternalTemplateRepos {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("external template repos are disabled for this workspace").Err()
+		}
+		if req == nil || strings.TrimSpace(req.Repo) == "" {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("external repo id is required").Err()
+		}
+		ref, err := resolveTemplateRepoForProject(s.cfg, pc, "external", strings.TrimSpace(req.Repo))
+		if err != nil {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
+		}
+		owner, repo, branch = ref.Owner, ref.Repo, ref.Branch
 	case "custom":
 		if req == nil || strings.TrimSpace(req.Repo) == "" {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("custom repo is required").Err()
 		}
-		customOwner, customRepo, err := parseGiteaRepoRef(req.Repo)
+		ref, err := resolveTemplateRepoForProject(s.cfg, pc, "custom", strings.TrimSpace(req.Repo))
 		if err != nil {
-			return nil, err
+			if strings.Contains(strings.ToLower(err.Error()), "not enabled") {
+				return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
+			}
+			if strings.Contains(strings.ToLower(err.Error()), "not allowed") {
+				return nil, errs.B().Code(errs.PermissionDenied).Msg(err.Error()).Err()
+			}
+			return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 		}
-		if !isAdminUser(s.cfg, pc.claims.Username) && customOwner != pc.workspace.GiteaOwner && customOwner != "skyforge" {
-			return nil, errs.B().Code(errs.PermissionDenied).Msg("custom repo not allowed").Err()
-		}
-		owner, repo = customOwner, customRepo
-		branch = ""
+		owner, repo, branch = ref.Owner, ref.Repo, ref.Branch
 	case "workspace":
 		// default already set
 	default:
@@ -127,9 +141,9 @@ func (s *Service) GetWorkspaceLabppTemplates(ctx context.Context, id string, req
 	_ = ctx
 	return &WorkspaceLabppTemplatesResponse{
 		WorkspaceID: pc.workspace.ID,
-		Repo:      fmt.Sprintf("%s/%s", owner, repo),
-		Branch:    branch,
-		Dir:       dir,
-		Templates: templates,
+		Repo:        fmt.Sprintf("%s/%s", owner, repo),
+		Branch:      branch,
+		Dir:         dir,
+		Templates:   templates,
 	}, nil
 }

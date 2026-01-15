@@ -111,7 +111,7 @@ func (s *Service) ListWorkspaceNetlabServers(ctx context.Context, id string) (*W
 		}
 	}
 
-	if s.db != nil {
+	if s.db != nil && pc.workspace.AllowCustomNetlabServers {
 		rows, err := listWorkspaceNetlabServers(ctx, s.db, s.box, id)
 		if err == nil {
 			for _, rec := range rows {
@@ -134,9 +134,12 @@ func (s *Service) UpsertWorkspaceNetlabServer(ctx context.Context, id string, pa
 	if payload == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("payload required").Err()
 	}
-	_, err := requireWorkspaceOwner(ctx, s, id)
+	pc, err := requireWorkspaceOwner(ctx, s, id)
 	if err != nil {
 		return nil, err
+	}
+	if !pc.workspace.AllowCustomNetlabServers {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("custom netlab servers are disabled for this workspace").Err()
 	}
 	if s.db == nil || s.box == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
@@ -173,9 +176,12 @@ func (s *Service) UpsertWorkspaceNetlabServer(ctx context.Context, id string, pa
 //
 //encore:api auth method=DELETE path=/api/workspaces/:id/netlab/servers/:serverID
 func (s *Service) DeleteWorkspaceNetlabServer(ctx context.Context, id, serverID string) error {
-	_, err := requireWorkspaceOwner(ctx, s, id)
+	pc, err := requireWorkspaceOwner(ctx, s, id)
 	if err != nil {
 		return err
+	}
+	if !pc.workspace.AllowCustomNetlabServers {
+		return errs.B().Code(errs.FailedPrecondition).Msg("custom netlab servers are disabled for this workspace").Err()
 	}
 	if s.db == nil {
 		return errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
@@ -208,7 +214,7 @@ func (s *Service) ListWorkspaceEveServers(ctx context.Context, id string) (*Work
 		out = append(out, WorkspaceServerRef{Value: name, Label: name, Scope: "global"})
 	}
 
-	if s.db != nil {
+	if s.db != nil && pc.workspace.AllowCustomEveServers {
 		rows, err := listWorkspaceEveServers(ctx, s.db, s.box, id)
 		if err == nil {
 			for _, rec := range rows {
@@ -231,9 +237,12 @@ func (s *Service) UpsertWorkspaceEveServer(ctx context.Context, id string, paylo
 	if payload == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("payload required").Err()
 	}
-	_, err := requireWorkspaceOwner(ctx, s, id)
+	pc, err := requireWorkspaceOwner(ctx, s, id)
 	if err != nil {
 		return nil, err
+	}
+	if !pc.workspace.AllowCustomEveServers {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("custom eve servers are disabled for this workspace").Err()
 	}
 	if s.db == nil || s.box == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
@@ -282,13 +291,15 @@ func (s *Service) UpsertWorkspaceEveServer(ctx context.Context, id string, paylo
 //
 //encore:api auth method=DELETE path=/api/workspaces/:id/eve/servers/:serverID
 func (s *Service) DeleteWorkspaceEveServer(ctx context.Context, id, serverID string) error {
-	_, err := requireWorkspaceOwner(ctx, s, id)
+	pc, err := requireWorkspaceOwner(ctx, s, id)
 	if err != nil {
 		return err
+	}
+	if !pc.workspace.AllowCustomEveServers {
+		return errs.B().Code(errs.FailedPrecondition).Msg("custom eve servers are disabled for this workspace").Err()
 	}
 	if s.db == nil {
 		return errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 	return deleteWorkspaceEveServer(ctx, s.db, id, serverID)
 }
-
