@@ -91,7 +91,7 @@ func (s *Service) ensureDefaultWorkspace(ctx context.Context, user *AuthUser) (*
 }
 
 func (s *Service) maybeQueueUserBootstrap(ctx context.Context, workspaceID string, user *AuthUser) {
-	if s == nil || s.db == nil || user == nil || !s.cfg.TaskWorkerEnabled {
+	if s == nil || s.db == nil || user == nil {
 		return
 	}
 	workspaceID = strings.TrimSpace(workspaceID)

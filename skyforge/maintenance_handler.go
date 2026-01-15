@@ -2,7 +2,6 @@ package skyforge
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -15,8 +14,10 @@ func (s *Service) handleMaintenanceEvent(ctx context.Context, msg *maintenance.M
 		return nil
 	}
 	if !s.cfg.TaskWorkerEnabled {
-		// NACK (return error) so non-worker pods do not ACK maintenance messages.
-		return fmt.Errorf("task worker disabled")
+		// If the worker is disabled, ACK maintenance messages to avoid infinite redelivery loops.
+		// Tasks will remain queued until a worker is enabled and reconciliation runs.
+		rlog.Warn("maintenance: worker disabled; skipping", "kind", strings.TrimSpace(msg.Kind))
+		return nil
 	}
 
 	kind := strings.TrimSpace(msg.Kind)

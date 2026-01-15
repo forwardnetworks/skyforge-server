@@ -37,7 +37,7 @@ func (s *Service) handleTaskEnqueued(ctx context.Context, msg *taskqueue.TaskEnq
 	}
 	// Only worker deployments should run this service; keep the guard for safety.
 	if !core.TaskWorkerEnabled() {
-		return fmt.Errorf("task worker disabled")
+		return nil
 	}
 	return core.ProcessQueuedTask(ctx, msg.TaskID)
 }
@@ -51,7 +51,7 @@ func (s *Service) handleMaintenanceEvent(ctx context.Context, msg *maintenance.M
 		return fmt.Errorf("skyforge service not initialized")
 	}
 	if !core.TaskWorkerEnabled() {
-		return fmt.Errorf("task worker disabled")
+		return nil
 	}
 	return core.HandleMaintenanceEvent(ctx, msg)
 }
