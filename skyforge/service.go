@@ -3533,7 +3533,7 @@ func initService() (*Service, error) {
 		db:             db,
 	}
 	defaultService = svc
-	startTaskWorkerHeartbeat(cfg, db)
+	// Task worker heartbeats are emitted by the worker service (cron-driven).
 	return svc, nil
 }
 
