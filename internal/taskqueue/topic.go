@@ -18,6 +18,3 @@ var BackgroundTopic = pubsub.NewTopic[*TaskEnqueuedEvent]("skyforge-task-queue-b
 	DeliveryGuarantee: pubsub.AtLeastOnce,
 	OrderingAttribute: "key",
 })
-
-// Topic is kept for backward compatibility; new code should choose interactive/background.
-var Topic = InteractiveTopic

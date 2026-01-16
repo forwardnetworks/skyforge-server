@@ -42,11 +42,19 @@
       "type": "nsq",
       "hosts": "nsq:4150",
       "topics": {
-        "skyforge-task-queue": {
-          "name": "skyforge-task-queue",
+        "skyforge-task-queue-interactive": {
+          "name": "skyforge-task-queue-interactive",
           "subscriptions": {
             "skyforge-task-worker": {
               "name": "skyforge-task-worker"
+            }
+          }
+        },
+        "skyforge-task-queue-background": {
+          "name": "skyforge-task-queue-background",
+          "subscriptions": {
+            "skyforge-task-worker-background": {
+              "name": "skyforge-task-worker-background"
             }
           }
         },
