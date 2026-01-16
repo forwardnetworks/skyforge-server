@@ -2,7 +2,7 @@ module encore.app
 
 go 1.24.0
 
-toolchain go1.26rc1
+toolchain go1.26rc2
 
 require (
 	encore.dev v1.44.6

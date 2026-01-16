@@ -148,6 +148,34 @@
         ],
         "type": "object"
       },
+      "skyforge.ClabernetesInfo": {
+        "properties": {
+          "configMaps": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "labName": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "topologyName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "namespace",
+          "topologyName",
+          "labName",
+          "ready",
+          "configMaps"
+        ],
+        "type": "object"
+      },
       "skyforge.ContainerlabInfo": {
         "properties": {
           "apiUrl": {
@@ -293,6 +321,30 @@
           "clusterNodes",
           "clusterOnline",
           "error"
+        ],
+        "type": "object"
+      },
+      "skyforge.ExternalTemplateRepo": {
+        "properties": {
+          "defaultBranch": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "repo": {
+            "title": "gitea owner/repo\n",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "repo",
+          "defaultBranch"
         ],
         "type": "object"
       },
@@ -817,6 +869,37 @@
         ],
         "type": "object"
       },
+      "skyforge.NetlabStatsServer": {
+        "properties": {
+          "cpuPercent": {
+            "type": "number"
+          },
+          "diskPercent": {
+            "type": "number"
+          },
+          "error": {
+            "type": "string"
+          },
+          "memPercent": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "status",
+          "cpuPercent",
+          "memPercent",
+          "diskPercent",
+          "error"
+        ],
+        "type": "object"
+      },
       "skyforge.NodeMetricSnapshot": {
         "properties": {
           "cpuActive": {
@@ -1010,6 +1093,15 @@
       },
       "skyforge.SkyforgeWorkspace": {
         "properties": {
+          "allowCustomEveServers": {
+            "type": "boolean"
+          },
+          "allowCustomNetlabServers": {
+            "type": "boolean"
+          },
+          "allowExternalTemplateRepos": {
+            "type": "boolean"
+          },
           "ansibleRunTemplateId": {
             "format": "int64",
             "type": "integer"
@@ -1063,6 +1155,12 @@
           },
           "eveServer": {
             "type": "string"
+          },
+          "externalTemplateRepos": {
+            "items": {
+              "$ref": "#/components/schemas/skyforge.ExternalTemplateRepo"
+            },
+            "type": "array"
           },
           "giteaOwner": {
             "type": "string"
@@ -1149,6 +1247,10 @@
           "viewerGroups",
           "blueprint",
           "defaultBranch",
+          "allowExternalTemplateRepos",
+          "allowCustomEveServers",
+          "allowCustomNetlabServers",
+          "externalTemplateRepos",
           "terraformStateKey",
           "terraformInitTemplateId",
           "terraformPlanTemplateId",
@@ -1463,6 +1565,13 @@
       },
       "skyforge.WorkspaceDeployment": {
         "properties": {
+          "activeTaskId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "activeTaskStatus": {
+            "type": "string"
+          },
           "config": {
             "$ref": "#/components/schemas/skyforge.JSONMap"
           },
@@ -1495,6 +1604,10 @@
           "name": {
             "type": "string"
           },
+          "queueDepth": {
+            "format": "int64",
+            "type": "integer"
+          },
           "type": {
             "type": "string"
           },
@@ -1518,7 +1631,10 @@
           "lastTaskId",
           "lastStatus",
           "lastStartedAt",
-          "lastFinishedAt"
+          "lastFinishedAt",
+          "activeTaskId",
+          "activeTaskStatus",
+          "queueDepth"
         ],
         "type": "object"
       },
@@ -1538,6 +1654,26 @@
           "id",
           "name",
           "username"
+        ],
+        "type": "object"
+      },
+      "skyforge.WorkspaceServerRef": {
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "scope": {
+            "title": "global|workspace\n",
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "label",
+          "scope"
         ],
         "type": "object"
       },
@@ -2365,6 +2501,69 @@
         "summary": "ListNodeMetrics returns a lightweight, live view of node metrics (admin only).\n"
       }
     },
+    "/api/admin/users/purge": {
+      "post": {
+        "description": "This is intended for development environments where you want to rerun \"first-login\" bootstrap (Gitea user/provisioning, default workspace, etc).\n",
+        "operationId": "POST:skyforge.PurgeUser",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "confirm": {
+                    "type": "string"
+                  },
+                  "username": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "username",
+                  "confirm"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "deletedWorkspaces": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "deletedWorkspaces",
+                    "warnings"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "PurgeUser removes a user and their state (admin only).\n"
+      }
+    },
     "/api/admin/workspaces/sync": {
       "post": {
         "operationId": "POST:skyforge.SyncWorkspaces",
@@ -3005,6 +3204,20 @@
           }
         },
         "summary": "ValidateGCPServiceAccount verifies GCP service account JSON by minting a token.\n"
+      }
+    },
+    "/api/dashboard/events": {
+      "get": {
+        "operationId": "GET:skyforge.DashboardEvents",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "DashboardEvents streams a dashboard snapshot as Server-Sent Events (SSE).\n"
       }
     },
     "/api/dns/bootstrap": {
@@ -4020,6 +4233,53 @@
         "summary": "ListNetlabServers returns configured Netlab runners.\n"
       }
     },
+    "/api/netlab/stats": {
+      "get": {
+        "operationId": "GET:skyforge.GetNetlabStats",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "servers": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.NetlabStatsServer"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "servers"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetNetlabStats returns basic Netlab server stats for the status dashboard.\n"
+      }
+    },
+    "/api/notifications/events": {
+      "get": {
+        "description": "This endpoint is intended to reduce portal-side polling. It streams a small \"snapshot\" payload whenever notifications change for the authenticated user.\n\nQuery params: - include\\_read=true|false (default false) - limit=1..100 (default 50)\n",
+        "operationId": "GET:skyforge.NotificationsEvents",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "NotificationsEvents streams notifications as Server-Sent Events (SSE).\n"
+      }
+    },
     "/api/oidc/callback": {
       "get": {
         "operationId": "GET:skyforge.OIDCCallback",
@@ -4826,6 +5086,132 @@
         "summary": "CreateRun is a reserved endpoint for admin-triggered native tasks.\n"
       }
     },
+    "/api/runs/{id}/cancel": {
+      "post": {
+        "operationId": "POST:skyforge.CancelRun",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "workspace_id",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "task": {
+                      "$ref": "#/components/schemas/skyforge.JSONMap"
+                    },
+                    "task_id": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "user": {
+                      "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "task_id",
+                    "workspaceId",
+                    "status",
+                    "task",
+                    "user"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "CancelRun cancels a queued or running task.\n"
+      }
+    },
+    "/api/runs/{id}/events": {
+      "get": {
+        "description": "This is implemented as a raw endpoint so it can hold a long-lived HTTP connection.\n",
+        "operationId": "GET:skyforge.RunEvents",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "RunEvents streams task output as Server-Sent Events (SSE).\n"
+      }
+    },
+    "/api/runs/{id}/lifecycle": {
+      "get": {
+        "description": "The stream is backed by \\`sf\\_task\\_events\\` and supports \\`Last-Event-ID\\` replay.\n",
+        "operationId": "GET:skyforge.TaskLifecycleEvents",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "TaskLifecycleEvents streams structured task lifecycle events as Server-Sent\nEvents (SSE).\n"
+      }
+    },
     "/api/runs/{id}/output": {
       "get": {
         "operationId": "GET:skyforge.GetRunOutput",
@@ -5517,6 +5903,9 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "externalUrl": {
+                      "type": "string"
+                    },
                     "headerBackground": {
                       "type": "string"
                     },
@@ -5557,6 +5946,7 @@
                     "supportText",
                     "supportUrl",
                     "themeDefault",
+                    "externalUrl",
                     "oidcEnabled",
                     "oidcLoginUrl"
                   ],
@@ -5755,6 +6145,15 @@
             "application/json": {
               "schema": {
                 "properties": {
+                  "allowCustomEveServers": {
+                    "type": "boolean"
+                  },
+                  "allowCustomNetlabServers": {
+                    "type": "boolean"
+                  },
+                  "allowExternalTemplateRepos": {
+                    "type": "boolean"
+                  },
                   "awsAccountId": {
                     "type": "string"
                   },
@@ -5775,6 +6174,12 @@
                   },
                   "eveServer": {
                     "type": "string"
+                  },
+                  "externalTemplateRepos": {
+                    "items": {
+                      "$ref": "#/components/schemas/skyforge.ExternalTemplateRepo"
+                    },
+                    "type": "array"
                   },
                   "isPublic": {
                     "type": "boolean"
@@ -5807,7 +6212,11 @@
                   "awsRegion",
                   "awsAuthMethod",
                   "eveServer",
-                  "netlabServer"
+                  "netlabServer",
+                  "allowExternalTemplateRepos",
+                  "allowCustomEveServers",
+                  "allowCustomNetlabServers",
+                  "externalTemplateRepos"
                 ],
                 "type": "object"
               }
@@ -5820,6 +6229,15 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "allowCustomEveServers": {
+                      "type": "boolean"
+                    },
+                    "allowCustomNetlabServers": {
+                      "type": "boolean"
+                    },
+                    "allowExternalTemplateRepos": {
+                      "type": "boolean"
+                    },
                     "ansibleRunTemplateId": {
                       "format": "int64",
                       "type": "integer"
@@ -5873,6 +6291,12 @@
                     },
                     "eveServer": {
                       "type": "string"
+                    },
+                    "externalTemplateRepos": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.ExternalTemplateRepo"
+                      },
+                      "type": "array"
                     },
                     "giteaOwner": {
                       "type": "string"
@@ -5959,6 +6383,10 @@
                     "viewerGroups",
                     "blueprint",
                     "defaultBranch",
+                    "allowExternalTemplateRepos",
+                    "allowCustomEveServers",
+                    "allowCustomNetlabServers",
+                    "externalTemplateRepos",
                     "terraformStateKey",
                     "terraformInitTemplateId",
                     "terraformPlanTemplateId",
@@ -7094,6 +7522,13 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "activeTaskId": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "activeTaskStatus": {
+                      "type": "string"
+                    },
                     "config": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
                     },
@@ -7126,6 +7561,10 @@
                     "name": {
                       "type": "string"
                     },
+                    "queueDepth": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
                     "type": {
                       "type": "string"
                     },
@@ -7149,7 +7588,10 @@
                     "lastTaskId",
                     "lastStatus",
                     "lastStartedAt",
-                    "lastFinishedAt"
+                    "lastFinishedAt",
+                    "activeTaskId",
+                    "activeTaskStatus",
+                    "queueDepth"
                   ],
                   "type": "object"
                 }
@@ -7287,6 +7729,13 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "activeTaskId": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "activeTaskStatus": {
+                      "type": "string"
+                    },
                     "config": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
                     },
@@ -7319,6 +7768,10 @@
                     "name": {
                       "type": "string"
                     },
+                    "queueDepth": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
                     "type": {
                       "type": "string"
                     },
@@ -7342,7 +7795,10 @@
                     "lastTaskId",
                     "lastStatus",
                     "lastStartedAt",
-                    "lastFinishedAt"
+                    "lastFinishedAt",
+                    "activeTaskId",
+                    "activeTaskStatus",
+                    "queueDepth"
                   ],
                   "type": "object"
                 }
@@ -7593,6 +8049,9 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "clabernetes": {
+                      "$ref": "#/components/schemas/skyforge.ClabernetesInfo"
+                    },
                     "containerlab": {
                       "$ref": "#/components/schemas/skyforge.ContainerlabInfo"
                     },
@@ -7642,7 +8101,8 @@
                     "forwardSnapshotUrl",
                     "netlab",
                     "labpp",
-                    "containerlab"
+                    "containerlab",
+                    "clabernetes"
                   ],
                   "type": "object"
                 }
@@ -7655,6 +8115,68 @@
           }
         },
         "summary": "GetWorkspaceDeploymentInfo returns provider-specific info for a deployment.\n"
+      }
+    },
+    "/api/workspaces/{id}/deployments/{deploymentID}/labpp/data-sources.csv": {
+      "get": {
+        "description": "The CSV is created by the LabPP runner and stored on the platform-data volume; Skyforge serves it back to the user as a base64 payload for easy browser download.\n",
+        "operationId": "GET:skyforge.DownloadLabppDataSourcesCSV",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "deploymentID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "fileData": {
+                      "type": "string"
+                    },
+                    "filename": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "filename",
+                    "fileData"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "DownloadLabppDataSourcesCSV returns the generated LabPP `data_sources.csv` for a\ndeployment.\n"
       }
     },
     "/api/workspaces/{id}/deployments/{deploymentID}/netlab-graph": {
@@ -7716,6 +8238,84 @@
           }
         },
         "summary": "GetWorkspaceDeploymentNetlabGraph returns a rendered netlab topology graph for a\ndeployment.\n"
+      }
+    },
+    "/api/workspaces/{id}/deployments/{deploymentID}/netlab/connect": {
+      "post": {
+        "description": "This is an alternative to local SSH ProxyJump when clients can't reach the lab network.\n",
+        "operationId": "POST:skyforge.NetlabConnect",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "deploymentID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "node": {
+                    "type": "string"
+                  },
+                  "show": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "node",
+                  "show"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "output": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "output"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "NetlabConnect executes `netlab connect` on the Netlab runner host and returns\nits output.\n"
       }
     },
     "/api/workspaces/{id}/deployments/{deploymentID}/start": {
@@ -7948,6 +8548,15 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "allowCustomEveServers": {
+                      "type": "boolean"
+                    },
+                    "allowCustomNetlabServers": {
+                      "type": "boolean"
+                    },
+                    "allowExternalTemplateRepos": {
+                      "type": "boolean"
+                    },
                     "ansibleRunTemplateId": {
                       "format": "int64",
                       "type": "integer"
@@ -8001,6 +8610,12 @@
                     },
                     "eveServer": {
                       "type": "string"
+                    },
+                    "externalTemplateRepos": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.ExternalTemplateRepo"
+                      },
+                      "type": "array"
                     },
                     "giteaOwner": {
                       "type": "string"
@@ -8087,6 +8702,10 @@
                     "viewerGroups",
                     "blueprint",
                     "defaultBranch",
+                    "allowExternalTemplateRepos",
+                    "allowCustomEveServers",
+                    "allowCustomNetlabServers",
+                    "externalTemplateRepos",
                     "terraformStateKey",
                     "terraformInitTemplateId",
                     "terraformPlanTemplateId",
@@ -8246,6 +8865,267 @@
           }
         },
         "summary": "CreateWorkspaceEveLab creates an EVE lab for the workspace.\n"
+      }
+    },
+    "/api/workspaces/{id}/eve/servers": {
+      "get": {
+        "operationId": "GET:skyforge.ListWorkspaceEveServers",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "servers": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.WorkspaceServerRef"
+                      },
+                      "type": "array"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "workspaceId",
+                    "servers"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ListWorkspaceEveServers returns configured EVE-NG servers for a workspace.\n"
+      },
+      "put": {
+        "operationId": "PUT:skyforge.UpsertWorkspaceEveServer",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "apiUrl": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "skipTlsVerify": {
+                    "type": "boolean"
+                  },
+                  "sshHost": {
+                    "type": "string"
+                  },
+                  "sshKey": {
+                    "type": "string"
+                  },
+                  "sshUser": {
+                    "type": "string"
+                  },
+                  "webUrl": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "apiUrl",
+                  "webUrl",
+                  "skipTlsVerify",
+                  "sshHost",
+                  "sshUser",
+                  "sshKey"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "apiUrl": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "skipTlsVerify": {
+                      "type": "boolean"
+                    },
+                    "sshHost": {
+                      "type": "string"
+                    },
+                    "sshKey": {
+                      "type": "string"
+                    },
+                    "sshUser": {
+                      "type": "string"
+                    },
+                    "webUrl": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "apiUrl",
+                    "webUrl",
+                    "skipTlsVerify",
+                    "sshHost",
+                    "sshUser",
+                    "sshKey"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "UpsertWorkspaceEveServer creates or updates a workspace-scoped EVE-NG server.\n"
+      }
+    },
+    "/api/workspaces/{id}/eve/servers/{serverID}": {
+      "delete": {
+        "operationId": "DELETE:skyforge.DeleteWorkspaceEveServer",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "serverID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "DeleteWorkspaceEveServer deletes a workspace-scoped EVE server.\n"
+      }
+    },
+    "/api/workspaces/{id}/eve/servers/{serverID}/health": {
+      "get": {
+        "operationId": "GET:skyforge.GetWorkspaceEveServerHealth",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "serverID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "time": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "time",
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspaceEveServerHealth checks the health of a workspace-scoped EVE server.\n"
       }
     },
     "/api/workspaces/{id}/integrations/forward": {
@@ -8876,6 +9756,15 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "allowCustomEveServers": {
+                      "type": "boolean"
+                    },
+                    "allowCustomNetlabServers": {
+                      "type": "boolean"
+                    },
+                    "allowExternalTemplateRepos": {
+                      "type": "boolean"
+                    },
                     "ansibleRunTemplateId": {
                       "format": "int64",
                       "type": "integer"
@@ -8929,6 +9818,12 @@
                     },
                     "eveServer": {
                       "type": "string"
+                    },
+                    "externalTemplateRepos": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.ExternalTemplateRepo"
+                      },
+                      "type": "array"
                     },
                     "giteaOwner": {
                       "type": "string"
@@ -9015,6 +9910,10 @@
                     "viewerGroups",
                     "blueprint",
                     "defaultBranch",
+                    "allowExternalTemplateRepos",
+                    "allowCustomEveServers",
+                    "allowCustomNetlabServers",
+                    "externalTemplateRepos",
                     "terraformStateKey",
                     "terraformInitTemplateId",
                     "terraformPlanTemplateId",
@@ -9136,6 +10035,15 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "allowCustomEveServers": {
+                      "type": "boolean"
+                    },
+                    "allowCustomNetlabServers": {
+                      "type": "boolean"
+                    },
+                    "allowExternalTemplateRepos": {
+                      "type": "boolean"
+                    },
                     "ansibleRunTemplateId": {
                       "format": "int64",
                       "type": "integer"
@@ -9189,6 +10097,12 @@
                     },
                     "eveServer": {
                       "type": "string"
+                    },
+                    "externalTemplateRepos": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.ExternalTemplateRepo"
+                      },
+                      "type": "array"
                     },
                     "giteaOwner": {
                       "type": "string"
@@ -9275,6 +10189,10 @@
                     "viewerGroups",
                     "blueprint",
                     "defaultBranch",
+                    "allowExternalTemplateRepos",
+                    "allowCustomEveServers",
+                    "allowCustomNetlabServers",
+                    "externalTemplateRepos",
                     "terraformStateKey",
                     "terraformInitTemplateId",
                     "terraformPlanTemplateId",
@@ -9304,6 +10222,243 @@
           }
         },
         "summary": "UpdateWorkspaceNetlab updates the workspace's netlab server selection.\n"
+      }
+    },
+    "/api/workspaces/{id}/netlab/servers": {
+      "get": {
+        "operationId": "GET:skyforge.ListWorkspaceNetlabServers",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "servers": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.WorkspaceServerRef"
+                      },
+                      "type": "array"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "workspaceId",
+                    "servers"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ListWorkspaceNetlabServers returns the configured Netlab API endpoints for this\nworkspace.\n"
+      },
+      "put": {
+        "operationId": "PUT:skyforge.UpsertWorkspaceNetlabServer",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "apiInsecure": {
+                    "type": "boolean"
+                  },
+                  "apiToken": {
+                    "type": "string"
+                  },
+                  "apiUrl": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "apiUrl",
+                  "apiInsecure",
+                  "apiToken"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "apiInsecure": {
+                      "type": "boolean"
+                    },
+                    "apiToken": {
+                      "type": "string"
+                    },
+                    "apiUrl": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "apiUrl",
+                    "apiInsecure",
+                    "apiToken"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "UpsertWorkspaceNetlabServer creates or updates a workspace-scoped Netlab API\nendpoint.\n"
+      }
+    },
+    "/api/workspaces/{id}/netlab/servers/{serverID}": {
+      "delete": {
+        "operationId": "DELETE:skyforge.DeleteWorkspaceNetlabServer",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "serverID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "DeleteWorkspaceNetlabServer deletes a workspace-scoped Netlab server.\n"
+      }
+    },
+    "/api/workspaces/{id}/netlab/servers/{serverID}/health": {
+      "get": {
+        "operationId": "GET:skyforge.GetWorkspaceNetlabServerHealth",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "serverID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "time": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "time",
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspaceNetlabServerHealth checks the health of a workspace-scoped Netlab\nAPI server.\n"
       }
     },
     "/api/workspaces/{id}/netlab/templates": {
@@ -10014,6 +11169,80 @@
           }
         },
         "summary": "RunWorkspaceTerraformPlan triggers a terraform plan run for a workspace.\n"
+      }
+    },
+    "/api/workspaces/{id}/settings": {
+      "put": {
+        "operationId": "PUT:skyforge.UpdateWorkspaceSettings",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "allowCustomEveServers": {
+                    "type": "boolean"
+                  },
+                  "allowCustomNetlabServers": {
+                    "type": "boolean"
+                  },
+                  "allowExternalTemplateRepos": {
+                    "type": "boolean"
+                  },
+                  "externalTemplateRepos": {
+                    "items": {
+                      "$ref": "#/components/schemas/skyforge.ExternalTemplateRepo"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "allowExternalTemplateRepos",
+                  "allowCustomEveServers",
+                  "allowCustomNetlabServers",
+                  "externalTemplateRepos"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "workspace": {
+                      "$ref": "#/components/schemas/skyforge.SkyforgeWorkspace"
+                    }
+                  },
+                  "required": [
+                    "workspace"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "UpdateWorkspaceSettings updates workspace-level feature flags and template repo\nsources.\n"
       }
     },
     "/api/workspaces/{id}/sync": {
@@ -10951,6 +12180,88 @@
           }
         },
         "summary": "IngestSyslog accepts syslog events from in-cluster collectors (Vector/Fluent\nBit/etc).\n"
+      }
+    },
+    "/internal/cron/cloud/checks": {
+      "post": {
+        "operationId": "POST:skyforge.CronCloudCredentialChecks",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        }
+      }
+    },
+    "/internal/cron/tasks/metrics": {
+      "post": {
+        "operationId": "POST:skyforge.CronRefreshTaskQueueMetrics",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        }
+      }
+    },
+    "/internal/cron/workspaces/sync": {
+      "post": {
+        "operationId": "POST:skyforge.CronWorkspaceSync",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        }
+      }
+    },
+    "/internal/tasks/reconcile": {
+      "post": {
+        "operationId": "POST:skyforge.ReconcileQueuedTasks",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ReconcileQueuedTasks republishes queue events for tasks stuck in the \"queued\"\nstate.\n"
+      }
+    },
+    "/internal/tasks/reconcile-running": {
+      "post": {
+        "operationId": "POST:skyforge.ReconcileRunningTasks",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ReconcileRunningTasks finds long-running tasks that appear stuck and marks them\nfailed.\n"
+      }
+    },
+    "/internal/worker/heartbeat": {
+      "post": {
+        "description": "This is used to detect whether any worker pods are alive when tasks are queued.\n",
+        "operationId": "POST:worker.CronWorkerHeartbeat",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "CronWorkerHeartbeat upserts a task worker heartbeat for this worker instance.\n"
       }
     },
     "/labs": {
