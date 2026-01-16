@@ -407,6 +407,25 @@ func ensureBlueprintCatalogRepo(cfg Config, blueprint string) error {
 	}
 	readme := "# Skyforge Blueprint Catalog\n\nThis repository contains validated deployment blueprints synced into user workspaces.\n"
 	_ = ensureGiteaFile(cfg, owner, repo, "README.md", readme, "docs: add blueprint catalog README", "main", nil)
+
+	// Ensure the catalog always contains at least one Containerlab topology so the
+	// UI can list templates even before admins add their own.
+	smoke := strings.TrimSpace(`name: skyforge-c9s-smoke
+
+topology:
+  nodes:
+    r1:
+      kind: linux
+      image: alpine:3.20
+      cmd: ["sh", "-lc", "sleep infinity"]
+    r2:
+      kind: linux
+      image: alpine:3.20
+      cmd: ["sh", "-lc", "sleep infinity"]
+  links:
+    - endpoints: ["r1:eth1", "r2:eth1"]
+`) + "\n"
+	_ = ensureGiteaFile(cfg, owner, repo, "containerlab/smoke.clab.yml", smoke, "chore: add containerlab smoke topology", "main", nil)
 	return nil
 }
 
