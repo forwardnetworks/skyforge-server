@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS sf_project_eve_servers (
   id uuid PRIMARY KEY,
-  project_id text NOT NULL REFERENCES sf_projects(id) ON DELETE CASCADE,
+  project_id text NOT NULL REFERENCES sf_workspaces(id) ON DELETE CASCADE,
   name text NOT NULL,
   api_url text NOT NULL,
   web_url text,
@@ -17,7 +17,7 @@ CREATE INDEX IF NOT EXISTS sf_project_eve_servers_project_idx ON sf_project_eve_
 
 CREATE TABLE IF NOT EXISTS sf_project_netlab_servers (
   id uuid PRIMARY KEY,
-  project_id text NOT NULL REFERENCES sf_projects(id) ON DELETE CASCADE,
+  project_id text NOT NULL REFERENCES sf_workspaces(id) ON DELETE CASCADE,
   name text NOT NULL,
   api_url text NOT NULL,
   api_insecure boolean NOT NULL DEFAULT true,
@@ -28,4 +28,3 @@ CREATE TABLE IF NOT EXISTS sf_project_netlab_servers (
 );
 
 CREATE INDEX IF NOT EXISTS sf_project_netlab_servers_project_idx ON sf_project_netlab_servers(project_id);
-
