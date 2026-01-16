@@ -61,12 +61,12 @@ LIMIT 200`)
 			key = fmt.Sprintf("%s:%s", strings.TrimSpace(q.workspaceID), strings.TrimSpace(q.deploymentID.String))
 		}
 		if q.priority < taskPriorityInteractive {
-			if _, err := taskqueue.BackgroundTopic.Publish(ctx, &taskqueue.TaskEnqueuedEvent{TaskID: q.id, Key: key}); err != nil {
+			if _, err := taskQueueBackgroundTopic.Publish(ctx, &taskqueue.TaskEnqueuedEvent{TaskID: q.id, Key: key}); err != nil {
 				rlog.Error("task reconcile publish failed", "task_id", q.id, "err", err)
 			}
 			continue
 		}
-		if _, err := taskqueue.InteractiveTopic.Publish(ctx, &taskqueue.TaskEnqueuedEvent{TaskID: q.id, Key: key}); err != nil {
+		if _, err := taskQueueInteractiveTopic.Publish(ctx, &taskqueue.TaskEnqueuedEvent{TaskID: q.id, Key: key}); err != nil {
 			rlog.Error("task reconcile publish failed", "task_id", q.id, "err", err)
 		}
 	}
@@ -100,12 +100,12 @@ func (s *Service) enqueueTaskID(ctx context.Context, taskID int, workspaceID str
 		key = fmt.Sprintf("%s:%s", strings.TrimSpace(workspaceID), strings.TrimSpace(deploymentID))
 	}
 	if priority < taskPriorityInteractive {
-		if _, err := taskqueue.BackgroundTopic.Publish(ctx, &taskqueue.TaskEnqueuedEvent{TaskID: taskID, Key: key}); err != nil {
+		if _, err := taskQueueBackgroundTopic.Publish(ctx, &taskqueue.TaskEnqueuedEvent{TaskID: taskID, Key: key}); err != nil {
 			rlog.Error("task enqueue publish failed", "task_id", taskID, "err", err)
 		}
 		return
 	}
-	if _, err := taskqueue.InteractiveTopic.Publish(ctx, &taskqueue.TaskEnqueuedEvent{TaskID: taskID, Key: key}); err != nil {
+	if _, err := taskQueueInteractiveTopic.Publish(ctx, &taskqueue.TaskEnqueuedEvent{TaskID: taskID, Key: key}); err != nil {
 		rlog.Error("task enqueue publish failed", "task_id", taskID, "err", err)
 	}
 }

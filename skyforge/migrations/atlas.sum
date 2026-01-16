@@ -1,4 +1,4 @@
-h1:nt/QivMQ/LI4+yUhz1vjQHKpDelIE9DUKtZAHwS60NQ=
+h1:HP6gULIsjTEggCVLqzd+8O/fi4hkXEEvQR3TLpN7x20=
 20251220000100_init.up.sql h1:ZR4Y0ICXFcjlVW2XKzVYoSNksZP2tQ0ajHHNnh/1IoM=
 20251221000100_cloud_credentials.up.sql h1:Xb5agfyv110UYW/49J7WKrDhUCDZeS7EiMKgQUf+Tvs=
 20251222000100_project_visibility.up.sql h1:PDVyAxeOyGa1iSj+KXN2dlV1G2jxBK9A49c/1gXv4PQ=
@@ -26,3 +26,4 @@ h1:nt/QivMQ/LI4+yUhz1vjQHKpDelIE9DUKtZAHwS60NQ=
 20260115000100_drop_legacy_workspace_id.up.sql h1:ulgmX/2DpDGr3QzQpJUY52iwOSsMwNcZrObdMFoH8DQ=
 20260115000200_workspace_template_sources.up.sql h1:ToKfGZW/yyoSoJmS5D9rqKaOJENiIkZAs9uq0nh4loA=
 20260116000100_task_priority.up.sql h1:bK+mnj/V9QdPImQhTZE8N9GXpSbtt1Tsa7sx9ZQcVgU=
+20260116000200_deployment_types.up.sql h1:TRaRsuEJokMoFK6qQ/s90tK/40tEb8y9ZMl29uNVo0U=
