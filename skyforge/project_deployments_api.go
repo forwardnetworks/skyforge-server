@@ -87,6 +87,7 @@ type WorkspaceDeploymentInfoResponse struct {
 	Netlab       *NetlabInfo          `json:"netlab,omitempty"`
 	Labpp        *LabppInfo           `json:"labpp,omitempty"`
 	Containerlab *ContainerlabInfo    `json:"containerlab,omitempty"`
+	Clabernetes  *ClabernetesInfo     `json:"clabernetes,omitempty"`
 }
 
 type NetlabGraphResponse struct {
@@ -99,6 +100,14 @@ type NetlabInfo struct {
 	JobID      string `json:"jobId"`
 	MultilabID int    `json:"multilabId"`
 	APIURL     string `json:"apiUrl"`
+}
+
+type ClabernetesInfo struct {
+	Namespace    string `json:"namespace"`
+	TopologyName string `json:"topologyName"`
+	LabName      string `json:"labName"`
+	Ready        bool   `json:"ready,omitempty"`
+	ConfigMaps   int    `json:"configMaps,omitempty"`
 }
 
 type NetlabConnectRequest struct {
@@ -1532,6 +1541,53 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 				resp.Log = string(body)
 			}
 		}
+		return resp, nil
+	case "clabernetes", "netlab-c9s":
+		labName := strings.TrimSpace(getString("labName"))
+		if labName == "" {
+			labName = containerlabLabName(pc.workspace.Slug, dep.Name)
+		}
+		k8sNamespace := strings.TrimSpace(getString("k8sNamespace"))
+		if k8sNamespace == "" {
+			k8sNamespace = clabernetesWorkspaceNamespace(pc.workspace.Slug)
+		}
+		topologyName := strings.TrimSpace(getString("topologyName"))
+		if topologyName == "" {
+			topologyName = clabernetesTopologyName(labName)
+		}
+
+		checkCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+
+		topo, status, err := kubeGetClabernetesTopology(checkCtx, k8sNamespace, topologyName)
+		if err != nil {
+			resp.Note = sanitizeError(err)
+			resp.Status = "error"
+		} else if topo == nil && status == http.StatusNotFound {
+			resp.Status = "not_found"
+			resp.Note = "topology not found"
+		} else if topo != nil && topo.Status.TopologyReady {
+			resp.Status = "ready"
+		} else {
+			resp.Status = "pending"
+		}
+
+		clab := &ClabernetesInfo{
+			Namespace:    k8sNamespace,
+			TopologyName: topologyName,
+			LabName:      labName,
+		}
+		if topo != nil {
+			clab.Ready = topo.Status.TopologyReady
+		}
+		if dep.Type == "netlab-c9s" {
+			if n, err := kubeCountConfigMapsByLabel(checkCtx, k8sNamespace, map[string]string{
+				"skyforge-c9s-topology": topologyName,
+			}); err == nil {
+				clab.ConfigMaps = n
+			}
+		}
+		resp.Clabernetes = clab
 		return resp, nil
 	default:
 		resp.Note = "info is not yet supported for this deployment type"

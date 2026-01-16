@@ -246,6 +246,55 @@ func kubeDeleteConfigMapsByLabel(ctx context.Context, ns string, selector map[st
 	return deleted, nil
 }
 
+func kubeCountConfigMapsByLabel(ctx context.Context, ns string, selector map[string]string) (int, error) {
+	ns = strings.TrimSpace(ns)
+	if ns == "" {
+		return 0, fmt.Errorf("namespace is required")
+	}
+	client, err := kubeHTTPClient()
+	if err != nil {
+		return 0, err
+	}
+	var parts []string
+	for k, v := range selector {
+		k = strings.TrimSpace(k)
+		v = strings.TrimSpace(v)
+		if k == "" || v == "" {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s=%s", k, v))
+	}
+	q := ""
+	if len(parts) > 0 {
+		q = url.QueryEscape(strings.Join(parts, ","))
+	}
+	listURL := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/configmaps", ns)
+	if q != "" {
+		listURL = listURL + "?labelSelector=" + q
+	}
+	req, err := kubeRequest(ctx, http.MethodGet, listURL, nil)
+	if err != nil {
+		return 0, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return 0, nil
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<10))
+		return 0, fmt.Errorf("kube configmap list failed: %s: %s", resp.Status, strings.TrimSpace(string(data)))
+	}
+	var list kubeConfigMapList
+	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
+		return 0, err
+	}
+	return len(list.Items), nil
+}
+
 func kubeCreateClabernetesTopology(ctx context.Context, ns string, payload map[string]any) error {
 	client, err := kubeHTTPClient()
 	if err != nil {
