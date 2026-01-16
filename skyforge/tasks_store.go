@@ -19,6 +19,7 @@ type TaskRecord struct {
 	WorkspaceID  string
 	DeploymentID sql.NullString
 	TaskType     string
+	Priority     int
 	Status       string
 	Message      sql.NullString
 	Metadata     JSONMap
@@ -45,6 +46,22 @@ type taskStatusCountRow struct {
 	TaskType         string
 	Count            int64
 	OldestAgeSeconds float64
+}
+
+const (
+	taskPriorityBackground  = 0
+	taskPriorityInteractive = 10
+)
+
+func defaultTaskPriority(taskType string) int {
+	switch strings.ToLower(strings.TrimSpace(taskType)) {
+	case "workspace.sync", "workspace_sync", "workspace-sync":
+		return taskPriorityBackground
+	case "cloud.checks", "cloud_checks", "cloud-checks":
+		return taskPriorityBackground
+	default:
+		return taskPriorityInteractive
+	}
 }
 
 func taskDedupeLockKey(workspaceID string, deploymentID *string, taskType, dedupeKey string) int64 {
@@ -74,6 +91,11 @@ func createTaskWithActiveCheck(ctx context.Context, db *sql.DB, workspaceID stri
 	}
 	if metadata == nil {
 		metadata = JSONMap{}
+	}
+
+	priority := getJSONMapInt(metadata, "priority")
+	if _, ok := metadata["priority"]; !ok {
+		priority = defaultTaskPriority(taskType)
 	}
 
 	dedupeKey := strings.TrimSpace(getJSONMapString(metadata, "dedupeKey"))
@@ -149,13 +171,14 @@ func createTaskWithActiveCheck(ctx context.Context, db *sql.DB, workspaceID stri
   workspace_id,
   deployment_id,
   task_type,
+  priority,
   status,
   message,
   metadata,
   created_by
-) VALUES ($1,$2,$3,$4,$5,$6,$7)
-RETURNING id, created_at`, workspaceID, dep, taskType, "queued", msg, metaBytes, createdBy)
-	rec := &TaskRecord{WorkspaceID: workspaceID, DeploymentID: dep, TaskType: taskType, Status: "queued", Message: msg, Metadata: metadata, CreatedBy: createdBy}
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+RETURNING id, created_at`, workspaceID, dep, taskType, priority, "queued", msg, metaBytes, createdBy)
+	rec := &TaskRecord{WorkspaceID: workspaceID, DeploymentID: dep, TaskType: taskType, Priority: priority, Status: "queued", Message: msg, Metadata: metadata, CreatedBy: createdBy}
 	if err := row.Scan(&rec.ID, &rec.CreatedAt); err != nil {
 		return nil, err
 	}
@@ -273,7 +296,7 @@ func getActiveDeploymentTask(ctx context.Context, db *sql.DB, workspaceID string
 	if db == nil {
 		return nil, errDBUnavailable
 	}
-	row := db.QueryRowContext(ctx, `SELECT id, workspace_id, deployment_id, task_type, status, message, metadata, created_by, created_at, started_at, finished_at, error
+	row := db.QueryRowContext(ctx, `SELECT id, workspace_id, deployment_id, task_type, priority, status, message, metadata, created_by, created_at, started_at, finished_at, error
 FROM sf_tasks
 WHERE workspace_id=$1
   AND deployment_id=$2
@@ -282,7 +305,7 @@ ORDER BY created_at DESC
 LIMIT 1`, workspaceID, deploymentID)
 	rec := TaskRecord{}
 	var metaBytes []byte
-	if err := row.Scan(&rec.ID, &rec.WorkspaceID, &rec.DeploymentID, &rec.TaskType, &rec.Status, &rec.Message, &metaBytes, &rec.CreatedBy, &rec.CreatedAt, &rec.StartedAt, &rec.FinishedAt, &rec.Error); err != nil {
+	if err := row.Scan(&rec.ID, &rec.WorkspaceID, &rec.DeploymentID, &rec.TaskType, &rec.Priority, &rec.Status, &rec.Message, &metaBytes, &rec.CreatedBy, &rec.CreatedAt, &rec.StartedAt, &rec.FinishedAt, &rec.Error); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
@@ -304,7 +327,7 @@ FROM sf_tasks
 WHERE workspace_id=$1
   AND deployment_id=$2
   AND status='queued'
-ORDER BY id ASC
+ORDER BY priority DESC, id ASC
 LIMIT 1`, workspaceID, deploymentID).Scan(&id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -325,7 +348,7 @@ FROM sf_tasks
 WHERE workspace_id=$1
   AND deployment_id IS NULL
   AND status='queued'
-ORDER BY id ASC
+ORDER BY priority DESC, id ASC
 LIMIT 1`, workspaceID).Scan(&id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -498,7 +521,7 @@ func listTasks(ctx context.Context, db *sql.DB, workspaceID string, limit int) (
 	if limit <= 0 {
 		limit = 5
 	}
-	rows, err := db.QueryContext(ctx, `SELECT id, workspace_id, deployment_id, task_type, status, message, metadata, created_by, created_at, started_at, finished_at, error
+	rows, err := db.QueryContext(ctx, `SELECT id, workspace_id, deployment_id, task_type, priority, status, message, metadata, created_by, created_at, started_at, finished_at, error
 FROM sf_tasks
 WHERE workspace_id=$1
 ORDER BY created_at DESC
@@ -511,7 +534,7 @@ LIMIT $2`, workspaceID, limit)
 	for rows.Next() {
 		rec := TaskRecord{}
 		var metaBytes []byte
-		if err := rows.Scan(&rec.ID, &rec.WorkspaceID, &rec.DeploymentID, &rec.TaskType, &rec.Status, &rec.Message, &metaBytes, &rec.CreatedBy, &rec.CreatedAt, &rec.StartedAt, &rec.FinishedAt, &rec.Error); err != nil {
+		if err := rows.Scan(&rec.ID, &rec.WorkspaceID, &rec.DeploymentID, &rec.TaskType, &rec.Priority, &rec.Status, &rec.Message, &metaBytes, &rec.CreatedBy, &rec.CreatedAt, &rec.StartedAt, &rec.FinishedAt, &rec.Error); err != nil {
 			return nil, err
 		}
 		if len(metaBytes) > 0 {
@@ -529,12 +552,12 @@ func getTask(ctx context.Context, db *sql.DB, taskID int) (*TaskRecord, error) {
 	if db == nil {
 		return nil, errDBUnavailable
 	}
-	row := db.QueryRowContext(ctx, `SELECT id, workspace_id, deployment_id, task_type, status, message, metadata, created_by, created_at, started_at, finished_at, error
+	row := db.QueryRowContext(ctx, `SELECT id, workspace_id, deployment_id, task_type, priority, status, message, metadata, created_by, created_at, started_at, finished_at, error
 FROM sf_tasks
 WHERE id=$1`, taskID)
 	rec := TaskRecord{}
 	var metaBytes []byte
-	if err := row.Scan(&rec.ID, &rec.WorkspaceID, &rec.DeploymentID, &rec.TaskType, &rec.Status, &rec.Message, &metaBytes, &rec.CreatedBy, &rec.CreatedAt, &rec.StartedAt, &rec.FinishedAt, &rec.Error); err != nil {
+	if err := row.Scan(&rec.ID, &rec.WorkspaceID, &rec.DeploymentID, &rec.TaskType, &rec.Priority, &rec.Status, &rec.Message, &metaBytes, &rec.CreatedBy, &rec.CreatedAt, &rec.StartedAt, &rec.FinishedAt, &rec.Error); err != nil {
 		return nil, err
 	}
 	if len(metaBytes) > 0 {
@@ -547,7 +570,7 @@ func getLatestDeploymentTask(ctx context.Context, db *sql.DB, workspaceID string
 	if db == nil {
 		return nil, errDBUnavailable
 	}
-	row := db.QueryRowContext(ctx, `SELECT id, workspace_id, deployment_id, task_type, status, message, metadata, created_by, created_at, started_at, finished_at, error
+	row := db.QueryRowContext(ctx, `SELECT id, workspace_id, deployment_id, task_type, priority, status, message, metadata, created_by, created_at, started_at, finished_at, error
 FROM sf_tasks
 WHERE workspace_id=$1
   AND deployment_id=$2
@@ -556,7 +579,7 @@ ORDER BY created_at DESC
 LIMIT 1`, workspaceID, deploymentID, taskType)
 	rec := TaskRecord{}
 	var metaBytes []byte
-	if err := row.Scan(&rec.ID, &rec.WorkspaceID, &rec.DeploymentID, &rec.TaskType, &rec.Status, &rec.Message, &metaBytes, &rec.CreatedBy, &rec.CreatedAt, &rec.StartedAt, &rec.FinishedAt, &rec.Error); err != nil {
+	if err := row.Scan(&rec.ID, &rec.WorkspaceID, &rec.DeploymentID, &rec.TaskType, &rec.Priority, &rec.Status, &rec.Message, &metaBytes, &rec.CreatedBy, &rec.CreatedAt, &rec.StartedAt, &rec.FinishedAt, &rec.Error); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}

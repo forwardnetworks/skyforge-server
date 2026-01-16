@@ -25,10 +25,10 @@ func reconcileQueuedTasks(ctx context.Context, svc *Service) error {
 		return nil
 	}
 	db := svc.db
-	rows, err := db.QueryContext(ctx, `SELECT id, workspace_id, deployment_id
+	rows, err := db.QueryContext(ctx, `SELECT id, workspace_id, deployment_id, priority
 FROM sf_tasks
 WHERE status='queued'
-ORDER BY id ASC
+ORDER BY priority DESC, id ASC
 LIMIT 200`)
 	if err != nil {
 		return err
@@ -39,11 +39,12 @@ LIMIT 200`)
 		id           int
 		workspaceID  string
 		deploymentID sql.NullString
+		priority     int
 	}
 	items := make([]queued, 0, 128)
 	for rows.Next() {
 		var q queued
-		if err := rows.Scan(&q.id, &q.workspaceID, &q.deploymentID); err != nil {
+		if err := rows.Scan(&q.id, &q.workspaceID, &q.deploymentID, &q.priority); err != nil {
 			return err
 		}
 		if q.id > 0 && strings.TrimSpace(q.workspaceID) != "" {
@@ -59,7 +60,11 @@ LIMIT 200`)
 		if q.deploymentID.Valid && strings.TrimSpace(q.deploymentID.String) != "" {
 			key = fmt.Sprintf("%s:%s", strings.TrimSpace(q.workspaceID), strings.TrimSpace(q.deploymentID.String))
 		}
-		if _, err := taskqueue.Topic.Publish(ctx, &taskqueue.TaskEnqueuedEvent{TaskID: q.id, Key: key}); err != nil {
+		topic := taskqueue.InteractiveTopic
+		if q.priority < taskPriorityInteractive {
+			topic = taskqueue.BackgroundTopic
+		}
+		if _, err := topic.Publish(ctx, &taskqueue.TaskEnqueuedEvent{TaskID: q.id, Key: key}); err != nil {
 			rlog.Error("task reconcile publish failed", "task_id", q.id, "err", err)
 		}
 	}
@@ -75,18 +80,28 @@ func (s *Service) enqueueTask(ctx context.Context, task *TaskRecord) {
 	if task.DeploymentID.Valid {
 		deploymentID = strings.TrimSpace(task.DeploymentID.String)
 	}
-	s.enqueueTaskID(ctx, task.ID, task.WorkspaceID, deploymentID)
+	s.enqueueTaskID(ctx, task.ID, task.WorkspaceID, deploymentID, task.Priority)
 }
 
-func (s *Service) enqueueTaskID(ctx context.Context, taskID int, workspaceID string, deploymentID string) {
+func (s *Service) enqueueTaskID(ctx context.Context, taskID int, workspaceID string, deploymentID string, priority int) {
 	if s == nil || taskID <= 0 {
 		return
+	}
+	if priority == 0 && s.db != nil {
+		var p sql.NullInt64
+		if err := s.db.QueryRowContext(ctx, `SELECT priority FROM sf_tasks WHERE id=$1`, taskID).Scan(&p); err == nil && p.Valid {
+			priority = int(p.Int64)
+		}
 	}
 	key := strings.TrimSpace(workspaceID)
 	if strings.TrimSpace(deploymentID) != "" {
 		key = fmt.Sprintf("%s:%s", strings.TrimSpace(workspaceID), strings.TrimSpace(deploymentID))
 	}
-	if _, err := taskqueue.Topic.Publish(ctx, &taskqueue.TaskEnqueuedEvent{TaskID: taskID, Key: key}); err != nil {
+	topic := taskqueue.InteractiveTopic
+	if priority < taskPriorityInteractive {
+		topic = taskqueue.BackgroundTopic
+	}
+	if _, err := topic.Publish(ctx, &taskqueue.TaskEnqueuedEvent{TaskID: taskID, Key: key}); err != nil {
 		rlog.Error("task enqueue publish failed", "task_id", taskID, "err", err)
 	}
 }

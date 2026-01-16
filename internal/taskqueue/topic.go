@@ -9,8 +9,15 @@ type TaskEnqueuedEvent struct {
 	TaskID int `json:"taskId"`
 }
 
-var Topic = pubsub.NewTopic[*TaskEnqueuedEvent]("skyforge-task-queue", pubsub.TopicConfig{
+var InteractiveTopic = pubsub.NewTopic[*TaskEnqueuedEvent]("skyforge-task-queue-interactive", pubsub.TopicConfig{
 	DeliveryGuarantee: pubsub.AtLeastOnce,
 	OrderingAttribute: "key",
 })
 
+var BackgroundTopic = pubsub.NewTopic[*TaskEnqueuedEvent]("skyforge-task-queue-background", pubsub.TopicConfig{
+	DeliveryGuarantee: pubsub.AtLeastOnce,
+	OrderingAttribute: "key",
+})
+
+// Topic is kept for backward compatibility; new code should choose interactive/background.
+var Topic = InteractiveTopic

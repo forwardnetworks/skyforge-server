@@ -3,6 +3,7 @@ package skyforge
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -70,4 +71,33 @@ func getJSONMapString(value JSONMap, key string) string {
 		return strings.TrimSpace(fmt.Sprintf("%v", anyVal))
 	}
 	return ""
+}
+
+func getJSONMapInt(value JSONMap, key string) int {
+	if value == nil {
+		return 0
+	}
+	raw, ok := value[key]
+	if !ok {
+		return 0
+	}
+	var out int
+	if err := json.Unmarshal(raw, &out); err == nil {
+		return out
+	}
+	var out64 int64
+	if err := json.Unmarshal(raw, &out64); err == nil {
+		return int(out64)
+	}
+	var f float64
+	if err := json.Unmarshal(raw, &f); err == nil {
+		return int(f)
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		if parsed, err := strconv.Atoi(strings.TrimSpace(s)); err == nil {
+			return parsed
+		}
+	}
+	return 0
 }

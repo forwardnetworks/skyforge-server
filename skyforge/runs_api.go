@@ -273,7 +273,7 @@ func (s *Service) CancelRun(ctx context.Context, id int, params *RunsOutputParam
 		if workspaceID != "" && deploymentID != "" {
 			if nextID, err := getOldestQueuedDeploymentTaskID(ctx, s.db, workspaceID, deploymentID); err == nil && nextID > 0 {
 				ctxKick, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				s.enqueueTaskID(ctxKick, nextID, workspaceID, deploymentID)
+				s.enqueueTaskID(ctxKick, nextID, workspaceID, deploymentID, 0)
 				cancel()
 			}
 		}

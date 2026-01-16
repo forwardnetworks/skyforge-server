@@ -21,6 +21,12 @@ var taskQueueSubscription = pubsub.NewSubscription(taskqueue.Topic, "skyforge-ta
 	AckDeadline: 2 * time.Hour,
 })
 
+var taskQueueBackgroundSubscription = pubsub.NewSubscription(taskqueue.BackgroundTopic, "skyforge-task-worker-background", pubsub.SubscriptionConfig[*taskqueue.TaskEnqueuedEvent]{
+	Handler:        pubsub.MethodHandler((*Service).handleTaskEnqueued),
+	MaxConcurrency: 2,
+	AckDeadline:    2 * time.Hour,
+})
+
 var maintenanceSubscription = pubsub.NewSubscription(maintenance.Topic, "skyforge-maintenance-worker", pubsub.SubscriptionConfig[*maintenance.MaintenanceEvent]{
 	Handler:        pubsub.MethodHandler((*Service).handleMaintenanceEvent),
 	MaxConcurrency: 1,
