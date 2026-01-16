@@ -106,6 +106,17 @@ type EveHealthResponse struct {
 //
 //encore:api public method=GET path=/api/health/eve
 func (s *Service) GetEveHealth(ctx context.Context, params *EveHealthParams) (*EveHealthResponse, error) {
+	// Deprecated: Skyforge is moving to a pure BYO-server model (workspace-scoped servers only).
+	// Use `/api/workspaces/:id/eve/servers/:serverID/health` instead.
+	return &EveHealthResponse{
+		Status:  "disabled",
+		OK:      0,
+		Total:   0,
+		Servers: []EveHealthServerResult{},
+		Full:    false,
+		Time:    time.Now().UTC().Format(time.RFC3339),
+	}, nil
+
 	selectedName := ""
 	full := false
 	if params != nil {

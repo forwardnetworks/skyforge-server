@@ -109,40 +109,16 @@ func (s *Service) dispatchNetlabTask(ctx context.Context, task *TaskRecord, log 
 	if err != nil {
 		return err
 	}
-	serverName := strings.TrimSpace(specIn.Server)
-	if serverName == "" {
-		serverName = strings.TrimSpace(pc.workspace.NetlabServer)
+	serverRef := strings.TrimSpace(specIn.Server)
+	if serverRef == "" {
+		serverRef = strings.TrimSpace(pc.workspace.NetlabServer)
 	}
-	if serverName == "" {
-		serverName = strings.TrimSpace(pc.workspace.EveServer)
+	if serverRef == "" {
+		serverRef = strings.TrimSpace(pc.workspace.EveServer)
 	}
-	var server *NetlabServerConfig
-	if serverID, ok := parseWorkspaceServerRef(serverName); ok {
-		if s.db == nil {
-			return fmt.Errorf("database unavailable")
-		}
-		rec, err := getWorkspaceNetlabServerByID(ctx, s.db, s.box, pc.workspace.ID, serverID)
-		if err != nil {
-			return fmt.Errorf("failed to load workspace netlab server")
-		}
-		if rec == nil {
-			return fmt.Errorf("workspace netlab server not found")
-		}
-		custom := NetlabServerConfig{
-			Name:        strings.TrimSpace(rec.Name),
-			APIURL:      strings.TrimSpace(rec.APIURL),
-			APIInsecure: rec.APIInsecure,
-			APIToken:    strings.TrimSpace(rec.APIToken),
-			StateRoot:   strings.TrimSpace(s.cfg.Netlab.StateRoot),
-		}
-		custom = normalizeNetlabServer(custom, s.cfg.Netlab)
-		server = &custom
-	} else {
-		srv, _ := resolveNetlabServer(s.cfg, serverName)
-		if srv == nil {
-			return fmt.Errorf("netlab runner is not configured")
-		}
-		server = srv
+	server, err := s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, serverRef)
+	if err != nil {
+		return err
 	}
 
 	if strings.TrimSpace(specIn.TemplateSource) == "" {
@@ -191,40 +167,16 @@ func (s *Service) dispatchNetlabC9sTask(ctx context.Context, task *TaskRecord, l
 	if err != nil {
 		return err
 	}
-	serverName := strings.TrimSpace(specIn.Server)
-	if serverName == "" {
-		serverName = strings.TrimSpace(pc.workspace.NetlabServer)
+	serverRef := strings.TrimSpace(specIn.Server)
+	if serverRef == "" {
+		serverRef = strings.TrimSpace(pc.workspace.NetlabServer)
 	}
-	if serverName == "" {
-		serverName = strings.TrimSpace(pc.workspace.EveServer)
+	if serverRef == "" {
+		serverRef = strings.TrimSpace(pc.workspace.EveServer)
 	}
-	var server *NetlabServerConfig
-	if serverID, ok := parseWorkspaceServerRef(serverName); ok {
-		if s.db == nil {
-			return fmt.Errorf("database unavailable")
-		}
-		rec, err := getWorkspaceNetlabServerByID(ctx, s.db, s.box, pc.workspace.ID, serverID)
-		if err != nil {
-			return fmt.Errorf("failed to load workspace netlab server")
-		}
-		if rec == nil {
-			return fmt.Errorf("workspace netlab server not found")
-		}
-		custom := NetlabServerConfig{
-			Name:        strings.TrimSpace(rec.Name),
-			APIURL:      strings.TrimSpace(rec.APIURL),
-			APIInsecure: rec.APIInsecure,
-			APIToken:    strings.TrimSpace(rec.APIToken),
-			StateRoot:   strings.TrimSpace(s.cfg.Netlab.StateRoot),
-		}
-		custom = normalizeNetlabServer(custom, s.cfg.Netlab)
-		server = &custom
-	} else {
-		srv, _ := resolveNetlabServer(s.cfg, serverName)
-		if srv == nil {
-			return fmt.Errorf("netlab runner is not configured")
-		}
-		server = srv
+	server, err := s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, serverRef)
+	if err != nil {
+		return err
 	}
 	if strings.TrimSpace(specIn.TemplateSource) == "" {
 		specIn.TemplateSource = "blueprints"
@@ -534,49 +486,22 @@ func (s *Service) dispatchLabppTask(ctx context.Context, task *TaskRecord, log *
 		return err
 	}
 
-	serverName := strings.TrimSpace(specIn.EveServer)
-	var eveServer *EveServerConfig
+	serverRef := strings.TrimSpace(specIn.EveServer)
+	if serverRef == "" {
+		serverRef = strings.TrimSpace(pc.workspace.EveServer)
+	}
+	resolvedEve, err := s.resolveWorkspaceEveServerConfig(ctx, pc.workspace.ID, serverRef)
+	if err != nil {
+		return err
+	}
+	eveServer := &resolvedEve.Server
 	sshHostOverride := ""
 	sshUserOverride := ""
-	sshKeyOverride := ""
-	skipTLSOverride := false
-	if serverID, ok := parseWorkspaceServerRef(serverName); ok {
-		if s.db == nil {
-			return fmt.Errorf("database unavailable")
-		}
-		rec, err := getWorkspaceEveServerByID(ctx, s.db, s.box, pc.workspace.ID, serverID)
-		if err != nil {
-			return fmt.Errorf("failed to load workspace EVE server")
-		}
-		if rec == nil {
-			return fmt.Errorf("workspace EVE server not found")
-		}
-		eveServer = &EveServerConfig{
-			Name:          strings.TrimSpace(rec.Name),
-			APIURL:        strings.TrimSpace(rec.APIURL),
-			WebURL:        strings.TrimSpace(rec.WebURL),
-			SkipTLSVerify: rec.SkipTLSVerify,
-			SSHHost:       strings.TrimSpace(rec.SSHHost),
-			SSHUser:       strings.TrimSpace(rec.SSHUser),
-		}
-		sshHostOverride = strings.TrimSpace(rec.SSHHost)
-		sshUserOverride = strings.TrimSpace(rec.SSHUser)
-		sshKeyOverride = strings.TrimSpace(rec.SSHKey)
-		skipTLSOverride = rec.SkipTLSVerify
-	} else {
-		if serverName != "" {
-			eveServer = eveServerByName(s.cfg.EveServers, serverName)
-		}
-		if eveServer == nil && len(s.cfg.EveServers) > 0 {
-			eveServer = &s.cfg.EveServers[0]
-		}
-		if eveServer == nil {
-			return fmt.Errorf("eve server is not configured")
-		}
-		normalized := normalizeEveServer(*eveServer, s.cfg.Labs)
-		eveServer = &normalized
-		skipTLSOverride = normalized.SkipTLSVerify
-	}
+	sshKeyFileOverride := ""
+	skipTLSOverride := resolvedEve.SkipTLSOverride
+	sshHostOverride = strings.TrimSpace(eveServer.SSHHost)
+	sshUserOverride = strings.TrimSpace(eveServer.SSHUser)
+	sshKeyFileOverride = strings.TrimSpace(resolvedEve.SSHKeyFile)
 
 	eveURL := strings.TrimSpace(specIn.EveURL)
 	if eveURL == "" {
@@ -668,7 +593,7 @@ func (s *Service) dispatchLabppTask(ctx context.Context, task *TaskRecord, log *
 		EvePassword:   evePassword,
 		EveSSHHost:    sshHostOverride,
 		EveSSHUser:    sshUserOverride,
-		EveSSHKey:     sshKeyOverride,
+		EveSSHKeyFile: sshKeyFileOverride,
 		EveSkipTLS:    skipTLSOverride,
 		MaxSeconds:    maxSeconds,
 		Metadata:      task.Metadata,
@@ -714,26 +639,26 @@ func (s *Service) dispatchContainerlabTask(ctx context.Context, task *TaskRecord
 
 	// Best-effort: if we didn't precompute API URL/token, derive it again.
 	if apiURL == "" || token == "" {
-		serverName := strings.TrimSpace(specIn.NetlabServer)
-		if serverName == "" {
-			serverName = strings.TrimSpace(pc.workspace.NetlabServer)
+		serverRef := strings.TrimSpace(specIn.NetlabServer)
+		if serverRef == "" {
+			serverRef = strings.TrimSpace(pc.workspace.NetlabServer)
 		}
-		if serverName == "" {
-			serverName = strings.TrimSpace(pc.workspace.EveServer)
+		if serverRef == "" {
+			serverRef = strings.TrimSpace(pc.workspace.EveServer)
 		}
-		server, _ := resolveNetlabServer(s.cfg, serverName)
-		if server == nil {
-			return fmt.Errorf("containerlab runner is not configured")
+		server, err := s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, serverRef)
+		if err != nil {
+			return err
 		}
 		apiURL = containerlabAPIURL(s.cfg, *server)
 		if apiURL == "" {
 			return fmt.Errorf("containerlab api url is not configured")
 		}
-		var err error
-		token, err = containerlabTokenForUser(s.cfg, pc.claims.Username)
-		if err != nil {
+		tokenValue, tokenErr := containerlabTokenForUser(s.cfg, pc.claims.Username)
+		if tokenErr != nil {
 			return fmt.Errorf("containerlab jwt secret is not configured")
 		}
+		token = tokenValue
 		skipTLS = containerlabSkipTLS(s.cfg, *server)
 	}
 

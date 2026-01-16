@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"encore.dev/beta/errs"
 )
@@ -44,6 +45,12 @@ type WorkspaceEveServersResponse struct {
 	Servers     []WorkspaceServerRef `json:"servers"`
 }
 
+type WorkspaceServerHealthResponse struct {
+	Status string `json:"status"`
+	Time   string `json:"time"`
+	Error  string `json:"error,omitempty"`
+}
+
 func requireWorkspaceOwner(ctx context.Context, s *Service, workspaceID string) (*workspaceContext, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -75,8 +82,7 @@ func validateURL(raw string) (string, error) {
 	return strings.TrimRight(raw, "/"), nil
 }
 
-// ListWorkspaceNetlabServers returns the configured Netlab API endpoints for this workspace,
-// including global defaults.
+// ListWorkspaceNetlabServers returns the configured Netlab API endpoints for this workspace.
 //
 //encore:api auth method=GET path=/api/workspaces/:id/netlab/servers
 func (s *Service) ListWorkspaceNetlabServers(ctx context.Context, id string) (*WorkspaceNetlabServersResponse, error) {
@@ -93,23 +99,6 @@ func (s *Service) ListWorkspaceNetlabServers(ctx context.Context, id string) (*W
 	}
 
 	out := []WorkspaceServerRef{}
-	if len(s.cfg.NetlabServers) == 0 && len(s.cfg.EveServers) > 0 {
-		for _, eve := range s.cfg.EveServers {
-			name := strings.TrimSpace(eve.Name)
-			if name == "" {
-				continue
-			}
-			out = append(out, WorkspaceServerRef{Value: name, Label: name, Scope: "global"})
-		}
-	} else {
-		for _, server := range s.cfg.NetlabServers {
-			name := strings.TrimSpace(server.Name)
-			if name == "" {
-				continue
-			}
-			out = append(out, WorkspaceServerRef{Value: name, Label: name, Scope: "global"})
-		}
-	}
 
 	if s.db != nil && pc.workspace.AllowCustomNetlabServers {
 		rows, err := listWorkspaceNetlabServers(ctx, s.db, s.box, id)
@@ -189,7 +178,7 @@ func (s *Service) DeleteWorkspaceNetlabServer(ctx context.Context, id, serverID 
 	return deleteWorkspaceNetlabServer(ctx, s.db, id, serverID)
 }
 
-// ListWorkspaceEveServers returns configured EVE-NG servers for a workspace (global + custom).
+// ListWorkspaceEveServers returns configured EVE-NG servers for a workspace.
 //
 //encore:api auth method=GET path=/api/workspaces/:id/eve/servers
 func (s *Service) ListWorkspaceEveServers(ctx context.Context, id string) (*WorkspaceEveServersResponse, error) {
@@ -206,13 +195,6 @@ func (s *Service) ListWorkspaceEveServers(ctx context.Context, id string) (*Work
 	}
 
 	out := []WorkspaceServerRef{}
-	for _, server := range s.cfg.EveServers {
-		name := strings.TrimSpace(server.Name)
-		if name == "" {
-			continue
-		}
-		out = append(out, WorkspaceServerRef{Value: name, Label: name, Scope: "global"})
-	}
 
 	if s.db != nil && pc.workspace.AllowCustomEveServers {
 		rows, err := listWorkspaceEveServers(ctx, s.db, s.box, id)
@@ -302,4 +284,77 @@ func (s *Service) DeleteWorkspaceEveServer(ctx context.Context, id, serverID str
 		return errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 	return deleteWorkspaceEveServer(ctx, s.db, id, serverID)
+}
+
+// GetWorkspaceNetlabServerHealth checks the health of a workspace-scoped Netlab API server.
+//
+//encore:api auth method=GET path=/api/workspaces/:id/netlab/servers/:serverID/health
+func (s *Service) GetWorkspaceNetlabServerHealth(ctx context.Context, id, serverID string) (*WorkspaceServerHealthResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	pc, err := s.workspaceContextForUser(user, id)
+	if err != nil {
+		return nil, err
+	}
+	if workspaceAccessLevelForClaims(s.cfg, pc.workspace, pc.claims) == "none" {
+		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
+	}
+	if err := s.checkWorkspaceNetlabHealth(ctx, id, workspaceServerRef(serverID)); err != nil {
+		return &WorkspaceServerHealthResponse{
+			Status: "error",
+			Time:   time.Now().UTC().Format(time.RFC3339),
+			Error:  sanitizeError(err),
+		}, nil
+	}
+	return &WorkspaceServerHealthResponse{
+		Status: "ok",
+		Time:   time.Now().UTC().Format(time.RFC3339),
+	}, nil
+}
+
+// GetWorkspaceEveServerHealth checks the health of a workspace-scoped EVE server.
+//
+//encore:api auth method=GET path=/api/workspaces/:id/eve/servers/:serverID/health
+func (s *Service) GetWorkspaceEveServerHealth(ctx context.Context, id, serverID string) (*WorkspaceServerHealthResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	pc, err := s.workspaceContextForUser(user, id)
+	if err != nil {
+		return nil, err
+	}
+	if workspaceAccessLevelForClaims(s.cfg, pc.workspace, pc.claims) == "none" {
+		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
+	}
+	sshCfg, err := s.resolveWorkspaceEveSSH(ctx, id, workspaceServerRef(serverID))
+	if err != nil {
+		return &WorkspaceServerHealthResponse{
+			Status: "error",
+			Time:   time.Now().UTC().Format(time.RFC3339),
+			Error:  sanitizeError(err),
+		}, nil
+	}
+	client, err := dialSSH(sshCfg)
+	if err != nil {
+		return &WorkspaceServerHealthResponse{
+			Status: "error",
+			Time:   time.Now().UTC().Format(time.RFC3339),
+			Error:  sanitizeError(err),
+		}, nil
+	}
+	defer client.Close()
+	if _, err := runSSHCommand(client, "true", 3*time.Second); err != nil {
+		return &WorkspaceServerHealthResponse{
+			Status: "error",
+			Time:   time.Now().UTC().Format(time.RFC3339),
+			Error:  sanitizeError(err),
+		}, nil
+	}
+	return &WorkspaceServerHealthResponse{
+		Status: "ok",
+		Time:   time.Now().UTC().Format(time.RFC3339),
+	}, nil
 }

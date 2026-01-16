@@ -63,9 +63,9 @@ func (s *Service) runNetlabC9sDeploymentAction(
 	if netlabServer == "" {
 		netlabServer = strings.TrimSpace(pc.workspace.EveServer)
 	}
-	server, _ := resolveNetlabServer(s.cfg, netlabServer)
-	if server == nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("netlab runner is not configured").Err()
+	server, err := s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, netlabServer)
+	if err != nil {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
 	}
 
 	template = strings.TrimSpace(template)

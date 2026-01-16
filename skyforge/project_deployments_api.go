@@ -1290,9 +1290,9 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
 		}
 
-		server, _ := resolveNetlabServer(s.cfg, netlabServer)
-		if server == nil {
-			return nil, errs.B().Code(errs.Unavailable).Msg("netlab runner is not configured").Err()
+		server, err := s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, netlabServer)
+		if err != nil {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
 		}
 
 		multilabID := dep.ID
@@ -1383,15 +1383,16 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 	case "labpp":
 		template, _ := cfgAny["template"].(string)
 		template = strings.TrimSpace(template)
-		eveServerName, _ := cfgAny["eveServer"].(string)
-		eveServerName = strings.TrimSpace(eveServerName)
-		if eveServerName == "" {
+		eveServerRef, _ := cfgAny["eveServer"].(string)
+		eveServerRef = strings.TrimSpace(eveServerRef)
+		if eveServerRef == "" {
 			return nil, errs.B().Code(errs.FailedPrecondition).Msg("eve-ng server selection is required").Err()
 		}
-		eveServer := eveServerByName(s.cfg.EveServers, eveServerName)
-		if eveServer == nil {
-			return nil, errs.B().Code(errs.Unavailable).Msg("unknown eve server").Err()
+		resolvedEve, err := s.resolveWorkspaceEveServerConfig(ctx, pc.workspace.ID, eveServerRef)
+		if err != nil {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
 		}
+		eveServer := &resolvedEve.Server
 
 		labPath, _ := cfgAny["labPath"].(string)
 		labPath = strings.TrimSpace(labPath)
@@ -1411,19 +1412,15 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 		}
 		if base == "" {
 			resp.Note = "eve server is missing apiUrl/webUrl"
-			resp.Labpp = &LabppInfo{EveServer: eveServerName, LabPath: labFilePath}
+			resp.Labpp = &LabppInfo{EveServer: eveServerRef, LabPath: labFilePath}
 			return resp, nil
 		}
 
 		username := strings.TrimSpace(pc.claims.Username)
 		password, ok := getCachedLDAPPassword(s.db, pc.claims.Username)
-		if !ok {
-			username = strings.TrimSpace(eveServer.Username)
-			password = strings.TrimSpace(eveServer.Password)
-		}
-		if username == "" || strings.TrimSpace(password) == "" {
-			resp.Note = "LDAP password unavailable; reauthenticate to check lab status"
-			resp.Labpp = &LabppInfo{EveServer: eveServerName, EveURL: base, LabPath: labFilePath}
+		if username == "" || !ok || strings.TrimSpace(password) == "" {
+			resp.Note = "EVE password unavailable; reauthenticate to check lab status"
+			resp.Labpp = &LabppInfo{EveServer: eveServerRef, EveURL: base, LabPath: labFilePath}
 			return resp, nil
 		}
 
@@ -1441,7 +1438,7 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 		if err := eveLogin(checkCtx, client, base, username, password); err != nil {
 			resp.Note = "failed to login to eve-ng"
 			resp.Status = "error"
-			resp.Labpp = &LabppInfo{EveServer: eveServerName, EveURL: base, LabPath: labPath}
+			resp.Labpp = &LabppInfo{EveServer: eveServerRef, EveURL: base, LabPath: labPath}
 			return resp, nil
 		}
 
@@ -1455,7 +1452,7 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 			resp.Status = "stopped"
 		}
 
-		labppInfo := &LabppInfo{EveServer: eveServerName, EveURL: base, LabPath: labFilePath, Endpoint: endpoint}
+		labppInfo := &LabppInfo{EveServer: eveServerRef, EveURL: base, LabPath: labFilePath, Endpoint: endpoint}
 		if task, err := getLatestDeploymentTask(ctx, s.db, pc.workspace.ID, dep.ID, "labpp-run"); err == nil && task != nil {
 			labppInfo.DataSourcesCSV = strings.TrimSpace(getJSONMapString(task.Metadata, "labppDataSourcesCsv"))
 		}
@@ -1487,9 +1484,9 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 		if netlabServer == "" {
 			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
 		}
-		server, _ := resolveNetlabServer(s.cfg, netlabServer)
-		if server == nil {
-			return nil, errs.B().Code(errs.Unavailable).Msg("containerlab runner is not configured").Err()
+		server, err := s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, netlabServer)
+		if err != nil {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
 		}
 		apiURL := containerlabAPIURL(s.cfg, *server)
 		if apiURL == "" {
@@ -1729,9 +1726,9 @@ func (s *Service) NetlabConnect(ctx context.Context, id, deploymentID string, re
 	if netlabServer == "" {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
 	}
-	server, _ := resolveNetlabServer(s.cfg, netlabServer)
-	if server == nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("netlab runner is not configured").Err()
+	server, err := s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, netlabServer)
+	if err != nil {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
 	}
 
 	multilabID := dep.ID
@@ -1831,9 +1828,9 @@ func (s *Service) GetWorkspaceDeploymentNetlabGraph(ctx context.Context, id, dep
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
 	}
 
-	server, _ := resolveNetlabServer(s.cfg, netlabServer)
-	if server == nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("netlab runner is not configured").Err()
+	server, err := s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, netlabServer)
+	if err != nil {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
 	}
 
 	multilabID := dep.ID
@@ -2013,30 +2010,9 @@ func (s *Service) forceCancelRunner(ctx context.Context, pc *workspaceContext, d
 		if jobID == "" {
 			return
 		}
-		serverName := strings.TrimSpace(getJSONMapString(dep.Config, "netlabServer"))
-		var server *NetlabServerConfig
-		if serverID, ok := parseWorkspaceServerRef(serverName); ok {
-			if s.db == nil {
-				return
-			}
-			rec, err := getWorkspaceNetlabServerByID(ctx, s.db, s.box, pc.workspace.ID, serverID)
-			if err != nil || rec == nil {
-				return
-			}
-			custom := NetlabServerConfig{
-				Name:        strings.TrimSpace(rec.Name),
-				APIURL:      strings.TrimSpace(rec.APIURL),
-				APIInsecure: rec.APIInsecure,
-				APIToken:    strings.TrimSpace(rec.APIToken),
-				StateRoot:   strings.TrimSpace(s.cfg.Netlab.StateRoot),
-			}
-			custom = normalizeNetlabServer(custom, s.cfg.Netlab)
-			server = &custom
-		} else {
-			srv, _ := resolveNetlabServer(s.cfg, serverName)
-			server = srv
-		}
-		if server == nil {
+		serverRef := strings.TrimSpace(getJSONMapString(dep.Config, "netlabServer"))
+		server, err := s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, serverRef)
+		if err != nil {
 			return
 		}
 		apiURL := strings.TrimSpace(server.APIURL)

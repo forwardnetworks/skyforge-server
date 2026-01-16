@@ -420,17 +420,17 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 	if req == nil {
 		req = &WorkspaceNetlabRunRequest{}
 	}
-	serverName := strings.TrimSpace(req.NetlabServer)
-	if serverName == "" {
-		serverName = strings.TrimSpace(pc.workspace.NetlabServer)
+	serverRef := strings.TrimSpace(req.NetlabServer)
+	if serverRef == "" {
+		serverRef = strings.TrimSpace(pc.workspace.NetlabServer)
 	}
-	if serverName == "" {
-		// Netlab runs default to the same server pool as EVE-NG when a dedicated Netlab pool isn't configured.
-		serverName = strings.TrimSpace(pc.workspace.EveServer)
+	if serverRef == "" {
+		// Back-compat for older workspaces that used EveServer as the default runner pool.
+		serverRef = strings.TrimSpace(pc.workspace.EveServer)
 	}
-	server, _ := resolveNetlabServer(s.cfg, serverName)
-	if server == nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("netlab runner is not configured").Err()
+	server, err := s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, serverRef)
+	if err != nil {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
 	}
 	action := strings.ToLower(strings.TrimSpace(req.Action))
 	if action == "" {
@@ -493,7 +493,7 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 			impersonated,
 			"workspace.run.netlab",
 			pc.workspace.ID,
-			fmt.Sprintf("action=%s server=%s", action, server.Name),
+			fmt.Sprintf("action=%s server=%s", action, strings.TrimSpace(server.Name)),
 		)
 	}
 	if s.db == nil {
@@ -503,12 +503,15 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 	envMap := parseEnvMap(envAny)
 	meta, err := toJSONMap(map[string]any{
 		"action":     action,
-		"server":     server.Name,
+		"server":     strings.TrimSpace(server.Name),
+		"serverRef":  serverRef,
 		"deployment": deploymentName,
+		"priority":   taskPriorityInteractive,
 		"dedupeKey":  fmt.Sprintf("netlab:%s:%s:%s", pc.workspace.ID, action, deploymentName),
 		"spec": map[string]any{
 			"action":          action,
-			"server":          server.Name,
+			"server":          serverRef,
+			"serverLabel":     strings.TrimSpace(server.Name),
 			"deployment":      deploymentName,
 			"deploymentId":    strings.TrimSpace(req.NetlabMultilabID),
 			"workspaceRoot":   workspaceRoot,
@@ -581,20 +584,15 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 		return nil, errs.B().Code(errs.Unavailable).Msg("labpp config dir base is not writable").Err()
 	}
 
-	serverName := strings.TrimSpace(req.EveServer)
-	if serverName == "" {
-		serverName = strings.TrimSpace(pc.workspace.EveServer)
+	serverRef := strings.TrimSpace(req.EveServer)
+	if serverRef == "" {
+		serverRef = strings.TrimSpace(pc.workspace.EveServer)
 	}
-	var eveServer *EveServerConfig
-	if serverName != "" {
-		eveServer = eveServerByName(s.cfg.EveServers, serverName)
+	resolvedEve, err := s.resolveWorkspaceEveServerConfig(ctx, pc.workspace.ID, serverRef)
+	if err != nil {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
 	}
-	if eveServer == nil && len(s.cfg.EveServers) > 0 {
-		eveServer = &s.cfg.EveServers[0]
-	}
-	if eveServer == nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("eve server is not configured").Err()
-	}
+	eveServer := &resolvedEve.Server
 
 	eveURL := strings.TrimSpace(eveServer.WebURL)
 	if eveURL == "" {
@@ -700,7 +698,7 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 			impersonated,
 			"workspace.run.labpp",
 			pc.workspace.ID,
-			fmt.Sprintf("action=%s server=%s", action, eveServer.Name),
+			fmt.Sprintf("action=%s server=%s", action, strings.TrimSpace(eveServer.Name)),
 		)
 	}
 	if s.db == nil {
@@ -716,13 +714,16 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 	}
 	meta, err := toJSONMap(map[string]any{
 		"action":     action,
-		"server":     eveServer.Name,
+		"server":     strings.TrimSpace(eveServer.Name),
+		"serverRef":  serverRef,
 		"deployment": deployment,
 		"template":   template,
+		"priority":   taskPriorityInteractive,
 		"dedupeKey":  fmt.Sprintf("labpp:%s:%s:%s:%s", pc.workspace.ID, strings.TrimSpace(req.DeploymentID), action, template),
 		"spec": map[string]any{
 			"action":            action,
-			"eveServer":         eveServer.Name,
+			"eveServer":         serverRef,
+			"eveServerLabel":    strings.TrimSpace(eveServer.Name),
 			"eveUrl":            eveURL,
 			"eveUsername":       eveUsername,
 			"evePasswordEnc":    evePasswordEnc,
@@ -791,16 +792,16 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 		req = &WorkspaceContainerlabRunRequest{}
 	}
 
-	serverName := strings.TrimSpace(req.NetlabServer)
-	if serverName == "" {
-		serverName = strings.TrimSpace(pc.workspace.NetlabServer)
+	serverRef := strings.TrimSpace(req.NetlabServer)
+	if serverRef == "" {
+		serverRef = strings.TrimSpace(pc.workspace.NetlabServer)
 	}
-	if serverName == "" {
-		serverName = strings.TrimSpace(pc.workspace.EveServer)
+	if serverRef == "" {
+		serverRef = strings.TrimSpace(pc.workspace.EveServer)
 	}
-	server, _ := resolveNetlabServer(s.cfg, serverName)
-	if server == nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("containerlab runner is not configured").Err()
+	server, err := s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, serverRef)
+	if err != nil {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
 	}
 
 	if containerlabAPIURL(s.cfg, *server) == "" {
@@ -884,7 +885,7 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 			impersonated,
 			"workspace.run.containerlab",
 			pc.workspace.ID,
-			fmt.Sprintf("action=%s server=%s", action, server.Name),
+			fmt.Sprintf("action=%s server=%s", action, strings.TrimSpace(server.Name)),
 		)
 	}
 	if s.db == nil {
@@ -893,13 +894,17 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 	envAny, _ := fromJSONMap(req.Environment)
 	envMap := parseEnvMap(envAny)
 	meta, err := toJSONMap(map[string]any{
-		"action":   action,
-		"server":   server.Name,
-		"labName":  labName,
-		"template": template,
+		"action":    action,
+		"server":    strings.TrimSpace(server.Name),
+		"serverRef": serverRef,
+		"labName":   labName,
+		"template":  template,
+		"priority":  taskPriorityInteractive,
+		"dedupeKey": fmt.Sprintf("containerlab:%s:%s:%s", pc.workspace.ID, action, labName),
 		"spec": map[string]any{
 			"action":       action,
-			"netlabServer": server.Name,
+			"netlabServer": serverRef,
+			"serverLabel":  strings.TrimSpace(server.Name),
 			"deployment":   deploymentName,
 			"labName":      labName,
 			"reconfigure":  reconfigure,

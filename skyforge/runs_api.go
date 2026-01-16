@@ -204,25 +204,7 @@ func (s *Service) CancelRun(ctx context.Context, id int, params *RunsOutputParam
 				}
 			}
 			var server *NetlabServerConfig
-			if serverID, ok := parseWorkspaceServerRef(serverName); ok {
-				if s.db != nil {
-					rec, err := getWorkspaceNetlabServerByID(ctx, s.db, s.box, workspace.ID, serverID)
-					if err == nil && rec != nil {
-						custom := NetlabServerConfig{
-							Name:        strings.TrimSpace(rec.Name),
-							APIURL:      strings.TrimSpace(rec.APIURL),
-							APIInsecure: rec.APIInsecure,
-							APIToken:    strings.TrimSpace(rec.APIToken),
-							StateRoot:   strings.TrimSpace(s.cfg.Netlab.StateRoot),
-						}
-						custom = normalizeNetlabServer(custom, s.cfg.Netlab)
-						server = &custom
-					}
-				}
-			} else {
-				srv, _ := resolveNetlabServer(s.cfg, serverName)
-				server = srv
-			}
+			server, _ = s.resolveWorkspaceNetlabServerConfig(ctx, workspace.ID, serverName)
 			if server != nil {
 				apiURL := strings.TrimSpace(server.APIURL)
 				if apiURL == "" && strings.TrimSpace(server.SSHHost) != "" {

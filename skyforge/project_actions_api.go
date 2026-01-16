@@ -155,7 +155,7 @@ func (s *Service) GetWorkspaceEve(ctx context.Context, id string) (*WorkspaceEve
 	return &WorkspaceEveConfigResponse{
 		WorkspaceID:  pc.workspace.ID,
 		EveServer:  pc.workspace.EveServer,
-		EveServers: eveServerNames(s.cfg.EveServers),
+		EveServers: []string{},
 	}, nil
 }
 
@@ -178,8 +178,18 @@ func (s *Service) UpdateWorkspaceEve(ctx context.Context, id string, req *Worksp
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid payload").Err()
 	}
 	next := strings.TrimSpace(req.EveServer)
-	if next != "" && eveServerByName(s.cfg.EveServers, next) == nil {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown eveServer").Err()
+	if next != "" {
+		serverID, ok := parseWorkspaceServerRef(next)
+		if !ok {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("eveServer must be a workspace server (ws:...)").Err()
+		}
+		if s.db == nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+		}
+		rec, err := getWorkspaceEveServerByID(ctx, s.db, s.box, pc.workspace.ID, serverID)
+		if err != nil || rec == nil {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown eveServer").Err()
+		}
 	}
 	pc.workspace.EveServer = next
 	pc.workspaces[pc.idx] = pc.workspace
@@ -225,7 +235,7 @@ func (s *Service) GetWorkspaceNetlab(ctx context.Context, id string) (*Workspace
 	return &WorkspaceNetlabConfigResponse{
 		WorkspaceID:     pc.workspace.ID,
 		NetlabServer:  pc.workspace.NetlabServer,
-		NetlabServers: netlabServerNamesForConfig(s.cfg),
+		NetlabServers: []string{},
 	}, nil
 }
 
@@ -248,8 +258,18 @@ func (s *Service) UpdateWorkspaceNetlab(ctx context.Context, id string, req *Wor
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid payload").Err()
 	}
 	next := strings.TrimSpace(req.NetlabServer)
-	if next != "" && netlabServerByNameForConfig(s.cfg, next) == nil {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown netlabServer").Err()
+	if next != "" {
+		serverID, ok := parseWorkspaceServerRef(next)
+		if !ok {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("netlabServer must be a workspace server (ws:...)").Err()
+		}
+		if s.db == nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+		}
+		rec, err := getWorkspaceNetlabServerByID(ctx, s.db, s.box, pc.workspace.ID, serverID)
+		if err != nil || rec == nil {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown netlabServer").Err()
+		}
 	}
 	pc.workspace.NetlabServer = next
 	pc.workspaces[pc.idx] = pc.workspace
@@ -306,16 +326,15 @@ func (s *Service) handleWorkspaceEveLab(ctx context.Context, id string, create b
 	if owner == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("workspace owner is required").Err()
 	}
-	eveServerName := strings.TrimSpace(pc.workspace.EveServer)
-	var server *EveServerConfig
-	for i := range s.cfg.EveServers {
-		if eveServerName == "" || strings.EqualFold(s.cfg.EveServers[i].Name, eveServerName) {
-			server = &s.cfg.EveServers[i]
-			break
-		}
+	serverRef := strings.TrimSpace(pc.workspace.EveServer)
+	resolvedEve, err := s.resolveWorkspaceEveServerConfig(ctx, pc.workspace.ID, serverRef)
+	if err != nil {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
 	}
-	if server == nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("no eve-ng servers configured").Err()
+	server := resolvedEve.Server
+	labsCfg := s.cfg.Labs
+	if strings.TrimSpace(resolvedEve.SSHKeyFile) != "" {
+		labsCfg.EveSSHKeyFile = strings.TrimSpace(resolvedEve.SSHKeyFile)
 	}
 	labsPath := strings.TrimSpace(server.LabsPath)
 	if labsPath == "" {
@@ -326,7 +345,7 @@ func (s *Service) handleWorkspaceEveLab(ctx context.Context, id string, create b
 	created := false
 
 	if create {
-		path, existed, err := ensureEveLabViaSSH(ctx, s.cfg.Labs, *server, owner, pc.workspace.Slug)
+		path, existed, err := ensureEveLabViaSSH(ctx, labsCfg, server, owner, pc.workspace.Slug)
 		if err != nil {
 			log.Printf("ensure eve lab: %v", err)
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to create lab").Err()
@@ -334,8 +353,8 @@ func (s *Service) handleWorkspaceEveLab(ctx context.Context, id string, create b
 		labPath = path
 		exists = true
 		created = !existed
-	} else if labPath != "" && strings.TrimSpace(s.cfg.Labs.EveSSHKeyFile) != "" {
-		if ok, _, err := eveLabExistsViaSSH(ctx, s.cfg.Labs, *server, owner, pc.workspace.Slug); err == nil {
+	} else if labPath != "" && strings.TrimSpace(labsCfg.EveSSHKeyFile) != "" {
+		if ok, _, err := eveLabExistsViaSSH(ctx, labsCfg, server, owner, pc.workspace.Slug); err == nil {
 			exists = ok
 		}
 	}
@@ -344,7 +363,7 @@ func (s *Service) handleWorkspaceEveLab(ctx context.Context, id string, create b
 		WorkspaceID:   pc.workspace.ID,
 		WorkspaceSlug: pc.workspace.Slug,
 		Owner:       owner,
-		EveServer:   server.Name,
+		EveServer:   serverRef,
 		LabPath:     labPath,
 		Exists:      exists,
 		Created:     created,

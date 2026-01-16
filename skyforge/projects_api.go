@@ -236,14 +236,14 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 		slug = slugify(slug)
 	}
 
-	eveServer := strings.TrimSpace(req.EveServer)
-	if eveServer != "" && eveServerByName(s.cfg.EveServers, eveServer) == nil {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown eveServer").Err()
+	if strings.TrimSpace(req.EveServer) != "" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("eveServer cannot be set at workspace creation (configure in workspace settings)").Err()
 	}
-	netlabServer := strings.TrimSpace(req.NetlabServer)
-	if netlabServer != "" && netlabServerByNameForConfig(s.cfg, netlabServer) == nil {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown netlabServer").Err()
+	if strings.TrimSpace(req.NetlabServer) != "" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("netlabServer cannot be set at workspace creation (configure in workspace settings)").Err()
 	}
+	eveServer := ""
+	netlabServer := ""
 	externalRepos := []ExternalTemplateRepo{}
 	if req.AllowExternalTemplateRepos {
 		var err error

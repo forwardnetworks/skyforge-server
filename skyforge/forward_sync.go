@@ -429,35 +429,21 @@ func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *wor
 	}
 	if dep.Type == "netlab" && (jumpHost == "" || jumpKey == "" || jumpUser == "") {
 		netlabServerName := getString("netlabServer")
-		if netlabServerName != "" {
-			if server, _ := resolveNetlabServer(s.cfg, netlabServerName); server != nil {
-				if jumpHost == "" {
-					jumpHost = strings.TrimSpace(server.SSHHost)
-				}
-				if jumpUser == "" || !useUserJump {
-					jumpUser = strings.TrimSpace(server.SSHUser)
-				}
-				if jumpKey == "" && server.SSHKeyFile != "" {
-					if keyBytes, err := os.ReadFile(server.SSHKeyFile); err == nil {
-						jumpKey = strings.TrimSpace(string(keyBytes))
-					}
-				}
-			}
-		}
+		_ = netlabServerName
 	}
 	if dep.Type == "labpp" && (jumpHost == "" || jumpKey == "" || jumpUser == "") {
-		eveServerName := getString("eveServer")
-		if eveServerName != "" {
-			if server := eveServerByName(s.cfg.EveServers, eveServerName); server != nil {
-				eve := normalizeEveServer(*server, s.cfg.Labs)
+		eveServerRef := getString("eveServer")
+		if eveServerRef != "" {
+			if resolvedEve, err := s.resolveWorkspaceEveServerConfig(ctx, pc.workspace.ID, eveServerRef); err == nil && resolvedEve != nil {
+				eve := resolvedEve.Server
 				if jumpHost == "" {
 					jumpHost = strings.TrimSpace(eve.SSHHost)
 				}
 				if jumpUser == "" || !useUserJump {
 					jumpUser = strings.TrimSpace(eve.SSHUser)
 				}
-				if jumpKey == "" && strings.TrimSpace(s.cfg.Labs.EveSSHKeyFile) != "" {
-					if keyBytes, err := os.ReadFile(strings.TrimSpace(s.cfg.Labs.EveSSHKeyFile)); err == nil {
+				if jumpKey == "" && strings.TrimSpace(resolvedEve.SSHKeyFile) != "" {
+					if keyBytes, err := os.ReadFile(strings.TrimSpace(resolvedEve.SSHKeyFile)); err == nil {
 						jumpKey = strings.TrimSpace(string(keyBytes))
 					}
 				}

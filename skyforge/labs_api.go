@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -210,36 +209,8 @@ func (s *Service) ListEveServers(ctx context.Context) (*EveServersResponse, erro
 	if err != nil {
 		return nil, err
 	}
-	servers := s.cfg.EveServers
-	if len(servers) == 0 && s.cfg.Labs.EveAPIURL != "" {
-		servers = []EveServerConfig{{
-			Name:          "eve-default",
-			APIURL:        s.cfg.Labs.EveAPIURL,
-			WebURL:        strings.TrimSuffix(strings.TrimRight(s.cfg.Labs.EveAPIURL, "/"), "/api"),
-			SkipTLSVerify: s.cfg.Labs.EveSkipTLSVerify,
-			SSHHost: func() string {
-				u, _ := url.Parse(s.cfg.Labs.EveAPIURL)
-				if u != nil {
-					return u.Hostname()
-				}
-				return ""
-			}(),
-			SSHUser:  s.cfg.Labs.EveSSHUser,
-			LabsPath: s.cfg.Labs.EveLabsPath,
-			TmpPath:  s.cfg.Labs.EveTmpPath,
-		}}
-	}
-	out := make([]EveServerSummary, 0, len(servers))
-	for _, server := range servers {
-		server = normalizeEveServer(server, s.cfg.Labs)
-		out = append(out, EveServerSummary{
-			Name:          server.Name,
-			APIURL:        server.APIURL,
-			WebURL:        server.WebURL,
-			SSHHost:       server.SSHHost,
-			SkipTLSVerify: server.SkipTLSVerify,
-		})
-	}
+	// Deprecated: Skyforge is moving to a pure BYO-server model (workspace-scoped servers only).
+	out := []EveServerSummary{}
 	return &EveServersResponse{
 		Servers: out,
 		User:    user.Username,
@@ -254,23 +225,8 @@ func (s *Service) ListNetlabServers(ctx context.Context) (*NetlabServersResponse
 	if err != nil {
 		return nil, err
 	}
-	servers := s.cfg.NetlabServers
-	if len(servers) == 0 && len(s.cfg.EveServers) > 0 {
-		servers = make([]NetlabServerConfig, 0, len(s.cfg.EveServers))
-		for _, eve := range s.cfg.EveServers {
-			servers = append(servers, netlabServerFromEve(eve, s.cfg.Netlab, s.cfg.Labs))
-		}
-	}
-	out := make([]NetlabServerSummary, 0, len(servers))
-	for _, server := range servers {
-		server = normalizeNetlabServer(server, s.cfg.Netlab)
-		out = append(out, NetlabServerSummary{
-			Name:      server.Name,
-			SSHHost:   server.SSHHost,
-			SSHUser:   server.SSHUser,
-			StateRoot: server.StateRoot,
-		})
-	}
+	// Deprecated: Skyforge is moving to a pure BYO-server model (workspace-scoped servers only).
+	out := []NetlabServerSummary{}
 	return &NetlabServersResponse{
 		Servers: out,
 		User:    user.Username,

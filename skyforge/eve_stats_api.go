@@ -45,10 +45,12 @@ type EveStatsResponse struct {
 //
 //encore:api public method=GET path=/api/eve/stats
 func (s *Service) GetEveStats(ctx context.Context, params *EveStatsParams) (*EveStatsResponse, error) {
-	servers := selectEveServersForStats(s.cfg, strings.TrimSpace(params.EveServer))
-	if len(servers) == 0 {
-		return &EveStatsResponse{Servers: []EveStatsServer{}}, nil
-	}
+	_ = params
+	servers := []EveServerConfig{}
+	_ = servers
+	// Deprecated: Skyforge is moving to a pure BYO-server model (workspace-scoped servers only).
+	// Use workspace-scoped server health endpoints instead.
+	return &EveStatsResponse{Servers: []EveStatsServer{}}, nil
 
 	results := make([]EveStatsServer, 0, len(servers))
 	for _, server := range servers {

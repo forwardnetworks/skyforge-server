@@ -1213,6 +1213,7 @@ type labppRunSpec struct {
 	EveSSHHost    string
 	EveSSHUser    string
 	EveSSHKey     string
+	EveSSHKeyFile string
 	EveSkipTLS    bool
 	MaxSeconds    int
 	Metadata      JSONMap
@@ -1317,6 +1318,7 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		sshUser = s.cfg.Labs.EveSSHUser
 	}
 	sshKey := strings.TrimSpace(spec.EveSSHKey)
+	sshKeyFile := strings.TrimSpace(spec.EveSSHKeyFile)
 	configFile, err := s.writeLabppConfigFile(eveHost, spec.EveUsername, spec.EvePassword)
 	if err != nil {
 		return err
@@ -1363,7 +1365,10 @@ func (s *Service) runLabppTask(ctx context.Context, spec labppRunSpec, log *task
 		"LABPP_SKIP_FORWARD":       "true",
 		"LABPP_DEPLOYMENT_ID":      strings.TrimSpace(spec.DeploymentID),
 	}
-	if sshKey != "" {
+	if sshKeyFile != "" {
+		jobEnv["LABPP_EVE_SSH_KEY_FILE"] = sshKeyFile
+		jobEnv["LABPP_EVE_SSH_KEY"] = ""
+	} else if sshKey != "" {
 		jobEnv["LABPP_EVE_SSH_KEY_FILE"] = ""
 		jobEnv["LABPP_EVE_SSH_KEY"] = sshKey
 	}
