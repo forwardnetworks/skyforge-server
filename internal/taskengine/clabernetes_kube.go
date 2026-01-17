@@ -7,10 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
+	neturl "net/url"
 	"os"
 	"strings"
-	"time"
 )
 
 type kubeClabernetesTopology struct {
@@ -118,7 +117,14 @@ func kubeEnsureNamespaceImagePullSecret(ctx context.Context, ns string) error {
 	if err := kubeCreateSecretIfMissing(ctx, ns, secret, map[string]string{"skyforge-managed": "true"}); err != nil {
 		return err
 	}
-	return kubePatchDefaultServiceAccountImagePullSecret(ctx, ns, secretName)
+	if err := kubeEnsureServiceAccountImagePullSecret(ctx, ns, "default", secretName); err != nil {
+		return err
+	}
+	// clabernetes creates/uses this service account for launcher pods.
+	if err := kubeEnsureServiceAccountImagePullSecret(ctx, ns, "clabernetes-launcher-service-account", secretName); err != nil {
+		return err
+	}
+	return nil
 }
 
 func kubeGetSecret(ctx context.Context, ns, name string) (map[string]any, bool, error) {
@@ -221,11 +227,12 @@ func kubeCreateSecretIfMissing(ctx context.Context, ns string, secret map[string
 	return fmt.Errorf("kube secret create failed: %s: %s", resp.Status, strings.TrimSpace(string(data)))
 }
 
-func kubePatchDefaultServiceAccountImagePullSecret(ctx context.Context, ns, secretName string) error {
+func kubeEnsureServiceAccountImagePullSecret(ctx context.Context, ns, saName, secretName string) error {
 	ns = strings.TrimSpace(ns)
+	saName = strings.TrimSpace(saName)
 	secretName = strings.TrimSpace(secretName)
-	if ns == "" || secretName == "" {
-		return fmt.Errorf("namespace and secret name are required")
+	if ns == "" || saName == "" || secretName == "" {
+		return fmt.Errorf("namespace, service account name, and secret name are required")
 	}
 
 	client, err := kubeHTTPClient()
@@ -233,37 +240,59 @@ func kubePatchDefaultServiceAccountImagePullSecret(ctx context.Context, ns, secr
 		return err
 	}
 
+	getURL := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/serviceaccounts/%s", ns, neturl.PathEscape(saName))
+	req, err := kubeRequest(ctx, http.MethodGet, getURL, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
 	var sa map[string]any
-	for attempt := 0; attempt < 20; attempt++ {
-		url := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/serviceaccounts/default", ns)
-		req, err := kubeRequest(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return err
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			return err
-		}
-		if resp.StatusCode == http.StatusNotFound {
-			resp.Body.Close()
-			time.Sleep(250 * time.Millisecond)
-			continue
-		}
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			data, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<10))
-			resp.Body.Close()
-			return fmt.Errorf("kube serviceaccount get failed: %s: %s", resp.Status, strings.TrimSpace(string(data)))
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&sa); err != nil {
-			resp.Body.Close()
-			return err
-		}
+	if resp.StatusCode == http.StatusNotFound {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
 		resp.Body.Close()
-		break
+		payload := map[string]any{
+			"apiVersion": "v1",
+			"kind":       "ServiceAccount",
+			"metadata": map[string]any{
+				"name":      saName,
+				"namespace": ns,
+				"labels": map[string]any{
+					"skyforge-managed": "true",
+				},
+			},
+			"imagePullSecrets": []any{map[string]any{"name": secretName}},
+		}
+		body, _ := json.Marshal(payload)
+		createURL := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/serviceaccounts", ns)
+		createReq, err := kubeRequest(ctx, http.MethodPost, createURL, bytes.NewReader(body))
+		if err != nil {
+			return err
+		}
+		createReq.Header.Set("Content-Type", "application/json")
+		createResp, err := client.Do(createReq)
+		if err != nil {
+			return err
+		}
+		defer createResp.Body.Close()
+		if createResp.StatusCode == http.StatusCreated || createResp.StatusCode == http.StatusConflict {
+			return nil
+		}
+		data, _ := io.ReadAll(io.LimitReader(createResp.Body, 32<<10))
+		return fmt.Errorf("kube serviceaccount create failed: %s: %s", createResp.Status, strings.TrimSpace(string(data)))
 	}
-	if sa == nil {
-		return fmt.Errorf("kube serviceaccount default not found: %s", ns)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<10))
+		resp.Body.Close()
+		return fmt.Errorf("kube serviceaccount get failed: %s: %s", resp.Status, strings.TrimSpace(string(data)))
 	}
+	if err := json.NewDecoder(resp.Body).Decode(&sa); err != nil {
+		resp.Body.Close()
+		return err
+	}
+	resp.Body.Close()
 
 	var pullSecrets []any
 	if cur, ok := sa["imagePullSecrets"].([]any); ok {
@@ -285,7 +314,7 @@ func kubePatchDefaultServiceAccountImagePullSecret(ctx context.Context, ns, secr
 		sa["imagePullSecrets"] = pullSecrets
 	}
 	body, _ := json.Marshal(sa)
-	updateURL := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/serviceaccounts/default", ns)
+	updateURL := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/serviceaccounts/%s", ns, neturl.PathEscape(saName))
 	updateReq, err := kubeRequest(ctx, http.MethodPut, updateURL, bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -458,7 +487,7 @@ func kubeDeleteConfigMapsByLabel(ctx context.Context, ns string, selector map[st
 	}
 	q := ""
 	if len(parts) > 0 {
-		q = url.QueryEscape(strings.Join(parts, ","))
+		q = neturl.QueryEscape(strings.Join(parts, ","))
 	}
 	listURL := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/configmaps", ns)
 	if q != "" {
@@ -521,7 +550,7 @@ func kubeCountConfigMapsByLabel(ctx context.Context, ns string, selector map[str
 	}
 	q := ""
 	if len(parts) > 0 {
-		q = url.QueryEscape(strings.Join(parts, ","))
+		q = neturl.QueryEscape(strings.Join(parts, ","))
 	}
 	listURL := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/configmaps", ns)
 	if q != "" {
