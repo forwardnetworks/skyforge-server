@@ -3,6 +3,7 @@ package skyforge
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 	"time"
 
@@ -35,6 +36,27 @@ func countWorkspaces(ctx context.Context, db *sql.DB) (int, error) {
 		return 0, err
 	}
 	return count, nil
+}
+
+func taskQueueSummary(ctx context.Context, db *sql.DB) (queued int, running int, oldestQueuedAgeSeconds int, err error) {
+	if db == nil {
+		return 0, 0, 0, nil
+	}
+	// Oldest queued age is best-effort; when no queued tasks exist, it should be 0.
+	var oldest sql.NullFloat64
+	row := db.QueryRowContext(ctx, `
+SELECT
+  (SELECT COUNT(*) FROM sf_tasks WHERE status='queued') AS queued,
+  (SELECT COUNT(*) FROM sf_tasks WHERE status='running') AS running,
+  (SELECT EXTRACT(EPOCH FROM (now() - MIN(created_at))) FROM sf_tasks WHERE status='queued') AS oldest
+`)
+	if err := row.Scan(&queued, &running, &oldest); err != nil {
+		return 0, 0, 0, err
+	}
+	if oldest.Valid && oldest.Float64 > 0 {
+		oldestQueuedAgeSeconds = int(oldest.Float64)
+	}
+	return queued, running, oldestQueuedAgeSeconds, nil
 }
 
 // StatusSummary returns a public, safe platform status summary.
@@ -82,6 +104,21 @@ func (s *Service) StatusSummary(ctx context.Context) (*StatusSummaryResponse, er
 				Name:   "task-workers",
 				Status: "down",
 				Detail: "no recent heartbeats",
+			})
+		}
+		ctxQ, cancelQ := context.WithTimeout(ctx, 2*time.Second)
+		defer cancelQ()
+		if queued, running, oldestAge, err := taskQueueSummary(ctxQ, s.db); err == nil {
+			detail := fmt.Sprintf("queued=%d running=%d oldest=%ds", queued, running, oldestAge)
+			status := "up"
+			// Consider any queued backlog older than ~2 minutes a degraded signal.
+			if queued > 0 && oldestAge >= 120 {
+				status = "down"
+			}
+			resp.Checks = append(resp.Checks, StatusCheckResponse{
+				Name:   "task-queue",
+				Status: status,
+				Detail: detail,
 			})
 		}
 	}

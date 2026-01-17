@@ -414,6 +414,15 @@ func (e *Engine) runLabppTask(ctx context.Context, spec labppRunSpec, log Logger
 			if payload, err := os.ReadFile(csvPath); err != nil {
 				rlog.Error("labpp data_sources.csv read failed", "task_id", spec.TaskID, "err", err)
 			} else if len(payload) > 0 && len(payload) <= 2<<20 {
+				ctxPut, cancel := context.WithTimeout(ctx, 10*time.Second)
+				key := fmt.Sprintf("labpp/%s/data_sources.csv", strings.TrimSpace(spec.DeploymentID))
+				if putKey, err := putWorkspaceArtifact(ctxPut, e.cfg, spec.WorkspaceCtx.workspace.ID, key, payload, "text/csv"); err != nil {
+					rlog.Error("labpp data_sources.csv upload failed", "task_id", spec.TaskID, "err", err)
+				} else {
+					e.setTaskMetadataKey(spec.TaskID, "labppDataSourcesKey", putKey)
+					log.Infof("LabPP data_sources.csv uploaded as %s", putKey)
+				}
+				cancel()
 				log.Infof("LabPP data_sources.csv generated at %s", csvPath)
 			}
 			forwardOverride := forwardOverridesFromEnv(spec.Environment)

@@ -227,13 +227,13 @@ func (e *Engine) runNetlabTask(ctx context.Context, spec netlabRunSpec, log Logg
 	lastLog := ""
 	deadline := time.Now().Add(30 * time.Minute)
 	for {
-		if spec.TaskID > 0 {
-			canceled, _ := e.taskCanceled(ctx, spec.TaskID)
-			if canceled {
-				e.cancelNetlabJob(ctx, apiURL, job.ID, insecure, auth, log)
-				return fmt.Errorf("netlab job canceled")
-			}
-		}
+				if spec.TaskID > 0 {
+					canceled, _ := e.taskCanceled(ctx, spec.TaskID)
+					if canceled {
+						_ = e.cancelNetlabJob(ctx, apiURL, job.ID, insecure, auth, log)
+						return fmt.Errorf("netlab job canceled")
+					}
+				}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("netlab job timed out")
 		}
@@ -272,6 +272,10 @@ func (e *Engine) runNetlabTask(ctx context.Context, spec netlabRunSpec, log Logg
 				}
 				return fmt.Errorf("netlab job %s", state)
 			}
+			// Best-effort artifact capture for later inspection.
+			if spec.TaskID > 0 && spec.WorkspaceCtx != nil && strings.TrimSpace(spec.DeploymentID) != "" {
+				_ = e.maybeUploadNetlabArtifacts(ctx, spec, apiURL, job.ID, insecure, auth, log)
+			}
 			// Best-effort Forward sync after successful runs (implemented separately).
 			if strings.EqualFold(spec.Action, "up") || strings.EqualFold(spec.Action, "restart") || strings.EqualFold(spec.Action, "create") {
 				_ = e.maybeSyncForwardNetlabAfterRun(ctx, spec, log, apiURL)
@@ -281,6 +285,57 @@ func (e *Engine) runNetlabTask(ctx context.Context, spec netlabRunSpec, log Logg
 
 		time.Sleep(2 * time.Second)
 	}
+}
+
+func (e *Engine) maybeUploadNetlabArtifacts(ctx context.Context, spec netlabRunSpec, apiURL, jobID string, insecure bool, auth netlabAPIAuth, log Logger) error {
+	if e == nil || strings.TrimSpace(apiURL) == "" || strings.TrimSpace(jobID) == "" {
+		return nil
+	}
+	if spec.WorkspaceCtx == nil {
+		return nil
+	}
+	wsID := strings.TrimSpace(spec.WorkspaceCtx.workspace.ID)
+	depID := strings.TrimSpace(spec.DeploymentID)
+	if wsID == "" || depID == "" {
+		return nil
+	}
+
+	type item struct {
+		path        string
+		keySuffix   string
+		contentType string
+		metaKey     string
+		maxBytes    int
+	}
+	items := []item{
+		{path: "netlab.snapshot.yml", keySuffix: "netlab.snapshot.yml", contentType: "application/yaml", metaKey: "netlabSnapshotKey", maxBytes: 4 << 20},
+		{path: "clab.yml", keySuffix: "clab.yml", contentType: "application/yaml", metaKey: "netlabClabKey", maxBytes: 4 << 20},
+	}
+
+	for _, it := range items {
+		ctxReq, cancel := context.WithTimeout(ctx, 10*time.Second)
+		data, err := netlabAPIGetJobArtifact(ctxReq, apiURL, jobID, it.path, insecure, auth)
+		cancel()
+		if err != nil || len(data) == 0 {
+			continue
+		}
+		if it.maxBytes > 0 && len(data) > it.maxBytes {
+			continue
+		}
+		key := fmt.Sprintf("netlab/%s/%s", depID, it.keySuffix)
+		ctxPut, cancel := context.WithTimeout(ctx, 10*time.Second)
+		putKey, err := putWorkspaceArtifact(ctxPut, e.cfg, wsID, key, data, it.contentType)
+		cancel()
+		if err != nil {
+			continue
+		}
+		e.setTaskMetadataKey(spec.TaskID, it.metaKey, putKey)
+		if log != nil {
+			log.Infof("Netlab artifact uploaded: %s", putKey)
+		}
+	}
+
+	return nil
 }
 
 func (e *Engine) taskCanceled(ctx context.Context, taskID int) (bool, map[string]any) {
@@ -299,20 +354,21 @@ func (e *Engine) taskCanceled(ctx context.Context, taskID int) (bool, map[string
 	return false, nil
 }
 
-func (e *Engine) cancelNetlabJob(ctx context.Context, apiURL, jobID string, insecure bool, auth netlabAPIAuth, log Logger) {
+func (e *Engine) cancelNetlabJob(ctx context.Context, apiURL, jobID string, insecure bool, auth netlabAPIAuth, log Logger) error {
 	apiURL = strings.TrimRight(strings.TrimSpace(apiURL), "/")
 	jobID = strings.TrimSpace(jobID)
 	if apiURL == "" || jobID == "" {
-		return
+		return nil
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	_, body, err := netlabAPIDo(ctxReq, fmt.Sprintf("%s/jobs/%s/cancel", apiURL, jobID), map[string]any{}, insecure, auth)
 	if err != nil {
 		log.Infof("Netlab cancel request failed: %v", err)
-		return
+		return err
 	}
 	_ = body
+	return nil
 }
 
 func isNetlabBenignFailure(action string, errText string, logs string) bool {

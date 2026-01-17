@@ -83,13 +83,20 @@ func (c *Client) GetObject(ctx context.Context, bucket, key string) ([]byte, err
 }
 
 func (c *Client) PutObject(ctx context.Context, bucket, key string, data []byte) error {
+	return c.PutObjectWithContentType(ctx, bucket, key, data, "application/json")
+}
+
+func (c *Client) PutObjectWithContentType(ctx context.Context, bucket, key string, data []byte, contentType string) error {
 	client, err := c.minioClient()
 	if err != nil {
 		return err
 	}
+	if strings.TrimSpace(contentType) == "" {
+		contentType = "application/octet-stream"
+	}
 	reader := bytes.NewReader(data)
 	_, err = client.PutObject(ctx, bucket, key, reader, int64(len(data)), minio.PutObjectOptions{
-		ContentType: "application/json",
+		ContentType: contentType,
 	})
 	return err
 }

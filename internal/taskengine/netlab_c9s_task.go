@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"time"
 
 	"encore.app/internal/taskdispatch"
 	"encore.app/internal/taskstore"
@@ -295,6 +296,15 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	tarBytes, err := netlabAPIGetJobArtifact(ctx, apiURL, jobID, tarballName, spec.Server.APIInsecure, auth)
 	if err != nil {
 		return err
+	}
+	if spec.TaskID > 0 && spec.WorkspaceCtx != nil && strings.TrimSpace(spec.DeploymentID) != "" && len(tarBytes) > 0 && len(tarBytes) <= 32<<20 {
+		ctxPut, cancel := context.WithTimeout(ctx, 10*time.Second)
+		key := fmt.Sprintf("netlab-c9s/%s/%s", strings.TrimSpace(spec.DeploymentID), path.Base(tarballName))
+		if putKey, err := putWorkspaceArtifact(ctxPut, e.cfg, spec.WorkspaceCtx.workspace.ID, key, tarBytes, "application/gzip"); err == nil {
+			e.setTaskMetadataKey(spec.TaskID, "netlabC9sTarballKey", putKey)
+			log.Infof("Netlab C9s tarball uploaded: %s", putKey)
+		}
+		cancel()
 	}
 	tarball, err := extractNetlabC9sTarball(tarBytes)
 	if err != nil {

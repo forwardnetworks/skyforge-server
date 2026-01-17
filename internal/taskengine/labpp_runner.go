@@ -188,21 +188,30 @@ func kubeCreateJob(ctx context.Context, ns string, payload map[string]any) error
 	return nil
 }
 
-func kubeDeleteJob(ctx context.Context, ns, name string) {
+func kubeDeleteJob(ctx context.Context, ns, name string) error {
 	client, err := kubeHTTPClient()
 	if err != nil {
-		return
+		return err
 	}
 	url := fmt.Sprintf("https://kubernetes.default.svc/apis/batch/v1/namespaces/%s/jobs/%s?propagationPolicy=Background", ns, name)
 	req, err := kubeRequest(ctx, http.MethodDelete, url, nil)
 	if err != nil {
-		return
+		return err
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return
+		return err
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
+	// Deleting an already-gone job is an idempotent success.
+	if resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	if resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 16<<10))
+		return fmt.Errorf("kube job delete failed: %s: %s", resp.Status, strings.TrimSpace(string(data)))
+	}
+	return nil
 }
 
 func kubeWaitJob(ctx context.Context, ns, name string, log Logger, canceled func() bool) error {
@@ -222,7 +231,7 @@ func kubeWaitJob(ctx context.Context, ns, name string, log Logger, canceled func
 			return fmt.Errorf("labpp run canceled")
 		case <-ticker.C:
 			if canceled != nil && canceled() {
-				kubeDeleteJob(context.Background(), ns, name)
+				_ = kubeDeleteJob(context.Background(), ns, name)
 				return fmt.Errorf("labpp run canceled")
 			}
 			status, err := kubeGetJobStatus(ctx, client, ns, name)
