@@ -3051,6 +3051,13 @@ func initService() (*Service, error) {
 		db:             db,
 	}
 	ensurePGNotifyHub(db)
+	// Ensure the shared blueprint catalog exists for Gitea Explore even before any
+	// user/workspace bootstrap tasks run.
+	if strings.TrimSpace(cfg.Workspaces.GiteaAPIURL) != "" && strings.TrimSpace(cfg.Workspaces.GiteaUsername) != "" {
+		if err := ensureBlueprintCatalogRepo(cfg, defaultBlueprintCatalog); err != nil {
+			rlog.Warn("ensureBlueprintCatalogRepo failed", "err", err)
+		}
+	}
 	// Task worker heartbeats are emitted by the worker service (cron-driven).
 	return svc, nil
 }

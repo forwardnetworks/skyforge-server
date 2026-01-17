@@ -330,6 +330,29 @@ func LoadConfig(enc EncoreConfig) skyforgecore.Config {
 	dnsUserZoneSuffix = strings.TrimPrefix(dnsUserZoneSuffix, ".")
 
 	taskWorkerEnabled := enc.TaskWorkerEnabled
+	netlabC9sGeneratorMode := strings.ToLower(strings.TrimSpace(enc.NetlabGenerator.C9sGeneratorMode))
+	if override := strings.ToLower(strings.TrimSpace(getenv("SKYFORGE_NETLAB_C9S_GENERATOR_MODE", ""))); override != "" {
+		netlabC9sGeneratorMode = override
+	}
+	if netlabC9sGeneratorMode == "" {
+		netlabC9sGeneratorMode = "remote"
+	}
+	netlabGeneratorImage := strings.TrimSpace(enc.NetlabGenerator.GeneratorImage)
+	if override := strings.TrimSpace(getenv("SKYFORGE_NETLAB_GENERATOR_IMAGE", "")); override != "" {
+		netlabGeneratorImage = override
+	}
+	netlabGeneratorPullPolicy := strings.TrimSpace(enc.NetlabGenerator.PullPolicy)
+	if override := strings.TrimSpace(getenv("SKYFORGE_NETLAB_GENERATOR_PULL_POLICY", "")); override != "" {
+		netlabGeneratorPullPolicy = override
+	}
+	ansibleRunnerImage := strings.TrimSpace(enc.NetlabGenerator.AnsibleImage)
+	if override := strings.TrimSpace(getenv("SKYFORGE_ANSIBLE_RUNNER_IMAGE", "")); override != "" {
+		ansibleRunnerImage = override
+	}
+	ansibleRunnerPullPolicy := strings.TrimSpace(enc.NetlabGenerator.AnsiblePullPolicy)
+	if override := strings.TrimSpace(getenv("SKYFORGE_ANSIBLE_RUNNER_PULL_POLICY", "")); override != "" {
+		ansibleRunnerPullPolicy = override
+	}
 
 	eveServersRaw := strings.TrimSpace(os.Getenv("SKYFORGE_EVE_SERVERS_JSON"))
 	if eveServersRaw == "" {
@@ -468,9 +491,14 @@ func LoadConfig(enc EncoreConfig) skyforgecore.Config {
 			}
 			return v
 		}(),
-		DNSURL:                 dnsURL,
-		DNSAdminUsername:       dnsAdminUsername,
-		DNSUserZoneSuffix:      dnsUserZoneSuffix,
-		TaskWorkerEnabled:      taskWorkerEnabled,
+		DNSURL:                    dnsURL,
+		DNSAdminUsername:          dnsAdminUsername,
+		DNSUserZoneSuffix:         dnsUserZoneSuffix,
+		TaskWorkerEnabled:         taskWorkerEnabled,
+		NetlabC9sGeneratorMode:    netlabC9sGeneratorMode,
+		NetlabGeneratorImage:      netlabGeneratorImage,
+		NetlabGeneratorPullPolicy: netlabGeneratorPullPolicy,
+		AnsibleRunnerImage:        ansibleRunnerImage,
+		AnsibleRunnerPullPolicy:   ansibleRunnerPullPolicy,
 	}
 }

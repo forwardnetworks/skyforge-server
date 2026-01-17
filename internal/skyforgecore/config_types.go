@@ -68,6 +68,14 @@ type Config struct {
 	ContainerlabAPIPath       string
 	ContainerlabJWTSecret     string
 	ContainerlabSkipTLSVerify bool
+	// NetlabC9sGeneratorMode controls how netlab-c9s artifacts are generated:
+	// - "remote": use the BYOS netlab API server (current default behavior)
+	// - "k8s": run a netlab generator Job in-cluster (planned; scaffolding only)
+	NetlabC9sGeneratorMode    string
+	NetlabGeneratorImage      string
+	NetlabGeneratorPullPolicy string
+	AnsibleRunnerImage        string
+	AnsibleRunnerPullPolicy   string
 	PKICACert                 string
 	PKICAKey                  string
 	PKIDefaultDays            int

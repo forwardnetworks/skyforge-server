@@ -420,9 +420,9 @@ LIMIT $3`, taskID, afterID, limit)
 	for rows.Next() {
 		var createdAt time.Time
 		var (
-			id        int64
-			eventType string
-			payload   []byte
+			id         int64
+			eventType  string
+			payload    []byte
 			payloadMap map[string]any
 		)
 		if err := rows.Scan(&id, &eventType, &payload, &createdAt); err != nil {
@@ -454,6 +454,15 @@ func TaskToRunInfo(task TaskRecord) map[string]any {
 		"status":    task.Status,
 		"user_name": task.CreatedBy,
 		"created":   task.CreatedAt.UTC().Format(time.RFC3339),
+	}
+	if strings.TrimSpace(task.WorkspaceID) != "" {
+		run["workspaceId"] = strings.TrimSpace(task.WorkspaceID)
+	}
+	if task.DeploymentID.Valid {
+		dep := strings.TrimSpace(task.DeploymentID.String)
+		if dep != "" {
+			run["deploymentId"] = dep
+		}
 	}
 	if task.Message.Valid {
 		run["message"] = task.Message.String

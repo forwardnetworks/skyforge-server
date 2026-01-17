@@ -388,7 +388,14 @@ func (c *Client) EnsureRepo(owner, repo string) error {
 	}
 	createPath := "/user/repos"
 	if strings.TrimSpace(owner) != "" && !strings.EqualFold(strings.TrimSpace(owner), strings.TrimSpace(c.cfg.Username)) {
-		createPath = fmt.Sprintf("/admin/users/%s/repos", url.PathEscape(owner))
+		// If the owner is an org, we should create the repo under the org namespace
+		// so it shows up correctly in Explore and normal browsing.
+		orgResp, _, orgErr := c.Do(http.MethodGet, fmt.Sprintf("/orgs/%s", url.PathEscape(owner)), nil)
+		if orgErr == nil && orgResp != nil && orgResp.StatusCode == http.StatusOK {
+			createPath = fmt.Sprintf("/orgs/%s/repos", url.PathEscape(owner))
+		} else {
+			createPath = fmt.Sprintf("/admin/users/%s/repos", url.PathEscape(owner))
+		}
 	}
 	resp, body, err := c.Do(http.MethodPost, createPath, createPayload)
 	if err != nil {

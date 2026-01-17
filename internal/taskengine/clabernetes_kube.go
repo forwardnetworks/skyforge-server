@@ -25,6 +25,10 @@ type kubeConfigMapList struct {
 	} `json:"items"`
 }
 
+type kubeConfigMap struct {
+	Data map[string]string `json:"data"`
+}
+
 func kubeEnsureNamespace(ctx context.Context, ns string) error {
 	ns = strings.TrimSpace(ns)
 	if ns == "" {
@@ -83,6 +87,43 @@ func kubeEnsureNamespace(ctx context.Context, ns string) error {
 		return fmt.Errorf("kube namespace create failed: %s: %s", resp.Status, strings.TrimSpace(string(data)))
 	}
 	return nil
+}
+
+func kubeGetConfigMap(ctx context.Context, ns, name string) (map[string]string, bool, error) {
+	ns = strings.TrimSpace(ns)
+	name = strings.TrimSpace(name)
+	if ns == "" || name == "" {
+		return nil, false, fmt.Errorf("namespace and configmap name are required")
+	}
+	client, err := kubeHTTPClient()
+	if err != nil {
+		return nil, false, err
+	}
+	url := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/configmaps/%s", ns, name)
+	req, err := kubeRequest(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, false, nil
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<10))
+		return nil, false, fmt.Errorf("kube configmap get failed: %s: %s", resp.Status, strings.TrimSpace(string(data)))
+	}
+	var cm kubeConfigMap
+	if err := json.NewDecoder(resp.Body).Decode(&cm); err != nil {
+		return nil, false, err
+	}
+	if cm.Data == nil {
+		cm.Data = map[string]string{}
+	}
+	return cm.Data, true, nil
 }
 
 func kubeUpsertConfigMap(ctx context.Context, ns, name string, data map[string]string, labels map[string]string) error {

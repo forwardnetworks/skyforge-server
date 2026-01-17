@@ -2,7 +2,7 @@
 //
 // These defaults can be overridden at deploy time using ENCORE_CFG_SKYFORGE.
 
-TaskWorkerEnabled: false
+TaskWorkerEnabled: true
 
 // Default polling interval for notifications (server-side).
 NotificationsIntervalSeconds: 30
@@ -71,4 +71,17 @@ DNS: {
 
 Containerlab: {
 	APIPath: "/containerlab"
+}
+
+// Netlab-on-C9s (netlab-c9s) defaults.
+// These are non-secret toggles; the generator/ansible images should be set in Helm values (ENCORE_CFG_SKYFORGE).
+NetlabGenerator: {
+	// "remote" (default): use BYOS netlab API server for `netlab create` + `netlab clab-tarball`.
+	// "k8s": run a netlab generator Job in-cluster (scaffolding; not fully implemented yet).
+	C9sGeneratorMode: "k8s"
+
+	GeneratorImage:    ""
+	PullPolicy:        "IfNotPresent"
+	AnsibleImage:      ""
+	AnsiblePullPolicy: "IfNotPresent"
 }

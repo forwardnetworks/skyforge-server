@@ -70,8 +70,12 @@ func (e *Engine) dispatchUserBootstrapTask(ctx context.Context, task *taskstore.
 	}
 
 	_ = taskdispatch.WithTaskStep(ctx, e.db, task.ID, "gitea.ensure_catalogs", func() error {
-		_ = ensureLabCatalogRepos(e.cfg)
-		_ = ensureBlueprintCatalogRepo(e.cfg, defaultBlueprintCatalog)
+		if err := ensureLabCatalogRepos(e.cfg); err != nil {
+			log.Errorf("gitea.ensure_catalogs: %v", err)
+		}
+		if err := ensureBlueprintCatalogRepo(e.cfg, defaultBlueprintCatalog); err != nil {
+			log.Errorf("gitea.ensure_catalogs: ensureBlueprintCatalogRepo: %v", err)
+		}
 		return nil
 	})
 

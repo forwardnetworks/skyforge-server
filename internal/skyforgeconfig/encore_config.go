@@ -54,6 +54,14 @@ type ContainerlabDefaultsConfig struct {
 	APIPath string
 }
 
+type NetlabGeneratorDefaultsConfig struct {
+	C9sGeneratorMode  string
+	GeneratorImage    string
+	PullPolicy        string
+	AnsibleImage      string
+	AnsiblePullPolicy string
+}
+
 type EncoreConfig struct {
 	TaskWorkerEnabled bool
 
@@ -61,11 +69,12 @@ type EncoreConfig struct {
 	CloudCheckIntervalMinutes    int
 	EveUserRootFallback          bool
 
-	EveRunningScan EveRunningScanConfig
-	Netlab         NetlabDefaultsConfig
-	Labpp          LabppDefaultsConfig
-	Integrations   IntegrationDefaultsConfig
-	Labs           LabsDefaultsConfig
-	DNS            DNSDefaultsConfig
-	Containerlab   ContainerlabDefaultsConfig
+	EveRunningScan  EveRunningScanConfig
+	Netlab          NetlabDefaultsConfig
+	Labpp           LabppDefaultsConfig
+	Integrations    IntegrationDefaultsConfig
+	Labs            LabsDefaultsConfig
+	DNS             DNSDefaultsConfig
+	Containerlab    ContainerlabDefaultsConfig
+	NetlabGenerator NetlabGeneratorDefaultsConfig
 }
