@@ -13,9 +13,13 @@ import (
 )
 
 const (
-	pgNotifyTasksChannel     = "skyforge_task_updates"
-	pgNotifyDashboardChannel = "skyforge_dashboard_updates"
+	pgNotifyTasksChannel         = "skyforge_task_updates"
+	pgNotifyDashboardChannel     = "skyforge_dashboard_updates"
 	pgNotifyNotificationsChannel = "skyforge_notification_updates"
+	pgNotifyWebhooksChannel      = "skyforge_webhook_updates"
+	pgNotifySyslogChannel        = "skyforge_syslog_updates"
+	pgNotifySnmpChannel          = "skyforge_snmp_updates"
+	pgNotifyWorkspacesChannel    = "skyforge_workspaces_updates"
 )
 
 type pgNotification struct {
@@ -37,12 +41,14 @@ var globalPGNotifyHub = &pgNotifyHub{
 }
 
 func ensurePGNotifyHub(db *sql.DB) *pgNotifyHub {
-	if db != nil && globalPGNotifyHub.db == nil {
-		globalPGNotifyHub.db = db
+	if db != nil {
+		if globalPGNotifyHub.db == nil {
+			globalPGNotifyHub.db = db
+		}
+		globalPGNotifyHub.startOnce.Do(func() {
+			go globalPGNotifyHub.run()
+		})
 	}
-	globalPGNotifyHub.startOnce.Do(func() {
-		go globalPGNotifyHub.run()
-	})
 	return globalPGNotifyHub
 }
 
@@ -76,9 +82,8 @@ func (h *pgNotifyHub) broadcast(n pgNotification) {
 }
 
 func (h *pgNotifyHub) run() {
-	// Wait for DB handle to be populated (initService sets defaultService/db).
-	for h.db == nil {
-		time.Sleep(250 * time.Millisecond)
+	if h.db == nil {
+		return
 	}
 
 	backoff := 250 * time.Millisecond
@@ -125,6 +130,18 @@ func (h *pgNotifyHub) listenOnce(ctx context.Context) error {
 		if _, err := conn.Exec(ctx, "LISTEN "+pgNotifyNotificationsChannel); err != nil {
 			return err
 		}
+		if _, err := conn.Exec(ctx, "LISTEN "+pgNotifyWebhooksChannel); err != nil {
+			return err
+		}
+		if _, err := conn.Exec(ctx, "LISTEN "+pgNotifySyslogChannel); err != nil {
+			return err
+		}
+		if _, err := conn.Exec(ctx, "LISTEN "+pgNotifySnmpChannel); err != nil {
+			return err
+		}
+		if _, err := conn.Exec(ctx, "LISTEN "+pgNotifyWorkspacesChannel); err != nil {
+			return err
+		}
 
 		for {
 			n, err := conn.WaitForNotification(ctx)
@@ -167,6 +184,53 @@ func notifyNotificationUpdatePG(ctx context.Context, db *sql.DB, username string
 	ctxReq, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
 	_, err := db.ExecContext(ctxReq, "SELECT pg_notify($1, $2)", pgNotifyNotificationsChannel, username)
+	return err
+}
+
+func notifyWebhookUpdatePG(ctx context.Context, db *sql.DB, username string) error {
+	username = strings.ToLower(strings.TrimSpace(username))
+	if db == nil || username == "" {
+		return nil
+	}
+	ctxReq, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+	_, err := db.ExecContext(ctxReq, "SELECT pg_notify($1, $2)", pgNotifyWebhooksChannel, username)
+	return err
+}
+
+func notifySyslogUpdatePG(ctx context.Context, db *sql.DB, username string) error {
+	username = strings.ToLower(strings.TrimSpace(username))
+	if db == nil || username == "" {
+		return nil
+	}
+	ctxReq, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+	_, err := db.ExecContext(ctxReq, "SELECT pg_notify($1, $2)", pgNotifySyslogChannel, username)
+	return err
+}
+
+func notifySnmpUpdatePG(ctx context.Context, db *sql.DB, username string) error {
+	username = strings.ToLower(strings.TrimSpace(username))
+	if db == nil || username == "" {
+		return nil
+	}
+	ctxReq, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+	_, err := db.ExecContext(ctxReq, "SELECT pg_notify($1, $2)", pgNotifySnmpChannel, username)
+	return err
+}
+
+func notifyWorkspacesUpdatePG(ctx context.Context, db *sql.DB, payload string) error {
+	payload = strings.ToLower(strings.TrimSpace(payload))
+	if payload == "" {
+		payload = "*"
+	}
+	if db == nil {
+		return nil
+	}
+	ctxReq, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+	_, err := db.ExecContext(ctxReq, "SELECT pg_notify($1, $2)", pgNotifyWorkspacesChannel, payload)
 	return err
 }
 
@@ -231,6 +295,107 @@ func waitForNotificationUpdateSignal(ctx context.Context, db *sql.DB, username s
 				continue
 			}
 			if strings.TrimSpace(n.Payload) == username {
+				return true
+			}
+		}
+	}
+}
+
+func waitForWebhookUpdateSignal(ctx context.Context, db *sql.DB, username string) bool {
+	username = strings.ToLower(strings.TrimSpace(username))
+	if username == "" {
+		return false
+	}
+	hub := ensurePGNotifyHub(db)
+	ch := hub.subscribe(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case n, ok := <-ch:
+			if !ok {
+				return false
+			}
+			if n.Channel != pgNotifyWebhooksChannel {
+				continue
+			}
+			if strings.TrimSpace(n.Payload) == username {
+				return true
+			}
+		}
+	}
+}
+
+func waitForSyslogUpdateSignal(ctx context.Context, db *sql.DB, username string) bool {
+	username = strings.ToLower(strings.TrimSpace(username))
+	if username == "" {
+		return false
+	}
+	hub := ensurePGNotifyHub(db)
+	ch := hub.subscribe(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case n, ok := <-ch:
+			if !ok {
+				return false
+			}
+			if n.Channel != pgNotifySyslogChannel {
+				continue
+			}
+			if strings.TrimSpace(n.Payload) == username {
+				return true
+			}
+		}
+	}
+}
+
+func waitForSnmpUpdateSignal(ctx context.Context, db *sql.DB, username string) bool {
+	username = strings.ToLower(strings.TrimSpace(username))
+	if username == "" {
+		return false
+	}
+	hub := ensurePGNotifyHub(db)
+	ch := hub.subscribe(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case n, ok := <-ch:
+			if !ok {
+				return false
+			}
+			if n.Channel != pgNotifySnmpChannel {
+				continue
+			}
+			if strings.TrimSpace(n.Payload) == username {
+				return true
+			}
+		}
+	}
+}
+
+func waitForWorkspacesUpdateSignal(ctx context.Context, db *sql.DB, username string) bool {
+	username = strings.ToLower(strings.TrimSpace(username))
+	if username == "" {
+		return false
+	}
+	hub := ensurePGNotifyHub(db)
+	ch := hub.subscribe(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case n, ok := <-ch:
+			if !ok {
+				return false
+			}
+			if n.Channel != pgNotifyWorkspacesChannel {
+				continue
+			}
+			payload := strings.ToLower(strings.TrimSpace(n.Payload))
+			if payload == "*" || payload == username {
 				return true
 			}
 		}

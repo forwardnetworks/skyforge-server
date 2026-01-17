@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -48,7 +47,7 @@ func (s *Service) resolveWorkspaceNetlabServerConfig(ctx context.Context, worksp
 
 type workspaceEveResolved struct {
 	Server          EveServerConfig
-	SSHKeyFile      string
+	SSHKey          string
 	SkipTLSOverride bool
 }
 
@@ -88,48 +87,57 @@ func (s *Service) resolveWorkspaceEveServerConfig(ctx context.Context, workspace
 	}
 	eveServer = normalizeEveServer(eveServer, s.cfg.Labs)
 
-	keyFile := ""
 	key := strings.TrimSpace(rec.SSHKey)
-	if key != "" {
-		tmpDir := strings.TrimSpace(s.cfg.PlatformDataDir)
-		if tmpDir == "" {
-			tmpDir = os.TempDir()
-		}
-		if err := os.MkdirAll(tmpDir, 0o755); err == nil {
-			path := filepath.Join(tmpDir, "skyforge-eve-"+serverID+".key")
-			if err := os.WriteFile(path, []byte(key), 0o600); err == nil {
-				keyFile = path
-			}
-		}
-	}
 
 	return &workspaceEveResolved{
 		Server:          eveServer,
-		SSHKeyFile:      keyFile,
+		SSHKey:          key,
 		SkipTLSOverride: eveServer.SkipTLSVerify,
 	}, nil
 }
 
-func (s *Service) resolveWorkspaceEveSSH(ctx context.Context, workspaceID string, serverRef string) (NetlabConfig, error) {
+func (s *Service) resolveWorkspaceEveSSH(ctx context.Context, workspaceID string, serverRef string) (NetlabConfig, func(), error) {
 	resolved, err := s.resolveWorkspaceEveServerConfig(ctx, workspaceID, serverRef)
 	if err != nil {
-		return NetlabConfig{}, err
+		return NetlabConfig{}, func() {}, err
 	}
 	host := strings.TrimSpace(resolved.Server.SSHHost)
 	user := strings.TrimSpace(resolved.Server.SSHUser)
 	if host == "" || user == "" {
-		return NetlabConfig{}, fmt.Errorf("eve sshHost/sshUser are required for health checks")
+		return NetlabConfig{}, func() {}, fmt.Errorf("eve sshHost/sshUser are required for health checks")
 	}
-	keyFile := strings.TrimSpace(resolved.SSHKeyFile)
-	if keyFile == "" {
-		return NetlabConfig{}, fmt.Errorf("eve sshKey is required for health checks")
+	key := strings.TrimSpace(resolved.SSHKey)
+	if key == "" {
+		return NetlabConfig{}, func() {}, fmt.Errorf("eve sshKey is required for health checks")
 	}
+
+	f, err := os.CreateTemp("", "skyforge-eve-ssh-*.key")
+	if err != nil {
+		return NetlabConfig{}, func() {}, fmt.Errorf("failed to stage eve ssh key: %w", err)
+	}
+	path := f.Name()
+	cleanup := func() { _ = os.Remove(path) }
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
+		cleanup()
+		return NetlabConfig{}, func() {}, fmt.Errorf("failed to stage eve ssh key: %w", err)
+	}
+	if _, err := f.WriteString(key); err != nil {
+		_ = f.Close()
+		cleanup()
+		return NetlabConfig{}, func() {}, fmt.Errorf("failed to stage eve ssh key: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		cleanup()
+		return NetlabConfig{}, func() {}, fmt.Errorf("failed to stage eve ssh key: %w", err)
+	}
+
 	return NetlabConfig{
 		SSHHost:    host,
 		SSHUser:    user,
-		SSHKeyFile: keyFile,
+		SSHKeyFile: path,
 		StateRoot:  "/",
-	}, nil
+	}, cleanup, nil
 }
 
 func (s *Service) checkWorkspaceNetlabHealth(ctx context.Context, workspaceID string, serverRef string) error {
@@ -152,4 +160,3 @@ func (s *Service) checkWorkspaceNetlabHealth(ctx context.Context, workspaceID st
 	}
 	return nil
 }
-

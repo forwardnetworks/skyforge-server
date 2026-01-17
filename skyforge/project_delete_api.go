@@ -21,14 +21,14 @@ type WorkspaceDeleteParams struct {
 }
 
 type WorkspaceDeleteResponse struct {
-	DryRun               bool               `json:"dryRun,omitempty"`
-	DeleteMode           string             `json:"deleteMode,omitempty"`
-	RequireForce         bool               `json:"requireForce,omitempty"`
-	GiteaOwner           string             `json:"giteaOwner,omitempty"`
-	GiteaRepo            string             `json:"giteaRepo,omitempty"`
-	TerraformStateKey    string             `json:"terraformStateKey,omitempty"`
-	TerraformStatePrefix string             `json:"terraformStatePrefix,omitempty"`
-	Status               string             `json:"status,omitempty"`
+	DryRun               bool                 `json:"dryRun,omitempty"`
+	DeleteMode           string               `json:"deleteMode,omitempty"`
+	RequireForce         bool                 `json:"requireForce,omitempty"`
+	GiteaOwner           string               `json:"giteaOwner,omitempty"`
+	GiteaRepo            string               `json:"giteaRepo,omitempty"`
+	TerraformStateKey    string               `json:"terraformStateKey,omitempty"`
+	TerraformStatePrefix string               `json:"terraformStatePrefix,omitempty"`
+	Status               string               `json:"status,omitempty"`
 	Workspace            *WorkspaceDeleteItem `json:"workspace,omitempty"`
 }
 
@@ -116,9 +116,13 @@ func (s *Service) DeleteWorkspace(ctx context.Context, id string, params *Worksp
 		}
 	}
 	pc.workspaces = append(pc.workspaces[:pc.idx], pc.workspaces[pc.idx+1:]...)
-	if err := s.workspaceStore.save(pc.workspaces); err != nil {
-		log.Printf("workspaces save: %v", err)
+	if err := s.workspaceStore.delete(pc.workspace.ID); err != nil {
+		log.Printf("workspace delete: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist workspace deletion").Err()
+	}
+	if s.db != nil {
+		_ = notifyWorkspacesUpdatePG(ctx, s.db, "*")
+		_ = notifyDashboardUpdatePG(ctx, s.db)
 	}
 	return &WorkspaceDeleteResponse{
 		DeleteMode: func() string {

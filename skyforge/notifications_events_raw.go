@@ -20,13 +20,13 @@ import (
 // - limit=1..100 (default 50)
 //
 //encore:api auth raw method=GET path=/api/notifications/events
-func NotificationsEvents(w http.ResponseWriter, req *http.Request) {
-	if defaultService == nil || defaultService.db == nil || defaultService.sessionManager == nil {
+func (s *Service) NotificationsEvents(w http.ResponseWriter, req *http.Request) {
+	if s == nil || s.db == nil || s.sessionManager == nil {
 		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
-	claims, err := defaultService.sessionManager.Parse(req)
+	claims, err := s.sessionManager.Parse(req)
 	if err != nil || claims == nil || strings.TrimSpace(claims.Username) == "" {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -75,7 +75,7 @@ func NotificationsEvents(w http.ResponseWriter, req *http.Request) {
 		}
 
 		ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
-		notifications, err := listNotifications(ctxReq, defaultService.db, username, includeRead, limit)
+		notifications, err := listNotifications(ctxReq, s.db, username, includeRead, limit)
 		cancel()
 		if err != nil {
 			write(": retry\n\n")
@@ -100,7 +100,7 @@ func NotificationsEvents(w http.ResponseWriter, req *http.Request) {
 		}
 
 		waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		updated := waitForNotificationUpdateSignal(waitCtx, defaultService.db, username)
+		updated := waitForNotificationUpdateSignal(waitCtx, s.db, username)
 		cancel()
 		if updated {
 			continue
@@ -109,4 +109,3 @@ func NotificationsEvents(w http.ResponseWriter, req *http.Request) {
 		flusher.Flush()
 	}
 }
-

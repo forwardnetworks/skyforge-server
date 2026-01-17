@@ -15,8 +15,8 @@ import (
 // The stream is backed by `sf_task_events` and supports `Last-Event-ID` replay.
 //
 //encore:api auth raw method=GET path=/api/runs/:id/lifecycle
-func TaskLifecycleEvents(w http.ResponseWriter, req *http.Request) {
-	if defaultService == nil || defaultService.db == nil || defaultService.sessionManager == nil {
+func (s *Service) TaskLifecycleEvents(w http.ResponseWriter, req *http.Request) {
+	if s == nil || s.db == nil || s.sessionManager == nil {
 		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -39,24 +39,24 @@ func TaskLifecycleEvents(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	claims, err := defaultService.sessionManager.Parse(req)
+	claims, err := s.sessionManager.Parse(req)
 	if err != nil || claims == nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	ctx := req.Context()
-	task, err := getTask(ctx, defaultService.db, taskID)
+	task, err := getTask(ctx, s.db, taskID)
 	if err != nil || task == nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	_, _, workspace, err := defaultService.loadWorkspaceByKey(task.WorkspaceID)
+	_, _, workspace, err := s.loadWorkspaceByKey(task.WorkspaceID)
 	if err != nil {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	if workspaceAccessLevelForClaims(defaultService.cfg, workspace, claims) == "none" {
+	if workspaceAccessLevelForClaims(s.cfg, workspace, claims) == "none" {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -92,7 +92,7 @@ func TaskLifecycleEvents(w http.ResponseWriter, req *http.Request) {
 			return
 		default:
 			ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
-			rows, err := listTaskEventsAfter(ctxReq, defaultService.db, taskID, lastID, 500)
+			rows, err := listTaskEventsAfter(ctxReq, s.db, taskID, lastID, 500)
 			cancel()
 			if err != nil {
 				write(": retry\n\n")
@@ -102,7 +102,7 @@ func TaskLifecycleEvents(w http.ResponseWriter, req *http.Request) {
 			if len(rows) == 0 {
 				// Block until we see an update (or periodically emit keep-alives).
 				waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-				updated := waitForTaskUpdateSignal(waitCtx, defaultService.db, taskID)
+				updated := waitForTaskUpdateSignal(waitCtx, s.db, taskID)
 				cancel()
 				if updated {
 					continue

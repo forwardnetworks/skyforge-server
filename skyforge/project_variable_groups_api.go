@@ -18,8 +18,8 @@ type WorkspaceVariableGroup struct {
 }
 
 type WorkspaceVariableGroupListResponse struct {
-	WorkspaceID string                  `json:"workspaceId"`
-	Groups    []*WorkspaceVariableGroup `json:"groups"`
+	WorkspaceID string                    `json:"workspaceId"`
+	Groups      []*WorkspaceVariableGroup `json:"groups"`
 }
 
 type WorkspaceVariableGroupUpsertRequest struct {

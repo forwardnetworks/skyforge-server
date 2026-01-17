@@ -97,6 +97,11 @@ VALUES ($1, $2::inet, NULLIF($3,''), NULLIF($4,''), NULLIF($5,''), NULLIF($6,'')
 	if err != nil {
 		return errs.B().Code(errs.Internal).Msg("failed to store syslog event").Err()
 	}
+
+	// Best-effort: notify the mapped owner (if any) so UIs can update via SSE.
+	if owner, err := lookupSyslogOwnerForIP(ctx, s.db, sourceIP); err == nil && strings.TrimSpace(owner) != "" {
+		_ = notifySyslogUpdatePG(ctx, s.db, owner)
+	}
 	return nil
 }
 
@@ -195,6 +200,11 @@ VALUES ($1, NULLIF($2,''), NULLIF($3,'')::inet, NULLIF($4,''), NULLIF($5,''), $6
 `, receivedAt, user.String, source.String, comm.String, oidVal.String, string(varsJSON))
 	if err != nil {
 		return errs.B().Code(errs.Internal).Msg("failed to store snmp trap").Err()
+	}
+
+	// Best-effort: notify the mapped owner (if any) so UIs can update via SSE.
+	if strings.TrimSpace(username) != "" {
+		_ = notifySnmpUpdatePG(ctx, s.db, username)
 	}
 	return nil
 }

@@ -1,0 +1,27 @@
+package taskreconcile
+
+import (
+	"context"
+	"database/sql"
+	"strings"
+	"time"
+)
+
+func UpdateDeploymentStatus(ctx context.Context, db *sql.DB, workspaceID, deploymentID, status string, finishedAt time.Time) error {
+	if db == nil {
+		return sql.ErrConnDone
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	deploymentID = strings.TrimSpace(deploymentID)
+	status = strings.TrimSpace(status)
+	if workspaceID == "" || deploymentID == "" || status == "" {
+		return nil
+	}
+	_, err := db.ExecContext(ctx, `UPDATE sf_deployments SET
+  last_status=$1,
+  last_finished_at=$2,
+  updated_at=now()
+WHERE workspace_id=$3 AND id=$4`, status, finishedAt.UTC(), workspaceID, deploymentID)
+	return err
+}
+

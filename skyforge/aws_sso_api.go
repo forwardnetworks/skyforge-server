@@ -163,7 +163,7 @@ func (s *Service) StartAwsSSO(ctx context.Context) (*AwsSSOStartResponse, error)
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	requestID, session, err := startAWSDeviceAuthorization(ctx, s.cfg, s.awsStore, user.Username)
+	requestID, session, err := startAWSDeviceAuthorization(ctx, s.cfg, s.awsStore, s.db, user.Username)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to start aws sso authorization").Err()
 	}
@@ -190,17 +190,12 @@ func (s *Service) PollAwsSSO(ctx context.Context, params *AwsSSOPollParams) (*Aw
 	requestID := strings.TrimSpace(params.RequestID)
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	session, token, status, err := pollAWSDeviceToken(ctx, requestID)
+	session, token, status, err := pollAWSDeviceToken(ctx, s.cfg, s.awsStore, s.db, requestID)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("aws sso poll failed").Err()
 	}
 	if session == nil || session.Username != user.Username {
 		return nil, errs.B().Code(errs.NotFound).Msg("not found").Err()
-	}
-	if status != "pending" {
-		awsDeviceAuthCache.mu.Lock()
-		delete(awsDeviceAuthCache.items, requestID)
-		awsDeviceAuthCache.mu.Unlock()
 	}
 	if status != "ok" {
 		return &AwsSSOPollResponse{Status: status}, nil

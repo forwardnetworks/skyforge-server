@@ -18,4 +18,3 @@ func sanitizeKubeNameFallback(name string, fallback string) string {
 	}
 	return name
 }
-

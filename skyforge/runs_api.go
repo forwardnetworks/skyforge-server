@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"encore.app/internal/taskqueue"
 	"encore.dev/beta/errs"
 )
 
@@ -185,59 +186,13 @@ func (s *Service) CancelRun(ctx context.Context, id int, params *RunsOutputParam
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("task is not cancelable").Err()
 	}
 
-	// Best-effort: propagate cancel for known cancellable task types.
-	meta, _ := fromJSONMap(task.Metadata)
-	taskType := strings.ToLower(strings.TrimSpace(task.TaskType))
-	if strings.HasPrefix(taskType, "netlab") {
-		jobID := strings.TrimSpace(labppMetaString(meta, "netlabJobId"))
-		if jobID != "" {
-			serverName := strings.TrimSpace(labppMetaString(meta, "server"))
-			if serverName == "" {
-				var spec netlabTaskSpec
-				if err := decodeTaskSpec(task, &spec); err == nil {
-					serverName = strings.TrimSpace(spec.Server)
-				} else {
-					var specC9s netlabC9sTaskSpec
-					if err := decodeTaskSpec(task, &specC9s); err == nil {
-						serverName = strings.TrimSpace(specC9s.Server)
-					}
-				}
-			}
-			var server *NetlabServerConfig
-			server, _ = s.resolveWorkspaceNetlabServerConfig(ctx, workspace.ID, serverName)
-			if server != nil {
-				apiURL := strings.TrimSpace(server.APIURL)
-				if apiURL == "" && strings.TrimSpace(server.SSHHost) != "" {
-					apiURL = strings.TrimRight("https://"+strings.TrimSpace(server.SSHHost)+"/netlab", "/")
-				}
-				if apiURL != "" {
-					log := &taskLogger{svc: s, taskID: task.ID}
-					auth, err := s.netlabAPIAuthForUser(user.Username, *server)
-					if err == nil {
-						s.cancelNetlabJob(ctx, apiURL, jobID, server.APIInsecure, auth, log)
-					}
-				}
-			}
-		}
-	}
-	if strings.HasPrefix(taskType, "labpp") {
-		// LabPP runs as an in-cluster Job named labpp-<taskId>.
-		kubeDeleteJob(context.Background(), kubeNamespace(), sanitizeKubeName("labpp-"+strconv.Itoa(task.ID)))
-	}
-	if strings.HasPrefix(taskType, "containerlab") {
-		// Containerlab tasks poll for cancellation; marking canceled is sufficient.
-	}
-	if strings.HasPrefix(taskType, "clabernetes") {
-		// Clabernetes tasks poll for cancellation; marking canceled is sufficient.
-	}
-	if strings.HasPrefix(taskType, "terraform") {
-		// Terraform tasks poll for cancellation; marking canceled is sufficient.
-	}
-
 	if err := cancelTask(ctx, s.db, task.ID); err != nil {
 		log.Printf("cancelTask: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to cancel task").Err()
 	}
+
+	// Worker-owned: best-effort propagate cancellation to external runners (netlab API job cancel, labpp job delete).
+	_, _ = taskqueue.CancelTopic.Publish(ctx, &taskqueue.TaskCancelEvent{TaskID: task.ID})
 
 	// Notify + update deployment status for UI.
 	if err := s.notifyTaskEvent(ctx, task, "canceled", ""); err != nil {

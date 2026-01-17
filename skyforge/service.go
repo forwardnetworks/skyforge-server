@@ -3,10 +3,7 @@ package skyforge
 import (
 	"bytes"
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/rand"
-	"crypto/sha256"
 	"crypto/tls"
 	"database/sql"
 	"encoding/base64"
@@ -30,7 +27,9 @@ import (
 	"encore.dev"
 	"encore.dev/rlog"
 
-	secretreader "encore.app/internal/secrets"
+	"encore.app/internal/secretbox"
+	"encore.app/internal/skyforgeconfig"
+	"encore.app/internal/skyforgedb"
 
 	"encore.app/storage"
 
@@ -46,99 +45,6 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
-
-var cloudCredentialStatusCache struct {
-	mu    sync.Mutex
-	items map[string]bool
-}
-
-type Config struct {
-	ListenAddr                string
-	SessionSecret             string
-	SessionTTL                time.Duration
-	SessionCookie             string
-	CookieSecure              string
-	CookieDomain              string
-	InternalToken             string
-	StaticRoot                string
-	PlatformDataDir           string
-	MaxGroups                 int
-	AdminUsers                []string
-	AdminUsername             string
-	AdminPassword             string
-	WorkspaceSyncSeconds      int
-	UI                        UIConfig
-	NotificationsEnabled      bool
-	NotificationsInterval     time.Duration
-	CloudCredentialChecks     time.Duration
-	CorpEmailDomain           string
-	AwsSSOAccountID           string
-	AwsSSORoleName            string
-	AwsSSOStartURL            string
-	AwsSSORegion              string
-	GiteaBaseURL              string
-	NetboxBaseURL             string
-	NetboxInternalBaseURL     string
-	NautobotBaseURL           string
-	NautobotInternalBaseURL   string
-	YaadeBaseURL              string
-	YaadeInternalBaseURL      string
-	StateBackend              string
-	DBHost                    string
-	DBPort                    int
-	DBName                    string
-	DBUser                    string
-	DBPassword                string
-	DBPasswordFile            string
-	DBSSLMode                 string
-	Netlab                    NetlabConfig
-	NetlabServers             []NetlabServerConfig
-	Labs                      LabsConfig
-	OIDC                      OIDCConfig
-	LDAP                      LDAPConfig
-	LDAPLookupBindDN          string
-	LDAPLookupBindPassword    string
-	Workspaces                WorkspacesConfig
-	EveServers                []EveServerConfig
-	LabppRunnerImage          string
-	LabppRunnerPullPolicy     string
-	LabppRunnerPVCName        string
-	LabppConfigDirBase        string
-	LabppConfigVersion        string
-	LabppNetboxURL            string
-	LabppNetboxUsername       string
-	LabppNetboxPassword       string
-	LabppNetboxToken          string
-	LabppNetboxMgmtSubnet     string
-	LabppS3AccessKey          string
-	LabppS3SecretKey          string
-	LabppS3Region             string
-	LabppS3BucketName         string
-	LabppS3Endpoint           string
-	LabppS3DisableSSL         bool
-	LabppS3DisableChecksum    bool
-	YaadeAdminUsername        string
-	YaadeAdminPassword        string
-	ContainerlabAPIPath       string
-	ContainerlabJWTSecret     string
-	ContainerlabSkipTLSVerify bool
-	PKICACert                 string
-	PKICAKey                  string
-	PKIDefaultDays            int
-	SSHCAKey                  string
-	SSHCADefaultDays          int
-	DNSURL                    string
-	DNSAdminUsername          string
-	DNSUserZoneSuffix         string
-	TaskWorkerEnabled         bool
-}
-
-type OIDCConfig struct {
-	IssuerURL    string
-	ClientID     string
-	ClientSecret string
-	RedirectURL  string
-}
 
 type RunRequest struct {
 	TemplateID  int     `json:"templateId"`
@@ -183,135 +89,6 @@ type NotificationRecord struct {
 	IsRead      bool      `json:"is_read"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
-}
-
-type LDAPConfig struct {
-	URL             string
-	BindTemplate    string
-	BaseDN          string
-	DisplayNameAttr string
-	MailAttr        string
-	GroupAttr       string
-	UseStartTLS     bool
-	SkipTLSVerify   bool
-}
-
-type UIConfig struct {
-	ProductName      string
-	ProductSubtitle  string
-	LogoURL          string
-	LogoAlt          string
-	HeaderBackground string
-	SupportText      string
-	SupportURL       string
-	ThemeDefault     string
-	OIDCEnabled      bool
-	OIDCLoginURL     string
-}
-
-type NetlabConfig struct {
-	SSHHost    string
-	SSHUser    string
-	SSHKeyFile string
-	StateRoot  string
-}
-
-type NetlabServerConfig struct {
-	Name                      string `json:"name,omitempty"`
-	SSHHost                   string `json:"sshHost,omitempty"`
-	SSHUser                   string `json:"sshUser,omitempty"`
-	SSHKeyFile                string `json:"sshKeyFile,omitempty"`
-	StateRoot                 string `json:"stateRoot,omitempty"`
-	APIURL                    string `json:"apiUrl,omitempty"`
-	APIInsecure               bool   `json:"apiInsecure,omitempty"`
-	APIToken                  string `json:"apiToken,omitempty"`
-	ContainerlabAPIURL        string `json:"containerlabApiUrl,omitempty"`
-	ContainerlabSkipTLSVerify bool   `json:"containerlabSkipTlsVerify,omitempty"`
-}
-
-type LabsConfig struct {
-	PublicURL        string
-	EveAPIURL        string
-	EveUsername      string
-	EvePassword      string
-	EveSkipTLSVerify bool
-	EveSSHKeyFile    string
-	EveSSHUser       string
-	EveSSHTunnel     bool
-	EveLabsPath      string
-	EveTmpPath       string
-}
-
-type EveServerConfig struct {
-	Name          string `json:"name"`
-	APIURL        string `json:"apiUrl"`
-	WebURL        string `json:"webUrl,omitempty"`
-	Username      string `json:"username,omitempty"`
-	Password      string `json:"password,omitempty"`
-	SkipTLSVerify bool   `json:"skipTlsVerify,omitempty"`
-	SSHHost       string `json:"sshHost,omitempty"`
-	SSHUser       string `json:"sshUser,omitempty"`
-	LabsPath      string `json:"labsPath,omitempty"`
-	TmpPath       string `json:"tmpPath,omitempty"`
-}
-
-type WorkspacesConfig struct {
-	DataDir                         string
-	GiteaAPIURL                     string
-	GiteaUsername                   string
-	GiteaPassword                   string
-	GiteaRepoPrivate                bool
-	DeleteMode                      string
-	ObjectStorageEndpoint           string
-	ObjectStorageUseSSL             bool
-	ObjectStorageTerraformAccessKey string
-	ObjectStorageTerraformSecretKey string
-}
-
-type SkyforgeWorkspace struct {
-	ID                         string                 `json:"id"`
-	Slug                       string                 `json:"slug"`
-	Name                       string                 `json:"name"`
-	Description                string                 `json:"description,omitempty"`
-	CreatedAt                  time.Time              `json:"createdAt"`
-	CreatedBy                  string                 `json:"createdBy"`
-	IsPublic                   bool                   `json:"isPublic"`
-	Owners                     []string               `json:"owners,omitempty"`
-	OwnerGroups                []string               `json:"ownerGroups,omitempty"`
-	Editors                    []string               `json:"editors,omitempty"`
-	EditorGroups               []string               `json:"editorGroups,omitempty"`
-	Viewers                    []string               `json:"viewers,omitempty"`
-	ViewerGroups               []string               `json:"viewerGroups,omitempty"`
-	Blueprint                  string                 `json:"blueprint,omitempty"`
-	DefaultBranch              string                 `json:"defaultBranch,omitempty"`
-	AllowExternalTemplateRepos bool                   `json:"allowExternalTemplateRepos,omitempty"`
-	AllowCustomEveServers      bool                   `json:"allowCustomEveServers,omitempty"`
-	AllowCustomNetlabServers   bool                   `json:"allowCustomNetlabServers,omitempty"`
-	ExternalTemplateRepos      []ExternalTemplateRepo `json:"externalTemplateRepos,omitempty"`
-	TerraformStateKey          string                 `json:"terraformStateKey,omitempty"`
-	TerraformInitTemplateID    int                    `json:"terraformInitTemplateId,omitempty"`
-	TerraformPlanTemplateID    int                    `json:"terraformPlanTemplateId,omitempty"`
-	TerraformApplyTemplateID   int                    `json:"terraformApplyTemplateId,omitempty"`
-	AnsibleRunTemplateID       int                    `json:"ansibleRunTemplateId,omitempty"`
-	NetlabRunTemplateID        int                    `json:"netlabRunTemplateId,omitempty"`
-	LabppRunTemplateID         int                    `json:"labppRunTemplateId,omitempty"`
-	ContainerlabRunTemplateID  int                    `json:"containerlabRunTemplateId,omitempty"`
-	AWSAccountID               string                 `json:"awsAccountId,omitempty"`
-	AWSRoleName                string                 `json:"awsRoleName,omitempty"`
-	AWSRegion                  string                 `json:"awsRegion,omitempty"`
-	AWSAuthMethod              string                 `json:"awsAuthMethod,omitempty"`
-	ArtifactsBucket            string                 `json:"artifactsBucket,omitempty"`
-	EveServer                  string                 `json:"eveServer,omitempty"`
-	NetlabServer               string                 `json:"netlabServer,omitempty"`
-	GiteaOwner                 string                 `json:"giteaOwner"`
-	GiteaRepo                  string                 `json:"giteaRepo"`
-}
-
-type ExternalTemplateRepo struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Repo          string `json:"repo"` // gitea owner/repo
-	DefaultBranch string `json:"defaultBranch,omitempty"`
 }
 
 func externalTemplateRepoByID(ws *SkyforgeWorkspace, id string) *ExternalTemplateRepo {
@@ -360,6 +137,18 @@ func getenvBool(key string, fallback bool) bool {
 	default:
 		return fallback
 	}
+}
+
+func readOptionalFile(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 func inferEmailDomain(explicit string) string {
@@ -411,90 +200,11 @@ func workspacePrimaryOwner(p SkyforgeWorkspace) string {
 }
 
 func mustGetSecret(key string) string {
-	if val := strings.TrimSpace(os.Getenv(key)); val != "" {
-		return val
-	}
-	if fromFile := loadSecretFromFile(key + "_FILE"); fromFile != "" {
-		return fromFile
-	}
-	secretName := secretFileNameForEnv(key)
-	if secretName != "" {
-		if fromFile, err := secretreader.ReadSecretFromEnvOrFile(key, secretName); err == nil && strings.TrimSpace(fromFile) != "" {
-			_ = os.Setenv(key, fromFile)
-			return strings.TrimSpace(fromFile)
-		}
-	}
-	if fromEncore := getEncoreSecret(key); strings.TrimSpace(fromEncore) != "" {
-		return strings.TrimSpace(fromEncore)
-	}
-	log.Fatalf("missing required secret env var %s", key)
-	return ""
+	return skyforgeconfig.MustSecret(key)
 }
 
 func getOptionalSecret(key string) string {
-	if val := strings.TrimSpace(os.Getenv(key)); val != "" {
-		return val
-	}
-	if fromFile := loadSecretFromFile(key + "_FILE"); fromFile != "" {
-		return fromFile
-	}
-	secretName := secretFileNameForEnv(key)
-	if secretName != "" {
-		if fromFile, err := secretreader.ReadSecretFromEnvOrFile(key, secretName); err == nil && strings.TrimSpace(fromFile) != "" {
-			_ = os.Setenv(key, fromFile)
-			return strings.TrimSpace(fromFile)
-		}
-	}
-	return strings.TrimSpace(getEncoreSecret(key))
-}
-
-func secretFileNameForEnv(key string) string {
-	switch key {
-	case "SKYFORGE_ADMIN_PASSWORD":
-		return "skyforge-admin-password"
-	case "SKYFORGE_SESSION_SECRET":
-		return "skyforge-session-secret"
-	case "SKYFORGE_LDAP_URL":
-		return "skyforge-ldap-url"
-	case "SKYFORGE_LDAP_BIND_TEMPLATE":
-		return "skyforge-ldap-bind-template"
-	case "SKYFORGE_LDAP_LOOKUP_BINDDN":
-		return "skyforge-ldap-lookup-binddn"
-	case "SKYFORGE_LDAP_LOOKUP_BINDPASSWORD":
-		return "skyforge-ldap-lookup-bindpassword"
-	case "SKYFORGE_DB_PASSWORD":
-		return "db-skyforge-server-password"
-	case "SKYFORGE_GITEA_PASSWORD":
-		return "gitea-admin-password"
-	case "SKYFORGE_CONTAINERLAB_JWT_SECRET":
-		return "skyforge-containerlab-jwt-secret"
-	case "SKYFORGE_PKI_CA_CERT":
-		return "skyforge-pki-ca-cert"
-	case "SKYFORGE_PKI_CA_KEY":
-		return "skyforge-pki-ca-key"
-	case "SKYFORGE_SSH_CA_KEY":
-		return "skyforge-ssh-ca-key"
-	case "SKYFORGE_OBJECT_STORAGE_TERRAFORM_ACCESS_KEY":
-		return "object-storage-terraform-access-key"
-	case "SKYFORGE_OBJECT_STORAGE_TERRAFORM_SECRET_KEY":
-		return "object-storage-terraform-secret-key"
-	case "SKYFORGE_INTERNAL_TOKEN":
-		return "skyforge-internal-token"
-	default:
-		return ""
-	}
-}
-
-func readOptionalFile(path string) string {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return ""
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	return string(data)
+	return skyforgeconfig.OptionalSecret(key)
 }
 
 func parseEveServers(raw string) ([]EveServerConfig, error) {
@@ -842,19 +552,8 @@ func loadConfig() Config {
 	oidcClientID := strings.TrimSpace(getOptionalSecret("SKYFORGE_OIDC_CLIENT_ID"))
 	oidcClientSecret := strings.TrimSpace(getOptionalSecret("SKYFORGE_OIDC_CLIENT_SECRET"))
 	oidcRedirectURL := strings.TrimSpace(getenv("SKYFORGE_OIDC_REDIRECT_URL", ""))
-	stateBackend := strings.TrimSpace(getenv("SKYFORGE_STATE_BACKEND", "file"))
-	dbHost := strings.TrimSpace(getenv("SKYFORGE_DB_HOST", ""))
-	dbPort := 5432
-	if raw := strings.TrimSpace(getenv("SKYFORGE_DB_PORT", "")); raw != "" {
-		if v, err := strconv.Atoi(raw); err == nil && v > 0 && v <= 65535 {
-			dbPort = v
-		}
-	}
-	dbName := strings.TrimSpace(getenv("SKYFORGE_DB_NAME", ""))
-	dbUser := strings.TrimSpace(getenv("SKYFORGE_DB_USER", ""))
-	dbPassword := strings.TrimSpace(getenv("SKYFORGE_DB_PASSWORD", ""))
-	dbPasswordFile := strings.TrimSpace(getenv("SKYFORGE_DB_PASSWORD_FILE", ""))
-	dbSSLMode := strings.TrimSpace(getenv("SKYFORGE_DB_SSLMODE", "disable"))
+	// NOTE: Skyforge uses an Encore-managed Postgres database resource.
+	// Legacy env-based DB connection settings have been removed.
 
 	ldapURL := strings.TrimSpace(getOptionalSecret("SKYFORGE_LDAP_URL"))
 	ldapBindTemplate := strings.TrimSpace(getOptionalSecret("SKYFORGE_LDAP_BIND_TEMPLATE"))
@@ -1060,7 +759,6 @@ func loadConfig() Config {
 		CookieDomain:            strings.TrimSpace(getenv("SKYFORGE_COOKIE_DOMAIN", "")),
 		InternalToken:           strings.TrimSpace(getOptionalSecret("SKYFORGE_INTERNAL_TOKEN")),
 		StaticRoot:              strings.TrimSpace(getenv("SKYFORGE_STATIC_ROOT", "/opt/skyforge/static")),
-		PlatformDataDir:         strings.TrimSpace(getenv("SKYFORGE_PLATFORM_DATA_DIR", "/var/lib/skyforge/platform-data")),
 		MaxGroups:               maxGroups,
 		AdminUsers:              adminUsers,
 		AdminUsername:           adminUsername,
@@ -1088,14 +786,6 @@ func loadConfig() Config {
 			ClientSecret: oidcClientSecret,
 			RedirectURL:  oidcRedirectURL,
 		},
-		StateBackend:              stateBackend,
-		DBHost:                    dbHost,
-		DBPort:                    dbPort,
-		DBName:                    dbName,
-		DBUser:                    dbUser,
-		DBPassword:                dbPassword,
-		DBPasswordFile:            dbPasswordFile,
-		DBSSLMode:                 dbSSLMode,
 		Netlab:                    netlabCfg,
 		NetlabServers:             filteredNetlabServers,
 		Labs:                      labsCfg,
@@ -1140,50 +830,8 @@ func loadConfig() Config {
 
 type workspacesStore interface {
 	load() ([]SkyforgeWorkspace, error)
-	save(workspaces []SkyforgeWorkspace) error
-}
-
-type fileWorkspacesStore struct {
-	mu   sync.Mutex
-	path string
-}
-
-func newFileWorkspacesStore(dataDir string) *fileWorkspacesStore {
-	return &fileWorkspacesStore{path: filepath.Join(dataDir, "workspaces.json")}
-}
-
-func (ps *fileWorkspacesStore) load() ([]SkyforgeWorkspace, error) {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
-	content, err := os.ReadFile(ps.path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return []SkyforgeWorkspace{}, nil
-		}
-		return nil, err
-	}
-	var workspaces []SkyforgeWorkspace
-	if err := json.Unmarshal(content, &workspaces); err != nil {
-		return nil, err
-	}
-	return workspaces, nil
-}
-
-func (ps *fileWorkspacesStore) save(workspaces []SkyforgeWorkspace) error {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
-	if err := os.MkdirAll(filepath.Dir(ps.path), 0o755); err != nil {
-		return err
-	}
-	payload, err := json.MarshalIndent(workspaces, "", "  ")
-	if err != nil {
-		return err
-	}
-	tmp := ps.path + ".tmp"
-	if err := os.WriteFile(tmp, payload, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, ps.path)
+	upsert(workspace SkyforgeWorkspace) error
+	delete(workspaceID string) error
 }
 
 type usersStore interface {
@@ -1192,151 +840,26 @@ type usersStore interface {
 	remove(username string) error
 }
 
-type fileUsersStore struct {
-	mu   sync.Mutex
-	path string
-}
-
-func newFileUsersStore(dataDir string) *fileUsersStore {
-	return &fileUsersStore{path: filepath.Join(dataDir, "users.json")}
-}
-
-func (us *fileUsersStore) load() ([]string, error) {
-	us.mu.Lock()
-	defer us.mu.Unlock()
-	content, err := os.ReadFile(us.path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return []string{}, nil
-		}
-		return nil, err
-	}
-	var users []string
-	if err := json.Unmarshal(content, &users); err != nil {
-		return nil, err
-	}
-	return users, nil
-}
-
-func (us *fileUsersStore) save(users []string) error {
-	us.mu.Lock()
-	defer us.mu.Unlock()
-	if err := os.MkdirAll(filepath.Dir(us.path), 0o755); err != nil {
-		return err
-	}
-	payload, err := json.MarshalIndent(users, "", "  ")
-	if err != nil {
-		return err
-	}
-	tmp := us.path + ".tmp"
-	if err := os.WriteFile(tmp, payload, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, us.path)
-}
-
-func (us *fileUsersStore) upsert(username string) error {
-	username = strings.TrimSpace(username)
-	if !isValidUsername(username) {
-		return nil
-	}
-	users, err := us.load()
-	if err != nil {
-		return err
-	}
-	for _, u := range users {
-		if strings.EqualFold(u, username) {
-			return nil
-		}
-	}
-	users = append(users, username)
-	return us.save(users)
-}
-
-func (us *fileUsersStore) remove(username string) error {
-	username = strings.TrimSpace(username)
-	if username == "" {
-		return nil
-	}
-	users, err := us.load()
-	if err != nil {
-		return err
-	}
-	next := make([]string, 0, len(users))
-	changed := false
-	for _, u := range users {
-		if strings.EqualFold(strings.TrimSpace(u), username) {
-			changed = true
-			continue
-		}
-		next = append(next, u)
-	}
-	if !changed {
-		return nil
-	}
-	return us.save(next)
-}
-
 type secretBox struct {
-	key [32]byte
+	box *secretbox.Box
 }
 
 func newSecretBox(secret string) *secretBox {
-	return &secretBox{key: sha256.Sum256([]byte(secret))}
+	return &secretBox{box: secretbox.New(secret)}
 }
 
 func (sb *secretBox) encrypt(plaintext string) (string, error) {
-	plaintext = strings.TrimSpace(plaintext)
-	if plaintext == "" {
-		return "", nil
+	if sb == nil || sb.box == nil {
+		return "", fmt.Errorf("secret box unavailable")
 	}
-	block, err := aes.NewCipher(sb.key[:])
-	if err != nil {
-		return "", err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
-	}
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
-		return "", err
-	}
-	ciphertext := gcm.Seal(nil, nonce, []byte(plaintext), nil)
-	out := append(nonce, ciphertext...)
-	return "enc:" + base64.RawStdEncoding.EncodeToString(out), nil
+	return sb.box.Encrypt(plaintext)
 }
 
 func (sb *secretBox) decrypt(value string) (string, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return "", nil
+	if sb == nil || sb.box == nil {
+		return "", fmt.Errorf("secret box unavailable")
 	}
-	if !strings.HasPrefix(value, "enc:") {
-		return value, nil
-	}
-	raw, err := base64.RawStdEncoding.DecodeString(strings.TrimPrefix(value, "enc:"))
-	if err != nil {
-		return "", err
-	}
-	block, err := aes.NewCipher(sb.key[:])
-	if err != nil {
-		return "", err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
-	}
-	if len(raw) < gcm.NonceSize() {
-		return "", fmt.Errorf("invalid encrypted secret")
-	}
-	nonce := raw[:gcm.NonceSize()]
-	ciphertext := raw[gcm.NonceSize():]
-	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		return "", err
-	}
-	return string(plaintext), nil
+	return sb.box.Decrypt(value)
 }
 
 type awsSSOTokenRecord struct {
@@ -1357,116 +880,6 @@ type awsSSOTokenStore interface {
 	put(username string, rec awsSSOTokenRecord) error
 	clear(username string) error
 	loadAll() (map[string]awsSSOTokenRecord, error)
-}
-
-type fileAWSStore struct {
-	mu   sync.Mutex
-	path string
-	box  *secretBox
-}
-
-func newFileAWSStore(dataDir string, box *secretBox) *fileAWSStore {
-	return &fileAWSStore{path: filepath.Join(dataDir, "aws_sso.json"), box: box}
-}
-
-func (s *fileAWSStore) loadAll() (map[string]awsSSOTokenRecord, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	content, err := os.ReadFile(s.path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return map[string]awsSSOTokenRecord{}, nil
-		}
-		return nil, err
-	}
-	out := map[string]awsSSOTokenRecord{}
-	if err := json.Unmarshal(content, &out); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (s *fileAWSStore) saveAll(records map[string]awsSSOTokenRecord) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
-		return err
-	}
-	payload, err := json.MarshalIndent(records, "", "  ")
-	if err != nil {
-		return err
-	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, payload, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, s.path)
-}
-
-func (s *fileAWSStore) get(username string) (*awsSSOTokenRecord, error) {
-	records, err := s.loadAll()
-	if err != nil {
-		return nil, err
-	}
-	rec, ok := records[username]
-	if !ok {
-		return nil, nil
-	}
-	if rec.AccessToken != "" {
-		if decrypted, err := s.box.decrypt(rec.AccessToken); err == nil {
-			rec.AccessToken = decrypted
-		}
-	}
-	if rec.RefreshToken != "" {
-		if decrypted, err := s.box.decrypt(rec.RefreshToken); err == nil {
-			rec.RefreshToken = decrypted
-		}
-	}
-	if rec.ClientSecret != "" {
-		if decrypted, err := s.box.decrypt(rec.ClientSecret); err == nil {
-			rec.ClientSecret = decrypted
-		}
-	}
-	return &rec, nil
-}
-
-func (s *fileAWSStore) put(username string, rec awsSSOTokenRecord) error {
-	records, err := s.loadAll()
-	if err != nil {
-		return err
-	}
-	if rec.AccessToken != "" {
-		enc, err := s.box.encrypt(rec.AccessToken)
-		if err != nil {
-			return err
-		}
-		rec.AccessToken = enc
-	}
-	if rec.RefreshToken != "" {
-		enc, err := s.box.encrypt(rec.RefreshToken)
-		if err != nil {
-			return err
-		}
-		rec.RefreshToken = enc
-	}
-	if rec.ClientSecret != "" {
-		enc, err := s.box.encrypt(rec.ClientSecret)
-		if err != nil {
-			return err
-		}
-		rec.ClientSecret = enc
-	}
-	records[username] = rec
-	return s.saveAll(records)
-}
-
-func (s *fileAWSStore) clear(username string) error {
-	records, err := s.loadAll()
-	if err != nil {
-		return err
-	}
-	delete(records, username)
-	return s.saveAll(records)
 }
 
 type pgUsersStore struct {
@@ -2448,20 +1861,196 @@ func (s *pgWorkspacesStore) load() ([]SkyforgeWorkspace, error) {
 	return workspaces, nil
 }
 
-func (s *pgWorkspacesStore) save(workspaces []SkyforgeWorkspace) error {
+func (s *pgWorkspacesStore) upsert(workspace SkyforgeWorkspace) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if _, err := tx.Exec(`DELETE FROM sf_workspace_members`); err != nil {
+	id := strings.TrimSpace(workspace.ID)
+	if id == "" {
+		return fmt.Errorf("workspace id is required")
+	}
+	if _, err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext($1))`, id); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM sf_workspace_groups`); err != nil {
+
+	ensureUser := func(username string) error {
+		username = strings.ToLower(strings.TrimSpace(username))
+		if username == "" || !isValidUsername(username) {
+			return nil
+		}
+		_, err := tx.Exec(`INSERT INTO sf_users (username) VALUES ($1) ON CONFLICT (username) DO NOTHING`, username)
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM sf_workspaces`); err != nil {
+
+	if err := ensureUser(workspace.CreatedBy); err != nil {
+		return err
+	}
+	for _, u := range append(append([]string{}, workspace.Owners...), append(workspace.Editors, workspace.Viewers...)...) {
+		if err := ensureUser(u); err != nil {
+			return err
+		}
+	}
+
+	slug := strings.TrimSpace(workspace.Slug)
+	if slug == "" {
+		slug = slugify(workspace.Name)
+	}
+	createdBy := strings.ToLower(strings.TrimSpace(workspace.CreatedBy))
+	if createdBy == "" {
+		return fmt.Errorf("workspace createdBy is required")
+	}
+	externalTemplateReposJSON, err := json.Marshal(workspace.ExternalTemplateRepos)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT INTO sf_workspaces (
+		  id, slug, name, description, created_at, created_by,
+		  allow_external_template_repos, allow_custom_eve_servers, allow_custom_netlab_servers, external_template_repos,
+		  blueprint, default_branch, terraform_state_key, terraform_init_template_id, terraform_plan_template_id, terraform_apply_template_id, ansible_run_template_id, netlab_run_template_id, labpp_run_template_id, containerlab_run_template_id,
+		  aws_account_id, aws_role_name, aws_region, aws_auth_method, artifacts_bucket, is_public,
+		  eve_server, netlab_server, gitea_owner, gitea_repo, updated_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,now())
+		ON CONFLICT (id) DO UPDATE SET
+		  slug=excluded.slug,
+		  name=excluded.name,
+		  description=excluded.description,
+		  allow_external_template_repos=excluded.allow_external_template_repos,
+		  allow_custom_eve_servers=excluded.allow_custom_eve_servers,
+		  allow_custom_netlab_servers=excluded.allow_custom_netlab_servers,
+		  external_template_repos=excluded.external_template_repos,
+		  blueprint=excluded.blueprint,
+		  default_branch=excluded.default_branch,
+		  terraform_state_key=excluded.terraform_state_key,
+		  terraform_init_template_id=excluded.terraform_init_template_id,
+		  terraform_plan_template_id=excluded.terraform_plan_template_id,
+		  terraform_apply_template_id=excluded.terraform_apply_template_id,
+		  ansible_run_template_id=excluded.ansible_run_template_id,
+		  netlab_run_template_id=excluded.netlab_run_template_id,
+		  labpp_run_template_id=excluded.labpp_run_template_id,
+		  containerlab_run_template_id=excluded.containerlab_run_template_id,
+		  aws_account_id=excluded.aws_account_id,
+		  aws_role_name=excluded.aws_role_name,
+		  aws_region=excluded.aws_region,
+		  aws_auth_method=excluded.aws_auth_method,
+		  artifacts_bucket=excluded.artifacts_bucket,
+		  is_public=excluded.is_public,
+		  eve_server=excluded.eve_server,
+		  netlab_server=excluded.netlab_server,
+		  gitea_owner=excluded.gitea_owner,
+		  gitea_repo=excluded.gitea_repo,
+		  updated_at=now()`,
+		id, slug, strings.TrimSpace(workspace.Name), nullIfEmpty(strings.TrimSpace(workspace.Description)), workspace.CreatedAt.UTC(), createdBy,
+		workspace.AllowExternalTemplateRepos, workspace.AllowCustomEveServers, workspace.AllowCustomNetlabServers, string(externalTemplateReposJSON),
+		nullIfEmpty(strings.TrimSpace(workspace.Blueprint)), nullIfEmpty(strings.TrimSpace(workspace.DefaultBranch)),
+		nullIfEmpty(strings.TrimSpace(workspace.TerraformStateKey)), workspace.TerraformInitTemplateID, workspace.TerraformPlanTemplateID, workspace.TerraformApplyTemplateID, workspace.AnsibleRunTemplateID, workspace.NetlabRunTemplateID, workspace.LabppRunTemplateID, workspace.ContainerlabRunTemplateID,
+		nullIfEmpty(strings.TrimSpace(workspace.AWSAccountID)), nullIfEmpty(strings.TrimSpace(workspace.AWSRoleName)), nullIfEmpty(strings.TrimSpace(workspace.AWSRegion)),
+		nullIfEmpty(strings.TrimSpace(workspace.AWSAuthMethod)), nullIfEmpty(strings.TrimSpace(workspace.ArtifactsBucket)), workspace.IsPublic,
+		nullIfEmpty(strings.TrimSpace(workspace.EveServer)), nullIfEmpty(strings.TrimSpace(workspace.NetlabServer)),
+		strings.TrimSpace(workspace.GiteaOwner), strings.TrimSpace(workspace.GiteaRepo),
+	); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`DELETE FROM sf_workspace_members WHERE workspace_id=$1`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM sf_workspace_groups WHERE workspace_id=$1`, id); err != nil {
+		return err
+	}
+
+	owners := normalizeUsernameList(workspace.Owners)
+	ownerGroups := normalizeGroupList(workspace.OwnerGroups)
+	editors := normalizeUsernameList(workspace.Editors)
+	editorGroups := normalizeGroupList(workspace.EditorGroups)
+	viewers := normalizeUsernameList(workspace.Viewers)
+	viewerGroups := normalizeGroupList(workspace.ViewerGroups)
+	if len(owners) == 0 && createdBy != "" {
+		owners = []string{createdBy}
+	}
+
+	insertMember := func(username, role string) error {
+		username = strings.ToLower(strings.TrimSpace(username))
+		if username == "" || !isValidUsername(username) {
+			return nil
+		}
+		_, err := tx.Exec(`INSERT INTO sf_workspace_members (workspace_id, username, role) VALUES ($1,$2,$3)
+ON CONFLICT (workspace_id, username) DO UPDATE SET role=excluded.role`, id, username, role)
+		return err
+	}
+	for _, u := range owners {
+		if err := insertMember(u, "owner"); err != nil {
+			return err
+		}
+	}
+	for _, u := range editors {
+		if err := insertMember(u, "editor"); err != nil {
+			return err
+		}
+	}
+	for _, u := range viewers {
+		if err := insertMember(u, "viewer"); err != nil {
+			return err
+		}
+	}
+
+	insertGroup := func(groupName, role string) error {
+		groupName = strings.TrimSpace(groupName)
+		if groupName == "" || len(groupName) > 512 {
+			return nil
+		}
+		_, err := tx.Exec(`INSERT INTO sf_workspace_groups (workspace_id, group_name, role) VALUES ($1,$2,$3)
+ON CONFLICT (workspace_id, group_name) DO UPDATE SET role=excluded.role`, id, groupName, role)
+		return err
+	}
+	for _, g := range ownerGroups {
+		if err := insertGroup(g, "owner"); err != nil {
+			return err
+		}
+	}
+	for _, g := range editorGroups {
+		if err := insertGroup(g, "editor"); err != nil {
+			return err
+		}
+	}
+	for _, g := range viewerGroups {
+		if err := insertGroup(g, "viewer"); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (s *pgWorkspacesStore) delete(workspaceID string) error {
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext($1))`, workspaceID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM sf_workspaces WHERE id=$1`, workspaceID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *pgWorkspacesStore) replaceAll(workspaces []SkyforgeWorkspace) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext('sf_workspaces_replace_all'))`); err != nil {
 		return err
 	}
 
@@ -2485,11 +2074,13 @@ func (s *pgWorkspacesStore) save(workspaces []SkyforgeWorkspace) error {
 		}
 	}
 
+	workspaceIDs := make([]string, 0, len(workspaces))
 	for _, p := range workspaces {
 		id := strings.TrimSpace(p.ID)
 		if id == "" {
 			return fmt.Errorf("workspace id is required")
 		}
+		workspaceIDs = append(workspaceIDs, id)
 		slug := strings.TrimSpace(p.Slug)
 		if slug == "" {
 			slug = slugify(p.Name)
@@ -2508,7 +2099,36 @@ func (s *pgWorkspacesStore) save(workspaces []SkyforgeWorkspace) error {
 			  blueprint, default_branch, terraform_state_key, terraform_init_template_id, terraform_plan_template_id, terraform_apply_template_id, ansible_run_template_id, netlab_run_template_id, labpp_run_template_id, containerlab_run_template_id,
 			  aws_account_id, aws_role_name, aws_region, aws_auth_method, artifacts_bucket, is_public,
 			  eve_server, netlab_server, gitea_owner, gitea_repo, updated_at
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,now())`,
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,now())
+			ON CONFLICT (id) DO UPDATE SET
+			  slug=excluded.slug,
+			  name=excluded.name,
+			  description=excluded.description,
+			  allow_external_template_repos=excluded.allow_external_template_repos,
+			  allow_custom_eve_servers=excluded.allow_custom_eve_servers,
+			  allow_custom_netlab_servers=excluded.allow_custom_netlab_servers,
+			  external_template_repos=excluded.external_template_repos,
+			  blueprint=excluded.blueprint,
+			  default_branch=excluded.default_branch,
+			  terraform_state_key=excluded.terraform_state_key,
+			  terraform_init_template_id=excluded.terraform_init_template_id,
+			  terraform_plan_template_id=excluded.terraform_plan_template_id,
+			  terraform_apply_template_id=excluded.terraform_apply_template_id,
+			  ansible_run_template_id=excluded.ansible_run_template_id,
+			  netlab_run_template_id=excluded.netlab_run_template_id,
+			  labpp_run_template_id=excluded.labpp_run_template_id,
+			  containerlab_run_template_id=excluded.containerlab_run_template_id,
+			  aws_account_id=excluded.aws_account_id,
+			  aws_role_name=excluded.aws_role_name,
+			  aws_region=excluded.aws_region,
+			  aws_auth_method=excluded.aws_auth_method,
+			  artifacts_bucket=excluded.artifacts_bucket,
+			  is_public=excluded.is_public,
+			  eve_server=excluded.eve_server,
+			  netlab_server=excluded.netlab_server,
+			  gitea_owner=excluded.gitea_owner,
+			  gitea_repo=excluded.gitea_repo,
+			  updated_at=now()`,
 			id, slug, strings.TrimSpace(p.Name), nullIfEmpty(strings.TrimSpace(p.Description)), p.CreatedAt.UTC(), createdBy,
 			p.AllowExternalTemplateRepos, p.AllowCustomEveServers, p.AllowCustomNetlabServers, string(externalTemplateReposJSON),
 			nullIfEmpty(strings.TrimSpace(p.Blueprint)), nullIfEmpty(strings.TrimSpace(p.DefaultBranch)),
@@ -2518,6 +2138,13 @@ func (s *pgWorkspacesStore) save(workspaces []SkyforgeWorkspace) error {
 			nullIfEmpty(strings.TrimSpace(p.EveServer)), nullIfEmpty(strings.TrimSpace(p.NetlabServer)),
 			strings.TrimSpace(p.GiteaOwner), strings.TrimSpace(p.GiteaRepo),
 		); err != nil {
+			return err
+		}
+
+		if _, err := tx.Exec(`DELETE FROM sf_workspace_members WHERE workspace_id=$1`, id); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DELETE FROM sf_workspace_groups WHERE workspace_id=$1`, id); err != nil {
 			return err
 		}
 
@@ -2536,7 +2163,8 @@ func (s *pgWorkspacesStore) save(workspaces []SkyforgeWorkspace) error {
 			if username == "" || !isValidUsername(username) {
 				return nil
 			}
-			_, err := tx.Exec(`INSERT INTO sf_workspace_members (workspace_id, username, role) VALUES ($1,$2,$3)`, id, username, role)
+			_, err := tx.Exec(`INSERT INTO sf_workspace_members (workspace_id, username, role) VALUES ($1,$2,$3)
+ON CONFLICT (workspace_id, username) DO UPDATE SET role=excluded.role`, id, username, role)
 			return err
 		}
 		for _, u := range owners {
@@ -2560,7 +2188,8 @@ func (s *pgWorkspacesStore) save(workspaces []SkyforgeWorkspace) error {
 			if groupName == "" || len(groupName) > 512 {
 				return nil
 			}
-			_, err := tx.Exec(`INSERT INTO sf_workspace_groups (workspace_id, group_name, role) VALUES ($1,$2,$3)`, id, groupName, role)
+			_, err := tx.Exec(`INSERT INTO sf_workspace_groups (workspace_id, group_name, role) VALUES ($1,$2,$3)
+ON CONFLICT (workspace_id, group_name) DO UPDATE SET role=excluded.role`, id, groupName, role)
 			return err
 		}
 		for _, g := range ownerGroups {
@@ -2580,152 +2209,27 @@ func (s *pgWorkspacesStore) save(workspaces []SkyforgeWorkspace) error {
 		}
 	}
 
+	if len(workspaceIDs) == 0 {
+		if _, err := tx.Exec(`DELETE FROM sf_workspace_members`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DELETE FROM sf_workspace_groups`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DELETE FROM sf_workspaces`); err != nil {
+			return err
+		}
+	} else {
+		if _, err := tx.Exec(`DELETE FROM sf_workspaces WHERE NOT (id = ANY($1))`, workspaceIDs); err != nil {
+			return err
+		}
+	}
+
 	return tx.Commit()
 }
 
-func readFileSecret(path string) (string, error) {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return "", nil
-	}
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(b)), nil
-}
-
-func openSkyforgeDB(cfg Config) (*sql.DB, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	explicitDBConfigured := strings.TrimSpace(cfg.DBHost) != "" &&
-		strings.TrimSpace(cfg.DBName) != "" &&
-		strings.TrimSpace(cfg.DBUser) != ""
-	if explicitDBConfigured {
-		return openSkyforgeExplicitDB(cfg)
-	}
-	if db, err := openSkyforgeEncoreDB(ctx); err == nil {
-		return db, nil
-	}
-	return nil, fmt.Errorf("missing SKYFORGE_DB_HOST/NAME/USER")
-}
-
-func openSkyforgeExplicitDB(cfg Config) (*sql.DB, error) {
-	pass := strings.TrimSpace(cfg.DBPassword)
-	if pass == "" && strings.TrimSpace(cfg.DBPasswordFile) != "" {
-		fromFile, err := readFileSecret(cfg.DBPasswordFile)
-		if err != nil {
-			return nil, err
-		}
-		pass = fromFile
-	}
-	if pass == "" {
-		return nil, fmt.Errorf("missing SKYFORGE_DB_PASSWORD or SKYFORGE_DB_PASSWORD_FILE")
-	}
-	sslmode := strings.TrimSpace(cfg.DBSSLMode)
-	if sslmode == "" {
-		sslmode = "disable"
-	}
-	dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
-		url.PathEscape(cfg.DBUser),
-		url.PathEscape(pass),
-		cfg.DBHost,
-		cfg.DBPort,
-		url.PathEscape(cfg.DBName),
-		url.QueryEscape(sslmode),
-	)
-	db, err := sql.Open("pgx", dsn)
-	if err != nil {
-		return nil, err
-	}
-	db.SetMaxOpenConns(8)
-	db.SetMaxIdleConns(4)
-	db.SetConnMaxLifetime(30 * time.Minute)
-	return db, nil
-}
-
-func isPostgresStateEmpty(ctx context.Context, db *sql.DB) (bool, error) {
-	var count int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sf_workspaces`).Scan(&count); err != nil {
-		return false, err
-	}
-	return count == 0, nil
-}
-
-func renameIfExists(path string) error {
-	if strings.TrimSpace(path) == "" {
-		return nil
-	}
-	if _, err := os.Stat(path); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return err
-	}
-	ts := time.Now().UTC().Format("20060102T150405Z")
-	return os.Rename(path, fmt.Sprintf("%s.migrated.%s", path, ts))
-}
-
-func migrateFileStateToPostgres(cfg Config, pgWorkspaces *pgWorkspacesStore, pgUsers *pgUsersStore, pgAWS *pgAWSStore) error {
-	fileWorkspaces := newFileWorkspacesStore(cfg.Workspaces.DataDir)
-	fileUsers := newFileUsersStore(cfg.Workspaces.DataDir)
-	fileAWS := newFileAWSStore(cfg.Workspaces.DataDir, newSecretBox(cfg.SessionSecret))
-
-	workspaces, err := fileWorkspaces.load()
-	if err != nil {
-		return err
-	}
-	users, err := fileUsers.load()
-	if err != nil {
-		return err
-	}
-	awsRecords, err := fileAWS.loadAll()
-	if err != nil {
-		return err
-	}
-
-	seenUsers := map[string]struct{}{}
-	addUser := func(u string) {
-		u = strings.ToLower(strings.TrimSpace(u))
-		if !isValidUsername(u) {
-			return
-		}
-		seenUsers[u] = struct{}{}
-	}
-	for _, u := range users {
-		addUser(u)
-	}
-	for username := range awsRecords {
-		addUser(username)
-	}
-	for _, p := range workspaces {
-		addUser(p.CreatedBy)
-		for _, u := range append(append([]string{}, p.Owners...), append(p.Editors, p.Viewers...)...) {
-			addUser(u)
-		}
-	}
-
-	for u := range seenUsers {
-		if err := pgUsers.upsert(u); err != nil {
-			return err
-		}
-	}
-	if err := pgWorkspaces.save(workspaces); err != nil {
-		return err
-	}
-	for username, rec := range awsRecords {
-		if err := pgAWS.put(username, rec); err != nil {
-			return err
-		}
-	}
-
-	if err := renameIfExists(filepath.Join(cfg.Workspaces.DataDir, "users.json")); err != nil {
-		return err
-	}
-	if err := renameIfExists(filepath.Join(cfg.Workspaces.DataDir, "aws_sso.json")); err != nil {
-		return err
-	}
-	return nil
+func openSkyforgeDB(ctx context.Context) (*sql.DB, error) {
+	return skyforgedb.Open(ctx, skyforgeDB)
 }
 
 func slugify(input string) string {
@@ -3051,8 +2555,6 @@ type awsDeviceAuthSession struct {
 	Username                string
 	Region                  string
 	StartURL                string
-	ClientID                string
-	ClientSecret            string
 	DeviceCode              string
 	IntervalSeconds         int32
 	ExpiresAt               time.Time
@@ -3060,10 +2562,7 @@ type awsDeviceAuthSession struct {
 	UserCode                string
 }
 
-var awsDeviceAuthCache struct {
-	mu    sync.Mutex
-	items map[string]awsDeviceAuthSession
-}
+// AWS device auth state is stored in Postgres to support multi-replica API deployments.
 
 func awsAnonymousConfig(ctx context.Context, region string) (aws.Config, error) {
 	return config.LoadDefaultConfig(ctx,
@@ -3117,11 +2616,14 @@ func ensureAWSOIDCClient(ctx context.Context, cfg Config, store awsSSOTokenStore
 	return record.ClientID, record.ClientSecret, record.ClientSecretExpiresAt, nil
 }
 
-func startAWSDeviceAuthorization(ctx context.Context, cfg Config, store awsSSOTokenStore, username string) (string, awsDeviceAuthSession, error) {
+func startAWSDeviceAuthorization(ctx context.Context, cfg Config, store awsSSOTokenStore, db *sql.DB, username string) (string, awsDeviceAuthSession, error) {
 	startURL := strings.TrimSpace(cfg.AwsSSOStartURL)
 	region := strings.TrimSpace(cfg.AwsSSORegion)
 	if startURL == "" || region == "" {
 		return "", awsDeviceAuthSession{}, fmt.Errorf("AWS SSO is not configured")
+	}
+	if db == nil {
+		return "", awsDeviceAuthSession{}, fmt.Errorf("aws sso requires database")
 	}
 	clientID, clientSecret, _, err := ensureAWSOIDCClient(ctx, cfg, store)
 	if err != nil {
@@ -3150,8 +2652,6 @@ func startAWSDeviceAuthorization(ctx context.Context, cfg Config, store awsSSOTo
 		Username:                username,
 		Region:                  region,
 		StartURL:                startURL,
-		ClientID:                clientID,
-		ClientSecret:            clientSecret,
 		DeviceCode:              aws.ToString(resp.DeviceCode),
 		IntervalSeconds:         resp.Interval,
 		ExpiresAt:               time.Now().Add(time.Duration(resp.ExpiresIn) * time.Second).UTC(),
@@ -3159,33 +2659,74 @@ func startAWSDeviceAuthorization(ctx context.Context, cfg Config, store awsSSOTo
 		UserCode:                aws.ToString(resp.UserCode),
 	}
 
-	awsDeviceAuthCache.mu.Lock()
-	if awsDeviceAuthCache.items == nil {
-		awsDeviceAuthCache.items = map[string]awsDeviceAuthSession{}
+	if _, err := db.ExecContext(ctx, `INSERT INTO sf_users (username) VALUES ($1) ON CONFLICT (username) DO NOTHING`, strings.ToLower(strings.TrimSpace(username))); err != nil {
+		return "", awsDeviceAuthSession{}, err
 	}
-	awsDeviceAuthCache.items[requestID] = session
-	awsDeviceAuthCache.mu.Unlock()
+	if _, err := db.ExecContext(ctx, `INSERT INTO sf_aws_device_auth_requests (
+  request_id, username, region, start_url, device_code, user_code, verification_uri_complete, interval_seconds, expires_at
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		requestID,
+		strings.ToLower(strings.TrimSpace(username)),
+		strings.TrimSpace(region),
+		strings.TrimSpace(startURL),
+		strings.TrimSpace(session.DeviceCode),
+		strings.TrimSpace(session.UserCode),
+		strings.TrimSpace(session.VerificationURIComplete),
+		int(session.IntervalSeconds),
+		session.ExpiresAt.UTC(),
+	); err != nil {
+		_ = clientID
+		_ = clientSecret
+		return "", awsDeviceAuthSession{}, err
+	}
 	return requestID, session, nil
 }
 
-func pollAWSDeviceToken(ctx context.Context, requestID string) (*awsDeviceAuthSession, *ssooidc.CreateTokenOutput, string, error) {
-	awsDeviceAuthCache.mu.Lock()
-	session, ok := awsDeviceAuthCache.items[requestID]
-	awsDeviceAuthCache.mu.Unlock()
-	if !ok {
+func pollAWSDeviceToken(ctx context.Context, cfg Config, store awsSSOTokenStore, db *sql.DB, requestID string) (*awsDeviceAuthSession, *ssooidc.CreateTokenOutput, string, error) {
+	requestID = strings.TrimSpace(requestID)
+	if requestID == "" {
 		return nil, nil, "not_found", nil
 	}
+	if db == nil {
+		return nil, nil, "error", fmt.Errorf("aws sso requires database")
+	}
+	var session awsDeviceAuthSession
+	var intervalSeconds int
+	if err := db.QueryRowContext(ctx, `SELECT username, region, start_url, device_code, user_code, verification_uri_complete, interval_seconds, expires_at
+FROM sf_aws_device_auth_requests WHERE request_id=$1`, requestID).Scan(
+		&session.Username,
+		&session.Region,
+		&session.StartURL,
+		&session.DeviceCode,
+		&session.UserCode,
+		&session.VerificationURIComplete,
+		&intervalSeconds,
+		&session.ExpiresAt,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil, "not_found", nil
+		}
+		return nil, nil, "error", err
+	}
+	session.IntervalSeconds = int32(intervalSeconds)
 	if time.Now().After(session.ExpiresAt) {
+		_, _ = db.ExecContext(ctx, `DELETE FROM sf_aws_device_auth_requests WHERE request_id=$1`, requestID)
 		return &session, nil, "expired", nil
 	}
+
+	clientID, clientSecret, _, err := ensureAWSOIDCClient(ctx, cfg, store)
+	if err != nil {
+		return &session, nil, "error", err
+	}
+
 	awsCfg, err := awsAnonymousConfig(ctx, session.Region)
 	if err != nil {
 		return &session, nil, "error", err
 	}
 	oidcClient := ssooidc.NewFromConfig(awsCfg)
 	out, err := oidcClient.CreateToken(ctx, &ssooidc.CreateTokenInput{
-		ClientId:     aws.String(session.ClientID),
-		ClientSecret: aws.String(session.ClientSecret),
+		ClientId:     aws.String(clientID),
+		ClientSecret: aws.String(clientSecret),
 		DeviceCode:   aws.String(session.DeviceCode),
 		GrantType:    aws.String("urn:ietf:params:oauth:grant-type:device_code"),
 	})
@@ -3200,14 +2741,18 @@ func pollAWSDeviceToken(ctx context.Context, requestID string) (*awsDeviceAuthSe
 		}
 		var denied *ssooidcTypes.AccessDeniedException
 		if errors.As(err, &denied) {
+			_, _ = db.ExecContext(ctx, `DELETE FROM sf_aws_device_auth_requests WHERE request_id=$1`, requestID)
 			return &session, nil, "denied", nil
 		}
 		var expired *ssooidcTypes.ExpiredTokenException
 		if errors.As(err, &expired) {
+			_, _ = db.ExecContext(ctx, `DELETE FROM sf_aws_device_auth_requests WHERE request_id=$1`, requestID)
 			return &session, nil, "expired", nil
 		}
+		_, _ = db.ExecContext(ctx, `DELETE FROM sf_aws_device_auth_requests WHERE request_id=$1`, requestID)
 		return &session, nil, "error", err
 	}
+	_, _ = db.ExecContext(ctx, `DELETE FROM sf_aws_device_auth_requests WHERE request_id=$1`, requestID)
 	return &session, out, "ok", nil
 }
 
@@ -3372,18 +2917,18 @@ func syncWorkspaces(ctx context.Context, cfg Config, store workspacesStore, db *
 		return nil, err
 	}
 	reports := make([]workspaceSyncReport, 0, len(workspaces))
-	changed := false
+	changedWorkspaces := make([]SkyforgeWorkspace, 0, 4)
 	for i := range workspaces {
 		workspaceCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		report := syncWorkspaceResources(workspaceCtx, cfg, &workspaces[i])
 		cancel()
 		if report.Updated {
-			changed = true
+			changedWorkspaces = append(changedWorkspaces, workspaces[i])
 		}
 		reports = append(reports, report)
 	}
-	if changed {
-		if err := store.save(workspaces); err != nil {
+	for _, ws := range changedWorkspaces {
+		if err := store.upsert(ws); err != nil {
 			return reports, err
 		}
 	}
@@ -3426,12 +2971,8 @@ type storageObjectSummary struct {
 	ContentType  string `json:"contentType,omitempty"`
 }
 
-// defaultService is set once at startup by initService and is used by raw endpoints
-// (SSE/webhooks) and cron jobs which don't have direct access to the Service instance.
-var defaultService *Service
-
 func initService() (*Service, error) {
-	hydrateSecretEnv(
+	skyforgeconfig.HydrateSecretEnv(
 		"SKYFORGE_SESSION_SECRET",
 		"SKYFORGE_OIDC_CLIENT_ID",
 		"SKYFORGE_OIDC_CLIENT_SECRET",
@@ -3454,7 +2995,7 @@ func initService() (*Service, error) {
 		"app_id", meta.AppID,
 	)
 
-	cfg := loadConfig()
+	cfg := skyforgeconfig.LoadConfig(skyforgeEncoreCfg)
 	box := newSecretBox(cfg.SessionSecret)
 	ldapPasswordBox = box
 	var auth *LDAPAuthenticator
@@ -3477,47 +3018,24 @@ func initService() (*Service, error) {
 		db             *sql.DB
 	)
 
-	fileWorkspaceStore := newFileWorkspacesStore(cfg.Workspaces.DataDir)
-	fileAWSStore := newFileAWSStore(cfg.Workspaces.DataDir, box)
-	fileUserStore := newFileUsersStore(cfg.Workspaces.DataDir)
-
-	if strings.EqualFold(strings.TrimSpace(cfg.StateBackend), "postgres") {
-		var err error
-		db, err = openSkyforgeDB(cfg)
-		if err != nil {
-			return nil, fmt.Errorf("postgres open failed: %w", err)
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := db.PingContext(ctx); err != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("postgres ping failed: %w", err)
-		}
-
-		pgWorkspaces := newPGWorkspacesStore(db)
-		pgUsers := newPGUsersStore(db)
-		pgAWS := newPGAWSStore(db, box)
-		empty, err := isPostgresStateEmpty(ctx, db)
-		if err != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("postgres state check failed: %w", err)
-		}
-		if empty {
-			if err := migrateFileStateToPostgres(cfg, pgWorkspaces, pgUsers, pgAWS); err != nil {
-				log.Printf("postgres state migration skipped/failed: %v", err)
-			} else {
-				log.Printf("postgres state migration complete")
-			}
-		}
-
-		workspaceStore = pgWorkspaces
-		awsStore = pgAWS
-		userStore = pgUsers
-	} else {
-		workspaceStore = fileWorkspaceStore
-		awsStore = fileAWSStore
-		userStore = fileUserStore
+	db, err = openSkyforgeDB(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("postgres open failed: %w", err)
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("postgres ping failed: %w", err)
+	}
+
+	pgWorkspaces := newPGWorkspacesStore(db)
+	pgUsers := newPGUsersStore(db)
+	pgAWS := newPGAWSStore(db, box)
+
+	workspaceStore = pgWorkspaces
+	awsStore = pgAWS
+	userStore = pgUsers
 
 	// Background loops are scheduled externally (e.g. Kubernetes CronJobs) and enqueued for worker execution.
 
@@ -3532,7 +3050,7 @@ func initService() (*Service, error) {
 		box:            box,
 		db:             db,
 	}
-	defaultService = svc
+	ensurePGNotifyHub(db)
 	// Task worker heartbeats are emitted by the worker service (cron-driven).
 	return svc, nil
 }
@@ -3764,20 +3282,18 @@ func auditActor(cfg Config, claims *SessionClaims) (actor string, actorIsAdmin b
 }
 
 type staticHandler struct {
-	brandDir        string
-	docsDir         string
-	platformDataDir string
+	brandDir string
+	docsDir  string
 }
 
-func newStaticHandler(staticRoot, platformDataDir string) *staticHandler {
+func newStaticHandler(staticRoot string) *staticHandler {
 	root := strings.TrimSpace(staticRoot)
 	if root == "" {
 		root = "/opt/skyforge/static"
 	}
 	return &staticHandler{
-		brandDir:        filepath.Join(root, "brand"),
-		docsDir:         filepath.Join(root, "docs"),
-		platformDataDir: strings.TrimSpace(platformDataDir),
+		brandDir: filepath.Join(root, "brand"),
+		docsDir:  filepath.Join(root, "docs"),
 	}
 }
 
@@ -3790,9 +3306,6 @@ func (h *staticHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 
 	switch {
-	case strings.HasPrefix(path, "/data/"):
-		h.serveData(w, r)
-		return
 	case strings.HasPrefix(path, "/brand/"):
 		http.StripPrefix("/brand/", http.FileServer(http.Dir(h.brandDir))).ServeHTTP(w, r)
 		return
@@ -3800,20 +3313,6 @@ func (h *staticHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-}
-
-func (h *staticHandler) serveData(w http.ResponseWriter, r *http.Request) {
-	if h.platformDataDir == "" {
-		http.NotFound(w, r)
-		return
-	}
-	rel := strings.TrimPrefix(r.URL.Path, "/data/")
-	rel = strings.TrimSpace(rel)
-	if rel == "" || strings.Contains(rel, "..") || strings.Contains(rel, "\\") {
-		http.NotFound(w, r)
-		return
-	}
-	http.StripPrefix("/data/", http.FileServer(http.Dir(h.platformDataDir))).ServeHTTP(w, r)
 }
 
 func (sm *SessionManager) Require(handler func(http.ResponseWriter, *http.Request, *SessionClaims)) http.Handler {
@@ -4310,15 +3809,41 @@ func createNotification(ctx context.Context, db *sql.DB, username, title, messag
 	return id, nil
 }
 
-func shouldNotifyCloudCredential(key string, ok bool) bool {
-	cloudCredentialStatusCache.mu.Lock()
-	defer cloudCredentialStatusCache.mu.Unlock()
-	if cloudCredentialStatusCache.items == nil {
-		cloudCredentialStatusCache.items = map[string]bool{}
+func shouldNotifyCloudCredential(ctx context.Context, db *sql.DB, key string, ok bool) bool {
+	if db == nil {
+		return !ok
 	}
-	prev, exists := cloudCredentialStatusCache.items[key]
-	cloudCredentialStatusCache.items[key] = ok
-	if !exists {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return !ok
+	}
+	ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	tx, err := db.BeginTx(ctxReq, nil)
+	if err != nil {
+		return !ok
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var prev bool
+	err = tx.QueryRowContext(ctxReq, `SELECT ok FROM sf_cloud_credential_status WHERE key=$1 FOR UPDATE`, key).Scan(&prev)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			if _, err := tx.ExecContext(ctxReq, `INSERT INTO sf_cloud_credential_status (key, ok, updated_at) VALUES ($1,$2,now())`, key, ok); err != nil {
+				return !ok
+			}
+			if err := tx.Commit(); err != nil {
+				return !ok
+			}
+			return !ok
+		}
+		return !ok
+	}
+	if _, err := tx.ExecContext(ctxReq, `UPDATE sf_cloud_credential_status SET ok=$2, updated_at=now() WHERE key=$1`, key, ok); err != nil {
+		return !ok
+	}
+	if err := tx.Commit(); err != nil {
 		return !ok
 	}
 	return prev && !ok
@@ -4382,13 +3907,13 @@ func runCloudCredentialChecks(cfg Config, workspaceStore workspacesStore, awsSto
 					continue
 				}
 				if !record.RefreshTokenExpiresAt.IsZero() && now.After(record.RefreshTokenExpiresAt) {
-					if shouldNotifyCloudCredential("aws-sso:"+username, false) {
+					if shouldNotifyCloudCredential(ctx, db, "aws-sso:"+username, false) {
 						_, _ = createNotification(ctx, db, username, "AWS SSO session expired",
 							"Your AWS SSO session expired. Re-authenticate in Workspaces → New Workspace → AWS.",
 							"warning", "cloud-credentials", "/workspaces/new", "high")
 					}
 				} else {
-					shouldNotifyCloudCredential("aws-sso:"+username, true)
+					shouldNotifyCloudCredential(ctx, db, "aws-sso:"+username, true)
 				}
 			}
 		}
@@ -4410,7 +3935,7 @@ func runCloudCredentialChecks(cfg Config, workspaceStore workspacesStore, awsSto
 			creds, err := getWorkspaceAWSStaticCredentials(ctx, db, box, workspace.ID)
 			key := "aws-static:" + workspace.ID
 			if err != nil || creds == nil || creds.AccessKeyID == "" || creds.SecretAccessKey == "" {
-				if shouldNotifyCloudCredential(key, false) {
+				if shouldNotifyCloudCredential(ctx, db, key, false) {
 					for _, username := range recipients {
 						_, _ = createNotification(ctx, db, username, "AWS static credentials missing",
 							fmt.Sprintf("Workspace %s is missing AWS static credentials. Update them in Workspace Settings.", workspace.Name),
@@ -4422,7 +3947,7 @@ func runCloudCredentialChecks(cfg Config, workspaceStore workspacesStore, awsSto
 				validateErr := validateAWSStaticCredentials(validateCtx, workspace.AWSRegion, creds)
 				cancel()
 				if validateErr != nil {
-					if shouldNotifyCloudCredential(key, false) {
+					if shouldNotifyCloudCredential(ctx, db, key, false) {
 						for _, username := range recipients {
 							_, _ = createNotification(ctx, db, username, "AWS static credentials invalid",
 								fmt.Sprintf("Workspace %s failed AWS static validation. Re-enter credentials in Workspace Settings.", workspace.Name),
@@ -4430,7 +3955,7 @@ func runCloudCredentialChecks(cfg Config, workspaceStore workspacesStore, awsSto
 						}
 					}
 				} else {
-					shouldNotifyCloudCredential(key, true)
+					shouldNotifyCloudCredential(ctx, db, key, true)
 				}
 			}
 		}
@@ -4439,7 +3964,7 @@ func runCloudCredentialChecks(cfg Config, workspaceStore workspacesStore, awsSto
 		if azureCreds != nil {
 			key := "azure:" + workspace.ID
 			if err != nil || azureCreds.ClientID == "" || azureCreds.ClientSecret == "" {
-				if shouldNotifyCloudCredential(key, false) {
+				if shouldNotifyCloudCredential(ctx, db, key, false) {
 					for _, username := range recipients {
 						_, _ = createNotification(ctx, db, username, "Azure credentials missing",
 							fmt.Sprintf("Workspace %s is missing Azure credentials. Re-enter them in Workspace Settings.", workspace.Name),
@@ -4451,7 +3976,7 @@ func runCloudCredentialChecks(cfg Config, workspaceStore workspacesStore, awsSto
 				_, tokenErr := fetchAzureToken(validateCtx, azureCreds.TenantID, azureCreds.ClientID, azureCreds.ClientSecret)
 				cancel()
 				if tokenErr != nil {
-					if shouldNotifyCloudCredential(key, false) {
+					if shouldNotifyCloudCredential(ctx, db, key, false) {
 						for _, username := range recipients {
 							_, _ = createNotification(ctx, db, username, "Azure credentials invalid",
 								fmt.Sprintf("Workspace %s failed Azure validation. Re-enter credentials in Workspace Settings.", workspace.Name),
@@ -4459,7 +3984,7 @@ func runCloudCredentialChecks(cfg Config, workspaceStore workspacesStore, awsSto
 						}
 					}
 				} else {
-					shouldNotifyCloudCredential(key, true)
+					shouldNotifyCloudCredential(ctx, db, key, true)
 				}
 			}
 		}
@@ -4468,7 +3993,7 @@ func runCloudCredentialChecks(cfg Config, workspaceStore workspacesStore, awsSto
 		if gcpCreds != nil {
 			key := "gcp:" + workspace.ID
 			if err != nil || gcpCreds.ServiceAccountJSON == "" {
-				if shouldNotifyCloudCredential(key, false) {
+				if shouldNotifyCloudCredential(ctx, db, key, false) {
 					for _, username := range recipients {
 						_, _ = createNotification(ctx, db, username, "GCP credentials missing",
 							fmt.Sprintf("Workspace %s is missing GCP credentials. Re-enter them in Workspace Settings.", workspace.Name),
@@ -4478,7 +4003,7 @@ func runCloudCredentialChecks(cfg Config, workspaceStore workspacesStore, awsSto
 			} else {
 				payload, parseErr := parseGCPServiceAccountJSON(gcpCreds.ServiceAccountJSON)
 				if parseErr != nil {
-					if shouldNotifyCloudCredential(key, false) {
+					if shouldNotifyCloudCredential(ctx, db, key, false) {
 						for _, username := range recipients {
 							_, _ = createNotification(ctx, db, username, "GCP credentials invalid",
 								fmt.Sprintf("Workspace %s has invalid GCP credentials. Re-upload JSON in Workspace Settings.", workspace.Name),
@@ -4490,7 +4015,7 @@ func runCloudCredentialChecks(cfg Config, workspaceStore workspacesStore, awsSto
 					_, tokenErr := fetchGCPAccessToken(validateCtx, payload)
 					cancel()
 					if tokenErr != nil {
-						if shouldNotifyCloudCredential(key, false) {
+						if shouldNotifyCloudCredential(ctx, db, key, false) {
 							for _, username := range recipients {
 								_, _ = createNotification(ctx, db, username, "GCP credentials invalid",
 									fmt.Sprintf("Workspace %s failed GCP validation. Re-upload JSON in Workspace Settings.", workspace.Name),
@@ -4498,7 +4023,7 @@ func runCloudCredentialChecks(cfg Config, workspaceStore workspacesStore, awsSto
 							}
 						}
 					} else {
-						shouldNotifyCloudCredential(key, true)
+						shouldNotifyCloudCredential(ctx, db, key, true)
 					}
 				}
 			}

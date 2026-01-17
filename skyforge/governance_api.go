@@ -29,51 +29,51 @@ type ProviderCostBreakdown struct {
 }
 
 type GovernanceResource struct {
-	ID           string          `json:"id"`
-	WorkspaceID  string          `json:"workspaceId,omitempty"`
+	ID            string          `json:"id"`
+	WorkspaceID   string          `json:"workspaceId,omitempty"`
 	WorkspaceName string          `json:"workspaceName,omitempty"`
-	Provider     string          `json:"provider"`
-	ResourceID   string          `json:"resourceId"`
-	ResourceType string          `json:"resourceType"`
-	Name         string          `json:"name,omitempty"`
-	Region       string          `json:"region,omitempty"`
-	AccountID    string          `json:"accountId,omitempty"`
-	Owner        string          `json:"owner,omitempty"`
-	Status       string          `json:"status,omitempty"`
-	Tags         json.RawMessage `json:"tags,omitempty"`
-	Metadata     json.RawMessage `json:"metadata,omitempty"`
-	FirstSeen    time.Time       `json:"firstSeen"`
-	LastSeen     time.Time       `json:"lastSeen"`
-	UpdatedAt    time.Time       `json:"updatedAt"`
+	Provider      string          `json:"provider"`
+	ResourceID    string          `json:"resourceId"`
+	ResourceType  string          `json:"resourceType"`
+	Name          string          `json:"name,omitempty"`
+	Region        string          `json:"region,omitempty"`
+	AccountID     string          `json:"accountId,omitempty"`
+	Owner         string          `json:"owner,omitempty"`
+	Status        string          `json:"status,omitempty"`
+	Tags          json.RawMessage `json:"tags,omitempty"`
+	Metadata      json.RawMessage `json:"metadata,omitempty"`
+	FirstSeen     time.Time       `json:"firstSeen"`
+	LastSeen      time.Time       `json:"lastSeen"`
+	UpdatedAt     time.Time       `json:"updatedAt"`
 }
 
 type GovernanceCostSnapshot struct {
-	ID          string          `json:"id"`
-	WorkspaceID  string          `json:"workspaceId,omitempty"`
+	ID            string          `json:"id"`
+	WorkspaceID   string          `json:"workspaceId,omitempty"`
 	WorkspaceName string          `json:"workspaceName,omitempty"`
-	ResourceID  string          `json:"resourceId,omitempty"`
-	Provider    string          `json:"provider"`
-	PeriodStart string          `json:"periodStart"`
-	PeriodEnd   string          `json:"periodEnd"`
-	Amount      float64         `json:"amount"`
-	Currency    string          `json:"currency"`
-	Source      string          `json:"source,omitempty"`
-	Metadata    json.RawMessage `json:"metadata,omitempty"`
-	CreatedAt   time.Time       `json:"createdAt"`
+	ResourceID    string          `json:"resourceId,omitempty"`
+	Provider      string          `json:"provider"`
+	PeriodStart   string          `json:"periodStart"`
+	PeriodEnd     string          `json:"periodEnd"`
+	Amount        float64         `json:"amount"`
+	Currency      string          `json:"currency"`
+	Source        string          `json:"source,omitempty"`
+	Metadata      json.RawMessage `json:"metadata,omitempty"`
+	CreatedAt     time.Time       `json:"createdAt"`
 }
 
 type GovernanceUsageSnapshot struct {
-	ID          string          `json:"id"`
-	WorkspaceID  string          `json:"workspaceId,omitempty"`
+	ID            string          `json:"id"`
+	WorkspaceID   string          `json:"workspaceId,omitempty"`
 	WorkspaceName string          `json:"workspaceName,omitempty"`
-	Provider    string          `json:"provider"`
-	ScopeType   string          `json:"scopeType"`
-	ScopeID     string          `json:"scopeId,omitempty"`
-	Metric      string          `json:"metric"`
-	Value       float64         `json:"value"`
-	Unit        string          `json:"unit,omitempty"`
-	Metadata    json.RawMessage `json:"metadata,omitempty"`
-	Collected   time.Time       `json:"collectedAt"`
+	Provider      string          `json:"provider"`
+	ScopeType     string          `json:"scopeType"`
+	ScopeID       string          `json:"scopeId,omitempty"`
+	Metric        string          `json:"metric"`
+	Value         float64         `json:"value"`
+	Unit          string          `json:"unit,omitempty"`
+	Metadata      json.RawMessage `json:"metadata,omitempty"`
+	Collected     time.Time       `json:"collectedAt"`
 }
 
 type GovernanceResourceIngestRequest struct {
@@ -102,7 +102,7 @@ type GovernanceCostIngestRequest struct {
 }
 
 type GovernanceCostInput struct {
-	WorkspaceID  string            `json:"workspaceId,omitempty"`
+	WorkspaceID string            `json:"workspaceId,omitempty"`
 	ResourceID  string            `json:"resourceId,omitempty"`
 	Provider    string            `json:"provider"`
 	PeriodStart string            `json:"periodStart"`
@@ -119,36 +119,36 @@ type GovernanceUsageIngestRequest struct {
 
 type GovernanceUsageInput struct {
 	WorkspaceID string            `json:"workspaceId,omitempty"`
-	Provider  string            `json:"provider"`
-	ScopeType string            `json:"scopeType"`
-	ScopeID   string            `json:"scopeId,omitempty"`
-	Metric    string            `json:"metric"`
-	Value     float64           `json:"value"`
-	Unit      string            `json:"unit,omitempty"`
-	Metadata  map[string]string `json:"metadata,omitempty"`
+	Provider    string            `json:"provider"`
+	ScopeType   string            `json:"scopeType"`
+	ScopeID     string            `json:"scopeId,omitempty"`
+	Metric      string            `json:"metric"`
+	Value       float64           `json:"value"`
+	Unit        string            `json:"unit,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
 }
 
 type GovernanceResourceQuery struct {
 	WorkspaceID string `query:"workspace_id" encore:"optional"`
-	Provider  string `query:"provider" encore:"optional"`
-	Status    string `query:"status" encore:"optional"`
-	Owner     string `query:"owner" encore:"optional"`
-	Type      string `query:"type" encore:"optional"`
-	Query     string `query:"q" encore:"optional"`
-	Limit     int    `query:"limit" encore:"optional"`
+	Provider    string `query:"provider" encore:"optional"`
+	Status      string `query:"status" encore:"optional"`
+	Owner       string `query:"owner" encore:"optional"`
+	Type        string `query:"type" encore:"optional"`
+	Query       string `query:"q" encore:"optional"`
+	Limit       int    `query:"limit" encore:"optional"`
 }
 
 type GovernanceCostQuery struct {
 	WorkspaceID string `query:"workspace_id" encore:"optional"`
-	Provider  string `query:"provider" encore:"optional"`
-	Limit     int    `query:"limit" encore:"optional"`
+	Provider    string `query:"provider" encore:"optional"`
+	Limit       int    `query:"limit" encore:"optional"`
 }
 
 type GovernanceUsageQuery struct {
 	WorkspaceID string `query:"workspace_id" encore:"optional"`
-	Provider  string `query:"provider" encore:"optional"`
-	Metric    string `query:"metric" encore:"optional"`
-	Limit     int    `query:"limit" encore:"optional"`
+	Provider    string `query:"provider" encore:"optional"`
+	Metric      string `query:"metric" encore:"optional"`
+	Limit       int    `query:"limit" encore:"optional"`
 }
 
 type GovernanceResourcesResponse struct {

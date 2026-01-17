@@ -1,6 +1,8 @@
 package skyforge
 
-import "encore.dev/metrics"
+import (
+	"encore.dev/metrics"
+)
 
 type taskTypeLabels struct {
 	TaskType string
@@ -32,7 +34,9 @@ var (
 	workspaceSyncFailures       = metrics.NewCounter[uint64]("skyforge_workspace_sync_failures_total", metrics.CounterConfig{})
 	workspaceSyncErrors         = metrics.NewCounter[uint64]("skyforge_workspace_sync_errors_total", metrics.CounterConfig{})
 	workspaceSyncBackgroundRuns = metrics.NewCounter[uint64]("skyforge_workspace_sync_background_runs_total", metrics.CounterConfig{})
+)
 
+var (
 	taskQueuedTotal   = metrics.NewCounterGroup[taskTypeLabels, uint64]("skyforge_tasks_queued_total", metrics.CounterConfig{})
 	taskStartedTotal  = metrics.NewCounterGroup[taskTypeLabels, uint64]("skyforge_tasks_started_total", metrics.CounterConfig{})
 	taskFinishedTotal = metrics.NewCounterGroup[taskFinishLabels, uint64]("skyforge_tasks_finished_total", metrics.CounterConfig{})

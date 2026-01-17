@@ -15,8 +15,8 @@ import (
 // This is implemented as a raw endpoint so it can hold a long-lived HTTP connection.
 //
 //encore:api auth raw method=GET path=/api/runs/:id/events
-func RunEvents(w http.ResponseWriter, req *http.Request) {
-	if defaultService == nil || defaultService.db == nil || defaultService.sessionManager == nil {
+func (s *Service) RunEvents(w http.ResponseWriter, req *http.Request) {
+	if s == nil || s.db == nil || s.sessionManager == nil {
 		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -40,25 +40,25 @@ func RunEvents(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	claims, err := defaultService.sessionManager.Parse(req)
+	claims, err := s.sessionManager.Parse(req)
 	if err != nil || claims == nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	ctx := req.Context()
-	task, err := getTask(ctx, defaultService.db, taskID)
+	task, err := getTask(ctx, s.db, taskID)
 	if err != nil || task == nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 	// RBAC: only allow if the user can access the workspace.
-	_, _, workspace, err := defaultService.loadWorkspaceByKey(task.WorkspaceID)
+	_, _, workspace, err := s.loadWorkspaceByKey(task.WorkspaceID)
 	if err != nil {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	if workspaceAccessLevelForClaims(defaultService.cfg, workspace, claims) == "none" {
+	if workspaceAccessLevelForClaims(s.cfg, workspace, claims) == "none" {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -96,7 +96,7 @@ func RunEvents(w http.ResponseWriter, req *http.Request) {
 		default:
 			// If canceled, stop streaming.
 			ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
-			rows, err := listTaskLogsAfter(ctxReq, defaultService.db, taskID, lastID, 500)
+			rows, err := listTaskLogsAfter(ctxReq, s.db, taskID, lastID, 500)
 			cancel()
 			if err != nil {
 				write(": retry\n\n")
@@ -106,7 +106,7 @@ func RunEvents(w http.ResponseWriter, req *http.Request) {
 			if len(rows) == 0 {
 				// Block until we see an update (or periodically emit keep-alives).
 				waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-				updated := waitForTaskUpdateSignal(waitCtx, defaultService.db, taskID)
+				updated := waitForTaskUpdateSignal(waitCtx, s.db, taskID)
 				cancel()
 				if updated {
 					continue

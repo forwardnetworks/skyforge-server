@@ -30,10 +30,10 @@ type PKIRootResponse struct {
 }
 
 type PKIIssueRequest struct {
-	CommonName string   `json:"commonName"`
-	SANs       []string `json:"sans,omitempty"`
-	WorkspaceID  string   `json:"workspaceId,omitempty"`
-	TTLDays    int      `json:"ttlDays,omitempty"`
+	CommonName  string   `json:"commonName"`
+	SANs        []string `json:"sans,omitempty"`
+	WorkspaceID string   `json:"workspaceId,omitempty"`
+	TTLDays     int      `json:"ttlDays,omitempty"`
 }
 
 type PKIIssueResponse struct {
@@ -44,7 +44,7 @@ type PKIIssueResponse struct {
 	BundlePEM   string `json:"bundlePem"`
 	IssuedAt    string `json:"issuedAt"`
 	ExpiresAt   string `json:"expiresAt"`
-	WorkspaceID   string `json:"workspaceId,omitempty"`
+	WorkspaceID string `json:"workspaceId,omitempty"`
 	Fingerprint string `json:"fingerprint"`
 }
 
@@ -52,7 +52,7 @@ type PKICertSummary struct {
 	ID          string   `json:"id"`
 	CommonName  string   `json:"commonName"`
 	SANs        []string `json:"sans,omitempty"`
-	WorkspaceID   string   `json:"workspaceId,omitempty"`
+	WorkspaceID string   `json:"workspaceId,omitempty"`
 	IssuedAt    string   `json:"issuedAt"`
 	ExpiresAt   string   `json:"expiresAt"`
 	RevokedAt   string   `json:"revokedAt,omitempty"`
@@ -77,9 +77,9 @@ type PKISSHRootResponse struct {
 }
 
 type PKISSHIssueRequest struct {
-	Principals []string `json:"principals,omitempty"`
-	WorkspaceID  string   `json:"workspaceId,omitempty"`
-	TTLDays    int      `json:"ttlDays,omitempty"`
+	Principals  []string `json:"principals,omitempty"`
+	WorkspaceID string   `json:"workspaceId,omitempty"`
+	TTLDays     int      `json:"ttlDays,omitempty"`
 }
 
 type PKISSHIssueResponse struct {
@@ -90,14 +90,14 @@ type PKISSHIssueResponse struct {
 	Certificate string   `json:"certificate"`
 	IssuedAt    string   `json:"issuedAt"`
 	ExpiresAt   string   `json:"expiresAt"`
-	WorkspaceID   string   `json:"workspaceId,omitempty"`
+	WorkspaceID string   `json:"workspaceId,omitempty"`
 	Fingerprint string   `json:"fingerprint"`
 }
 
 type PKISSHCertSummary struct {
 	ID          string   `json:"id"`
 	Principals  []string `json:"principals"`
-	WorkspaceID   string   `json:"workspaceId,omitempty"`
+	WorkspaceID string   `json:"workspaceId,omitempty"`
 	IssuedAt    string   `json:"issuedAt"`
 	ExpiresAt   string   `json:"expiresAt"`
 	RevokedAt   string   `json:"revokedAt,omitempty"`
@@ -255,7 +255,7 @@ func (s *Service) IssuePKICert(ctx context.Context, req *PKIIssueRequest) (*PKII
 		BundlePEM:   bundle,
 		IssuedAt:    now.Format(time.RFC3339),
 		ExpiresAt:   notAfter.Format(time.RFC3339),
-		WorkspaceID:   workspaceID,
+		WorkspaceID: workspaceID,
 		Fingerprint: base64.StdEncoding.EncodeToString(fingerprint[:]),
 	}, nil
 }
@@ -287,7 +287,7 @@ ORDER BY issued_at DESC`, username)
 		var (
 			id, commonName, certPEM string
 			sansRaw                 []byte
-			workspaceID               sql.NullString
+			workspaceID             sql.NullString
 			issuedAt                time.Time
 			expiresAt               time.Time
 			revokedAt               sql.NullTime
@@ -306,7 +306,7 @@ ORDER BY issued_at DESC`, username)
 			ID:          id,
 			CommonName:  commonName,
 			SANs:        sans,
-			WorkspaceID:   workspaceID.String,
+			WorkspaceID: workspaceID.String,
 			IssuedAt:    issuedAt.UTC().Format(time.RFC3339),
 			ExpiresAt:   expiresAt.UTC().Format(time.RFC3339),
 			Fingerprint: fingerprint,
@@ -379,7 +379,7 @@ func (s *Service) RevokePKICert(ctx context.Context, id string) (*PKICertSummary
 	var (
 		commonName, certPEM, owner string
 		sansRaw                    []byte
-		workspaceID                  sql.NullString
+		workspaceID                sql.NullString
 		issuedAt                   time.Time
 		expiresAt                  time.Time
 		revokedAt                  sql.NullTime
@@ -411,7 +411,7 @@ func (s *Service) RevokePKICert(ctx context.Context, id string) (*PKICertSummary
 		ID:          id,
 		CommonName:  commonName,
 		SANs:        sans,
-		WorkspaceID:   workspaceID.String,
+		WorkspaceID: workspaceID.String,
 		IssuedAt:    issuedAt.UTC().Format(time.RFC3339),
 		ExpiresAt:   expiresAt.UTC().Format(time.RFC3339),
 		Fingerprint: fingerprint,
@@ -504,7 +504,7 @@ func (s *Service) IssuePKISSHCert(ctx context.Context, req *PKISSHIssueRequest) 
 		ValidBefore:     uint64(notAfter.Unix()),
 		Permissions: ssh.Permissions{
 			Extensions: map[string]string{
-				"permit-pty":             "",
+				"permit-pty":              "",
 				"permit-agent-forwarding": "",
 				"permit-port-forwarding":  "",
 				"permit-user-rc":          "",
@@ -548,7 +548,7 @@ func (s *Service) IssuePKISSHCert(ctx context.Context, req *PKISSHIssueRequest) 
 		Certificate: certText,
 		IssuedAt:    now.Format(time.RFC3339),
 		ExpiresAt:   notAfter.Format(time.RFC3339),
-		WorkspaceID:   workspaceID,
+		WorkspaceID: workspaceID,
 		Fingerprint: ssh.FingerprintSHA256(cert),
 	}, nil
 }
@@ -578,9 +578,9 @@ ORDER BY issued_at DESC`, username)
 	certs := make([]PKISSHCertSummary, 0, 32)
 	for rows.Next() {
 		var (
-			id, certText string
+			id, certText  string
 			principalsRaw []byte
-			workspaceID     sql.NullString
+			workspaceID   sql.NullString
 			issuedAt      time.Time
 			expiresAt     time.Time
 			revokedAt     sql.NullTime
@@ -597,7 +597,7 @@ ORDER BY issued_at DESC`, username)
 		entry := PKISSHCertSummary{
 			ID:          id,
 			Principals:  principals,
-			WorkspaceID:   workspaceID.String,
+			WorkspaceID: workspaceID.String,
 			IssuedAt:    issuedAt.UTC().Format(time.RFC3339),
 			ExpiresAt:   expiresAt.UTC().Format(time.RFC3339),
 			Fingerprint: fingerprint,
@@ -668,7 +668,7 @@ func (s *Service) RevokePKISSHCert(ctx context.Context, id string) (*PKISSHCertS
 	row := s.db.QueryRowContext(ctx, `SELECT principals, workspace_id, issued_at, expires_at, revoked_at, cert, username FROM sf_pki_ssh_certs WHERE id=$1`, id)
 	var (
 		principalsRaw []byte
-		workspaceID     sql.NullString
+		workspaceID   sql.NullString
 		issuedAt      time.Time
 		expiresAt     time.Time
 		revokedAt     sql.NullTime
@@ -700,7 +700,7 @@ func (s *Service) RevokePKISSHCert(ctx context.Context, id string) (*PKISSHCertS
 	resp := &PKISSHCertSummary{
 		ID:          id,
 		Principals:  principals,
-		WorkspaceID:   workspaceID.String,
+		WorkspaceID: workspaceID.String,
 		IssuedAt:    issuedAt.UTC().Format(time.RFC3339),
 		ExpiresAt:   expiresAt.UTC().Format(time.RFC3339),
 		Fingerprint: fingerprint,

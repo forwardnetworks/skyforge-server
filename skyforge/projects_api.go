@@ -166,9 +166,14 @@ func (s *Service) GetWorkspaces(ctx context.Context, params *WorkspacesListParam
 			}
 		}
 		if changed {
-			if err := s.workspaceStore.save(workspaces); err != nil {
-				log.Printf("workspaces save after group sync: %v", err)
-			} else {
+			updatedAll := true
+			for _, w := range changedWorkspaces {
+				if err := s.workspaceStore.upsert(w); err != nil {
+					updatedAll = false
+					log.Printf("workspace upsert after group sync (%s): %v", w.ID, err)
+				}
+			}
+			if updatedAll {
 				for _, w := range changedWorkspaces {
 					syncGiteaCollaboratorsForWorkspace(s.cfg, w)
 				}
@@ -373,10 +378,13 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 	if created.AWSAuthMethod == "" {
 		created.AWSAuthMethod = "sso"
 	}
-	workspaces = append(workspaces, created)
-	if err := s.workspaceStore.save(workspaces); err != nil {
-		log.Printf("workspaces save: %v", err)
+	if err := s.workspaceStore.upsert(created); err != nil {
+		log.Printf("workspace upsert: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist workspace").Err()
+	}
+	if s.db != nil {
+		_ = notifyWorkspacesUpdatePG(ctx, s.db, "*")
+		_ = notifyDashboardUpdatePG(ctx, s.db)
 	}
 	if s.db != nil {
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)

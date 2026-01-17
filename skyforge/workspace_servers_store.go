@@ -350,4 +350,3 @@ func deleteWorkspaceEveServer(ctx context.Context, db *sql.DB, workspaceID, id s
 	_, err := db.ExecContext(ctx, `DELETE FROM sf_project_eve_servers WHERE project_id=$1 AND id=$2`, workspaceID, id)
 	return err
 }
-

@@ -1,0 +1,300 @@
+{
+  "source": "https://github.com/ipspace/netlab (dev) netsim/devices/*.yml",
+  "generated_at": "2026-01-02T15:46:21Z",
+  "sets": [
+    {
+      "device": "arubacx",
+      "credentials": [
+        {
+          "username": "admin",
+          "password": "admin"
+        },
+        {
+          "username": "admin",
+          "password": "admin@123"
+        }
+      ],
+      "image_prefix": "vrnetlab/aruba_arubaos-cx"
+    },
+    {
+      "device": "asav",
+      "credentials": [
+        {
+          "username": "admin",
+          "password": "CiscoAsa1!"
+        }
+      ],
+      "image_prefix": "vrnetlab/cisco_asav"
+    },
+    {
+      "device": "cat8000v",
+      "credentials": [
+        {
+          "username": "admin",
+          "password": "admin"
+        },
+        {
+          "username": "admin",
+          "password": "admin@123"
+        }
+      ],
+      "image_prefix": "vrnetlab/cisco_c8000v"
+    },
+    {
+      "device": "csr",
+      "credentials": [
+        {
+          "username": "admin",
+          "password": "admin"
+        },
+        {
+          "username": "admin",
+          "password": "admin@123"
+        }
+      ],
+      "image_prefix": "vrnetlab/vr-csr"
+    },
+    {
+      "device": "dellos10",
+      "credentials": [
+        {
+          "username": "admin",
+          "password": "admin"
+        }
+      ],
+      "image_prefix": "vrnetlab/vr-ftosv"
+    },
+    {
+      "device": "eos",
+      "credentials": [
+        {
+          "username": "admin",
+          "password": "admin"
+        }
+      ],
+      "image_prefix": "ceos"
+    },
+    {
+      "device": "eos",
+      "credentials": [
+        {
+          "username": "admin",
+          "password": "admin"
+        }
+      ],
+      "image_prefix": "ceos64"
+    },
+    {
+      "device": "fortios",
+      "credentials": [
+        {
+          "username": "admin",
+          "password": "admin"
+        },
+        {
+          "username": "admin",
+          "password": "admin@123"
+        }
+      ],
+      "image_prefix": "vrnetlab/vr-fortios"
+    },
+    {
+      "device": "iol",
+      "credentials": [
+        {
+          "username": "admin",
+          "password": "admin"
+        },
+        {
+          "username": "admin",
+          "password": "admin@123"
+        }
+      ],
+      "image_prefix": "vrnetlab/cisco_iol"
+    },
+    {
+      "device": "ioll2",
+      "credentials": [
+        {
+          "username": "admin",
+          "password": "admin"
+        },
+        {
+          "username": "admin",
+          "password": "admin@123"
+        }
+      ],
+      "image_prefix": "vrnetlab/cisco_iol"
+    },
+    {
+      "device": "ios",
+      "credentials": [
+        {
+          "username": "admin",
+          "password": "admin"
+        }
+      ]
+    },
+    {
+      "device": "iosv",
+      "credentials": [
+        {
+          "username": "admin",
+          "password": "admin"
+        },
+        {
+          "username": "admin",
+          "password": "admin@123"
+        }
+      ],
+      "image_prefix": "vrnetlab/cisco_vios"
+    },
+    {
+      "device": "iosvl2",
+      "credentials": [
+        {
+          "username": "admin",
+          "password": "admin"
+        },
+        {
+          "username": "admin",
+          "password": "admin@123"
+        }
+      ],
+      "image_prefix": "vrnetlab/cisco_viosl2"
+    },
+    {
+      "device": "iosxr",
+      "credentials": [
+        {
+          "username": "clab",
+          "password": "clab@123"
+        }
+      ],
+      "image_prefix": "ios-xr/xrd-control-plane"
+    },
+    {
+      "device": "nxos",
+      "credentials": [
+        {
+          "username": "admin",
+          "password": "admin"
+        }
+      ],
+      "image_prefix": "vrnetlab/vr-n9kv"
+    },
+    {
+      "device": "linux",
+      "credentials": [
+        {
+          "username": "root",
+          "password": "admin"
+        }
+      ],
+      "image_prefix": "python"
+    },
+    {
+      "device": "openbsd",
+      "credentials": [
+        {
+          "username": "admin",
+          "password": "admin"
+        }
+      ],
+      "image_prefix": "vrnetlab/openbsd_openbsd"
+    },
+    {
+      "device": "routeros7",
+      "credentials": [
+        {
+          "username": "admin",
+          "password": "admin"
+        },
+        {
+          "username": "admin",
+          "password": "admin@123"
+        }
+      ],
+      "image_prefix": "vrnetlab/mikrotik_routeros"
+    },
+    {
+      "device": "sros",
+      "credentials": [
+        {
+          "username": "admin",
+          "password": "admin"
+        },
+        {
+          "username": "admin",
+          "password": "admin@123"
+        }
+      ],
+      "image_prefix": "vrnetlab/vr-sros"
+    },
+    {
+      "device": "vjunos-router",
+      "credentials": [
+        {
+          "username": "admin",
+          "password": "admin@123"
+        }
+      ],
+      "image_prefix": "vrnetlab/juniper_vjunos-router"
+    },
+    {
+      "device": "vjunos-switch",
+      "credentials": [
+        {
+          "username": "admin",
+          "password": "admin@123"
+        }
+      ],
+      "image_prefix": "vrnetlab/juniper_vjunos-switch"
+    },
+    {
+      "device": "vmx",
+      "credentials": [
+        {
+          "username": "admin",
+          "password": "admin"
+        },
+        {
+          "username": "admin",
+          "password": "admin@123"
+        }
+      ],
+      "image_prefix": "vrnetlab/vr-vmx"
+    },
+    {
+      "device": "vptx",
+      "credentials": [
+        {
+          "username": "admin",
+          "password": "admin@123"
+        }
+      ],
+      "image_prefix": "vrnetlab/juniper_vjunosevolved"
+    },
+    {
+      "device": "vsrx",
+      "credentials": [
+        {
+          "username": "admin",
+          "password": "admin@123"
+        }
+      ],
+      "image_prefix": "vrnetlab/juniper_vsrx"
+    }
+  ],
+  "fallback": [
+    {
+      "username": "admin",
+      "password": "admin"
+    }
+    ,
+    {
+      "username": "admin",
+      "password": "admin@123"
+    }
+  ]
+}

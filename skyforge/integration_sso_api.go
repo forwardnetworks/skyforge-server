@@ -15,7 +15,6 @@ type yaadeLoginPayload struct {
 	Password string `json:"password"`
 }
 
-
 func (s *Service) redirectToReauth(w http.ResponseWriter, r *http.Request) {
 	const publicAPIPrefix = "/api/skyforge"
 	requestURI := strings.TrimSpace(r.URL.RequestURI())

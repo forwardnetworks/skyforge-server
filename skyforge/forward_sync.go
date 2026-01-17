@@ -442,10 +442,8 @@ func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *wor
 				if jumpUser == "" || !useUserJump {
 					jumpUser = strings.TrimSpace(eve.SSHUser)
 				}
-				if jumpKey == "" && strings.TrimSpace(resolvedEve.SSHKeyFile) != "" {
-					if keyBytes, err := os.ReadFile(strings.TrimSpace(resolvedEve.SSHKeyFile)); err == nil {
-						jumpKey = strings.TrimSpace(string(keyBytes))
-					}
+				if jumpKey == "" && strings.TrimSpace(resolvedEve.SSHKey) != "" {
+					jumpKey = strings.TrimSpace(resolvedEve.SSHKey)
 				}
 			}
 		}

@@ -329,7 +329,7 @@ func (s *Service) GetWorkspaceEveServerHealth(ctx context.Context, id, serverID 
 	if workspaceAccessLevelForClaims(s.cfg, pc.workspace, pc.claims) == "none" {
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
-	sshCfg, err := s.resolveWorkspaceEveSSH(ctx, id, workspaceServerRef(serverID))
+	sshCfg, cleanup, err := s.resolveWorkspaceEveSSH(ctx, id, workspaceServerRef(serverID))
 	if err != nil {
 		return &WorkspaceServerHealthResponse{
 			Status: "error",
@@ -337,6 +337,7 @@ func (s *Service) GetWorkspaceEveServerHealth(ctx context.Context, id, serverID 
 			Error:  sanitizeError(err),
 		}, nil
 	}
+	defer cleanup()
 	client, err := dialSSH(sshCfg)
 	if err != nil {
 		return &WorkspaceServerHealthResponse{

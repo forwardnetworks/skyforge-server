@@ -175,9 +175,14 @@ func loadDashboardSnapshot(ctx context.Context, svc *Service, claims *SessionCla
 		}
 	}
 	if changed {
-		if err := svc.workspaceStore.save(workspaces); err != nil {
-			log.Printf("workspaces save after group sync: %v", err)
-		} else {
+		updatedAll := true
+		for _, w := range changedWorkspaces {
+			if err := svc.workspaceStore.upsert(w); err != nil {
+				updatedAll = false
+				log.Printf("workspace upsert after group sync (%s): %v", w.ID, err)
+			}
+		}
+		if updatedAll {
 			for _, w := range changedWorkspaces {
 				syncGiteaCollaboratorsForWorkspace(svc.cfg, w)
 			}
@@ -209,6 +214,12 @@ func loadDashboardSnapshot(ctx context.Context, svc *Service, claims *SessionCla
 			if err == nil {
 				runItems := make([]map[string]any, 0, len(tasks))
 				for _, task := range tasks {
+					// Hide internal bootstrap tasks from the dashboard. These run as part
+					// of first-login/workspace creation and are not actionable for users.
+					switch strings.TrimSpace(task.TaskType) {
+					case "user-bootstrap", "workspace-bootstrap":
+						continue
+					}
 					run := taskToRunInfo(task)
 					run["workspaceId"] = w.ID
 					runItems = append(runItems, run)
@@ -255,12 +266,12 @@ func intFromAny(v any) int {
 // DashboardEvents streams a dashboard snapshot as Server-Sent Events (SSE).
 //
 //encore:api auth raw method=GET path=/api/dashboard/events
-func DashboardEvents(w http.ResponseWriter, req *http.Request) {
-	if defaultService == nil || defaultService.db == nil || defaultService.sessionManager == nil {
+func (s *Service) DashboardEvents(w http.ResponseWriter, req *http.Request) {
+	if s == nil || s.db == nil || s.sessionManager == nil {
 		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	claims, err := defaultService.sessionManager.Parse(req)
+	claims, err := s.sessionManager.Parse(req)
 	if err != nil || claims == nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -289,7 +300,7 @@ func DashboardEvents(w http.ResponseWriter, req *http.Request) {
 	id := int64(0)
 
 	for {
-		snap, err := loadDashboardSnapshot(ctx, defaultService, claims)
+		snap, err := loadDashboardSnapshot(ctx, s, claims)
 		if err != nil {
 			write(": retry\n\n")
 			flusher.Flush()
@@ -314,7 +325,7 @@ func DashboardEvents(w http.ResponseWriter, req *http.Request) {
 
 		// Block until a dashboard update arrives (or periodically send keep-alives).
 		waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		updated := waitForDashboardUpdateSignal(waitCtx, defaultService.db)
+		updated := waitForDashboardUpdateSignal(waitCtx, s.db)
 		cancel()
 		if updated {
 			continue

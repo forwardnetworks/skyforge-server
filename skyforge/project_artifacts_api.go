@@ -55,8 +55,8 @@ func (s *Service) ListWorkspaceArtifacts(ctx context.Context, id string, params 
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to list artifacts").Err()
 	}
 	return &WorkspaceArtifactsListResponse{
-		WorkspaceID:       pc.workspace.ID,
-		WorkspaceSlug:     pc.workspace.Slug,
+		WorkspaceID:     pc.workspace.ID,
+		WorkspaceSlug:   pc.workspace.Slug,
 		ArtifactsBucket: storage.StorageBucketName,
 		Prefix:          prefix,
 		Items:           items,

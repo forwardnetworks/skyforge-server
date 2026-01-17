@@ -19,9 +19,9 @@ type EveStatsParams struct {
 }
 
 type EveStatsServer struct {
-	Name          string  `json:"name"`
-	Status        string  `json:"status,omitempty"`
-	Version       string  `json:"version,omitempty"`
+	Name          string   `json:"name"`
+	Status        string   `json:"status,omitempty"`
+	Version       string   `json:"version,omitempty"`
 	CpuPercent    *float64 `json:"cpuPercent,omitempty"`
 	MemPercent    *float64 `json:"memPercent,omitempty"`
 	DiskPercent   *float64 `json:"diskPercent,omitempty"`
@@ -34,7 +34,7 @@ type EveStatsServer struct {
 	DockerNodes   *int     `json:"dockerNodes,omitempty"`
 	ClusterNodes  *int     `json:"clusterNodes,omitempty"`
 	ClusterOnline *int     `json:"clusterOnline,omitempty"`
-	Error         string  `json:"error,omitempty"`
+	Error         string   `json:"error,omitempty"`
 }
 
 type EveStatsResponse struct {

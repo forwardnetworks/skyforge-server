@@ -577,12 +577,6 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 	if req == nil {
 		req = &WorkspaceLabppRunRequest{}
 	}
-	if strings.TrimSpace(s.cfg.LabppConfigDirBase) == "" {
-		return nil, errs.B().Code(errs.FailedPrecondition).Msg("labpp config dir base is not configured").Err()
-	}
-	if err := ensureWritableDir(strings.TrimSpace(s.cfg.LabppConfigDirBase)); err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("labpp config dir base is not writable").Err()
-	}
 
 	serverRef := strings.TrimSpace(req.EveServer)
 	if serverRef == "" {
@@ -626,17 +620,6 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid labpp action").Err()
 	}
 
-	needsDataDir := action != "stop" && action != "delete"
-	if needsDataDir {
-		platformDataDir := strings.TrimSpace(s.cfg.PlatformDataDir)
-		if platformDataDir == "" {
-			return nil, errs.B().Code(errs.FailedPrecondition).Msg("platform data dir is not configured").Err()
-		}
-		if err := ensureWritableDir(platformDataDir); err != nil {
-			return nil, errs.B().Code(errs.Unavailable).Msg("platform data dir is not writable").Err()
-		}
-	}
-
 	// The LabPP API uses this to parallelize per-node setup/configuration.
 	threadCount := req.ThreadCount
 
@@ -649,22 +632,12 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 	if template == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("template is required").Err()
 	}
-	destRoot := strings.TrimSpace(req.TemplatesDestRoot)
-	if destRoot == "" {
-		destRoot = templatesRoot
-	}
 	source := strings.TrimSpace(req.TemplateSource)
 	repo := strings.TrimSpace(req.TemplateRepo)
 	dir := strings.TrimSpace(req.TemplatesDir)
 	if source == "" {
 		source = "blueprints"
 	}
-	syncedRoot, err := s.syncLabppTemplateDir(ctx, pc, eveServer, source, repo, dir, template, destRoot)
-	if err != nil {
-		log.Printf("labpp template sync: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to sync labpp template").Err()
-	}
-	templatesRoot = strings.TrimSpace(syncedRoot)
 	labPath := strings.TrimSpace(req.LabPath)
 	if labPath == "" && strings.TrimSpace(req.DeploymentID) != "" {
 		if dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, strings.TrimSpace(req.DeploymentID)); err == nil && dep != nil {
@@ -721,24 +694,23 @@ func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *Workspa
 		"priority":   taskPriorityInteractive,
 		"dedupeKey":  fmt.Sprintf("labpp:%s:%s:%s:%s", pc.workspace.ID, strings.TrimSpace(req.DeploymentID), action, template),
 		"spec": map[string]any{
-			"action":            action,
-			"eveServer":         serverRef,
-			"eveServerLabel":    strings.TrimSpace(eveServer.Name),
-			"eveUrl":            eveURL,
-			"eveUsername":       eveUsername,
-			"evePasswordEnc":    evePasswordEnc,
-			"deployment":        deployment,
-			"deploymentId":      strings.TrimSpace(req.DeploymentID),
-			"templatesRoot":     templatesRoot,
-			"template":          template,
-			"labPath":           labPath,
-			"threadCount":       threadCount,
-			"maxSeconds":        1200,
-			"environment":       envMap,
-			"templateSource":    source,
-			"templateRepo":      repo,
-			"templatesDir":      dir,
-			"templatesDestRoot": destRoot,
+			"action":         action,
+			"eveServer":      serverRef,
+			"eveServerLabel": strings.TrimSpace(eveServer.Name),
+			"eveUrl":         eveURL,
+			"eveUsername":    eveUsername,
+			"evePasswordEnc": evePasswordEnc,
+			"deployment":     deployment,
+			"deploymentId":   strings.TrimSpace(req.DeploymentID),
+			"templatesRoot":  templatesRoot,
+			"template":       template,
+			"labPath":        labPath,
+			"threadCount":    threadCount,
+			"maxSeconds":     1200,
+			"environment":    envMap,
+			"templateSource": source,
+			"templateRepo":   repo,
+			"templatesDir":   dir,
 		},
 	})
 	if err != nil {

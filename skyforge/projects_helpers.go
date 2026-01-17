@@ -28,10 +28,10 @@ func (s *Service) loadWorkspaceByKey(workspaceKey string) ([]SkyforgeWorkspace, 
 
 type workspaceContext struct {
 	workspaces []SkyforgeWorkspace
-	idx      int
-	workspace SkyforgeWorkspace
-	access   string
-	claims   *SessionClaims
+	idx        int
+	workspace  SkyforgeWorkspace
+	access     string
+	claims     *SessionClaims
 }
 
 func (s *Service) workspaceContextForUser(user *AuthUser, workspaceKey string) (*workspaceContext, error) {
@@ -55,9 +55,9 @@ func (s *Service) workspaceContextForUser(user *AuthUser, workspaceKey string) (
 	}
 	return &workspaceContext{
 		workspaces: workspaces,
-		idx:      idx,
+		idx:        idx,
 		workspace:  workspace,
-		access:   access,
-		claims:   claims,
+		access:     access,
+		claims:     claims,
 	}, nil
 }

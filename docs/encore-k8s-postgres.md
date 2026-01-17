@@ -39,6 +39,6 @@ encore run --watch=false --browser=never --port=4000
 
 ## Notes
 
-- The Skyforge server code uses an explicit Postgres connection (`SKYFORGE_DB_*`), so it will use the forwarded connection if those env vars are set.
+- Skyforge uses an Encore `sqldb` database resource; the `SKYFORGE_DB_*` env vars are consumed by the Encore infra config (`infra.config.json`) to configure the database connection.
 - If Docker is not installed locally, `encore run` will fail before the app starts (even if Postgres is reachable over the network).
 - For local `encore run`, you also need the required secrets present (see `skyforge/server/.env.local.example`).

@@ -16,13 +16,14 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"encore.app/internal/taskqueue"
+	"encore.app/storage"
 	"encore.dev/beta/errs"
 	"github.com/google/uuid"
 )
@@ -1463,7 +1464,11 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 
 		labppInfo := &LabppInfo{EveServer: eveServerRef, EveURL: base, LabPath: labFilePath, Endpoint: endpoint}
 		if task, err := getLatestDeploymentTask(ctx, s.db, pc.workspace.ID, dep.ID, "labpp-run"); err == nil && task != nil {
-			labppInfo.DataSourcesCSV = strings.TrimSpace(getJSONMapString(task.Metadata, "labppDataSourcesCsv"))
+			if key := strings.TrimSpace(getJSONMapString(task.Metadata, "labppDataSourcesKey")); key != "" {
+				labppInfo.DataSourcesCSV = key
+			} else {
+				labppInfo.DataSourcesCSV = strings.TrimSpace(getJSONMapString(task.Metadata, "labppDataSourcesCsv"))
+			}
 		}
 		resp.Labpp = labppInfo
 		return resp, nil
@@ -1643,8 +1648,28 @@ func (s *Service) SyncWorkspaceDeploymentForward(ctx context.Context, id, deploy
 		return nil, errs.B().Code(errs.NotFound).Msg("no labpp run metadata found").Err()
 	}
 	csvPath := strings.TrimSpace(getJSONMapString(task.Metadata, "labppDataSourcesCsv"))
-	if csvPath == "" {
+	csvKey := strings.TrimSpace(getJSONMapString(task.Metadata, "labppDataSourcesKey"))
+	if csvPath == "" && csvKey == "" {
 		return nil, errs.B().Code(errs.NotFound).Msg("labpp data sources file not found").Err()
+	}
+
+	if csvKey != "" {
+		ctxDL, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		obj := artifactObjectName(pc.workspace.ID, csvKey)
+		resp, err := storage.Read(ctxDL, &storage.ReadRequest{ObjectName: obj})
+		if err != nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to download labpp data sources").Err()
+		}
+		tmp, err := os.CreateTemp("", "skyforge-labpp-data-sources-*.csv")
+		if err != nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to stage labpp data sources").Err()
+		}
+		tmpPath := tmp.Name()
+		_, _ = tmp.Write(resp.Data)
+		_ = tmp.Close()
+		defer func() { _ = os.Remove(tmpPath) }()
+		csvPath = tmpPath
 	}
 
 	syncCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -1660,8 +1685,8 @@ func (s *Service) SyncWorkspaceDeploymentForward(ctx context.Context, id, deploy
 
 // DownloadLabppDataSourcesCSV returns the generated LabPP `data_sources.csv` for a deployment.
 //
-// The CSV is created by the LabPP runner and stored on the platform-data volume; Skyforge serves it
-// back to the user as a base64 payload for easy browser download.
+// The CSV is created by the LabPP runner and stored in Skyforge object storage; Skyforge serves it
+// back to the user as a base64 payload for easy browser download (legacy file-backed paths are still supported).
 //
 //encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/labpp/data-sources.csv
 func (s *Service) DownloadLabppDataSourcesCSV(ctx context.Context, id, deploymentID string) (*LabppDataSourcesDownloadResponse, error) {
@@ -1693,25 +1718,17 @@ func (s *Service) DownloadLabppDataSourcesCSV(ctx context.Context, id, deploymen
 	if task == nil {
 		return nil, errs.B().Code(errs.NotFound).Msg("no labpp run metadata found").Err()
 	}
-	csvPath := strings.TrimSpace(getJSONMapString(task.Metadata, "labppDataSourcesCsv"))
-	if csvPath == "" {
-		return nil, errs.B().Code(errs.NotFound).Msg("labpp data sources file not found").Err()
+	csvKey := strings.TrimSpace(getJSONMapString(task.Metadata, "labppDataSourcesKey"))
+	if csvKey == "" {
+		return nil, errs.B().Code(errs.NotFound).Msg("labpp data sources file not available (rerun LabPP to regenerate)").Err()
 	}
 
-	platformRoot := strings.TrimSpace(s.cfg.PlatformDataDir)
-	if platformRoot == "" {
-		platformRoot = "/data"
-	}
-	allowedRoot := filepath.Clean(filepath.Join(platformRoot, "labpp", "data-sources")) + string(os.PathSeparator)
-	csvClean := filepath.Clean(csvPath)
-	if !strings.HasPrefix(csvClean+string(os.PathSeparator), allowedRoot) {
-		return nil, errs.B().Code(errs.PermissionDenied).Msg("invalid csv path").Err()
-	}
-
-	data, err := os.ReadFile(csvClean)
+	obj := artifactObjectName(pc.workspace.ID, csvKey)
+	resp, err := storage.Read(ctx, &storage.ReadRequest{ObjectName: obj})
 	if err != nil {
 		return nil, errs.B().Code(errs.NotFound).Msg("labpp data sources file not found").Err()
 	}
+	data := resp.Data
 	// Keep responses small and predictable; this file is expected to be tiny.
 	if len(data) > 2<<20 {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("csv too large").Err()
@@ -2041,46 +2058,16 @@ func (s *Service) StopWorkspaceDeployment(ctx context.Context, id, deploymentID 
 	if task == nil {
 		return &WorkspaceDeploymentActionResponse{WorkspaceID: pc.workspace.ID, Deployment: dep}, nil
 	}
-	s.forceCancelRunner(ctx, pc, dep, task)
 	if err := cancelTask(ctx, s.db, task.ID); err != nil {
 		log.Printf("deployment stop: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to cancel task").Err()
 	}
+	_, _ = taskqueue.CancelTopic.Publish(ctx, &taskqueue.TaskCancelEvent{TaskID: task.ID})
 	now := time.Now().UTC()
 	if err := s.updateDeploymentStatus(ctx, pc.workspace.ID, dep.ID, "canceled", &now); err != nil {
 		log.Printf("deployment stop update: %v", err)
 	}
 	return &WorkspaceDeploymentActionResponse{WorkspaceID: pc.workspace.ID, Deployment: dep}, nil
-}
-
-func (s *Service) forceCancelRunner(ctx context.Context, pc *workspaceContext, dep *WorkspaceDeployment, task *TaskRecord) {
-	if dep == nil || task == nil {
-		return
-	}
-	log := &taskLogger{svc: s, taskID: task.ID}
-	switch strings.ToLower(strings.TrimSpace(dep.Type)) {
-	case "labpp":
-		log.Infof("LabPP cancel requested; CLI runner will stop on task cancellation.")
-	case "netlab":
-		jobID := getJSONMapString(task.Metadata, "netlabJobId")
-		if jobID == "" {
-			return
-		}
-		serverRef := strings.TrimSpace(getJSONMapString(dep.Config, "netlabServer"))
-		server, err := s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, serverRef)
-		if err != nil {
-			return
-		}
-		apiURL := strings.TrimSpace(server.APIURL)
-		if apiURL == "" {
-			apiURL = strings.TrimRight(fmt.Sprintf("https://%s/netlab", strings.TrimSpace(server.SSHHost)), "/")
-		}
-		auth, err := s.netlabAPIAuthForUser(pc.claims.Username, *server)
-		if err != nil {
-			return
-		}
-		s.cancelNetlabJob(ctx, apiURL, jobID, server.APIInsecure, auth, log)
-	}
 }
 
 func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, req *WorkspaceDeploymentStartRequest, mode string) (*WorkspaceDeploymentActionResponse, error) {

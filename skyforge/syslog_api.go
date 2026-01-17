@@ -233,6 +233,8 @@ func (s *Service) UpsertSyslogRoute(ctx context.Context, params *SyslogRouteUpse
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid sourceCidr").Err()
 	}
 
+	prevOwner, _ := lookupSyslogOwnerForCIDR(ctx, s.db, source)
+
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	_, err = s.db.ExecContext(ctx, `
@@ -251,6 +253,12 @@ DO UPDATE SET owner_username = excluded.owner_username, label = excluded.label, 
 		return nil, errs.B().Code(errs.Internal).Msg("failed to read syslog route").Err()
 	}
 	out := &SyslogRoute{SourceCIDR: source, Owner: owner, Label: strings.TrimSpace(label), UpdatedAt: updated}
+
+	// Best-effort: routes change inbox membership; notify both old and new owners.
+	_ = notifySyslogUpdatePG(ctx, s.db, owner)
+	if prevOwner != "" && !strings.EqualFold(prevOwner, owner) {
+		_ = notifySyslogUpdatePG(ctx, s.db, prevOwner)
+	}
 	return out, nil
 }
 
@@ -279,11 +287,15 @@ func (s *Service) DeleteSyslogRoute(ctx context.Context, params *SyslogRouteDele
 	if _, _, err := net.ParseCIDR(source); err != nil {
 		return errs.B().Code(errs.InvalidArgument).Msg("invalid sourceCidr").Err()
 	}
+	prevOwner, _ := lookupSyslogOwnerForCIDR(ctx, s.db, source)
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	_, err = s.db.ExecContext(ctx, `DELETE FROM sf_syslog_routes WHERE source_cidr=$1::cidr`, source)
 	if err != nil {
 		return errs.B().Code(errs.Internal).Msg("failed to delete syslog route").Err()
+	}
+	if prevOwner != "" {
+		_ = notifySyslogUpdatePG(ctx, s.db, prevOwner)
 	}
 	return nil
 }
@@ -342,4 +354,50 @@ func parseOptionalInt64(raw string) *int64 {
 func parseOptionalBool(raw string) bool {
 	raw = strings.TrimSpace(strings.ToLower(raw))
 	return raw == "1" || raw == "true" || raw == "yes" || raw == "on"
+}
+
+func lookupSyslogOwnerForCIDR(ctx context.Context, db *sql.DB, sourceCIDR string) (string, error) {
+	if db == nil {
+		return "", nil
+	}
+	sourceCIDR = strings.TrimSpace(sourceCIDR)
+	if sourceCIDR == "" {
+		return "", nil
+	}
+	ctxReq, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+	var owner string
+	if err := db.QueryRowContext(ctxReq, `SELECT owner_username FROM sf_syslog_routes WHERE source_cidr=$1::cidr`, sourceCIDR).Scan(&owner); err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(owner), nil
+}
+
+func lookupSyslogOwnerForIP(ctx context.Context, db *sql.DB, sourceIP string) (string, error) {
+	if db == nil {
+		return "", nil
+	}
+	sourceIP = strings.TrimSpace(sourceIP)
+	if sourceIP == "" {
+		return "", nil
+	}
+	ctxReq, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+	var owner sql.NullString
+	if err := db.QueryRowContext(ctxReq, `
+SELECT owner_username
+FROM sf_syslog_routes
+WHERE $1::inet <<= source_cidr
+ORDER BY masklen(source_cidr) DESC
+LIMIT 1
+`, sourceIP).Scan(&owner); err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(owner.String), nil
 }

@@ -9,7 +9,7 @@ import (
 
 type TemplatesParams struct {
 	WorkspaceID string `query:"workspace_id" encore:"optional"`
-	Cookie     string `header:"Cookie"`
+	Cookie      string `header:"Cookie"`
 }
 
 type TemplatesResponse struct {

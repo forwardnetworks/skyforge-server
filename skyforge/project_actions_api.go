@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -33,11 +34,14 @@ func (s *Service) SyncWorkspace(ctx context.Context, id string) (*workspaceSyncR
 	defer cancel()
 	report := syncWorkspaceResources(ctx, s.cfg, &pc.workspace)
 	if report.Updated {
-		pc.workspaces[pc.idx] = pc.workspace
-		if err := s.workspaceStore.save(pc.workspaces); err != nil {
-			log.Printf("workspaces save after sync: %v", err)
+		if err := s.workspaceStore.upsert(pc.workspace); err != nil {
+			log.Printf("workspace upsert after sync: %v", err)
 			workspaceSyncFailures.Add(1)
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist sync").Err()
+		}
+		if s.db != nil {
+			_ = notifyWorkspacesUpdatePG(ctx, s.db, "*")
+			_ = notifyDashboardUpdatePG(ctx, s.db)
 		}
 	}
 	{
@@ -102,10 +106,13 @@ func (s *Service) UpdateWorkspaceMembers(ctx context.Context, id string, req *Wo
 	pc.workspace.EditorGroups = nextEditorGroups
 	pc.workspace.Viewers = nextViewers
 	pc.workspace.ViewerGroups = nextViewerGroups
-	pc.workspaces[pc.idx] = pc.workspace
-	if err := s.workspaceStore.save(pc.workspaces); err != nil {
-		log.Printf("workspaces save: %v", err)
+	if err := s.workspaceStore.upsert(pc.workspace); err != nil {
+		log.Printf("workspace upsert: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist members").Err()
+	}
+	if s.db != nil {
+		_ = notifyWorkspacesUpdatePG(ctx, s.db, "*")
+		_ = notifyDashboardUpdatePG(ctx, s.db)
 	}
 	{
 		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
@@ -127,9 +134,9 @@ func (s *Service) UpdateWorkspaceMembers(ctx context.Context, id string, req *Wo
 }
 
 type WorkspaceEveConfigResponse struct {
-	WorkspaceID  string   `json:"workspaceId"`
-	EveServer  string   `json:"eveServer"`
-	EveServers []string `json:"eveServers"`
+	WorkspaceID string   `json:"workspaceId"`
+	EveServer   string   `json:"eveServer"`
+	EveServers  []string `json:"eveServers"`
 }
 
 type WorkspaceEveConfigRequest struct {
@@ -153,9 +160,9 @@ func (s *Service) GetWorkspaceEve(ctx context.Context, id string) (*WorkspaceEve
 	}
 	_ = ctx
 	return &WorkspaceEveConfigResponse{
-		WorkspaceID:  pc.workspace.ID,
-		EveServer:  pc.workspace.EveServer,
-		EveServers: []string{},
+		WorkspaceID: pc.workspace.ID,
+		EveServer:   pc.workspace.EveServer,
+		EveServers:  []string{},
 	}, nil
 }
 
@@ -192,10 +199,13 @@ func (s *Service) UpdateWorkspaceEve(ctx context.Context, id string, req *Worksp
 		}
 	}
 	pc.workspace.EveServer = next
-	pc.workspaces[pc.idx] = pc.workspace
-	if err := s.workspaceStore.save(pc.workspaces); err != nil {
-		log.Printf("workspaces save: %v", err)
+	if err := s.workspaceStore.upsert(pc.workspace); err != nil {
+		log.Printf("workspace upsert: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist eve server").Err()
+	}
+	if s.db != nil {
+		_ = notifyWorkspacesUpdatePG(ctx, s.db, "*")
+		_ = notifyDashboardUpdatePG(ctx, s.db)
 	}
 	{
 		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
@@ -207,7 +217,7 @@ func (s *Service) UpdateWorkspaceEve(ctx context.Context, id string, req *Worksp
 }
 
 type WorkspaceNetlabConfigResponse struct {
-	WorkspaceID     string   `json:"workspaceId"`
+	WorkspaceID   string   `json:"workspaceId"`
 	NetlabServer  string   `json:"netlabServer"`
 	NetlabServers []string `json:"netlabServers"`
 }
@@ -233,7 +243,7 @@ func (s *Service) GetWorkspaceNetlab(ctx context.Context, id string) (*Workspace
 	}
 	_ = ctx
 	return &WorkspaceNetlabConfigResponse{
-		WorkspaceID:     pc.workspace.ID,
+		WorkspaceID:   pc.workspace.ID,
 		NetlabServer:  pc.workspace.NetlabServer,
 		NetlabServers: []string{},
 	}, nil
@@ -272,10 +282,13 @@ func (s *Service) UpdateWorkspaceNetlab(ctx context.Context, id string, req *Wor
 		}
 	}
 	pc.workspace.NetlabServer = next
-	pc.workspaces[pc.idx] = pc.workspace
-	if err := s.workspaceStore.save(pc.workspaces); err != nil {
-		log.Printf("workspaces save: %v", err)
+	if err := s.workspaceStore.upsert(pc.workspace); err != nil {
+		log.Printf("workspace upsert: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist netlab server").Err()
+	}
+	if s.db != nil {
+		_ = notifyWorkspacesUpdatePG(ctx, s.db, "*")
+		_ = notifyDashboardUpdatePG(ctx, s.db)
 	}
 	{
 		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
@@ -289,11 +302,11 @@ func (s *Service) UpdateWorkspaceNetlab(ctx context.Context, id string, req *Wor
 type WorkspaceEveLabResponse struct {
 	WorkspaceID   string `json:"workspaceId"`
 	WorkspaceSlug string `json:"workspaceSlug"`
-	Owner       string `json:"owner"`
-	EveServer   string `json:"eveServer"`
-	LabPath     string `json:"labPath"`
-	Exists      bool   `json:"exists"`
-	Created     bool   `json:"created"`
+	Owner         string `json:"owner"`
+	EveServer     string `json:"eveServer"`
+	LabPath       string `json:"labPath"`
+	Exists        bool   `json:"exists"`
+	Created       bool   `json:"created"`
 }
 
 // GetWorkspaceEveLab returns EVE lab state for the workspace.
@@ -333,8 +346,17 @@ func (s *Service) handleWorkspaceEveLab(ctx context.Context, id string, create b
 	}
 	server := resolvedEve.Server
 	labsCfg := s.cfg.Labs
-	if strings.TrimSpace(resolvedEve.SSHKeyFile) != "" {
-		labsCfg.EveSSHKeyFile = strings.TrimSpace(resolvedEve.SSHKeyFile)
+	if strings.TrimSpace(resolvedEve.SSHKey) != "" {
+		f, err := os.CreateTemp("", "skyforge-eve-ssh-*.key")
+		if err != nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to stage eve ssh key").Err()
+		}
+		path := f.Name()
+		defer os.Remove(path)
+		_ = f.Chmod(0o600)
+		_, _ = f.WriteString(strings.TrimSpace(resolvedEve.SSHKey))
+		_ = f.Close()
+		labsCfg.EveSSHKeyFile = path
 	}
 	labsPath := strings.TrimSpace(server.LabsPath)
 	if labsPath == "" {
@@ -362,11 +384,11 @@ func (s *Service) handleWorkspaceEveLab(ctx context.Context, id string, create b
 	return &WorkspaceEveLabResponse{
 		WorkspaceID:   pc.workspace.ID,
 		WorkspaceSlug: pc.workspace.Slug,
-		Owner:       owner,
-		EveServer:   serverRef,
-		LabPath:     labPath,
-		Exists:      exists,
-		Created:     created,
+		Owner:         owner,
+		EveServer:     serverRef,
+		LabPath:       labPath,
+		Exists:        exists,
+		Created:       created,
 	}, nil
 }
 
@@ -432,9 +454,8 @@ func (s *Service) PutWorkspaceAWSSSOConfig(ctx context.Context, id string, req *
 	pc.workspace.AWSAccountID = accountID
 	pc.workspace.AWSRoleName = roleName
 	pc.workspace.AWSAuthMethod = "sso"
-	pc.workspaces[pc.idx] = pc.workspace
-	if err := s.workspaceStore.save(pc.workspaces); err != nil {
-		log.Printf("workspaces save: %v", err)
+	if err := s.workspaceStore.upsert(pc.workspace); err != nil {
+		log.Printf("workspace upsert: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist aws sso config").Err()
 	}
 	{
@@ -706,16 +727,16 @@ func (s *Service) DeleteWorkspaceAzureCredentials(ctx context.Context, id string
 }
 
 type WorkspaceGCPCredentialGetResponse struct {
-	Configured        bool   `json:"configured"`
-	ClientEmail       string `json:"clientEmail,omitempty"`
+	Configured          bool   `json:"configured"`
+	ClientEmail         string `json:"clientEmail,omitempty"`
 	WorkspaceID         string `json:"workspaceId,omitempty"`
 	SelectedWorkspaceID string `json:"selectedWorkspaceId,omitempty"`
-	UpdatedAt         string `json:"updatedAt,omitempty"`
+	UpdatedAt           string `json:"updatedAt,omitempty"`
 }
 
 type WorkspaceGCPCredentialPutRequest struct {
 	ServiceAccountJSON string `json:"serviceAccountJson"`
-	WorkspaceID          string `json:"workspaceId,omitempty"`
+	WorkspaceID        string `json:"workspaceId,omitempty"`
 }
 
 type WorkspaceGCPCredentialStatusResponse struct {
@@ -763,11 +784,11 @@ func (s *Service) GetWorkspaceGCPCredentials(ctx context.Context, id string) (*W
 		}
 	}
 	return &WorkspaceGCPCredentialGetResponse{
-		Configured:        rec != nil && rec.ServiceAccountJSON != "",
-		ClientEmail:       clientEmail,
+		Configured:          rec != nil && rec.ServiceAccountJSON != "",
+		ClientEmail:         clientEmail,
 		WorkspaceID:         projectID,
 		SelectedWorkspaceID: selectedProjectID,
-		UpdatedAt:         updatedAt,
+		UpdatedAt:           updatedAt,
 	}, nil
 }
 

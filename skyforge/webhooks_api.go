@@ -360,6 +360,8 @@ VALUES ($1,$2,$3,$4,$5,$6,$7)
 		errs.HTTPError(w, errs.B().Code(errs.Internal).Msg("failed to store webhook").Err())
 		return
 	}
+	// Best-effort update signal for UI streaming (SSE).
+	_ = notifyWebhookUpdatePG(req.Context(), s.db, username)
 
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"status":"ok"}`))

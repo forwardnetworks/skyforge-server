@@ -3,11 +3,10 @@ package skyforge
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
+
+	"encore.app/internal/taskheartbeats"
 )
 
 type StatusCheckResponse struct {
@@ -47,29 +46,60 @@ func (s *Service) StatusSummary(ctx context.Context) (*StatusSummaryResponse, er
 	now := time.Now().UTC().Format(time.RFC3339)
 	resp := &StatusSummaryResponse{Status: "unknown", Timestamp: now}
 
-	if s.cfg.PlatformDataDir != "" {
-		path := filepath.Join(s.cfg.PlatformDataDir, "platform-health.json")
-		if data, err := os.ReadFile(path); err == nil {
-			var checks []StatusCheckResponse
-			if err := json.Unmarshal(data, &checks); err == nil {
-				resp.Checks = checks
-				for _, c := range checks {
-					if strings.EqualFold(strings.TrimSpace(c.Status), "up") {
-						resp.Up++
-					} else {
-						resp.Down++
-					}
-				}
-				switch {
-				case len(checks) == 0:
-					resp.Status = "unknown"
-				case resp.Down == 0:
-					resp.Status = "ok"
-				default:
-					resp.Status = "degraded"
-				}
-			}
+	resp.Checks = append(resp.Checks, StatusCheckResponse{
+		Name:   "skyforge-api",
+		Status: "up",
+	})
+	if s.db == nil {
+		resp.Checks = append(resp.Checks, StatusCheckResponse{
+			Name:   "postgres",
+			Status: "down",
+			Detail: "db not configured",
+		})
+	} else {
+		ctxPing, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		if err := s.db.PingContext(ctxPing); err != nil {
+			resp.Checks = append(resp.Checks, StatusCheckResponse{
+				Name:   "postgres",
+				Status: "down",
+				Detail: "ping failed",
+			})
+		} else {
+			resp.Checks = append(resp.Checks, StatusCheckResponse{
+				Name:   "postgres",
+				Status: "up",
+			})
 		}
+		if n, err := taskheartbeats.CountWorkerHeartbeats(ctx, s.db, 90*time.Second); err == nil && n > 0 {
+			resp.Checks = append(resp.Checks, StatusCheckResponse{
+				Name:   "task-workers",
+				Status: "up",
+				Detail: "active",
+			})
+		} else {
+			resp.Checks = append(resp.Checks, StatusCheckResponse{
+				Name:   "task-workers",
+				Status: "down",
+				Detail: "no recent heartbeats",
+			})
+		}
+	}
+
+	for _, c := range resp.Checks {
+		if strings.EqualFold(strings.TrimSpace(c.Status), "up") {
+			resp.Up++
+		} else {
+			resp.Down++
+		}
+	}
+	switch {
+	case len(resp.Checks) == 0:
+		resp.Status = "unknown"
+	case resp.Down == 0:
+		resp.Status = "ok"
+	default:
+		resp.Status = "degraded"
 	}
 
 	if total, err := countWorkspaces(ctx, s.db); err == nil {

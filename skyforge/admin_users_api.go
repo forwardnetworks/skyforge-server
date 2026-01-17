@@ -56,15 +56,13 @@ func (s *Service) PurgeUser(ctx context.Context, req *PurgeUserRequest) (*PurgeU
 
 	// Best-effort cleanup of file-backed state.
 	if workspaces, err := s.workspaceStore.load(); err == nil {
-		next := make([]SkyforgeWorkspace, 0, len(workspaces))
 		for _, ws := range workspaces {
 			if strings.EqualFold(ws.CreatedBy, username) {
+				if err := s.workspaceStore.delete(ws.ID); err != nil {
+					warnings = append(warnings, fmt.Sprintf("failed to delete workspace %s: %v", ws.ID, err))
+				}
 				continue
 			}
-			next = append(next, ws)
-		}
-		if err := s.workspaceStore.save(next); err != nil {
-			warnings = append(warnings, fmt.Sprintf("failed to update workspaces store: %v", err))
 		}
 	} else {
 		warnings = append(warnings, fmt.Sprintf("failed to load workspaces store: %v", err))
@@ -72,6 +70,8 @@ func (s *Service) PurgeUser(ctx context.Context, req *PurgeUserRequest) (*PurgeU
 	if err := s.userStore.remove(username); err != nil {
 		warnings = append(warnings, fmt.Sprintf("failed to update users store: %v", err))
 	}
+	_ = notifyWorkspacesUpdatePG(ctx, s.db, "*")
+	_ = notifyDashboardUpdatePG(ctx, s.db)
 
 	// Best-effort cleanup of Gitea user and repos.
 	{

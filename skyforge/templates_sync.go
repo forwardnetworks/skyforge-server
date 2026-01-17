@@ -579,10 +579,20 @@ func (s *Service) syncLabppTemplateDir(ctx context.Context, pc *workspaceContext
 	if !isSafeRelativePath(templatesDir) {
 		return "", fmt.Errorf("templatesDir must be a safe repo-relative path")
 	}
-	if strings.TrimSpace(destRoot) == "" {
-		destRoot = "/var/lib/skyforge/labpp/templates"
-	}
 	destRoot = strings.TrimRight(strings.TrimSpace(destRoot), "/")
+	createdTemp := false
+	if destRoot == "" {
+		base := "/var/lib/skyforge/labpp/template-sync"
+		if err := os.MkdirAll(base, 0o755); err != nil {
+			return "", err
+		}
+		tmpRoot, err := os.MkdirTemp(base, "labpp-template-")
+		if err != nil {
+			return "", err
+		}
+		destRoot = tmpRoot
+		createdTemp = true
+	}
 	destTemplateDir := filepath.Join(destRoot, templateName)
 
 	ref, err := resolveTemplateRepoForProject(s.cfg, pc, templateSource, templateRepo)
@@ -602,27 +612,45 @@ func (s *Service) syncLabppTemplateDir(ctx context.Context, pc *workspaceContext
 		}
 	}
 	if host == "" {
+		if createdTemp {
+			_ = os.RemoveAll(destRoot)
+		}
 		return "", fmt.Errorf("missing eve server host for labpp template sync")
 	}
 
 	rootPath := path.Join(templatesDir, templateName)
 	labJSONPath := path.Join(rootPath, "lab.json")
 	if _, err := readGiteaFileBytes(s.cfg, ref.Owner, ref.Repo, labJSONPath, ref.Branch); err != nil {
+		if createdTemp {
+			_ = os.RemoveAll(destRoot)
+		}
 		return "", fmt.Errorf("labpp template %q missing lab.json", templateName)
 	}
 	log.Printf("labpp template sync: repo=%s/%s branch=%s root=%s dest=%s", ref.Owner, ref.Repo, ref.Branch, rootPath, destTemplateDir)
 	rootEntries, err := listGiteaDirectory(s.cfg, ref.Owner, ref.Repo, rootPath, ref.Branch)
 	if err != nil {
+		if createdTemp {
+			_ = os.RemoveAll(destRoot)
+		}
 		return "", fmt.Errorf("failed to list labpp template %q: %w", templateName, err)
 	}
 	if len(rootEntries) == 0 {
+		if createdTemp {
+			_ = os.RemoveAll(destRoot)
+		}
 		return "", fmt.Errorf("labpp template %q has no files under %s", templateName, rootPath)
 	}
 
 	if err := os.RemoveAll(destTemplateDir); err != nil {
+		if createdTemp {
+			_ = os.RemoveAll(destRoot)
+		}
 		return "", err
 	}
 	if err := os.MkdirAll(destTemplateDir, 0o755); err != nil {
+		if createdTemp {
+			_ = os.RemoveAll(destRoot)
+		}
 		return "", err
 	}
 
@@ -640,7 +668,10 @@ func (s *Service) syncLabppTemplateDir(ctx context.Context, pc *workspaceContext
 			entryPath := strings.TrimPrefix(strings.TrimSpace(entry.Path), "/")
 			rel := strings.TrimPrefix(entryPath, rootPath)
 			rel = strings.TrimPrefix(rel, "/")
-			dest := path.Join(destTemplateDir, rel)
+			if rel != "" && !isSafeRelativePath(rel) {
+				return fmt.Errorf("unsafe template path %q", rel)
+			}
+			dest := filepath.Join(destTemplateDir, filepath.FromSlash(rel))
 			switch entry.Type {
 			case "dir":
 				if err := os.MkdirAll(dest, 0o755); err != nil {
@@ -654,7 +685,7 @@ func (s *Service) syncLabppTemplateDir(ctx context.Context, pc *workspaceContext
 				if err != nil {
 					return err
 				}
-				if err := os.MkdirAll(path.Dir(dest), 0o755); err != nil {
+				if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 					return err
 				}
 				if strings.HasSuffix(entryPath, "/lab.json") {
@@ -672,25 +703,13 @@ func (s *Service) syncLabppTemplateDir(ctx context.Context, pc *workspaceContext
 
 	if err := syncDir(rootPath); err != nil {
 		log.Printf("labpp template sync failed: %v", err)
+		if createdTemp {
+			_ = os.RemoveAll(destRoot)
+		}
 		return "", fmt.Errorf("failed to sync labpp template")
 	}
 	_ = ctx
 	return destRoot, nil
-}
-
-func (s *Service) labppTemplateExists(eveServer *EveServerConfig, templatesRoot, templateName string) (bool, error) {
-	templatesRoot = strings.TrimRight(strings.TrimSpace(templatesRoot), "/")
-	templateName = strings.TrimSpace(templateName)
-	if templatesRoot == "" || templateName == "" {
-		return false, fmt.Errorf("templatesRoot and template are required")
-	}
-	if _, err := os.Stat(filepath.Join(templatesRoot, templateName, "lab.json")); err != nil {
-		if os.IsNotExist(err) {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
 }
 
 func injectLabppServer(body []byte, host string) []byte {

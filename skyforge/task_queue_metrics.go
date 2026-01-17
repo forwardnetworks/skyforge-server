@@ -2,6 +2,7 @@ package skyforge
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 	"time"
 
@@ -12,7 +13,13 @@ func (s *Service) updateTaskQueueMetrics(ctx context.Context) error {
 	if s == nil || s.db == nil {
 		return nil
 	}
-	db := s.db
+	return updateTaskQueueMetrics(ctx, s.cfg, s.db)
+}
+
+func updateTaskQueueMetrics(ctx context.Context, cfg Config, db *sql.DB) error {
+	if db == nil {
+		return nil
+	}
 
 	ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
 	taskTypes, err := listTaskTypesSince(ctxReq, db, 30*24*time.Hour)
@@ -82,7 +89,7 @@ func (s *Service) updateTaskQueueMetrics(ctx context.Context) error {
 	taskRunningCurrentTotal.Set(runningTotal)
 	taskQueuedOldestAgeSecondsTotal.Set(oldestQueuedAge)
 
-	workersAlive := float64(countTaskWorkerHeartbeats(s.cfg, s.db))
+	workersAlive := float64(countTaskWorkerHeartbeats(cfg, db))
 	taskWorkersAliveCurrent.Set(workersAlive)
 	if queuedTotal > 0 && workersAlive <= 0 {
 		rlog.Warn("queued tasks but no task workers observed", "queued", queuedTotal)

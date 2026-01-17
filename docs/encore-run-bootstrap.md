@@ -63,6 +63,6 @@ encore run --watch=false --browser=never --port=4000
 
 ## Notes
 
-- The Skyforge server uses explicit `SKYFORGE_DB_*` env vars (not Encore `sqldb` APIs), so port-forwarding works cleanly.
+- Skyforge uses an Encore `sqldb` database resource; the `SKYFORGE_DB_*` env vars are consumed by the Encore infra config (`infra.config.json`) to configure the database connection.
 - The Encore storage API used for artifacts is configured via `infra.config.json` for production builds (k8s/MinIO). In `encore run`, Encore may use its local storage backend instead.
 - This repo runs `server/encore.app` in “unlinked” mode to avoid requiring Encore Cloud auth during development.
