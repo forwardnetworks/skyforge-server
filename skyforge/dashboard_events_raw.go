@@ -17,6 +17,7 @@ type dashboardSnapshot struct {
 	Workspaces   []SkyforgeWorkspace    `json:"workspaces"`
 	Deployments  []WorkspaceDeployment  `json:"deployments"`
 	Runs         []JSONMap              `json:"runs"`
+	TemplatesAt  string                 `json:"templatesIndexUpdatedAt,omitempty"`
 	AwsSsoStatus *dashboardAwsSsoStatus `json:"awsSsoStatus,omitempty"`
 }
 
@@ -241,11 +242,23 @@ func loadDashboardSnapshot(ctx context.Context, svc *Service, claims *SessionCla
 		return intFromAny(runs[i]["id"]) > intFromAny(runs[j]["id"])
 	})
 
+	templatesAt := ""
+	{
+		qctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+		var maxUpdated sql.NullTime
+		err := svc.db.QueryRowContext(qctx, "SELECT max(updated_at) FROM sf_template_indexes").Scan(&maxUpdated)
+		cancel()
+		if err == nil && maxUpdated.Valid {
+			templatesAt = maxUpdated.Time.UTC().Format(time.RFC3339)
+		}
+	}
+
 	return &dashboardSnapshot{
 		RefreshedAt:  time.Now().UTC().Format(time.RFC3339),
 		Workspaces:   workspaces,
 		Deployments:  deployments,
 		Runs:         runs,
+		TemplatesAt:  templatesAt,
 		AwsSsoStatus: buildDashboardAwsSsoStatus(svc.cfg, svc.awsStore, claims.Username),
 	}, nil
 }
