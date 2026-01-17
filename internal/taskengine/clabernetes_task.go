@@ -125,6 +125,9 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		if err := kubeEnsureNamespace(ctx, ns); err != nil {
 			return err
 		}
+		if err := kubeEnsureNamespaceImagePullSecret(ctx, ns); err != nil {
+			return err
+		}
 		if _, err := kubeDeleteClabernetesTopology(ctx, ns, name); err != nil {
 			return err
 		}

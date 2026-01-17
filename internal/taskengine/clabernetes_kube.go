@@ -8,7 +8,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
+	"time"
 )
 
 type kubeClabernetesTopology struct {
@@ -85,6 +87,218 @@ func kubeEnsureNamespace(ctx context.Context, ns string) error {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 16<<10))
 		return fmt.Errorf("kube namespace create failed: %s: %s", resp.Status, strings.TrimSpace(string(data)))
+	}
+	return nil
+}
+
+func kubeEnsureNamespaceImagePullSecret(ctx context.Context, ns string) error {
+	ns = strings.TrimSpace(ns)
+	if ns == "" {
+		return fmt.Errorf("namespace is required")
+	}
+	secretName := strings.TrimSpace(os.Getenv("SKYFORGE_IMAGE_PULL_SECRET_NAME"))
+	if secretName == "" {
+		secretName = "ghcr-pull"
+	}
+	srcNS := strings.TrimSpace(os.Getenv("SKYFORGE_IMAGE_PULL_SECRET_NAMESPACE"))
+	if srcNS == "" {
+		srcNS = "skyforge"
+	}
+	if ns == srcNS {
+		return nil
+	}
+
+	secret, ok, err := kubeGetSecret(ctx, srcNS, secretName)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("kube image pull secret not found: %s/%s", srcNS, secretName)
+	}
+	if err := kubeCreateSecretIfMissing(ctx, ns, secret, map[string]string{"skyforge-managed": "true"}); err != nil {
+		return err
+	}
+	return kubePatchDefaultServiceAccountImagePullSecret(ctx, ns, secretName)
+}
+
+func kubeGetSecret(ctx context.Context, ns, name string) (map[string]any, bool, error) {
+	ns = strings.TrimSpace(ns)
+	name = strings.TrimSpace(name)
+	if ns == "" || name == "" {
+		return nil, false, fmt.Errorf("namespace and secret name are required")
+	}
+	client, err := kubeHTTPClient()
+	if err != nil {
+		return nil, false, err
+	}
+	url := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/secrets/%s", ns, name)
+	req, err := kubeRequest(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, false, nil
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<10))
+		return nil, false, fmt.Errorf("kube secret get failed: %s: %s", resp.Status, strings.TrimSpace(string(data)))
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, false, err
+	}
+	return out, true, nil
+}
+
+func kubeCreateSecretIfMissing(ctx context.Context, ns string, secret map[string]any, labels map[string]string) error {
+	ns = strings.TrimSpace(ns)
+	if ns == "" {
+		return fmt.Errorf("namespace is required")
+	}
+	if secret == nil {
+		return fmt.Errorf("secret payload is required")
+	}
+
+	metadata, _ := secret["metadata"].(map[string]any)
+	name, _ := metadata["name"].(string)
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("secret name missing in payload")
+	}
+
+	// If it already exists, nothing to do.
+	_, ok, err := kubeGetSecret(ctx, ns, name)
+	if err != nil {
+		return err
+	}
+	if ok {
+		return nil
+	}
+
+	payload := map[string]any{
+		"apiVersion": "v1",
+		"kind":       "Secret",
+		"metadata": map[string]any{
+			"name":      name,
+			"namespace": ns,
+		},
+	}
+	if t, ok := secret["type"].(string); ok && strings.TrimSpace(t) != "" {
+		payload["type"] = t
+	}
+	if data, ok := secret["data"].(map[string]any); ok && len(data) > 0 {
+		payload["data"] = data
+	}
+	if labels != nil && len(labels) > 0 {
+		payload["metadata"].(map[string]any)["labels"] = labels
+	}
+
+	body, _ := json.Marshal(payload)
+	client, err := kubeHTTPClient()
+	if err != nil {
+		return err
+	}
+	createURL := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/secrets", ns)
+	req, err := kubeRequest(ctx, http.MethodPost, createURL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusConflict {
+		return nil
+	}
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<10))
+	return fmt.Errorf("kube secret create failed: %s: %s", resp.Status, strings.TrimSpace(string(data)))
+}
+
+func kubePatchDefaultServiceAccountImagePullSecret(ctx context.Context, ns, secretName string) error {
+	ns = strings.TrimSpace(ns)
+	secretName = strings.TrimSpace(secretName)
+	if ns == "" || secretName == "" {
+		return fmt.Errorf("namespace and secret name are required")
+	}
+
+	client, err := kubeHTTPClient()
+	if err != nil {
+		return err
+	}
+
+	var sa map[string]any
+	for attempt := 0; attempt < 20; attempt++ {
+		url := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/serviceaccounts/default", ns)
+		req, err := kubeRequest(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return err
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode == http.StatusNotFound {
+			resp.Body.Close()
+			time.Sleep(250 * time.Millisecond)
+			continue
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			data, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<10))
+			resp.Body.Close()
+			return fmt.Errorf("kube serviceaccount get failed: %s: %s", resp.Status, strings.TrimSpace(string(data)))
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&sa); err != nil {
+			resp.Body.Close()
+			return err
+		}
+		resp.Body.Close()
+		break
+	}
+	if sa == nil {
+		return fmt.Errorf("kube serviceaccount default not found: %s", ns)
+	}
+
+	var pullSecrets []any
+	if cur, ok := sa["imagePullSecrets"].([]any); ok {
+		pullSecrets = cur
+	}
+	found := false
+	for _, item := range pullSecrets {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(fmt.Sprint(m["name"])) == secretName {
+			found = true
+			break
+		}
+	}
+	if !found {
+		pullSecrets = append(pullSecrets, map[string]any{"name": secretName})
+		sa["imagePullSecrets"] = pullSecrets
+	}
+	body, _ := json.Marshal(sa)
+	updateURL := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/serviceaccounts/default", ns)
+	updateReq, err := kubeRequest(ctx, http.MethodPut, updateURL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateResp, err := client.Do(updateReq)
+	if err != nil {
+		return err
+	}
+	defer updateResp.Body.Close()
+	if updateResp.StatusCode < 200 || updateResp.StatusCode >= 300 {
+		data, _ := io.ReadAll(io.LimitReader(updateResp.Body, 32<<10))
+		return fmt.Errorf("kube serviceaccount update failed: %s: %s", updateResp.Status, strings.TrimSpace(string(data)))
 	}
 	return nil
 }
