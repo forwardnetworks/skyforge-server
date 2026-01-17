@@ -538,9 +538,10 @@ func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req 
 	deploymentID := uuid.NewString()
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
+	initialStatus := "created"
 	_, err = s.db.ExecContext(ctx, `INSERT INTO sf_deployments (
-  id, workspace_id, name, type, config, created_by
-) VALUES ($1,$2,$3,$4,$5,$6)`, deploymentID, pc.workspace.ID, name, typ, cfgBytes, pc.claims.Username)
+  id, workspace_id, name, type, config, created_by, last_status
+) VALUES ($1,$2,$3,$4,$5,$6,$7)`, deploymentID, pc.workspace.ID, name, typ, cfgBytes, pc.claims.Username, initialStatus)
 	if err != nil {
 		log.Printf("deployments insert: %v", err)
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
@@ -886,8 +887,8 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 		if strings.TrimSpace(template) == "" {
 			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab template is required").Err()
 		}
-		if (op == "start" || op == "stop" || op == "export") && !infraCreated {
-			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab deployment must be created before start/stop/export").Err()
+		if (op == "stop" || op == "export") && !infraCreated {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab deployment must be created before stop/export").Err()
 		}
 
 		netlabAction := "up"
@@ -940,8 +941,8 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 		if strings.TrimSpace(template) == "" && op != "destroy" && op != "stop" {
 			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab template is required").Err()
 		}
-		if (op == "start" || op == "stop") && !infraCreated {
-			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab-c9s deployment must be created before start/stop").Err()
+		if op == "stop" && !infraCreated {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab-c9s deployment must be created before stop").Err()
 		}
 		if strings.TrimSpace(labName) == "" {
 			labName = containerlabLabName(pc.workspace.Slug, dep.Name)
@@ -2428,6 +2429,9 @@ WHERE workspace_id=$1 AND id=$2`, workspaceID, deploymentID).Scan(
 	}
 	if lastStatus.Valid {
 		v := lastStatus.String
+		rec.LastStatus = &v
+	} else {
+		v := "created"
 		rec.LastStatus = &v
 	}
 	if lastStarted.Valid {
