@@ -73,3 +73,11 @@ Containerlab: {
 	APIPath: "/containerlab"
 }
 
+// Netlab-on-C9s (netlab-c9s) defaults.
+NetlabGenerator: {
+	C9sGeneratorMode: "k8s"
+	GeneratorImage:   ""
+	PullPolicy:       "IfNotPresent"
+	AnsibleImage:     ""
+	AnsiblePullPolicy:"IfNotPresent"
+}
