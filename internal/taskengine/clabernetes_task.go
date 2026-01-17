@@ -4,12 +4,43 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"encore.app/internal/taskdispatch"
 	"encore.app/internal/taskstore"
 )
+
+func envBool(env map[string]string, key string, def bool) bool {
+	if env == nil {
+		return def
+	}
+	raw, ok := env[key]
+	if !ok {
+		return def
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return def
+	}
+	b, err := strconv.ParseBool(raw)
+	if err != nil {
+		return def
+	}
+	return b
+}
+
+func envString(env map[string]string, key string) string {
+	if env == nil {
+		return ""
+	}
+	raw, ok := env[key]
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(raw)
+}
 
 type c9sFileFromConfigMap struct {
 	ConfigMapName string `json:"configMapName,omitempty"`
@@ -100,6 +131,10 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		if len(spec.FilesFromConfigMap) > 0 {
 			log.Infof("Clabernetes file mounts: nodes=%d", len(spec.FilesFromConfigMap))
 		}
+		connectivity := strings.ToLower(envString(spec.Environment, "SKYFORGE_CLABERNETES_CONNECTIVITY"))
+		nativeMode := envBool(spec.Environment, "SKYFORGE_CLABERNETES_NATIVE_MODE", true)
+		hostNetwork := envBool(spec.Environment, "SKYFORGE_CLABERNETES_HOST_NETWORK", false)
+
 		payload := map[string]any{
 			"apiVersion": "clabernetes.containerlab.dev/v1alpha1",
 			"kind":       "Topology",
@@ -116,6 +151,15 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 				},
 			},
 		}
+		if connectivity != "" {
+			payload["spec"].(map[string]any)["connectivity"] = connectivity
+		}
+
+		deployment := map[string]any{
+			"nativeMode":  nativeMode,
+			"hostNetwork": hostNetwork,
+		}
+
 		if len(spec.FilesFromConfigMap) > 0 {
 			files := map[string]any{}
 			for node, entries := range spec.FilesFromConfigMap {
@@ -145,11 +189,12 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 				}
 			}
 			if len(files) > 0 {
-				specAny := payload["spec"].(map[string]any)
-				specAny["deployment"] = map[string]any{
-					"filesFromConfigMap": files,
-				}
+				deployment["filesFromConfigMap"] = files
 			}
+		}
+
+		if len(deployment) > 0 {
+			payload["spec"].(map[string]any)["deployment"] = deployment
 		}
 		if err := kubeCreateClabernetesTopology(ctx, ns, payload); err != nil {
 			return err
