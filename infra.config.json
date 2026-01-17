@@ -42,6 +42,14 @@
       "type": "nsq",
       "hosts": "nsq:4150",
       "topics": {
+        "skyforge-task-cancel": {
+          "name": "skyforge-task-cancel",
+          "subscriptions": {
+            "skyforge-task-worker-cancel": {
+              "name": "skyforge-task-worker-cancel"
+            }
+          }
+        },
         "skyforge-task-queue-interactive": {
           "name": "skyforge-task-queue-interactive",
           "subscriptions": {
@@ -95,6 +103,10 @@
     "SKYFORGE_OBJECT_STORAGE_ROOT_PASSWORD": {},
     "SKYFORGE_OBJECT_STORAGE_TERRAFORM_ACCESS_KEY": {},
     "SKYFORGE_OBJECT_STORAGE_TERRAFORM_SECRET_KEY": {},
+    "SKYFORGE_CONTAINERLAB_JWT_SECRET": {},
+    "SKYFORGE_PKI_CA_CERT": {},
+    "SKYFORGE_PKI_CA_KEY": {},
+    "SKYFORGE_SSH_CA_KEY": {},
     "SKYFORGE_INTERNAL_TOKEN": {}
   },
   "env": {
