@@ -549,6 +549,7 @@ func loadConfig() Config {
 	nautobotInternalBaseURL := strings.TrimRight(strings.TrimSpace(skyforgeEncoreCfg.Integrations.NautobotInternalBaseURL), "/")
 	yaadeInternalBaseURL := strings.TrimRight(strings.TrimSpace(skyforgeEncoreCfg.Integrations.YaadeInternalBaseURL), "/")
 	oidcIssuerURL := strings.TrimSpace(getenv("SKYFORGE_OIDC_ISSUER_URL", ""))
+	oidcDiscoveryURL := strings.TrimSpace(getenv("SKYFORGE_OIDC_DISCOVERY_URL", ""))
 	oidcClientID := strings.TrimSpace(getOptionalSecret("SKYFORGE_OIDC_CLIENT_ID"))
 	oidcClientSecret := strings.TrimSpace(getOptionalSecret("SKYFORGE_OIDC_CLIENT_SECRET"))
 	oidcRedirectURL := strings.TrimSpace(getenv("SKYFORGE_OIDC_REDIRECT_URL", ""))
@@ -782,6 +783,7 @@ func loadConfig() Config {
 		YaadeInternalBaseURL:    yaadeInternalBaseURL,
 		OIDC: OIDCConfig{
 			IssuerURL:    oidcIssuerURL,
+			DiscoveryURL: oidcDiscoveryURL,
 			ClientID:     oidcClientID,
 			ClientSecret: oidcClientSecret,
 			RedirectURL:  oidcRedirectURL,

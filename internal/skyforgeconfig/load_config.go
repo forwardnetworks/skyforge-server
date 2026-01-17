@@ -283,6 +283,7 @@ func LoadConfig(enc EncoreConfig) skyforgecore.Config {
 	yaadeInternalBaseURL := strings.TrimRight(strings.TrimSpace(enc.Integrations.YaadeInternalBaseURL), "/")
 
 	oidcIssuerURL := strings.TrimSpace(getenv("SKYFORGE_OIDC_ISSUER_URL", ""))
+	oidcDiscoveryURL := strings.TrimSpace(getenv("SKYFORGE_OIDC_DISCOVERY_URL", ""))
 	oidcClientID := strings.TrimSpace(OptionalSecret("SKYFORGE_OIDC_CLIENT_ID"))
 	oidcClientSecret := strings.TrimSpace(OptionalSecret("SKYFORGE_OIDC_CLIENT_SECRET"))
 	oidcRedirectURL := strings.TrimSpace(getenv("SKYFORGE_OIDC_REDIRECT_URL", ""))
@@ -443,6 +444,7 @@ func LoadConfig(enc EncoreConfig) skyforgecore.Config {
 		YaadeInternalBaseURL:    yaadeInternalBaseURL,
 		OIDC: skyforgecore.OIDCConfig{
 			IssuerURL:    oidcIssuerURL,
+			DiscoveryURL: oidcDiscoveryURL,
 			ClientID:     oidcClientID,
 			ClientSecret: oidcClientSecret,
 			RedirectURL:  oidcRedirectURL,

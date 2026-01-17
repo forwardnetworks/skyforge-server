@@ -39,7 +39,21 @@ func initOIDCClient(cfg Config) (*OIDCClient, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	provider, err := oidc.NewProvider(ctx, cfg.OIDC.IssuerURL)
+	providerURL := strings.TrimSpace(cfg.OIDC.IssuerURL)
+	if raw := strings.TrimSpace(cfg.OIDC.DiscoveryURL); raw != "" {
+		// Allow callers to specify either the issuer base or the full discovery URL.
+		raw = strings.TrimSuffix(raw, "/.well-known/openid-configuration")
+		raw = strings.TrimSuffix(raw, ".well-known/openid-configuration")
+		raw = strings.TrimRight(raw, "/")
+		if raw != "" {
+			providerURL = raw
+			// When we fetch discovery from a non-issuer URL (e.g. in-cluster Dex service),
+			// allow the discovery document to define the external issuer.
+			ctx = oidc.InsecureIssuerURLContext(ctx, cfg.OIDC.IssuerURL)
+		}
+	}
+
+	provider, err := oidc.NewProvider(ctx, providerURL)
 	if err != nil {
 		return nil, err
 	}

@@ -89,6 +89,13 @@ type Config struct {
 
 type OIDCConfig struct {
 	IssuerURL    string
+	// DiscoveryURL optionally overrides where Skyforge fetches the OIDC discovery document.
+	// This is useful when the issuer URL is only reachable via an external ingress hostname,
+	// but the service itself is reachable in-cluster (e.g. Dex at http://dex:5556/dex).
+	//
+	// When set, Skyforge uses go-oidc's InsecureIssuerURLContext to allow the discovery
+	// document to specify the external issuer while being fetched from the internal URL.
+	DiscoveryURL string
 	ClientID     string
 	ClientSecret string
 	RedirectURL  string
