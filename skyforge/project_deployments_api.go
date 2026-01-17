@@ -2189,8 +2189,20 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 		k8sNamespace, _ := cfgAny["k8sNamespace"].(string)
 
 		netlabServer = strings.TrimSpace(netlabServer)
-		if netlabServer == "" {
-			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
+		generatorMode := strings.ToLower(strings.TrimSpace(s.cfg.NetlabC9sGeneratorMode))
+		if generatorMode == "" {
+			generatorMode = "k8s"
+		}
+		if generatorMode == "remote" {
+			if netlabServer == "" {
+				return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
+			}
+		} else {
+			// Cluster-native netlab-c9s mode: treat missing netlabServer as "k8s".
+			if netlabServer == "" {
+				netlabServer = "k8s"
+				cfgAny["netlabServer"] = netlabServer
+			}
 		}
 		if strings.TrimSpace(template) == "" && mode != "destroy" {
 			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab template is required").Err()

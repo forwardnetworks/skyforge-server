@@ -56,16 +56,29 @@ func (s *Service) runNetlabC9sDeploymentAction(
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid netlab c9s action (use deploy or destroy)").Err()
 	}
 
-	netlabServer = strings.TrimSpace(netlabServer)
-	if netlabServer == "" {
-		netlabServer = strings.TrimSpace(pc.workspace.NetlabServer)
+	serverName := "k8s"
+	mode := strings.ToLower(strings.TrimSpace(s.cfg.NetlabC9sGeneratorMode))
+	if mode == "" {
+		mode = "k8s"
 	}
-	if netlabServer == "" {
-		netlabServer = strings.TrimSpace(pc.workspace.EveServer)
-	}
-	server, err := s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, netlabServer)
-	if err != nil {
-		return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
+	if mode == "remote" {
+		netlabServer = strings.TrimSpace(netlabServer)
+		if netlabServer == "" {
+			netlabServer = strings.TrimSpace(pc.workspace.NetlabServer)
+		}
+		if netlabServer == "" {
+			netlabServer = strings.TrimSpace(pc.workspace.EveServer)
+		}
+		server, err := s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, netlabServer)
+		if err != nil {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
+		}
+		serverName = server.Name
+	} else {
+		// Cluster-native generator mode: do not require BYOS netlab servers.
+		if strings.TrimSpace(netlabServer) != "" {
+			serverName = strings.TrimSpace(netlabServer)
+		}
 	}
 
 	template = strings.TrimSpace(template)
@@ -122,13 +135,13 @@ func (s *Service) runNetlabC9sDeploymentAction(
 			impersonated,
 			"workspace.run.netlab.c9s",
 			pc.workspace.ID,
-			fmt.Sprintf("action=%s server=%s namespace=%s topology=%s", action, server.Name, k8sNamespace, topologyName),
+			fmt.Sprintf("action=%s server=%s namespace=%s topology=%s", action, serverName, k8sNamespace, topologyName),
 		)
 	}
 
 	meta, err := toJSONMap(map[string]any{
 		"action":       action,
-		"server":       server.Name,
+		"server":       serverName,
 		"deployment":   dep.Name,
 		"deploymentID": dep.ID,
 		"namespace":    k8sNamespace,
@@ -137,7 +150,7 @@ func (s *Service) runNetlabC9sDeploymentAction(
 		"dedupeKey":    fmt.Sprintf("netlab-c9s:%s:%s:%s", pc.workspace.ID, action, dep.ID),
 		"spec": netlabC9sTaskSpec{
 			Action:          action,
-			Server:          server.Name,
+			Server:          serverName,
 			Deployment:      deploymentName,
 			DeploymentID:    dep.ID,
 			WorkspaceRoot:   workspaceRoot,
