@@ -127,6 +127,9 @@ ORDER BY updated_at DESC`, workspaceID)
 		if lastStatus.Valid {
 			v := lastStatus.String
 			rec.LastStatus = &v
+		} else {
+			v := "created"
+			rec.LastStatus = &v
 		}
 		if lastStarted.Valid {
 			v := lastStarted.Time.UTC().Format(time.RFC3339)
