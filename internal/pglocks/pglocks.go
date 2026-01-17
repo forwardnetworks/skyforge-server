@@ -20,6 +20,12 @@ func WorkspaceAdvisoryLockKey(workspaceID string) int64 {
 	return int64(u)
 }
 
+func KeyFromString(s string) int64 {
+	sum := sha256.Sum256([]byte(s))
+	u := binary.LittleEndian.Uint64(sum[:8])
+	return int64(u)
+}
+
 func TryAdvisoryLock(ctx context.Context, db *sql.DB, key int64) (bool, error) {
 	if db == nil {
 		return false, fmt.Errorf("db unavailable")
@@ -41,4 +47,3 @@ func AdvisoryUnlock(ctx context.Context, db *sql.DB, key int64) error {
 	}
 	return nil
 }
-
