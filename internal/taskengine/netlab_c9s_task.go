@@ -126,11 +126,11 @@ func (e *Engine) dispatchNetlabC9sTask(ctx context.Context, task *taskstore.Task
 		MultilabNumeric: specIn.MultilabNumeric,
 		StateRoot:       "",
 		Server:          NetlabServerConfig{},
-		TopologyPath: strings.TrimSpace(specIn.TopologyPath),
-		ClabTarball:  strings.TrimSpace(specIn.ClabTarball),
-		K8sNamespace: strings.TrimSpace(specIn.K8sNamespace),
-		LabName:      strings.TrimSpace(specIn.LabName),
-		TopologyName: strings.TrimSpace(specIn.TopologyName),
+		TopologyPath:    strings.TrimSpace(specIn.TopologyPath),
+		ClabTarball:     strings.TrimSpace(specIn.ClabTarball),
+		K8sNamespace:    strings.TrimSpace(specIn.K8sNamespace),
+		LabName:         strings.TrimSpace(specIn.LabName),
+		TopologyName:    strings.TrimSpace(specIn.TopologyName),
 	}
 	action := strings.ToLower(strings.TrimSpace(runSpec.Action))
 	if action == "" {
@@ -245,7 +245,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	}
 
 	// Optional Phase 2: post-deploy Ansible.
-	if strings.EqualFold(strings.TrimSpace(spec.Environment["SKYFORGE_NETLAB_C9S_RUN_ANSIBLE"]), "true") {
+	if !strings.EqualFold(strings.TrimSpace(spec.Environment["SKYFORGE_NETLAB_C9S_RUN_ANSIBLE"]), "false") {
 		return e.runNetlabC9sAnsible(ctx, spec, ns, topologyName, labName, log)
 	}
 	return nil
