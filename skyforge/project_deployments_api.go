@@ -2122,6 +2122,7 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 	}
 
 	var run *WorkspaceRunResponse
+	cfgOut := dep.Config
 
 	switch dep.Type {
 	case "terraform":
@@ -2177,6 +2178,60 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 		})
 		if err != nil {
 			return nil, err
+		}
+	case "netlab-c9s":
+		netlabServer, _ := cfgAny["netlabServer"].(string)
+		templateSource, _ := cfgAny["templateSource"].(string)
+		templateRepo, _ := cfgAny["templateRepo"].(string)
+		templatesDir, _ := cfgAny["templatesDir"].(string)
+		template, _ := cfgAny["template"].(string)
+		labName, _ := cfgAny["labName"].(string)
+		k8sNamespace, _ := cfgAny["k8sNamespace"].(string)
+
+		netlabServer = strings.TrimSpace(netlabServer)
+		if netlabServer == "" {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
+		}
+		if strings.TrimSpace(template) == "" && mode != "destroy" {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab template is required").Err()
+		}
+		if strings.TrimSpace(labName) == "" {
+			labName = containerlabLabName(pc.workspace.Slug, dep.Name)
+			cfgAny["labName"] = labName
+		}
+		if strings.TrimSpace(k8sNamespace) == "" {
+			k8sNamespace = clabernetesWorkspaceNamespace(pc.workspace.Slug)
+			cfgAny["k8sNamespace"] = k8sNamespace
+		}
+		cfgAny["topologyName"] = clabernetesTopologyName(labName)
+
+		c9sAction := "deploy"
+		if mode == "destroy" {
+			c9sAction = "destroy"
+			cfgAny["infraCreated"] = false
+		} else {
+			cfgAny["infraCreated"] = true
+		}
+
+		run, err = s.runNetlabC9sDeploymentAction(
+			ctx,
+			pc,
+			dep,
+			envJSON,
+			c9sAction,
+			netlabServer,
+			strings.TrimSpace(templateSource),
+			strings.TrimSpace(templateRepo),
+			strings.TrimSpace(templatesDir),
+			strings.TrimSpace(template),
+			strings.TrimSpace(labName),
+			strings.TrimSpace(k8sNamespace),
+		)
+		if err != nil {
+			return nil, err
+		}
+		if next, err := toJSONMap(cfgAny); err == nil {
+			cfgOut = next
 		}
 	case "labpp":
 		template, _ := cfgAny["template"].(string)
@@ -2258,11 +2313,58 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 		if strings.TrimSpace(labName) == "" {
 			cfgAny["labName"] = containerlabLabName(pc.workspace.Slug, dep.Name)
 		}
+	case "clabernetes":
+		templateSource, _ := cfgAny["templateSource"].(string)
+		templateRepo, _ := cfgAny["templateRepo"].(string)
+		templatesDir, _ := cfgAny["templatesDir"].(string)
+		template, _ := cfgAny["template"].(string)
+		labName, _ := cfgAny["labName"].(string)
+		k8sNamespace, _ := cfgAny["k8sNamespace"].(string)
+
+		if strings.TrimSpace(template) == "" && mode != "destroy" {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("clabernetes template is required").Err()
+		}
+		if strings.TrimSpace(labName) == "" {
+			labName = containerlabLabName(pc.workspace.Slug, dep.Name)
+			cfgAny["labName"] = labName
+		}
+		if strings.TrimSpace(k8sNamespace) == "" {
+			k8sNamespace = clabernetesWorkspaceNamespace(pc.workspace.Slug)
+			cfgAny["k8sNamespace"] = k8sNamespace
+		}
+
+		clabernetesAction := "deploy"
+		if mode == "destroy" {
+			clabernetesAction = "destroy"
+			cfgAny["infraCreated"] = false
+		} else {
+			cfgAny["infraCreated"] = true
+		}
+
+		run, err = s.runClabernetesDeploymentAction(
+			ctx,
+			pc,
+			dep,
+			envJSON,
+			clabernetesAction,
+			strings.TrimSpace(templateSource),
+			strings.TrimSpace(templateRepo),
+			strings.TrimSpace(templatesDir),
+			strings.TrimSpace(template),
+			strings.TrimSpace(labName),
+			strings.TrimSpace(k8sNamespace),
+		)
+		if err != nil {
+			return nil, err
+		}
+		if next, err := toJSONMap(cfgAny); err == nil {
+			cfgOut = next
+		}
 	default:
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown deployment type").Err()
 	}
 
-	updated, err := s.touchDeploymentFromRun(ctx, pc.workspace.ID, deploymentID, dep.Config, run)
+	updated, err := s.touchDeploymentFromRun(ctx, pc.workspace.ID, deploymentID, cfgOut, run)
 	if err != nil {
 		log.Printf("deployments touch: %v", err)
 	}
