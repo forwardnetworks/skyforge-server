@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Skyforge Docs · Getting started</title>
+    <style>
+      :root {
+        color-scheme: dark light;
+        --bg: #0b1223;
+        --fg: #f1f5ff;
+        --muted: rgba(241, 245, 255, 0.75);
+        --card: rgba(15, 23, 42, 0.7);
+        --border: rgba(148, 163, 184, 0.18);
+        --link: #9fb7ff;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f7f8fc;
+          --fg: #0b1833;
+          --muted: rgba(11, 24, 53, 0.75);
+          --card: #ffffff;
+          --border: rgba(11, 24, 53, 0.12);
+          --link: #2f46ff;
+        }
+      }
+      html,
+      body {
+        margin: 0;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        background: radial-gradient(900px 500px at 20% 10%, rgba(99, 102, 241, 0.14), transparent 60%),
+          radial-gradient(800px 500px at 80% 0%, rgba(255, 122, 43, 0.12), transparent 55%), var(--bg);
+        color: var(--fg);
+      }
+      a {
+        color: var(--link);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+      header,
+      main {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 1.5rem;
+      }
+      header p {
+        margin: 0.35rem 0 0;
+        color: var(--muted);
+      }
+      .card {
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: var(--card);
+        padding: 1.1rem;
+        margin-top: 1rem;
+      }
+      h1 {
+        margin: 0;
+      }
+      h2 {
+        margin: 0 0 0.5rem;
+        font-size: 1.05rem;
+      }
+      ol,
+      ul {
+        margin: 0.6rem 0 0.4rem 1.25rem;
+      }
+      li {
+        margin: 0.25rem 0;
+      }
+      code,
+      pre {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      }
+      pre {
+        white-space: pre-wrap;
+        margin: 0.6rem 0 0;
+        padding: 0.75rem 0.9rem;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: rgba(0, 0, 0, 0.12);
+      }
+      .nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        margin-top: 0.75rem;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.35rem 0.65rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(0, 0, 0, 0.08);
+        color: inherit;
+        font-weight: 650;
+        font-size: 0.9rem;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Getting started</h1>
+      <p>How to get from “fresh VM” → “working demo toolchain”.</p>
+      <div class="nav">
+        <a class="pill" href="/docs/">Docs home</a>
+        <a class="pill" href="/">Skyforge home</a>
+        <a class="pill" href="/status/summary">Platform status</a>
+      </div>
+    </header>
+    <main>
+      <section class="card">
+        <h2>1) Log in once (Skyforge session)</h2>
+        <ol>
+          <li>Open <a href="/">Skyforge home</a>.</li>
+          <li>Click <strong>Sign In</strong> to authenticate via the Skyforge SSO (Dex + LDAP).</li>
+          <li>After sign-in, use the SSO links like <code>/netbox/</code>, <code>/nautobot/</code>, <code>/git/</code>, and <code>/minio-console/</code> (object storage console).</li>
+        </ol>
+      </section>
+
+      <section class="card">
+        <h2>2) Validate the stack</h2>
+        <p>Check the live status JSON:</p>
+        <pre><code>curl -k https://localhost/status/summary | head</code></pre>
+        <p>And verify pods:</p>
+        <pre><code>kubectl -n skyforge get pods</code></pre>
+      </section>
+
+      <section class="card">
+        <h2>3) Useful unauthenticated links</h2>
+        <ul>
+          <li><a href="/file-drop.html">File Drop</a> (anonymous HTTPS upload/download)</li>
+          <li><a href="/coder">Coder Workspace</a> (sign-in required)</li>
+          <li><a href="/docs/">Docs</a></li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>4) Secrets & config</h2>
+        <p>Internal credentials are stored under <code>./secrets/</code> (gitignored). Update files and re-apply the secrets overlay as needed.</p>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Skyforge | Technical Services</title>
+    <script>
+      (function() {
+        const storageKey = "vite-ui-theme";
+        const defaultTheme = "system";
+        let theme = localStorage.getItem(storageKey) || defaultTheme;
+        if (theme === "system") {
+          theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+        document.documentElement.classList.add(theme);
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/skyforge/index-CLs06Zcy.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/skyforge/motion-CPgCf6pg.js">
+    <link rel="modulepreload" crossorigin href="/assets/skyforge/rolldown-runtime-DAKAggwm.js">
+    <link rel="modulepreload" crossorigin href="/assets/skyforge/react-DFSg3LB0.js">
+    <link rel="modulepreload" crossorigin href="/assets/skyforge/tanstack-u1eiz_hl.js">
+    <link rel="modulepreload" crossorigin href="/assets/skyforge/ui-utils-l2x0dF3k.js">
+    <link rel="modulepreload" crossorigin href="/assets/skyforge/vendor-WR1pEW_p.js">
+    <link rel="stylesheet" crossorigin href="/assets/skyforge/react-CHpVij2M.css">
+    <link rel="stylesheet" crossorigin href="/assets/skyforge/index-DGPtq4Jm.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
