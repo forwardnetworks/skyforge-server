@@ -6,33 +6,35 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"encore.dev/beta/errs"
 )
 
 func (s *Service) resolveWorkspaceNetlabServerConfig(ctx context.Context, workspaceID string, serverRef string) (*NetlabServerConfig, error) {
 	if s == nil {
-		return nil, fmt.Errorf("service unavailable")
+		return nil, errs.B().Code(errs.Unavailable).Msg("service unavailable").Err()
 	}
 	if s.db == nil {
-		return nil, fmt.Errorf("database unavailable")
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 	workspaceID = strings.TrimSpace(workspaceID)
 	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace id required")
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("workspace id required").Err()
 	}
 	serverRef = strings.TrimSpace(serverRef)
 	if serverRef == "" {
-		return nil, fmt.Errorf("netlab server is required (configure a Netlab server in workspace settings)")
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server is required (configure a Netlab server in workspace settings)").Err()
 	}
 	serverID, ok := parseWorkspaceServerRef(serverRef)
 	if !ok {
-		return nil, fmt.Errorf("netlab server must be a workspace server reference (ws:...)")
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("netlab server must be a workspace server reference (ws:...)").Err()
 	}
 	rec, err := getWorkspaceNetlabServerByID(ctx, s.db, s.box, workspaceID, serverID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load workspace netlab server")
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load workspace netlab server").Err()
 	}
 	if rec == nil {
-		return nil, fmt.Errorf("workspace netlab server not found")
+		return nil, errs.B().Code(errs.NotFound).Msg("workspace netlab server not found").Err()
 	}
 	custom := NetlabServerConfig{
 		Name:        strings.TrimSpace(rec.Name),
@@ -53,29 +55,29 @@ type workspaceEveResolved struct {
 
 func (s *Service) resolveWorkspaceEveServerConfig(ctx context.Context, workspaceID string, serverRef string) (*workspaceEveResolved, error) {
 	if s == nil {
-		return nil, fmt.Errorf("service unavailable")
+		return nil, errs.B().Code(errs.Unavailable).Msg("service unavailable").Err()
 	}
 	if s.db == nil {
-		return nil, fmt.Errorf("database unavailable")
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 	workspaceID = strings.TrimSpace(workspaceID)
 	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace id required")
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("workspace id required").Err()
 	}
 	serverRef = strings.TrimSpace(serverRef)
 	if serverRef == "" {
-		return nil, fmt.Errorf("eve server is required (configure an EVE server in workspace settings)")
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("eve server is required (configure an EVE server in workspace settings)").Err()
 	}
 	serverID, ok := parseWorkspaceServerRef(serverRef)
 	if !ok {
-		return nil, fmt.Errorf("eve server must be a workspace server reference (ws:...)")
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("eve server must be a workspace server reference (ws:...)").Err()
 	}
 	rec, err := getWorkspaceEveServerByID(ctx, s.db, s.box, workspaceID, serverID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load workspace EVE server")
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load workspace EVE server").Err()
 	}
 	if rec == nil {
-		return nil, fmt.Errorf("workspace EVE server not found")
+		return nil, errs.B().Code(errs.NotFound).Msg("workspace EVE server not found").Err()
 	}
 	eveServer := EveServerConfig{
 		Name:          strings.TrimSpace(rec.Name),
@@ -147,7 +149,7 @@ func (s *Service) checkWorkspaceNetlabHealth(ctx context.Context, workspaceID st
 	}
 	apiURL := strings.TrimRight(strings.TrimSpace(server.APIURL), "/")
 	if apiURL == "" {
-		return fmt.Errorf("netlab apiUrl is required")
+		return errs.B().Code(errs.FailedPrecondition).Msg("netlab apiUrl is required").Err()
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -156,7 +158,7 @@ func (s *Service) checkWorkspaceNetlabHealth(ctx context.Context, workspaceID st
 		return err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("netlab unhealthy: %s", strings.TrimSpace(string(body)))
+		return errs.B().Code(errs.Unavailable).Msgf("netlab unhealthy: %s", strings.TrimSpace(string(body))).Err()
 	}
 	return nil
 }
