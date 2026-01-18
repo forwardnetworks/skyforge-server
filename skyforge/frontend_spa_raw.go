@@ -61,21 +61,12 @@ func (s *Service) serveFrontendIndex(w http.ResponseWriter, req *http.Request) {
 	http.Error(w, "frontend not built (run `cd portal-tanstack && pnpm build`)", http.StatusServiceUnavailable)
 }
 
-// FrontendAny serves the Vite-built Skyforge UI directly from the Encore backend.
-// This replaces the standalone nginx-based portal container.
-//
-//encore:api public raw method=GET path=/*path
-func (s *Service) FrontendAny(w http.ResponseWriter, req *http.Request) {
+func (s *Service) serveFrontendSPA(w http.ResponseWriter, req *http.Request) {
 	p := strings.TrimSpace(req.URL.Path)
 	if p == "" {
 		p = "/"
 	}
 
-	// Known file requests: try to serve directly, otherwise fall back to SPA routing.
-	if p == "/" {
-		s.serveFrontendIndex(w, req)
-		return
-	}
 	if strings.HasPrefix(p, "/assets/skyforge/") {
 		if serveFrontendFile(w, req, p) {
 			return
@@ -98,4 +89,67 @@ func (s *Service) FrontendAny(w http.ResponseWriter, req *http.Request) {
 
 	// Client-side route fallback.
 	s.serveFrontendIndex(w, req)
+}
+
+// FrontendAssets serves hashed frontend assets built by Vite.
+//
+//encore:api public raw method=GET path=/assets/skyforge/*path
+func (s *Service) FrontendAssets(w http.ResponseWriter, req *http.Request) {
+	s.serveFrontendSPA(w, req)
+}
+
+// FrontendRoot serves the SPA entrypoint.
+//
+//encore:api public raw method=GET path=/
+func (s *Service) FrontendRoot(w http.ResponseWriter, req *http.Request) {
+	s.serveFrontendSPA(w, req)
+}
+
+// FrontendDashboard serves the SPA for dashboard routes.
+//
+//encore:api public raw method=GET path=/dashboard/*path
+func (s *Service) FrontendDashboard(w http.ResponseWriter, req *http.Request) {
+	s.serveFrontendSPA(w, req)
+}
+
+// FrontendAdmin serves the SPA for admin routes.
+//
+//encore:api public raw method=GET path=/admin/*path
+func (s *Service) FrontendAdmin(w http.ResponseWriter, req *http.Request) {
+	s.serveFrontendSPA(w, req)
+}
+
+// FrontendWebhooks serves the SPA for the webhook inbox UI route.
+//
+//encore:api public raw method=GET path=/webhooks
+func (s *Service) FrontendWebhooks(w http.ResponseWriter, req *http.Request) {
+	s.serveFrontendSPA(w, req)
+}
+
+// FrontendSyslog serves the SPA for syslog routes.
+//
+//encore:api public raw method=GET path=/syslog/*path
+func (s *Service) FrontendSyslog(w http.ResponseWriter, req *http.Request) {
+	s.serveFrontendSPA(w, req)
+}
+
+// FrontendSNMP serves the SPA for SNMP routes.
+//
+//encore:api public raw method=GET path=/snmp/*path
+func (s *Service) FrontendSNMP(w http.ResponseWriter, req *http.Request) {
+	s.serveFrontendSPA(w, req)
+}
+
+// FrontendNotifications serves the SPA for notifications routes.
+//
+//encore:api public raw method=GET path=/notifications/*path
+func (s *Service) FrontendNotifications(w http.ResponseWriter, req *http.Request) {
+	s.serveFrontendSPA(w, req)
+}
+
+// FrontendDocs serves embedded UI docs pages.
+//
+//encore:api public raw method=GET path=/docs/*path
+func (s *Service) FrontendDocs(w http.ResponseWriter, req *http.Request) {
+	s.serveFrontendSPA(w, req)
 }

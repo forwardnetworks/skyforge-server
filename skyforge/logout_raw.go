@@ -45,10 +45,10 @@ func (s *Service) NetboxLogout(w http.ResponseWriter, req *http.Request) {
 	s.integrationLogoutRedirect(w, req, "/netbox/")
 }
 
-// NetboxLogoutSlash clears the Skyforge session cookie and redirects to the Skyforge landing page.
+// NetboxLogoutAny handles `/netbox/logout/*` (including a trailing slash).
 //
-//encore:api public raw method=GET path=/netbox/logout/
-func (s *Service) NetboxLogoutSlash(w http.ResponseWriter, req *http.Request) {
+//encore:api public raw method=GET path=/netbox/logout/*rest
+func (s *Service) NetboxLogoutAny(w http.ResponseWriter, req *http.Request) {
 	s.integrationLogoutRedirect(w, req, "/netbox/")
 }
 
@@ -59,10 +59,10 @@ func (s *Service) NautobotLogout(w http.ResponseWriter, req *http.Request) {
 	s.integrationLogoutRedirect(w, req, "/nautobot/")
 }
 
-// NautobotLogoutSlash clears the Skyforge session cookie and redirects to the Skyforge landing page.
+// NautobotLogoutAny handles `/nautobot/logout/*` (including a trailing slash).
 //
-//encore:api public raw method=GET path=/nautobot/logout/
-func (s *Service) NautobotLogoutSlash(w http.ResponseWriter, req *http.Request) {
+//encore:api public raw method=GET path=/nautobot/logout/*rest
+func (s *Service) NautobotLogoutAny(w http.ResponseWriter, req *http.Request) {
 	s.integrationLogoutRedirect(w, req, "/nautobot/")
 }
 
