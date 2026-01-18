@@ -336,7 +336,9 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		netlabC9sGeneratorMode = override
 	}
 	if netlabC9sGeneratorMode == "" {
-		netlabC9sGeneratorMode = "remote"
+		// Default to in-cluster generation for netlab-c9s so it works out of the box without
+		// requiring a BYOS netlab server selection.
+		netlabC9sGeneratorMode = "k8s"
 	}
 	netlabGeneratorImage := strings.TrimSpace(enc.NetlabGenerator.GeneratorImage)
 	if override := strings.TrimSpace(getenv("SKYFORGE_NETLAB_GENERATOR_IMAGE", "")); override != "" {
