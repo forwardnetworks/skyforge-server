@@ -1,8 +1,10 @@
-package skyforge
+package worker
 
 import "encore.app/internal/skyforgecore"
 
 // secrets defines the Encore-managed secrets for the application.
+// This duplicates the secrets from the skyforge service because the worker
+// needs access to the same configuration (DB, S3, etc.).
 var secrets struct {
 	SKYFORGE_SESSION_SECRET                      string `secret:"SKYFORGE_SESSION_SECRET"`
 	SKYFORGE_ADMIN_PASSWORD                      string `secret:"SKYFORGE_ADMIN_PASSWORD"`

@@ -24,7 +24,7 @@ func CronRefreshTaskQueueMetrics(ctx context.Context) error {
 	ctxReq, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	cfg := skyforgeconfig.LoadConfig(skyforgeEncoreCfg)
+	cfg := skyforgeconfig.LoadConfig(skyforgeEncoreCfg, getSecrets())
 	return updateTaskQueueMetrics(ctxReq, cfg, db)
 }
 

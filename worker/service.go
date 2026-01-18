@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"encore.app/internal/skyforgeconfig"
+	"encore.app/internal/skyforgecore"
 	"encore.app/internal/taskengine"
 	"encore.app/internal/taskexec"
 	"encore.app/internal/taskqueue"
@@ -20,7 +22,18 @@ import (
 //encore:service
 type Service struct{}
 
-var workerCoreCfg = skyforgeconfig.LoadConfig(workerEncoreCfg)
+var (
+	workerCoreCfg     skyforgecore.Config
+	workerCoreCfgOnce sync.Once
+)
+
+func getWorkerCoreCfg() skyforgecore.Config {
+	workerCoreCfgOnce.Do(func() {
+		sec := getSecrets()
+		workerCoreCfg = skyforgeconfig.LoadConfig(workerEncoreCfg, sec)
+	})
+	return workerCoreCfg
+}
 
 var taskQueueSubscription = pubsub.NewSubscription(taskqueue.InteractiveTopic, "skyforge-task-worker", pubsub.SubscriptionConfig[*taskqueue.TaskEnqueuedEvent]{
 	Handler:        pubsub.MethodHandler((*Service).handleTaskEnqueued),
@@ -45,7 +58,7 @@ func (s *Service) handleTaskEnqueued(ctx context.Context, msg *taskqueue.TaskEnq
 	}
 	return taskexec.ProcessQueuedTask(ctx, stdlib, msg.TaskID, taskexec.Deps{
 		Dispatch: func(ctx context.Context, task *taskstore.TaskRecord, log taskexec.Logger) error {
-			eng := taskengine.New(workerCoreCfg, stdlib)
+			eng := taskengine.New(getWorkerCoreCfg(), stdlib)
 			if handled, err := eng.DispatchTask(ctx, task, log); handled {
 				return err
 			}

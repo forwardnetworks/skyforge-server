@@ -252,7 +252,7 @@ func normalizeNetlabServer(s skyforgecore.NetlabServerConfig, fallback skyforgec
 //
 // The Encore-managed config values must be passed in from a service package,
 // since config.Load cannot be called from a non-service library.
-func LoadConfig(enc EncoreConfig) skyforgecore.Config {
+func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config {
 	sessionTTL := 8 * time.Hour
 	if raw := getenv("SKYFORGE_SESSION_TTL", "8h"); raw != "" {
 		if parsed, err := time.ParseDuration(raw); err == nil {
@@ -271,7 +271,7 @@ func LoadConfig(enc EncoreConfig) skyforgecore.Config {
 
 	adminUsers := parseUserList(getenv("SKYFORGE_ADMIN_USERS", ""))
 	adminUsername := strings.TrimSpace(getenv("SKYFORGE_ADMIN_USERNAME", "skyforge"))
-	adminPassword := strings.TrimSpace(OptionalSecret("SKYFORGE_ADMIN_PASSWORD"))
+	adminPassword := strings.TrimSpace(sec.AdminPassword)
 	corpEmailDomain := inferEmailDomain(getenv("SKYFORGE_CORP_EMAIL_DOMAIN", ""))
 
 	giteaBaseURL := strings.TrimRight(strings.TrimSpace(enc.Integrations.GiteaBaseURL), "/")
@@ -284,15 +284,15 @@ func LoadConfig(enc EncoreConfig) skyforgecore.Config {
 
 	oidcIssuerURL := strings.TrimSpace(getenv("SKYFORGE_OIDC_ISSUER_URL", ""))
 	oidcDiscoveryURL := strings.TrimSpace(getenv("SKYFORGE_OIDC_DISCOVERY_URL", ""))
-	oidcClientID := strings.TrimSpace(OptionalSecret("SKYFORGE_OIDC_CLIENT_ID"))
-	oidcClientSecret := strings.TrimSpace(OptionalSecret("SKYFORGE_OIDC_CLIENT_SECRET"))
+	oidcClientID := strings.TrimSpace(sec.OIDCClientID)
+	oidcClientSecret := strings.TrimSpace(sec.OIDCClientSecret)
 	oidcRedirectURL := strings.TrimSpace(getenv("SKYFORGE_OIDC_REDIRECT_URL", ""))
 
 	// NOTE: Skyforge uses an Encore-managed Postgres database resource.
 	// Legacy env-based DB connection settings have been removed.
 
-	ldapURL := strings.TrimSpace(OptionalSecret("SKYFORGE_LDAP_URL"))
-	ldapBindTemplate := strings.TrimSpace(OptionalSecret("SKYFORGE_LDAP_BIND_TEMPLATE"))
+	ldapURL := strings.TrimSpace(sec.LDAPURL)
+	ldapBindTemplate := strings.TrimSpace(sec.LDAPBindTemplate)
 	ldapCfg := skyforgecore.LDAPConfig{
 		URL:             ldapURL,
 		BindTemplate:    ldapBindTemplate,
@@ -303,8 +303,8 @@ func LoadConfig(enc EncoreConfig) skyforgecore.Config {
 		UseStartTLS:     getenv("SKYFORGE_LDAP_STARTTLS", "false") == "true",
 		SkipTLSVerify:   getenv("SKYFORGE_LDAP_SKIP_TLS_VERIFY", "false") == "true",
 	}
-	ldapLookupBindDN := strings.TrimSpace(OptionalSecret("SKYFORGE_LDAP_LOOKUP_BINDDN"))
-	ldapLookupBindPassword := OptionalSecret("SKYFORGE_LDAP_LOOKUP_BINDPASSWORD")
+	ldapLookupBindDN := strings.TrimSpace(sec.LDAPLookupBindDN)
+	ldapLookupBindPassword := sec.LDAPLookupBindPassword
 
 	netlabCfg := skyforgecore.NetlabConfig{
 		SSHHost:    strings.TrimSpace(enc.Netlab.SSHHost),
@@ -416,23 +416,23 @@ func LoadConfig(enc EncoreConfig) skyforgecore.Config {
 		DataDir:                         getenv("SKYFORGE_WORKSPACES_DATA_DIR", "/var/lib/skyforge"),
 		GiteaAPIURL:                     strings.TrimRight(getenv("SKYFORGE_GITEA_API_URL", ""), "/"),
 		GiteaUsername:                   getenv("SKYFORGE_GITEA_USERNAME", getenv("GITEA_ADMIN_USER", "skyforge")),
-		GiteaPassword:                   strings.TrimSpace(OptionalSecret("SKYFORGE_GITEA_PASSWORD")),
+		GiteaPassword:                   strings.TrimSpace(sec.GiteaPassword),
 		GiteaRepoPrivate:                getenv("SKYFORGE_GITEA_REPO_PRIVATE", "false") == "true",
 		DeleteMode:                      strings.TrimSpace(getenv("SKYFORGE_WORKSPACE_DELETE_MODE", "live")),
 		ObjectStorageEndpoint:           strings.TrimRight(getenv("SKYFORGE_OBJECT_STORAGE_ENDPOINT", "minio:9000"), "/"),
 		ObjectStorageUseSSL:             getenv("SKYFORGE_OBJECT_STORAGE_USE_SSL", "false") == "true",
-		ObjectStorageTerraformAccessKey: strings.TrimSpace(OptionalSecret("SKYFORGE_OBJECT_STORAGE_TERRAFORM_ACCESS_KEY")),
-		ObjectStorageTerraformSecretKey: strings.TrimSpace(OptionalSecret("SKYFORGE_OBJECT_STORAGE_TERRAFORM_SECRET_KEY")),
+		ObjectStorageTerraformAccessKey: strings.TrimSpace(sec.ObjectStorageTerraformAccessKey),
+		ObjectStorageTerraformSecretKey: strings.TrimSpace(sec.ObjectStorageTerraformSecretKey),
 	}
 
 	return skyforgecore.Config{
 		ListenAddr:              getenv("SKYFORGE_LISTEN_ADDR", ":8085"),
-		SessionSecret:           MustSecret("SKYFORGE_SESSION_SECRET"),
+		SessionSecret:           sec.SessionSecret,
 		SessionTTL:              sessionTTL,
 		SessionCookie:           getenv("SKYFORGE_SESSION_COOKIE", "skyforge_session"),
 		CookieSecure:            getenv("SKYFORGE_COOKIE_SECURE", "auto"),
 		CookieDomain:            strings.TrimSpace(getenv("SKYFORGE_COOKIE_DOMAIN", "")),
-		InternalToken:           strings.TrimSpace(OptionalSecret("SKYFORGE_INTERNAL_TOKEN")),
+		InternalToken:           strings.TrimSpace(sec.InternalToken),
 		StaticRoot:              strings.TrimSpace(getenv("SKYFORGE_STATIC_ROOT", "/opt/skyforge/static")),
 		MaxGroups:               maxGroups,
 		AdminUsers:              adminUsers,
@@ -476,25 +476,25 @@ func LoadConfig(enc EncoreConfig) skyforgecore.Config {
 		LabppConfigDirBase:        strings.TrimSpace(enc.Labpp.ConfigDirBase),
 		LabppConfigVersion:        strings.TrimSpace(enc.Labpp.ConfigVersion),
 		LabppNetboxURL:            strings.TrimSpace(enc.Labpp.NetboxURL),
-		LabppNetboxUsername:       strings.TrimSpace(OptionalSecret("SKYFORGE_LABPP_NETBOX_USERNAME")),
-		LabppNetboxPassword:       strings.TrimSpace(OptionalSecret("SKYFORGE_LABPP_NETBOX_PASSWORD")),
-		LabppNetboxToken:          strings.TrimSpace(OptionalSecret("SKYFORGE_LABPP_NETBOX_TOKEN")),
+		LabppNetboxUsername:       strings.TrimSpace(sec.LabppNetboxUsername),
+		LabppNetboxPassword:       strings.TrimSpace(sec.LabppNetboxPassword),
+		LabppNetboxToken:          strings.TrimSpace(sec.LabppNetboxToken),
 		LabppNetboxMgmtSubnet:     strings.TrimSpace(enc.Labpp.NetboxMgmtSubnet),
-		LabppS3AccessKey:          strings.TrimSpace(OptionalSecret("SKYFORGE_LABPP_S3_ACCESS_KEY")),
-		LabppS3SecretKey:          strings.TrimSpace(OptionalSecret("SKYFORGE_LABPP_S3_SECRET_KEY")),
+		LabppS3AccessKey:          strings.TrimSpace(sec.LabppS3AccessKey),
+		LabppS3SecretKey:          strings.TrimSpace(sec.LabppS3SecretKey),
 		LabppS3Region:             strings.TrimSpace(enc.Labpp.S3Region),
 		LabppS3BucketName:         strings.TrimSpace(enc.Labpp.S3BucketName),
 		LabppS3Endpoint:           strings.TrimSpace(enc.Labpp.S3Endpoint),
 		LabppS3DisableSSL:         enc.Labpp.S3DisableSSL,
 		LabppS3DisableChecksum:    enc.Labpp.S3DisableChecksum,
 		YaadeAdminUsername:        strings.TrimSpace(getenv("SKYFORGE_YAADE_ADMIN_USERNAME", "admin")),
-		YaadeAdminPassword:        strings.TrimSpace(OptionalSecret("YAADE_ADMIN_PASSWORD")),
+		YaadeAdminPassword:        strings.TrimSpace(sec.YaadeAdminPassword),
 		ContainerlabAPIPath:       strings.TrimSpace(enc.Containerlab.APIPath),
-		ContainerlabJWTSecret:     strings.TrimSpace(OptionalSecret("SKYFORGE_CONTAINERLAB_JWT_SECRET")),
+		ContainerlabJWTSecret:     strings.TrimSpace(sec.ContainerlabJWTSecret),
 		ContainerlabSkipTLSVerify: getenv("SKYFORGE_CONTAINERLAB_SKIP_TLS_VERIFY", "false") == "true",
-		PKICACert:                 strings.TrimSpace(OptionalSecret("SKYFORGE_PKI_CA_CERT")),
-		PKICAKey:                  strings.TrimSpace(OptionalSecret("SKYFORGE_PKI_CA_KEY")),
-		SSHCAKey:                  strings.TrimSpace(OptionalSecret("SKYFORGE_SSH_CA_KEY")),
+		PKICACert:                 strings.TrimSpace(sec.PKICACert),
+		PKICAKey:                  strings.TrimSpace(sec.PKICAKey),
+		SSHCAKey:                  strings.TrimSpace(sec.SSHCAKey),
 		PKIDefaultDays: func() int {
 			v := 365
 			if raw := strings.TrimSpace(getenv("SKYFORGE_PKI_DEFAULT_DAYS", "")); raw != "" {
@@ -523,4 +523,16 @@ func LoadConfig(enc EncoreConfig) skyforgecore.Config {
 		AnsibleRunnerImage:        ansibleRunnerImage,
 		AnsibleRunnerPullPolicy:   ansibleRunnerPullPolicy,
 	}
+}
+
+func readSecretFromFileEnv(key string) string {
+	path := strings.TrimSpace(os.Getenv(key))
+	if path == "" {
+		return ""
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }

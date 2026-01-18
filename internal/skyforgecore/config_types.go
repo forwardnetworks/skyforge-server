@@ -231,3 +231,29 @@ type ExternalTemplateRepo struct {
 	Repo          string `json:"repo"` // gitea owner/repo
 	DefaultBranch string `json:"defaultBranch,omitempty"`
 }
+
+type Secrets struct {
+	SessionSecret                      string
+	AdminPassword                      string
+	OIDCClientID                       string
+	OIDCClientSecret                   string
+	LDAPURL                            string
+	LDAPBindTemplate                   string
+	LDAPLookupBindDN                   string
+	LDAPLookupBindPassword             string
+	DBPassword                         string
+	GiteaPassword                      string
+	ObjectStorageTerraformAccessKey    string
+	ObjectStorageTerraformSecretKey    string
+	InternalToken                      string
+	ContainerlabJWTSecret              string
+	PKICACert                          string
+	PKICAKey                           string
+	SSHCAKey                           string
+	LabppNetboxUsername                string
+	LabppNetboxPassword                string
+	LabppNetboxToken                   string
+	LabppS3AccessKey                   string
+	LabppS3SecretKey                   string
+	YaadeAdminPassword                 string
+}
