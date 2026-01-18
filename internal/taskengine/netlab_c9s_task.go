@@ -351,6 +351,7 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 				if !ok || cfg == nil {
 					continue
 				}
+				kind := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["kind"])))
 				// Some netlab-generated binds (notably /etc/hosts) point at a directory that is
 				// populated via filesFromConfigMap, where the actual file lives under
 				// `<mountRoot>/node_files/<rel>/<configMapPath>`.
@@ -387,6 +388,19 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 					}
 					hostPath := strings.TrimSpace(parts[0])
 					rest := parts[1]
+
+					// Kubernetes container runtimes mount volumes with recursive bind flags
+					// (`MS_BIND|MS_REC`). When attempting to mount a single file onto `/etc/hosts`,
+					// some runtimes treat this as an invalid recursive bind (ENOTDIR). The
+					// /etc/hosts bind is nice-to-have for name resolution but not required for the
+					// topology to boot, so drop it for linux containers.
+					if kind == "linux" && strings.HasPrefix(strings.TrimSpace(rest), "/etc/hosts") {
+						if e != nil {
+							e.appendTaskWarning(taskID, fmt.Sprintf("c9s: skipped /etc/hosts bind for linux node %s (not supported by runtime)", nodeName))
+						}
+						continue
+					}
+
 					hostPath = strings.TrimPrefix(hostPath, "./")
 					if strings.HasPrefix(hostPath, "node_files/") {
 						newHost := path.Join(mountRoot, hostPath)
