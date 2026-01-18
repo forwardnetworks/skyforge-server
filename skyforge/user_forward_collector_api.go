@@ -19,6 +19,7 @@ type UserForwardCollectorResponse struct {
 	CollectorID       string `json:"collectorId,omitempty"`
 	CollectorUsername string `json:"collectorUsername,omitempty"`
 	AuthorizationKey  string `json:"authorizationKey,omitempty"`
+	Runtime           any    `json:"runtime,omitempty"`
 	HasPassword       bool   `json:"hasPassword"`
 	HasJumpKey        bool   `json:"hasJumpPrivateKey"`
 	HasJumpCert       bool   `json:"hasJumpCert"`
@@ -227,6 +228,7 @@ func (s *Service) GetUserForwardCollector(ctx context.Context) (*UserForwardColl
 		return &UserForwardCollectorResponse{
 			Configured:  false,
 			BaseURL:     defaultForwardBaseURL,
+			Runtime:     nil,
 			HasPassword: false,
 			HasJumpKey:  false,
 			HasJumpCert: false,
@@ -240,6 +242,14 @@ func (s *Service) GetUserForwardCollector(ctx context.Context) (*UserForwardColl
 	if baseURL == "" {
 		baseURL = defaultForwardBaseURL
 	}
+	runtime := any(nil)
+	{
+		ctx2, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		if st, err := getCollectorRuntimeStatus(ctx2, user.Username); err == nil {
+			runtime = st
+		}
+	}
 	return &UserForwardCollectorResponse{
 		Configured:        baseURL != "" && rec.ForwardUsername != "" && rec.ForwardPassword != "",
 		BaseURL:           baseURL,
@@ -247,6 +257,7 @@ func (s *Service) GetUserForwardCollector(ctx context.Context) (*UserForwardColl
 		CollectorID:       rec.CollectorID,
 		CollectorUsername: rec.CollectorUsername,
 		AuthorizationKey:  rec.AuthorizationKey,
+		Runtime:           runtime,
 		HasPassword:       rec.ForwardPassword != "",
 		HasJumpKey:        false,
 		HasJumpCert:       false,
@@ -353,6 +364,17 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to store Forward collector settings").Err()
 	}
 
+	runtime := any(nil)
+	{
+		ctx2, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+		if st, err := ensureCollectorDeployed(ctx2, user.Username, authKey); err != nil {
+			log.Printf("collector deploy failed: %v", err)
+		} else {
+			runtime = st
+		}
+	}
+
 	return &UserForwardCollectorResponse{
 		Configured:        true,
 		BaseURL:           baseURL,
@@ -360,6 +382,7 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 		CollectorID:       collectorID,
 		CollectorUsername: collectorUsername,
 		AuthorizationKey:  authKey,
+		Runtime:           runtime,
 		HasPassword:       true,
 		HasJumpKey:        false,
 		HasJumpCert:       false,
@@ -427,6 +450,17 @@ func (s *Service) ResetUserForwardCollector(ctx context.Context) (*UserForwardCo
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to store Forward collector settings").Err()
 	}
 
+	runtime := any(nil)
+	{
+		ctx2, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+		if st, err := ensureCollectorDeployed(ctx2, user.Username, current.AuthorizationKey); err != nil {
+			log.Printf("collector deploy failed: %v", err)
+		} else {
+			runtime = st
+		}
+	}
+
 	return &UserForwardCollectorResponse{
 		Configured:        true,
 		BaseURL:           strings.TrimSpace(current.BaseURL),
@@ -434,11 +468,33 @@ func (s *Service) ResetUserForwardCollector(ctx context.Context) (*UserForwardCo
 		CollectorID:       strings.TrimSpace(current.CollectorID),
 		CollectorUsername: strings.TrimSpace(current.CollectorUsername),
 		AuthorizationKey:  strings.TrimSpace(current.AuthorizationKey),
+		Runtime:           runtime,
 		HasPassword:       true,
 		HasJumpKey:        false,
 		HasJumpCert:       false,
 		UpdatedAt:         time.Now().UTC().Format(time.RFC3339),
 	}, nil
+}
+
+type UserCollectorRuntimeResponse struct {
+	Runtime *collectorRuntimeStatus `json:"runtime,omitempty"`
+}
+
+// GetUserCollectorRuntime returns the in-cluster runtime status for the user's collector.
+//
+//encore:api auth method=GET path=/api/forward/collector/runtime
+func (s *Service) GetUserCollectorRuntime(ctx context.Context) (*UserCollectorRuntimeResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	st, err := getCollectorRuntimeStatus(ctx, user.Username)
+	if err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load collector runtime").Err()
+	}
+	return &UserCollectorRuntimeResponse{Runtime: st}, nil
 }
 
 // ClearUserForwardCollector deletes the stored user Forward collector settings.
@@ -458,9 +514,17 @@ func (s *Service) ClearUserForwardCollector(ctx context.Context) (*UserForwardCo
 		log.Printf("user forward delete: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to clear Forward collector settings").Err()
 	}
+	{
+		ctx2, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		if err := deleteCollectorResources(ctx2, user.Username); err != nil {
+			log.Printf("collector delete failed: %v", err)
+		}
+	}
 	return &UserForwardCollectorResponse{
 		Configured:  false,
 		BaseURL:     defaultForwardBaseURL,
+		Runtime:     nil,
 		HasPassword: false,
 	}, nil
 }
