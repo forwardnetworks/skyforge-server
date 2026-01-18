@@ -1757,6 +1757,12 @@
           "deploymentName": {
             "type": "string"
           },
+          "image": {
+            "type": "string"
+          },
+          "imageId": {
+            "type": "string"
+          },
           "logsCommandHint": {
             "type": "string"
           },
@@ -1772,7 +1778,16 @@
           "ready": {
             "type": "boolean"
           },
+          "remoteDigest": {
+            "type": "string"
+          },
           "startTime": {
+            "type": "string"
+          },
+          "updateAvailable": {
+            "type": "boolean"
+          },
+          "updateStatus": {
             "type": "string"
           }
         },
@@ -1783,6 +1798,11 @@
           "podPhase",
           "ready",
           "startTime",
+          "image",
+          "imageId",
+          "remoteDigest",
+          "updateAvailable",
+          "updateStatus",
           "logsCommandHint"
         ],
         "type": "object"
@@ -3845,6 +3865,36 @@
           }
         },
         "summary": "ResetUserForwardCollector rotates the user's Forward collector by creating a new\none and storing its authorization key.\n"
+      }
+    },
+    "/api/forward/collector/restart": {
+      "post": {
+        "description": "This is used to pull down a newer image when using \\`:latest\\`.\n",
+        "operationId": "POST:skyforge.RestartUserCollector",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "runtime": {
+                      "$ref": "#/components/schemas/skyforge.collectorRuntimeStatus"
+                    }
+                  },
+                  "required": [
+                    "runtime"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "RestartUserCollector triggers a rolling restart of the user's in-cluster\ncollector Deployment.\n"
       }
     },
     "/api/forward/collector/runtime": {

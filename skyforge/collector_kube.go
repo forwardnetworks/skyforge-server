@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -25,8 +26,15 @@ type collectorRuntimeStatus struct {
 	PodPhase        string `json:"podPhase,omitempty"`
 	Ready           bool   `json:"ready"`
 	StartTime       string `json:"startTime,omitempty"`
+	Image           string `json:"image,omitempty"`
+	ImageID         string `json:"imageId,omitempty"`
+	RemoteDigest    string `json:"remoteDigest,omitempty"`
+	UpdateAvailable bool   `json:"updateAvailable,omitempty"`
+	UpdateStatus    string `json:"updateStatus,omitempty"`
 	LogsCommandHint string `json:"logsCommandHint,omitempty"`
 }
+
+var ghcrImageRe = regexp.MustCompile(`^ghcr\.io/([^/]+)/([^:]+):(.+)$`)
 
 func collectorResourceNameForUser(username string) string {
 	// Kubernetes DNS label (<=63). Keep it deterministic and human-readable.
@@ -53,8 +61,8 @@ func ensureCollectorDeployed(ctx context.Context, username, token string) (*coll
 	labels := map[string]string{
 		"app.kubernetes.io/name":      "skyforge",
 		"app.kubernetes.io/component": "collector",
-		"skyforge-managed":           "true",
-		"skyforge-username":          strings.TrimSpace(username),
+		"skyforge-managed":            "true",
+		"skyforge-username":           strings.TrimSpace(username),
 	}
 
 	client, err := kubeHTTPClient()
@@ -144,7 +152,7 @@ func ensureCollectorDeployed(ctx context.Context, username, token string) (*coll
 							"app.kubernetes.io/name":      "skyforge",
 							"app.kubernetes.io/component": "collector",
 							"skyforge-collector":          name,
-							"skyforge-managed":           "true",
+							"skyforge-managed":            "true",
 						},
 						"annotations": map[string]string{
 							"skyforge/restartedAt": time.Now().UTC().Format(time.RFC3339Nano),
@@ -156,7 +164,7 @@ func ensureCollectorDeployed(ctx context.Context, username, token string) (*coll
 							map[string]any{
 								"name":            "collector",
 								"image":           defaultCollectorImage,
-								"imagePullPolicy": "IfNotPresent",
+								"imagePullPolicy": "Always",
 								"env": []any{
 									map[string]any{
 										"name": "TOKEN",
@@ -207,7 +215,7 @@ func ensureCollectorDeployed(ctx context.Context, username, token string) (*coll
 								map[string]any{
 									"name":            "collector",
 									"image":           defaultCollectorImage,
-									"imagePullPolicy": "IfNotPresent",
+									"imagePullPolicy": "Always",
 									"env": []any{
 										map[string]any{
 											"name": "TOKEN",
@@ -287,8 +295,10 @@ func getCollectorRuntimeStatus(ctx context.Context, username string) (*collector
 			Status struct {
 				Phase             string `json:"phase"`
 				ContainerStatuses []struct {
-					Name  string `json:"name"`
-					Ready bool   `json:"ready"`
+					Name    string `json:"name"`
+					Ready   bool   `json:"ready"`
+					Image   string `json:"image"`
+					ImageID string `json:"imageID"`
 				} `json:"containerStatuses"`
 			} `json:"status"`
 		} `json:"items"`
@@ -312,11 +322,67 @@ func getCollectorRuntimeStatus(ctx context.Context, username string) (*collector
 	for _, cs := range pod.Status.ContainerStatuses {
 		if cs.Name == "collector" && cs.Ready {
 			ready = true
-			break
+		}
+		if cs.Name == "collector" {
+			out.Image = strings.TrimSpace(cs.Image)
+			out.ImageID = strings.TrimSpace(cs.ImageID)
 		}
 	}
 	out.Ready = ready
+
+	// Best-effort update check for ghcr.io images. If the registry is private or requires auth,
+	// we return a status of "unknown" instead of failing the whole endpoint.
+	if digest, status := checkGHCRTagDigest(ctx, out.Image); status != "" {
+		out.RemoteDigest = digest
+		out.UpdateStatus = status
+		if digest != "" && strings.Contains(out.ImageID, digest) == false && strings.TrimSpace(out.ImageID) != "" {
+			// If we have both digests and they don't match, consider an update available.
+			out.UpdateAvailable = true
+		}
+	}
+
 	return out, nil
+}
+
+func checkGHCRTagDigest(ctx context.Context, image string) (digest string, status string) {
+	image = strings.TrimSpace(image)
+	if image == "" {
+		return "", ""
+	}
+	m := ghcrImageRe.FindStringSubmatch(image)
+	if len(m) != 4 {
+		return "", ""
+	}
+	org := m[1]
+	repo := m[2]
+	tag := m[3]
+
+	reqURL := fmt.Sprintf("https://ghcr.io/v2/%s/%s/manifests/%s", url.PathEscape(org), url.PathEscape(repo), url.PathEscape(tag))
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, reqURL, nil)
+	if err != nil {
+		return "", "unknown"
+	}
+	req.Header.Set("Accept", "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json")
+
+	client := &http.Client{Timeout: 4 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "unknown"
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		d := strings.TrimSpace(resp.Header.Get("Docker-Content-Digest"))
+		if d == "" {
+			return "", "unknown"
+		}
+		return d, "ok"
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return "", "unauthorized"
+	default:
+		return "", "unknown"
+	}
 }
 
 func deleteCollectorResources(ctx context.Context, username string) error {
@@ -363,5 +429,44 @@ func deleteCollectorResources(ctx context.Context, username string) error {
 		}
 	}
 
+	return nil
+}
+
+func restartCollectorDeployment(ctx context.Context, username string) error {
+	ns := kubeNamespace()
+	name := collectorResourceNameForUser(username)
+	client, err := kubeHTTPClient()
+	if err != nil {
+		return err
+	}
+	patchBody, _ := json.Marshal(map[string]any{
+		"spec": map[string]any{
+			"template": map[string]any{
+				"metadata": map[string]any{
+					"annotations": map[string]string{
+						"skyforge/restartedAt": time.Now().UTC().Format(time.RFC3339Nano),
+					},
+				},
+			},
+		},
+	})
+	patchURL := fmt.Sprintf("https://kubernetes.default.svc/apis/apps/v1/namespaces/%s/deployments/%s", url.PathEscape(ns), url.PathEscape(name))
+	patchReq, err := kubeRequest(ctx, http.MethodPatch, patchURL, bytes.NewReader(patchBody))
+	if err != nil {
+		return err
+	}
+	patchReq.Header.Set("Content-Type", "application/strategic-merge-patch+json")
+	resp, err := client.Do(patchReq)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("collector is not deployed")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 16<<10))
+		return fmt.Errorf("kube deployment restart failed: %s: %s", resp.Status, strings.TrimSpace(string(data)))
+	}
 	return nil
 }

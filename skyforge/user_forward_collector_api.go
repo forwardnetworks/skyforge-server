@@ -498,6 +498,30 @@ type UserCollectorRuntimeResponse struct {
 	Runtime *collectorRuntimeStatus `json:"runtime,omitempty"`
 }
 
+type RestartUserCollectorResponse struct {
+	Runtime *collectorRuntimeStatus `json:"runtime,omitempty"`
+}
+
+// RestartUserCollector triggers a rolling restart of the user's in-cluster collector Deployment.
+// This is used to pull down a newer image when using `:latest`.
+//
+//encore:api auth method=POST path=/api/forward/collector/restart
+func (s *Service) RestartUserCollector(ctx context.Context) (*RestartUserCollectorResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	ctx2, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if err := restartCollectorDeployment(ctx2, user.Username); err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg(err.Error()).Err()
+	}
+	ctx3, cancel2 := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel2()
+	st, _ := getCollectorRuntimeStatus(ctx3, user.Username)
+	return &RestartUserCollectorResponse{Runtime: st}, nil
+}
+
 // GetUserCollectorRuntime returns the in-cluster runtime status for the user's collector.
 //
 //encore:api auth method=GET path=/api/forward/collector/runtime
