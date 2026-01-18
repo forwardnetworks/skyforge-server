@@ -7,8 +7,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"hash/fnv"
 	"log"
+	"net/url"
 	"path"
 	"strconv"
 	"strings"
@@ -349,13 +349,15 @@ type WorkspaceNetlabRunRequest struct {
 	Message            string  `json:"message,omitempty"`
 	GitBranch          string  `json:"gitBranch,omitempty"`
 	Environment        JSONMap `json:"environment,omitempty"`
-	Action             string  `json:"action,omitempty"`  // up, create, restart, collect, status, down, clab-tarball
+	Action             string  `json:"action,omitempty"`  // up, create, restart, collect, status, down
 	Cleanup            bool    `json:"cleanup,omitempty"` // for down/restart, remove workdir when true
 	NetlabServer       string  `json:"netlabServer,omitempty"`
 	NetlabPassword     string  `json:"netlabPassword,omitempty"`
 	NetlabWorkspaceDir string  `json:"netlabWorkspaceDir,omitempty"`
 	NetlabMultilabID   string  `json:"netlabMultilabId,omitempty"`
 	NetlabDeployment   string  `json:"netlabDeployment,omitempty"`
+	TopologyPath       string  `json:"topologyPath,omitempty"`   // remote workdir-relative (or absolute) topology file
+	TopologyURL        string  `json:"topologyUrl,omitempty"`    // remote URL (only if netlab supports it)
 	TemplateSource     string  `json:"templateSource,omitempty"` // workspace (default), blueprints, or custom
 	TemplateRepo       string  `json:"templateRepo,omitempty"`   // owner/repo or URL (custom only)
 	TemplatesDir       string  `json:"templatesDir,omitempty"`   // repo-relative directory (default: blueprints/netlab)
@@ -420,6 +422,11 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 	if req == nil {
 		req = &WorkspaceNetlabRunRequest{}
 	}
+
+	templateSource := strings.ToLower(strings.TrimSpace(req.TemplateSource))
+	if templateSource == "" {
+		templateSource = "workspace"
+	}
 	serverRef := strings.TrimSpace(req.NetlabServer)
 	if serverRef == "" {
 		serverRef = strings.TrimSpace(pc.workspace.NetlabServer)
@@ -437,32 +444,24 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 		action = "up"
 	}
 	switch action {
-	case "up", "create", "restart", "collect", "status", "down", "clab-tarball":
+	case "up", "create", "restart", "collect", "status", "down":
 	default:
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid netlab action (use up, create, restart, collect, status, down, clab-tarball)").Err()
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid netlab action (use up, create, restart, collect, status, down)").Err()
 	}
 
-	multilabID := strings.TrimSpace(req.NetlabMultilabID)
-	if multilabID == "" {
+	runID := strings.TrimSpace(req.NetlabMultilabID)
+	if runID == "" {
 		buf := make([]byte, 4)
 		if _, err := rand.Read(buf); err == nil {
-			multilabID = hex.EncodeToString(buf)
+			runID = hex.EncodeToString(buf)
 		} else {
-			multilabID = strconv.FormatInt(time.Now().UnixNano(), 36)
+			runID = strconv.FormatInt(time.Now().UnixNano(), 36)
 		}
 	}
 
-	// Netlab multilab plugin requires an integer defaults.multilab.id. Derive a stable uint32 from the
-	// deployment/run id, and cap it to a small range to avoid port collisions and to satisfy multilab
-	// validation (defaults.multilab.id must be an integer < 200).
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(multilabID))
-	// Range 1..199 (multilab rejects 0 and values >= 200).
-	multilabNumericID := int(h.Sum32()%199) + 1
-
 	deploymentName := strings.TrimSpace(req.NetlabDeployment)
 	if deploymentName == "" {
-		deploymentName = multilabID
+		deploymentName = runID
 	}
 
 	workspaceRoot := fmt.Sprintf("/home/%s/netlab", pc.claims.Username)
@@ -472,11 +471,83 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 	if workspaceDir == "" {
 		workspaceDir = fmt.Sprintf("%s/%s/%s", workspaceRoot, strings.TrimSpace(pc.workspace.Slug), deploymentName)
 	}
-	clabTarball := strings.TrimSpace(req.ClabTarball)
-	if action == "clab-tarball" && clabTarball == "" {
-		clabTarball = fmt.Sprintf("containerlab-%s.tar.gz", deploymentName)
-	}
 
+	topologyPath := strings.TrimSpace(req.TopologyPath)
+	topologyURL := strings.TrimSpace(req.TopologyURL)
+	templateName := strings.Trim(strings.TrimSpace(req.Template), "/")
+	if topologyPath == "" && topologyURL == "" {
+		if templateName != "" {
+			owner := pc.workspace.GiteaOwner
+			repo := pc.workspace.GiteaRepo
+			branch := strings.TrimSpace(pc.workspace.DefaultBranch)
+
+			switch templateSource {
+			case "blueprints", "blueprint":
+				ref := strings.TrimSpace(pc.workspace.Blueprint)
+				if ref == "" {
+					ref = "skyforge/blueprints"
+				}
+				if strings.Contains(ref, "://") {
+					if u, err := url.Parse(ref); err == nil {
+						ref = strings.Trim(strings.TrimPrefix(u.Path, "/"), "/")
+					}
+				}
+				parts := strings.Split(strings.Trim(ref, "/"), "/")
+				if len(parts) < 2 {
+					return nil, errs.B().Code(errs.InvalidArgument).Msg("blueprints repo must be of form owner/repo").Err()
+				}
+				owner, repo = parts[0], parts[1]
+				branch = ""
+			case "workspace":
+				if !pc.workspace.IsPublic {
+					return nil, errs.B().Code(errs.FailedPrecondition).Msg("workspace repo is private; netlab BYOS requires a public topologyUrl (use the public blueprints repo or make the repo public)").Err()
+				}
+			case "custom", "external":
+				// Allowed only when enabled; URL access still depends on repo visibility.
+				if templateSource == "external" && !pc.workspace.AllowExternalTemplateRepos {
+					return nil, errs.B().Code(errs.FailedPrecondition).Msg("external template repos are disabled for this workspace").Err()
+				}
+				if strings.TrimSpace(req.TemplateRepo) == "" {
+					return nil, errs.B().Code(errs.InvalidArgument).Msg("templateRepo is required for custom/external template source").Err()
+				}
+				ref, err := resolveTemplateRepoForProject(s.cfg, pc, templateSource, strings.TrimSpace(req.TemplateRepo))
+				if err != nil {
+					if strings.Contains(strings.ToLower(err.Error()), "not enabled") {
+						return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
+					}
+					if strings.Contains(strings.ToLower(err.Error()), "not allowed") {
+						return nil, errs.B().Code(errs.PermissionDenied).Msg(err.Error()).Err()
+					}
+					return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
+				}
+				owner, repo, branch = ref.Owner, ref.Repo, ref.Branch
+			default:
+				return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown template source").Err()
+			}
+
+			if branch == "" {
+				branch = "main"
+				if b, err := getGiteaRepoDefaultBranch(s.cfg, owner, repo); err == nil && strings.TrimSpace(b) != "" {
+					branch = strings.TrimSpace(b)
+				}
+			}
+
+			templatesDir := strings.Trim(strings.TrimSpace(req.TemplatesDir), "/")
+			if templatesDir == "" {
+				templatesDir = "blueprints/netlab"
+				if templateSource == "blueprints" || templateSource == "blueprint" || templateSource == "external" {
+					templatesDir = "netlab"
+				}
+			}
+			if !isSafeRelativePath(templateName) || !isSafeRelativePath(templatesDir) {
+				return nil, errs.B().Code(errs.InvalidArgument).Msg("template must be a safe repo-relative path").Err()
+			}
+			filePath := path.Join(templatesDir, templateName)
+			topologyURL = giteaRawFileURL(s.cfg, owner, repo, branch, filePath)
+		} else {
+			topologyPath = "topology.yml"
+		}
+	}
 	message := strings.TrimSpace(req.Message)
 	if message == "" {
 		message = fmt.Sprintf("Skyforge netlab run (%s)", pc.claims.Username)
@@ -509,23 +580,16 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 		"priority":   taskPriorityInteractive,
 		"dedupeKey":  fmt.Sprintf("netlab:%s:%s:%s", pc.workspace.ID, action, deploymentName),
 		"spec": map[string]any{
-			"action":          action,
-			"server":          serverRef,
-			"serverLabel":     strings.TrimSpace(server.Name),
-			"deployment":      deploymentName,
-			"deploymentId":    strings.TrimSpace(req.NetlabMultilabID),
-			"workspaceRoot":   workspaceRoot,
-			"templateSource":  strings.TrimSpace(req.TemplateSource),
-			"templateRepo":    strings.TrimSpace(req.TemplateRepo),
-			"templatesDir":    strings.TrimSpace(req.TemplatesDir),
-			"template":        strings.TrimSpace(req.Template),
-			"workspaceDir":    strings.TrimSpace(workspaceDir),
-			"multilabNumeric": multilabNumericID,
-			"cleanup":         req.Cleanup,
-			"clabTarball":     clabTarball,
-			"clabConfigDir":   strings.TrimSpace(req.ClabConfigDir),
-			"clabCleanup":     req.ClabCleanup,
-			"environment":     envMap,
+			"action":        action,
+			"server":        serverRef,
+			"serverLabel":   strings.TrimSpace(server.Name),
+			"deployment":    deploymentName,
+			"workspaceRoot": workspaceRoot,
+			"workspaceDir":  strings.TrimSpace(workspaceDir),
+			"topologyPath":  topologyPath,
+			"topologyUrl":   topologyURL,
+			"cleanup":       req.Cleanup,
+			"environment":   envMap,
 		},
 	})
 	if err != nil {
@@ -809,6 +873,7 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 	labName := containerlabLabName(pc.workspace.Slug, deploymentName)
 
 	var topologyJSON string
+	var topologySourceURL string
 	if action == "deploy" {
 		templatesDir := normalizeContainerlabTemplatesDir(req.TemplateSource, req.TemplatesDir)
 		if !isSafeRelativePath(templatesDir) {
@@ -819,26 +884,35 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 			return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 		}
 		filePath := path.Join(templatesDir, template)
-		body, err := readGiteaFileBytes(s.cfg, ref.Owner, ref.Repo, filePath, ref.Branch)
-		if err != nil {
-			log.Printf("containerlab template read: %v", err)
-			return nil, errs.B().Code(errs.Unavailable).Msg("failed to read containerlab template").Err()
+
+		// Prefer topologySourceUrl (clab-api-server supports git/raw URLs) to avoid sending full topology content.
+		// For private workspace repos, the BYOS host might not be able to fetch the raw URL, so we keep a
+		// fallback mode that uploads topology content directly.
+		shouldUseSource := strings.ToLower(strings.TrimSpace(req.TemplateSource)) != "workspace" || pc.workspace.IsPublic
+		if shouldUseSource {
+			topologySourceURL = giteaRawFileURL(s.cfg, ref.Owner, ref.Repo, ref.Branch, filePath)
+		} else {
+			body, err := readGiteaFileBytes(s.cfg, ref.Owner, ref.Repo, filePath, ref.Branch)
+			if err != nil {
+				log.Printf("containerlab template read: %v", err)
+				return nil, errs.B().Code(errs.Unavailable).Msg("failed to read containerlab template").Err()
+			}
+			var topo map[string]any
+			if err := yaml.Unmarshal(body, &topo); err != nil {
+				log.Printf("containerlab template parse: %v", err)
+				return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid containerlab topology").Err()
+			}
+			if topo == nil {
+				topo = map[string]any{}
+			}
+			topo["name"] = labName
+			topologyBytes, err := json.Marshal(topo)
+			if err != nil {
+				log.Printf("containerlab template encode: %v", err)
+				return nil, errs.B().Code(errs.Internal).Msg("failed to encode topology").Err()
+			}
+			topologyJSON = string(topologyBytes)
 		}
-		var topo map[string]any
-		if err := yaml.Unmarshal(body, &topo); err != nil {
-			log.Printf("containerlab template parse: %v", err)
-			return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid containerlab topology").Err()
-		}
-		if topo == nil {
-			topo = map[string]any{}
-		}
-		topo["name"] = labName
-		topologyBytes, err := json.Marshal(topo)
-		if err != nil {
-			log.Printf("containerlab template encode: %v", err)
-			return nil, errs.B().Code(errs.Internal).Msg("failed to encode topology").Err()
-		}
-		topologyJSON = string(topologyBytes)
 	}
 
 	message := strings.TrimSpace(req.Message)
@@ -874,14 +948,15 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 		"priority":  taskPriorityInteractive,
 		"dedupeKey": fmt.Sprintf("containerlab:%s:%s:%s", pc.workspace.ID, action, labName),
 		"spec": map[string]any{
-			"action":       action,
-			"netlabServer": serverRef,
-			"serverLabel":  strings.TrimSpace(server.Name),
-			"deployment":   deploymentName,
-			"labName":      labName,
-			"reconfigure":  reconfigure,
-			"topologyJSON": topologyJSON,
-			"environment":  envMap,
+			"action":            action,
+			"netlabServer":      serverRef,
+			"serverLabel":       strings.TrimSpace(server.Name),
+			"deployment":        deploymentName,
+			"labName":           labName,
+			"reconfigure":       reconfigure,
+			"topologyJSON":      topologyJSON,
+			"topologySourceUrl": strings.TrimSpace(topologySourceURL),
+			"environment":       envMap,
 		},
 	})
 	if err != nil {
@@ -897,12 +972,6 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 	}
 	if err != nil {
 		return nil, err
-	}
-	if topologyJSON != "" {
-		var topo map[string]any
-		if err := json.Unmarshal([]byte(topologyJSON), &topo); err != nil {
-			return nil, errs.B().Code(errs.Internal).Msg("failed to decode topology").Err()
-		}
 	}
 	s.queueTask(task)
 

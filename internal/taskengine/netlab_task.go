@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -14,48 +13,33 @@ import (
 )
 
 type netlabTaskSpec struct {
-	Action          string            `json:"action,omitempty"`
-	Server          string            `json:"server,omitempty"`
-	Deployment      string            `json:"deployment,omitempty"`
-	DeploymentID    string            `json:"deploymentId,omitempty"`
-	WorkspaceRoot   string            `json:"workspaceRoot,omitempty"`
-	TemplateSource  string            `json:"templateSource,omitempty"`
-	TemplateRepo    string            `json:"templateRepo,omitempty"`
-	TemplatesDir    string            `json:"templatesDir,omitempty"`
-	Template        string            `json:"template,omitempty"`
-	WorkspaceDir    string            `json:"workspaceDir,omitempty"`
-	MultilabNumeric int               `json:"multilabNumeric,omitempty"`
-	Cleanup         bool              `json:"cleanup,omitempty"`
-	TopologyPath    string            `json:"topologyPath,omitempty"`
-	ClabTarball     string            `json:"clabTarball,omitempty"`
-	ClabConfigDir   string            `json:"clabConfigDir,omitempty"`
-	ClabCleanup     bool              `json:"clabCleanup,omitempty"`
-	Environment     map[string]string `json:"environment,omitempty"`
+	Action        string            `json:"action,omitempty"`
+	Server        string            `json:"server,omitempty"`
+	Deployment    string            `json:"deployment,omitempty"`
+	DeploymentID  string            `json:"deploymentId,omitempty"`
+	WorkspaceRoot string            `json:"workspaceRoot,omitempty"`
+	WorkspaceDir  string            `json:"workspaceDir,omitempty"`
+	Cleanup       bool              `json:"cleanup,omitempty"`
+	TopologyPath  string            `json:"topologyPath,omitempty"`
+	TopologyURL   string            `json:"topologyUrl,omitempty"`
+	Environment   map[string]string `json:"environment,omitempty"`
 }
 
 type netlabRunSpec struct {
-	TaskID          int
-	WorkspaceCtx    *workspaceContext
-	WorkspaceSlug   string
-	Username        string
-	Environment     map[string]string
-	Action          string
-	Deployment      string
-	DeploymentID    string
-	WorkspaceRoot   string
-	TemplateSource  string
-	TemplateRepo    string
-	TemplatesDir    string
-	Template        string
-	WorkspaceDir    string
-	MultilabNumeric int
-	StateRoot       string
-	Cleanup         bool
-	Server          NetlabServerConfig
-	TopologyPath    string
-	ClabTarball     string
-	ClabConfigDir   string
-	ClabCleanup     bool
+	TaskID        int
+	WorkspaceCtx  *workspaceContext
+	WorkspaceSlug string
+	Username      string
+	Environment   map[string]string
+	Action        string
+	Deployment    string
+	DeploymentID  string
+	WorkspaceRoot string
+	WorkspaceDir  string
+	Cleanup       bool
+	Server        NetlabServerConfig
+	TopologyPath  string
+	TopologyURL   string
 }
 
 func (e *Engine) dispatchNetlabTask(ctx context.Context, task *taskstore.TaskRecord, log Logger) error {
@@ -94,33 +78,21 @@ func (e *Engine) dispatchNetlabTask(ctx context.Context, task *taskstore.TaskRec
 		return err
 	}
 
-	if strings.TrimSpace(specIn.TemplateSource) == "" {
-		specIn.TemplateSource = "blueprints"
-	}
-
 	runSpec := netlabRunSpec{
-		TaskID:          task.ID,
-		WorkspaceCtx:    pc,
-		WorkspaceSlug:   strings.TrimSpace(pc.workspace.Slug),
-		Username:        username,
-		Environment:     specIn.Environment,
-		Action:          strings.TrimSpace(specIn.Action),
-		Deployment:      strings.TrimSpace(specIn.Deployment),
-		DeploymentID:    strings.TrimSpace(specIn.DeploymentID),
-		WorkspaceRoot:   strings.TrimSpace(specIn.WorkspaceRoot),
-		TemplateSource:  strings.TrimSpace(specIn.TemplateSource),
-		TemplateRepo:    strings.TrimSpace(specIn.TemplateRepo),
-		TemplatesDir:    strings.TrimSpace(specIn.TemplatesDir),
-		Template:        strings.TrimSpace(specIn.Template),
-		WorkspaceDir:    strings.TrimSpace(specIn.WorkspaceDir),
-		MultilabNumeric: specIn.MultilabNumeric,
-		StateRoot:       strings.TrimSpace(server.StateRoot),
-		Cleanup:         specIn.Cleanup,
-		Server:          *server,
-		TopologyPath:    strings.TrimSpace(specIn.TopologyPath),
-		ClabTarball:     strings.TrimSpace(specIn.ClabTarball),
-		ClabConfigDir:   strings.TrimSpace(specIn.ClabConfigDir),
-		ClabCleanup:     specIn.ClabCleanup,
+		TaskID:        task.ID,
+		WorkspaceCtx:  pc,
+		WorkspaceSlug: strings.TrimSpace(pc.workspace.Slug),
+		Username:      username,
+		Environment:   specIn.Environment,
+		Action:        strings.TrimSpace(specIn.Action),
+		Deployment:    strings.TrimSpace(specIn.Deployment),
+		DeploymentID:  strings.TrimSpace(specIn.DeploymentID),
+		WorkspaceRoot: strings.TrimSpace(specIn.WorkspaceRoot),
+		WorkspaceDir:  strings.TrimSpace(specIn.WorkspaceDir),
+		Cleanup:       specIn.Cleanup,
+		Server:        *server,
+		TopologyPath:  strings.TrimSpace(specIn.TopologyPath),
+		TopologyURL:   strings.TrimSpace(specIn.TopologyURL),
 	}
 
 	action := strings.ToLower(strings.TrimSpace(runSpec.Action))
@@ -140,22 +112,6 @@ func (e *Engine) runNetlabTask(ctx context.Context, spec netlabRunSpec, log Logg
 		return fmt.Errorf("workspace context unavailable")
 	}
 
-	// If a template was selected, bundle it from the repo and let the netlab API server
-	// extract it into the workdir before running netlab.
-	topologyBundleB64 := ""
-	if strings.TrimSpace(spec.Template) != "" {
-		log.Infof("Preparing netlab template bundle %s", strings.TrimSpace(spec.Template))
-		b64, err := e.buildNetlabTopologyBundleB64(ctx, spec.WorkspaceCtx, spec.TemplateSource, spec.TemplateRepo, spec.TemplatesDir, spec.Template)
-		if err != nil {
-			return err
-		}
-		topologyBundleB64 = strings.TrimSpace(b64)
-		// When a bundle is present, the netlab API server writes the selected topology to workdir/topology.yml.
-		if strings.TrimSpace(spec.TopologyPath) == "" {
-			spec.TopologyPath = "topology.yml"
-		}
-	}
-
 	apiURL := netlabAPIURL(spec.Server)
 	if apiURL == "" {
 		return fmt.Errorf("netlab api url is not configured")
@@ -168,35 +124,17 @@ func (e *Engine) runNetlabTask(ctx context.Context, spec netlabRunSpec, log Logg
 
 	payload := map[string]any{
 		"action":        strings.TrimSpace(spec.Action),
-		"user":          strings.TrimSpace(spec.Username),
-		"workspace":     strings.TrimSpace(spec.WorkspaceSlug),
-		"deployment":    strings.TrimSpace(spec.Deployment),
+		"workdir":       strings.TrimSpace(spec.WorkspaceDir),
 		"workspaceRoot": strings.TrimSpace(spec.WorkspaceRoot),
-		"plugin":        "multilab",
-		"multilabId":    strconv.Itoa(spec.MultilabNumeric),
-		"instance":      strconv.Itoa(spec.MultilabNumeric),
-		"stateRoot":     strings.TrimSpace(spec.StateRoot),
 	}
 	if strings.TrimSpace(spec.TopologyPath) != "" {
 		payload["topologyPath"] = strings.TrimSpace(spec.TopologyPath)
 	}
-	if topologyBundleB64 != "" {
-		payload["topologyBundleB64"] = topologyBundleB64
-	}
-	if strings.TrimSpace(spec.ClabTarball) != "" {
-		payload["clabTarball"] = strings.TrimSpace(spec.ClabTarball)
-	}
-	if strings.TrimSpace(spec.ClabConfigDir) != "" {
-		payload["clabConfigDir"] = strings.TrimSpace(spec.ClabConfigDir)
-	}
-	if spec.ClabCleanup {
-		payload["clabCleanup"] = true
+	if strings.TrimSpace(spec.TopologyURL) != "" {
+		payload["topologyUrl"] = strings.TrimSpace(spec.TopologyURL)
 	}
 	if spec.Cleanup {
 		payload["cleanup"] = true
-	}
-	if len(spec.Environment) > 0 {
-		payload["environment"] = spec.Environment
 	}
 
 	log.Infof("Starting netlab job (%s)", strings.TrimSpace(spec.Action))
@@ -227,13 +165,13 @@ func (e *Engine) runNetlabTask(ctx context.Context, spec netlabRunSpec, log Logg
 	lastLog := ""
 	deadline := time.Now().Add(30 * time.Minute)
 	for {
-				if spec.TaskID > 0 {
-					canceled, _ := e.taskCanceled(ctx, spec.TaskID)
-					if canceled {
-						_ = e.cancelNetlabJob(ctx, apiURL, job.ID, insecure, auth, log)
-						return fmt.Errorf("netlab job canceled")
-					}
-				}
+		if spec.TaskID > 0 {
+			canceled, _ := e.taskCanceled(ctx, spec.TaskID)
+			if canceled {
+				_ = e.cancelNetlabJob(ctx, apiURL, job.ID, insecure, auth, log)
+				return fmt.Errorf("netlab job canceled")
+			}
+		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("netlab job timed out")
 		}

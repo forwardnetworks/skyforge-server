@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -679,15 +678,8 @@ func (e *Engine) maybeSyncForwardNetlabAfterRun(ctx context.Context, spec netlab
 		return err
 	}
 	payload := map[string]any{
-		"action":        "status",
-		"user":          spec.Username,
-		"workspace":     spec.WorkspaceSlug,
-		"deployment":    spec.Deployment,
-		"workspaceRoot": spec.WorkspaceRoot,
-		"plugin":        "multilab",
-		"multilabId":    strconv.Itoa(spec.MultilabNumeric),
-		"instance":      strconv.Itoa(spec.MultilabNumeric),
-		"stateRoot":     strings.TrimSpace(spec.StateRoot),
+		"action":  "status",
+		"workdir": strings.TrimSpace(spec.WorkspaceDir),
 	}
 	if strings.TrimSpace(spec.TopologyPath) != "" {
 		payload["topologyPath"] = strings.TrimSpace(spec.TopologyPath)
