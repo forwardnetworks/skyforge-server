@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -137,6 +138,12 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		connectivity := strings.ToLower(envString(spec.Environment, "SKYFORGE_CLABERNETES_CONNECTIVITY"))
 		nativeMode := envBool(spec.Environment, "SKYFORGE_CLABERNETES_NATIVE_MODE", true)
 		hostNetwork := envBool(spec.Environment, "SKYFORGE_CLABERNETES_HOST_NETWORK", false)
+		// Ensure clabernetes launcher pods can pull private images (launcher/NOS) by wiring the
+		// namespace pull secret into the topology service account via spec.imagePull.pullSecrets.
+		secretName := strings.TrimSpace(os.Getenv("SKYFORGE_IMAGE_PULL_SECRET_NAME"))
+		if secretName == "" {
+			secretName = "ghcr-pull"
+		}
 
 		payload := map[string]any{
 			"apiVersion": "clabernetes.containerlab.dev/v1alpha1",
@@ -151,6 +158,9 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 			"spec": map[string]any{
 				"definition": map[string]any{
 					"containerlab": spec.TopologyYAML,
+				},
+				"imagePull": map[string]any{
+					"pullSecrets": []any{secretName},
 				},
 			},
 		}
