@@ -86,6 +86,10 @@ func sanitizeContainerlabYAMLForClabernetes(containerlabYAML string) (string, ma
 		return containerlabYAML, nil, nil
 	}
 
+	// NOTE: This function also performs Skyforge-specific compatibility tweaks for running
+	// containerlab nodes as Kubernetes pods (clabernetes). These should apply even when no
+	// node name rewriting is needed.
+
 	// Create deterministic mapping and avoid collisions.
 	oldNames := make([]string, 0, len(nodes))
 	for name := range nodes {
@@ -114,9 +118,6 @@ func sanitizeContainerlabYAMLForClabernetes(containerlabYAML string) (string, ma
 			mapping[old] = newName
 		}
 	}
-	if len(mapping) == 0 {
-		return containerlabYAML, nil, nil
-	}
 
 	newNodes := map[string]any{}
 	for old, cfg := range nodes {
@@ -124,8 +125,43 @@ func sanitizeContainerlabYAMLForClabernetes(containerlabYAML string) (string, ma
 		if v, ok := mapping[old]; ok {
 			newName = v
 		}
+		cfgMap, cfgIsMap := cfg.(map[string]any)
+		if cfgIsMap {
+			// Ensure cEOS (systemd) nodes can run reliably in Kubernetes.
+			//
+			// The cEOS container expects a writable cgroup mount and access to host kernel modules.
+			// With Docker, containerlab handles this; in Kubernetes native mode we must add the binds
+			// explicitly so the clabernetes controller can translate them into volume mounts.
+			kind := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfgMap["kind"])))
+			image := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfgMap["image"])))
+			isCEOS := kind == "ceos" || strings.Contains(image, "/ceos:") || strings.HasSuffix(image, ":ceos")
+			if isCEOS {
+				bindsAny, _ := cfgMap["binds"]
+				var binds []any
+				if cur, ok := bindsAny.([]any); ok && len(cur) > 0 {
+					binds = cur
+				}
+				ensureBind := func(bind string) {
+					bind = strings.TrimSpace(bind)
+					if bind == "" {
+						return
+					}
+					for _, bAny := range binds {
+						if strings.TrimSpace(fmt.Sprintf("%v", bAny)) == bind {
+							return
+						}
+					}
+					binds = append(binds, bind)
+				}
+				ensureBind("/sys/fs/cgroup:/sys/fs/cgroup:rw")
+				ensureBind("/lib/modules:/lib/modules:ro")
+				if len(binds) > 0 {
+					cfgMap["binds"] = binds
+				}
+			}
+		}
 		// Also rewrite any node_files binds that include the original node directory name.
-		if cfgMap, ok := cfg.(map[string]any); ok {
+		if cfgIsMap {
 			if bindsAny, ok := cfgMap["binds"]; ok {
 				if bindsList, ok := bindsAny.([]any); ok && len(bindsList) > 0 {
 					out := make([]any, 0, len(bindsList))
