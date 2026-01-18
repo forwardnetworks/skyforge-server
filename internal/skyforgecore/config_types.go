@@ -45,6 +45,9 @@ type Config struct {
 	LDAPLookupBindDN          string
 	LDAPLookupBindPassword    string
 	Workspaces                WorkspacesConfig
+	TerraformBinaryPath       string
+	TerraformVersion          string
+	TerraformURL              string
 	EveServers                []EveServerConfig
 	LabppRunnerImage          string
 	LabppRunnerPullPolicy     string
@@ -88,7 +91,7 @@ type Config struct {
 }
 
 type OIDCConfig struct {
-	IssuerURL    string
+	IssuerURL string
 	// DiscoveryURL optionally overrides where Skyforge fetches the OIDC discovery document.
 	// This is useful when the issuer URL is only reachable via an external ingress hostname,
 	// but the service itself is reachable in-cluster (e.g. Dex at http://dex:5556/dex).
@@ -233,27 +236,27 @@ type ExternalTemplateRepo struct {
 }
 
 type Secrets struct {
-	SessionSecret                      string
-	AdminPassword                      string
-	OIDCClientID                       string
-	OIDCClientSecret                   string
-	LDAPURL                            string
-	LDAPBindTemplate                   string
-	LDAPLookupBindDN                   string
-	LDAPLookupBindPassword             string
-	DBPassword                         string
-	GiteaPassword                      string
-	ObjectStorageTerraformAccessKey    string
-	ObjectStorageTerraformSecretKey    string
-	InternalToken                      string
-	ContainerlabJWTSecret              string
-	PKICACert                          string
-	PKICAKey                           string
-	SSHCAKey                           string
-	LabppNetboxUsername                string
-	LabppNetboxPassword                string
-	LabppNetboxToken                   string
-	LabppS3AccessKey                   string
-	LabppS3SecretKey                   string
-	YaadeAdminPassword                 string
+	SessionSecret                   string
+	AdminPassword                   string
+	OIDCClientID                    string
+	OIDCClientSecret                string
+	LDAPURL                         string
+	LDAPBindTemplate                string
+	LDAPLookupBindDN                string
+	LDAPLookupBindPassword          string
+	DBPassword                      string
+	GiteaPassword                   string
+	ObjectStorageTerraformAccessKey string
+	ObjectStorageTerraformSecretKey string
+	InternalToken                   string
+	ContainerlabJWTSecret           string
+	PKICACert                       string
+	PKICAKey                        string
+	SSHCAKey                        string
+	LabppNetboxUsername             string
+	LabppNetboxPassword             string
+	LabppNetboxToken                string
+	LabppS3AccessKey                string
+	LabppS3SecretKey                string
+	YaadeAdminPassword              string
 }

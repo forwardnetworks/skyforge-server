@@ -427,6 +427,10 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		ObjectStorageTerraformSecretKey: strings.TrimSpace(sec.ObjectStorageTerraformSecretKey),
 	}
 
+	terraformBinaryPath := strings.TrimSpace(getenv("SKYFORGE_TERRAFORM_PATH", ""))
+	terraformVersion := strings.TrimSpace(getenv("SKYFORGE_TERRAFORM_VERSION", ""))
+	terraformURL := strings.TrimSpace(getenv("SKYFORGE_TERRAFORM_URL", ""))
+
 	return skyforgecore.Config{
 		ListenAddr:              getenv("SKYFORGE_LISTEN_ADDR", ":8085"),
 		SessionSecret:           sec.SessionSecret,
@@ -471,6 +475,9 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		LDAPLookupBindDN:          ldapLookupBindDN,
 		LDAPLookupBindPassword:    ldapLookupBindPassword,
 		Workspaces:                workspacesCfg,
+		TerraformBinaryPath:       terraformBinaryPath,
+		TerraformVersion:          terraformVersion,
+		TerraformURL:              terraformURL,
 		EveServers:                filteredEveServers,
 		LabppRunnerImage:          strings.TrimSpace(enc.Labpp.RunnerImage),
 		LabppRunnerPullPolicy:     strings.TrimSpace(enc.Labpp.RunnerPullPolicy),

@@ -14,7 +14,6 @@ import (
 
 	"github.com/google/uuid"
 
-	secretreader "encore.app/internal/secrets"
 	"encore.app/internal/taskdispatch"
 	"encore.app/internal/taskstore"
 	"encore.dev/rlog"
@@ -359,30 +358,6 @@ func (e *Engine) runLabppTask(ctx context.Context, spec labppRunSpec, log Logger
 	jobEnv["LABPP_NETBOX_USERNAME"] = strings.TrimSpace(e.cfg.LabppNetboxUsername)
 	jobEnv["LABPP_NETBOX_PASSWORD"] = strings.TrimSpace(e.cfg.LabppNetboxPassword)
 	jobEnv["LABPP_NETBOX_TOKEN"] = strings.TrimSpace(e.cfg.LabppNetboxToken)
-	if jobEnv["LABPP_NETBOX_USERNAME"] == "" {
-		jobEnv["LABPP_NETBOX_USERNAME"] = strings.TrimSpace(os.Getenv("SKYFORGE_LABPP_NETBOX_USERNAME"))
-	}
-	if jobEnv["LABPP_NETBOX_USERNAME"] == "" {
-		if secret, err := secretreader.ReadSecretFromEnvOrFile("SKYFORGE_LABPP_NETBOX_USERNAME", "skyforge-labpp-netbox-username"); err == nil {
-			jobEnv["LABPP_NETBOX_USERNAME"] = strings.TrimSpace(secret)
-		}
-	}
-	if jobEnv["LABPP_NETBOX_PASSWORD"] == "" {
-		jobEnv["LABPP_NETBOX_PASSWORD"] = strings.TrimSpace(os.Getenv("SKYFORGE_LABPP_NETBOX_PASSWORD"))
-	}
-	if jobEnv["LABPP_NETBOX_PASSWORD"] == "" {
-		if secret, err := secretreader.ReadSecretFromEnvOrFile("SKYFORGE_LABPP_NETBOX_PASSWORD", "skyforge-labpp-netbox-password"); err == nil {
-			jobEnv["LABPP_NETBOX_PASSWORD"] = strings.TrimSpace(secret)
-		}
-	}
-	if jobEnv["LABPP_NETBOX_TOKEN"] == "" {
-		jobEnv["LABPP_NETBOX_TOKEN"] = strings.TrimSpace(os.Getenv("SKYFORGE_LABPP_NETBOX_TOKEN"))
-	}
-	if jobEnv["LABPP_NETBOX_TOKEN"] == "" {
-		if secret, err := secretreader.ReadSecretFromEnvOrFile("SKYFORGE_LABPP_NETBOX_TOKEN", "skyforge-labpp-netbox-token"); err == nil {
-			jobEnv["LABPP_NETBOX_TOKEN"] = strings.TrimSpace(secret)
-		}
-	}
 	if spec.ThreadCount > 0 {
 		jobEnv["LABPP_THREAD_COUNT"] = strconv.Itoa(spec.ThreadCount)
 	}
@@ -534,22 +509,7 @@ func (e *Engine) generateLabppDataSourcesCSV(ctx context.Context, taskID int, de
 	}
 	jobEnv["LABPP_NETBOX_USERNAME"] = strings.TrimSpace(e.cfg.LabppNetboxUsername)
 	jobEnv["LABPP_NETBOX_PASSWORD"] = strings.TrimSpace(e.cfg.LabppNetboxPassword)
-	if jobEnv["LABPP_NETBOX_USERNAME"] == "" {
-		jobEnv["LABPP_NETBOX_USERNAME"] = strings.TrimSpace(os.Getenv("SKYFORGE_LABPP_NETBOX_USERNAME"))
-	}
-	if jobEnv["LABPP_NETBOX_USERNAME"] == "" {
-		if secret, err := secretreader.ReadSecretFromEnvOrFile("SKYFORGE_LABPP_NETBOX_USERNAME", "skyforge-labpp-netbox-username"); err == nil {
-			jobEnv["LABPP_NETBOX_USERNAME"] = strings.TrimSpace(secret)
-		}
-	}
-	if jobEnv["LABPP_NETBOX_PASSWORD"] == "" {
-		jobEnv["LABPP_NETBOX_PASSWORD"] = strings.TrimSpace(os.Getenv("SKYFORGE_LABPP_NETBOX_PASSWORD"))
-	}
-	if jobEnv["LABPP_NETBOX_PASSWORD"] == "" {
-		if secret, err := secretreader.ReadSecretFromEnvOrFile("SKYFORGE_LABPP_NETBOX_PASSWORD", "skyforge-labpp-netbox-password"); err == nil {
-			jobEnv["LABPP_NETBOX_PASSWORD"] = strings.TrimSpace(secret)
-		}
-	}
+	jobEnv["LABPP_NETBOX_TOKEN"] = strings.TrimSpace(e.cfg.LabppNetboxToken)
 	logName := fmt.Sprintf("labpp-sources-%s", deploymentID)
 	if err := e.runLabppJob(ctx, log, logName, customArgs, jobEnv, 0); err != nil {
 		return "", err

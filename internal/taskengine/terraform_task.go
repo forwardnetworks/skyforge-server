@@ -146,7 +146,7 @@ func (e *Engine) runTerraformTask(ctx context.Context, spec terraformRunSpec, lo
 		return err
 	}
 
-	terraformPath, err := ensureTerraformBinary()
+	terraformPath, err := e.ensureTerraformBinary()
 	if err != nil {
 		return err
 	}
@@ -289,9 +289,9 @@ var terraformBinaryOnce sync.Once
 var terraformBinaryPath string
 var terraformBinaryErr error
 
-func ensureTerraformBinary() (string, error) {
+func (e *Engine) ensureTerraformBinary() (string, error) {
 	terraformBinaryOnce.Do(func() {
-		if p := strings.TrimSpace(os.Getenv("SKYFORGE_TERRAFORM_PATH")); p != "" {
+		if p := strings.TrimSpace(e.cfg.TerraformBinaryPath); p != "" {
 			terraformBinaryPath = p
 			return
 		}
@@ -300,11 +300,11 @@ func ensureTerraformBinary() (string, error) {
 		if _, err := os.Stat(terraformBinaryPath); err == nil {
 			return
 		}
-		version := strings.TrimSpace(os.Getenv("SKYFORGE_TERRAFORM_VERSION"))
+		version := strings.TrimSpace(e.cfg.TerraformVersion)
 		if version == "" {
 			version = "1.9.8"
 		}
-		url := strings.TrimSpace(os.Getenv("SKYFORGE_TERRAFORM_URL"))
+		url := strings.TrimSpace(e.cfg.TerraformURL)
 		if url == "" {
 			url = fmt.Sprintf("https://releases.hashicorp.com/terraform/%s/terraform_%s_linux_amd64.zip", version, version)
 		}
