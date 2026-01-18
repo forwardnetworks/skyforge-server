@@ -255,7 +255,7 @@ func (s *Service) ListAwsSSOAccounts(ctx context.Context) (*AwsSSOAccountsRespon
 	}
 	client := sso.NewFromConfig(awsCfg)
 	pager := sso.NewListAccountsPaginator(client, &sso.ListAccountsInput{
-		AccessToken: aws.String(accessToken),
+		AccessToken: new(accessToken),
 	})
 	accounts := []AwsSSOAccount{}
 	for pager.HasMorePages() {
@@ -302,8 +302,8 @@ func (s *Service) ListAwsSSORoles(ctx context.Context, accountID string) (*AwsSS
 	}
 	client := sso.NewFromConfig(awsCfg)
 	pager := sso.NewListAccountRolesPaginator(client, &sso.ListAccountRolesInput{
-		AccessToken: aws.String(accessToken),
-		AccountId:   aws.String(accountID),
+		AccessToken: new(accessToken),
+		AccountId:   new(accountID),
 	})
 	roles := []AwsSSORole{}
 	for pager.HasMorePages() {
