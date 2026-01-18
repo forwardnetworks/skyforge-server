@@ -14,7 +14,6 @@ import (
 	"encore.app/internal/taskexec"
 	"encore.app/internal/taskqueue"
 	"encore.app/internal/taskstore"
-	"encore.app/skyforge"
 	"encore.dev/pubsub"
 	"encore.dev/rlog"
 )
@@ -65,11 +64,12 @@ func (s *Service) handleTaskEnqueued(ctx context.Context, msg *taskqueue.TaskEnq
 			return fmt.Errorf("unsupported task type: %s", strings.TrimSpace(task.TaskType))
 		},
 		Notify: func(ctx context.Context, task *taskstore.TaskRecord, status string, errMsg string) error {
-			return skyforge.InternalNotifyTaskStatus(ctx, &skyforge.InternalNotifyTaskStatusParams{
+			_, err := taskqueue.StatusTopic.Publish(ctx, &taskqueue.TaskStatusEvent{
 				TaskID: task.ID,
 				Status: status,
 				Error:  errMsg,
 			})
+			return err
 		},
 		EnqueueNextDeploymentTask: func(ctx context.Context, nextTaskID int, workspaceID string, deploymentID string) {
 			key := strings.TrimSpace(workspaceID)

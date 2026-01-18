@@ -14,6 +14,12 @@ type TaskCancelEvent struct {
 	TaskID int `json:"taskId"`
 }
 
+type TaskStatusEvent struct {
+	TaskID int    `json:"taskId"`
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
+}
+
 var InteractiveTopic = pubsub.NewTopic[*TaskEnqueuedEvent]("skyforge-task-queue-interactive", pubsub.TopicConfig{
 	DeliveryGuarantee: pubsub.AtLeastOnce,
 	OrderingAttribute: "key",
@@ -22,6 +28,10 @@ var InteractiveTopic = pubsub.NewTopic[*TaskEnqueuedEvent]("skyforge-task-queue-
 var BackgroundTopic = pubsub.NewTopic[*TaskEnqueuedEvent]("skyforge-task-queue-background", pubsub.TopicConfig{
 	DeliveryGuarantee: pubsub.AtLeastOnce,
 	OrderingAttribute: "key",
+})
+
+var StatusTopic = pubsub.NewTopic[*TaskStatusEvent]("skyforge-task-status", pubsub.TopicConfig{
+	DeliveryGuarantee: pubsub.AtLeastOnce,
 })
 
 var CancelTopic = pubsub.NewTopic[*TaskCancelEvent]("skyforge-task-cancel", pubsub.TopicConfig{
