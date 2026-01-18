@@ -2,9 +2,11 @@ package taskengine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path"
 	"strings"
+	"time"
 
 	"encore.app/internal/taskdispatch"
 	"encore.app/internal/taskstore"
@@ -249,9 +251,76 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		return err
 	}
 
+	// Capture a lightweight topology graph after deploy so the UI can render
+	// resolved management IPs without querying netlab output.
+	if err := e.captureC9sTopologyArtifact(ctx, spec, ns, topologyName, labName, topologyBytes, log); err != nil {
+		// Don't fail the run if topology capture fails; it is a best-effort UX enhancement.
+		if log != nil {
+			log.Infof("c9s topology capture failed: %v", err)
+		}
+	}
+
 	// Optional Phase 2: post-deploy Ansible.
 	if !strings.EqualFold(strings.TrimSpace(spec.Environment["SKYFORGE_NETLAB_C9S_RUN_ANSIBLE"]), "false") {
 		return e.runNetlabC9sAnsible(ctx, spec, ns, topologyName, labName, log)
+	}
+	return nil
+}
+
+func (e *Engine) captureC9sTopologyArtifact(ctx context.Context, spec netlabC9sRunSpec, ns, topologyName, labName string, topologyYAML []byte, log Logger) error {
+	if e == nil || e.db == nil || spec.TaskID <= 0 || spec.WorkspaceCtx == nil || strings.TrimSpace(spec.WorkspaceCtx.workspace.ID) == "" {
+		return fmt.Errorf("invalid task context")
+	}
+	ns = strings.TrimSpace(ns)
+	topologyName = strings.TrimSpace(topologyName)
+	if ns == "" || topologyName == "" {
+		return fmt.Errorf("namespace and topology name are required")
+	}
+
+	pods, err := kubeListPods(ctx, ns, map[string]string{
+		"clabernetes/topologyOwner": topologyName,
+	})
+	if err != nil {
+		return err
+	}
+	podInfo := map[string]TopologyNode{}
+	for _, pod := range pods {
+		node := strings.TrimSpace(pod.Metadata.Labels["clabernetes/topologyNode"])
+		if node == "" {
+			continue
+		}
+		podInfo[node] = TopologyNode{
+			ID:     node,
+			Label:  node,
+			MgmtIP: strings.TrimSpace(pod.Status.PodIP),
+			Status: strings.TrimSpace(pod.Status.Phase),
+		}
+	}
+
+	graph, err := containerlabYAMLBytesToTopologyGraph(topologyYAML, podInfo)
+	if err != nil {
+		return err
+	}
+	graph.GeneratedAt = time.Now().UTC().Format(time.RFC3339)
+
+	graphBytes, err := json.Marshal(graph)
+	if err != nil {
+		return err
+	}
+
+	if strings.TrimSpace(labName) == "" {
+		labName = topologyName
+	}
+	key := fmt.Sprintf("topology/netlab-c9s/%s.json", sanitizeArtifactKeySegment(labName))
+	ctxPut, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	putKey, err := putWorkspaceArtifact(ctxPut, e.cfg, spec.WorkspaceCtx.workspace.ID, key, graphBytes, "application/json")
+	if err != nil {
+		return err
+	}
+	e.setTaskMetadataKey(spec.TaskID, "topologyKey", putKey)
+	if log != nil {
+		log.Infof("c9s topology artifact stored: %s", putKey)
 	}
 	return nil
 }

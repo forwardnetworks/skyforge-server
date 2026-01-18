@@ -61,9 +61,34 @@ func (s *Service) GetWorkspaceDeploymentTopology(ctx context.Context, id, deploy
 	switch dep.Type {
 	case "containerlab":
 		return s.getContainerlabDeploymentTopology(ctx, pc, dep)
+	case "netlab-c9s":
+		return s.getDeploymentTopologyFromLatestTaskArtifact(ctx, pc, dep, "netlab-c9s-run")
+	case "clabernetes":
+		return s.getDeploymentTopologyFromLatestTaskArtifact(ctx, pc, dep, "clabernetes-run")
 	default:
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("topology is not available for this deployment type").Err()
 	}
+}
+
+func (s *Service) getDeploymentTopologyFromLatestTaskArtifact(ctx context.Context, pc *workspaceContext, dep *WorkspaceDeployment, taskType string) (*DeploymentTopologyResponse, error) {
+	taskType = strings.TrimSpace(taskType)
+	if taskType == "" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("task type is required").Err()
+	}
+	if task, err := getLatestDeploymentTask(ctx, s.db, pc.workspace.ID, dep.ID, taskType); err == nil && task != nil {
+		key := strings.TrimSpace(getJSONMapString(task.Metadata, "topologyKey"))
+		if key != "" {
+			ctxRead, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			if raw, err := readWorkspaceArtifact(ctxRead, pc.workspace.ID, key, 2<<20); err == nil && len(raw) > 0 {
+				if graph, err := parseTopologyGraph(raw); err == nil && graph != nil {
+					graph.ArtifactKey = key
+					return graph, nil
+				}
+			}
+		}
+	}
+	return nil, errs.B().Code(errs.Unavailable).Msg("topology is not available yet for this deployment").Err()
 }
 
 func (s *Service) getContainerlabDeploymentTopology(ctx context.Context, pc *workspaceContext, dep *WorkspaceDeployment) (*DeploymentTopologyResponse, error) {
