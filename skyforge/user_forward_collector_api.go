@@ -1,0 +1,555 @@
+package skyforge
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"log"
+	"strings"
+	"time"
+
+	"encore.dev/beta/errs"
+)
+
+type UserForwardCollectorResponse struct {
+	Configured        bool   `json:"configured"`
+	BaseURL           string `json:"baseUrl"`
+	Username          string `json:"username,omitempty"`
+	CollectorID       string `json:"collectorId,omitempty"`
+	CollectorUsername string `json:"collectorUsername,omitempty"`
+	AuthorizationKey  string `json:"authorizationKey,omitempty"`
+	HasPassword       bool   `json:"hasPassword"`
+	HasJumpKey        bool   `json:"hasJumpPrivateKey"`
+	HasJumpCert       bool   `json:"hasJumpCert"`
+	UpdatedAt         string `json:"updatedAt,omitempty"`
+}
+
+type PutUserForwardCollectorRequest struct {
+	BaseURL        string `json:"baseUrl"`
+	Username       string `json:"username"`
+	Password       string `json:"password"`
+	DeviceUsername string `json:"deviceUsername,omitempty"`
+	DevicePassword string `json:"devicePassword,omitempty"`
+	JumpHost       string `json:"jumpHost,omitempty"`
+	JumpUsername   string `json:"jumpUsername,omitempty"`
+	JumpPrivateKey string `json:"jumpPrivateKey,omitempty"`
+	JumpCert       string `json:"jumpCert,omitempty"`
+}
+
+type userForwardCredentials struct {
+	BaseURL           string
+	ForwardUsername   string
+	ForwardPassword   string
+	CollectorID       string
+	CollectorUsername string
+	AuthorizationKey  string
+	DeviceUsername    string
+	DevicePassword    string
+	JumpHost          string
+	JumpUsername      string
+	JumpPrivateKey    string
+	JumpCert          string
+	UpdatedAt         time.Time
+}
+
+func getUserForwardCredentials(ctx context.Context, db *sql.DB, box *secretBox, username string) (*userForwardCredentials, error) {
+	if db == nil || box == nil {
+		return nil, fmt.Errorf("db is not configured")
+	}
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil, fmt.Errorf("username is required")
+	}
+	var baseURL, forwardUser, forwardPass sql.NullString
+	var collectorID, collectorUser, authKey sql.NullString
+	var deviceUser, devicePass sql.NullString
+	var jumpHost, jumpUser, jumpKey, jumpCert sql.NullString
+	var updatedAt sql.NullTime
+	err := db.QueryRowContext(ctx, `SELECT base_url, forward_username, forward_password,
+  COALESCE(collector_id, ''), COALESCE(collector_username, ''), COALESCE(authorization_key, ''),
+  COALESCE(device_username, ''), COALESCE(device_password, ''),
+  COALESCE(jump_host, ''), COALESCE(jump_username, ''), COALESCE(jump_private_key, ''), COALESCE(jump_cert, ''),
+  updated_at
+FROM sf_user_forward_credentials WHERE username=$1`, username).Scan(
+		&baseURL,
+		&forwardUser,
+		&forwardPass,
+		&collectorID,
+		&collectorUser,
+		&authKey,
+		&deviceUser,
+		&devicePass,
+		&jumpHost,
+		&jumpUser,
+		&jumpKey,
+		&jumpCert,
+		&updatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	baseURLValue, err := box.decrypt(baseURL.String)
+	if err != nil {
+		return nil, err
+	}
+	forwardUserValue, err := box.decrypt(forwardUser.String)
+	if err != nil {
+		return nil, err
+	}
+	forwardPassValue, err := box.decrypt(forwardPass.String)
+	if err != nil {
+		return nil, err
+	}
+	collectorIDValue, err := box.decrypt(collectorID.String)
+	if err != nil {
+		return nil, err
+	}
+	collectorUserValue, err := box.decrypt(collectorUser.String)
+	if err != nil {
+		return nil, err
+	}
+	authKeyValue, err := box.decrypt(authKey.String)
+	if err != nil {
+		return nil, err
+	}
+	deviceUserValue, err := box.decrypt(deviceUser.String)
+	if err != nil {
+		return nil, err
+	}
+	devicePassValue, err := box.decrypt(devicePass.String)
+	if err != nil {
+		return nil, err
+	}
+	jumpHostValue, err := box.decrypt(jumpHost.String)
+	if err != nil {
+		return nil, err
+	}
+	jumpUserValue, err := box.decrypt(jumpUser.String)
+	if err != nil {
+		return nil, err
+	}
+	jumpKeyValue, err := box.decrypt(jumpKey.String)
+	if err != nil {
+		return nil, err
+	}
+	jumpCertValue, err := box.decrypt(jumpCert.String)
+	if err != nil {
+		return nil, err
+	}
+
+	rec := &userForwardCredentials{
+		BaseURL:           strings.TrimSpace(baseURLValue),
+		ForwardUsername:   strings.TrimSpace(forwardUserValue),
+		ForwardPassword:   strings.TrimSpace(forwardPassValue),
+		CollectorID:       strings.TrimSpace(collectorIDValue),
+		CollectorUsername: strings.TrimSpace(collectorUserValue),
+		AuthorizationKey:  strings.TrimSpace(authKeyValue),
+		DeviceUsername:    strings.TrimSpace(deviceUserValue),
+		DevicePassword:    strings.TrimSpace(devicePassValue),
+		JumpHost:          strings.TrimSpace(jumpHostValue),
+		JumpUsername:      strings.TrimSpace(jumpUserValue),
+		JumpPrivateKey:    strings.TrimSpace(jumpKeyValue),
+		JumpCert:          strings.TrimSpace(jumpCertValue),
+	}
+	if updatedAt.Valid {
+		rec.UpdatedAt = updatedAt.Time
+	}
+	return rec, nil
+}
+
+func putUserForwardCredentials(ctx context.Context, db *sql.DB, box *secretBox, username string, rec userForwardCredentials) error {
+	if db == nil || box == nil {
+		return fmt.Errorf("db is not configured")
+	}
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return fmt.Errorf("username is required")
+	}
+	baseURL := strings.TrimSpace(rec.BaseURL)
+	if baseURL == "" {
+		baseURL = defaultForwardBaseURL
+	}
+	forwardUser := strings.TrimSpace(rec.ForwardUsername)
+	forwardPass := strings.TrimSpace(rec.ForwardPassword)
+	if forwardUser == "" || forwardPass == "" {
+		return fmt.Errorf("username and password are required")
+	}
+	encBaseURL, err := encryptIfPlain(box, baseURL)
+	if err != nil {
+		return err
+	}
+	encFwdUser, err := encryptIfPlain(box, forwardUser)
+	if err != nil {
+		return err
+	}
+	encFwdPass, err := encryptIfPlain(box, forwardPass)
+	if err != nil {
+		return err
+	}
+	encCollectorID, err := encryptIfPlain(box, rec.CollectorID)
+	if err != nil {
+		return err
+	}
+	encCollectorUser, err := encryptIfPlain(box, rec.CollectorUsername)
+	if err != nil {
+		return err
+	}
+	encAuthKey, err := encryptIfPlain(box, rec.AuthorizationKey)
+	if err != nil {
+		return err
+	}
+	encDeviceUser, err := encryptIfPlain(box, rec.DeviceUsername)
+	if err != nil {
+		return err
+	}
+	encDevicePass, err := encryptIfPlain(box, rec.DevicePassword)
+	if err != nil {
+		return err
+	}
+	encJumpHost, err := encryptIfPlain(box, rec.JumpHost)
+	if err != nil {
+		return err
+	}
+	encJumpUser, err := encryptIfPlain(box, rec.JumpUsername)
+	if err != nil {
+		return err
+	}
+	encJumpKey, err := encryptIfPlain(box, rec.JumpPrivateKey)
+	if err != nil {
+		return err
+	}
+	encJumpCert, err := encryptIfPlain(box, rec.JumpCert)
+	if err != nil {
+		return err
+	}
+	_, err = db.ExecContext(ctx, `INSERT INTO sf_user_forward_credentials (
+  username, base_url, forward_username, forward_password,
+  collector_id, collector_username, authorization_key,
+  device_username, device_password,
+  jump_host, jump_username, jump_private_key, jump_cert,
+  updated_at
+) VALUES ($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),NULLIF($12,''),NULLIF($13,''),now())
+ON CONFLICT (username) DO UPDATE SET
+  base_url=excluded.base_url,
+  forward_username=excluded.forward_username,
+  forward_password=excluded.forward_password,
+  collector_id=excluded.collector_id,
+  collector_username=excluded.collector_username,
+  authorization_key=excluded.authorization_key,
+  device_username=excluded.device_username,
+  device_password=excluded.device_password,
+  jump_host=excluded.jump_host,
+  jump_username=excluded.jump_username,
+  jump_private_key=excluded.jump_private_key,
+  jump_cert=excluded.jump_cert,
+  updated_at=now()`,
+		username,
+		encBaseURL,
+		encFwdUser,
+		encFwdPass,
+		encCollectorID,
+		encCollectorUser,
+		encAuthKey,
+		encDeviceUser,
+		encDevicePass,
+		encJumpHost,
+		encJumpUser,
+		encJumpKey,
+		encJumpCert,
+	)
+	return err
+}
+
+func deleteUserForwardCredentials(ctx context.Context, db *sql.DB, username string) error {
+	if db == nil {
+		return fmt.Errorf("db is not configured")
+	}
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil
+	}
+	_, err := db.ExecContext(ctx, `DELETE FROM sf_user_forward_credentials WHERE username=$1`, username)
+	return err
+}
+
+func defaultCollectorNameForUser(username string) string {
+	username = strings.TrimSpace(strings.ToLower(username))
+	username = strings.ReplaceAll(username, "@", "-")
+	username = strings.ReplaceAll(username, ".", "-")
+	username = strings.ReplaceAll(username, " ", "-")
+	username = strings.ReplaceAll(username, "_", "-")
+	username = strings.ReplaceAll(username, "/", "-")
+	username = strings.ReplaceAll(username, ":", "-")
+	username = strings.Trim(username, "-")
+	if username == "" {
+		username = "user"
+	}
+	if len(username) > 48 {
+		username = username[:48]
+	}
+	return "skyforge-" + username
+}
+
+// GetUserForwardCollector returns the authenticated user's Forward collector settings.
+//
+//encore:api auth method=GET path=/api/forward/collector
+func (s *Service) GetUserForwardCollector(ctx context.Context) (*UserForwardCollectorResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	rec, err := getUserForwardCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), user.Username)
+	if err != nil {
+		log.Printf("user forward get: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward collector settings").Err()
+	}
+	if rec == nil {
+		return &UserForwardCollectorResponse{
+			Configured:  false,
+			BaseURL:     defaultForwardBaseURL,
+			HasPassword: false,
+			HasJumpKey:  false,
+			HasJumpCert: false,
+		}, nil
+	}
+	updatedAt := ""
+	if !rec.UpdatedAt.IsZero() {
+		updatedAt = rec.UpdatedAt.UTC().Format(time.RFC3339)
+	}
+	baseURL := strings.TrimSpace(rec.BaseURL)
+	if baseURL == "" {
+		baseURL = defaultForwardBaseURL
+	}
+	return &UserForwardCollectorResponse{
+		Configured:        baseURL != "" && rec.ForwardUsername != "" && rec.ForwardPassword != "",
+		BaseURL:           baseURL,
+		Username:          rec.ForwardUsername,
+		CollectorID:       rec.CollectorID,
+		CollectorUsername: rec.CollectorUsername,
+		AuthorizationKey:  rec.AuthorizationKey,
+		HasPassword:       rec.ForwardPassword != "",
+		HasJumpKey:        strings.TrimSpace(rec.JumpPrivateKey) != "",
+		HasJumpCert:       strings.TrimSpace(rec.JumpCert) != "",
+		UpdatedAt:         updatedAt,
+	}, nil
+}
+
+// PutUserForwardCollector stores Forward credentials and ensures a per-user collector exists.
+//
+//encore:api auth method=PUT path=/api/forward/collector
+func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwardCollectorRequest) (*UserForwardCollectorResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	if req == nil {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid payload").Err()
+	}
+
+	baseURL := strings.TrimSpace(req.BaseURL)
+	if baseURL == "" {
+		baseURL = defaultForwardBaseURL
+	}
+	forwardUser := strings.TrimSpace(req.Username)
+	forwardPass := strings.TrimSpace(req.Password)
+	deviceUser := strings.TrimSpace(req.DeviceUsername)
+	devicePass := strings.TrimSpace(req.DevicePassword)
+	jumpHost := strings.TrimSpace(req.JumpHost)
+	jumpUser := strings.TrimSpace(req.JumpUsername)
+	jumpKey := strings.TrimSpace(req.JumpPrivateKey)
+	jumpCert := strings.TrimSpace(req.JumpCert)
+
+	if forwardUser == "" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("username is required").Err()
+	}
+
+	box := newSecretBox(s.cfg.SessionSecret)
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+
+	current, err := getUserForwardCredentials(ctx, s.db, box, user.Username)
+	if err != nil {
+		log.Printf("user forward get: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward collector settings").Err()
+	}
+	if forwardPass == "" && current != nil {
+		forwardPass = current.ForwardPassword
+	}
+	if forwardPass == "" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("password is required").Err()
+	}
+	if current != nil {
+		if devicePass == "" {
+			devicePass = current.DevicePassword
+		}
+		if jumpKey == "" {
+			jumpKey = current.JumpPrivateKey
+		}
+		if jumpCert == "" {
+			jumpCert = current.JumpCert
+		}
+	}
+
+	cfg := forwardCredentials{
+		BaseURL:  baseURL,
+		Username: forwardUser,
+		Password: forwardPass,
+	}
+	client, err := newForwardClient(cfg)
+	if err != nil {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid Forward config").Err()
+	}
+	if _, err := forwardListCollectors(ctx, client); err != nil {
+		return nil, errs.B().Code(errs.Unauthenticated).Msg("Forward authentication failed").Err()
+	}
+
+	collectorID := ""
+	collectorUsername := ""
+	authKey := ""
+	if current != nil {
+		collectorID = strings.TrimSpace(current.CollectorID)
+		collectorUsername = strings.TrimSpace(current.CollectorUsername)
+		authKey = strings.TrimSpace(current.AuthorizationKey)
+	}
+	if collectorID == "" || collectorUsername == "" || authKey == "" {
+		name := defaultCollectorNameForUser(user.Username)
+		collector, err := forwardCreateCollector(ctx, client, name)
+		if err != nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to create Forward collector").Err()
+		}
+		collectorID = strings.TrimSpace(collector.ID)
+		collectorUsername = strings.TrimSpace(collector.Username)
+		authKey = strings.TrimSpace(collector.AuthorizationKey)
+	}
+
+	if err := putUserForwardCredentials(ctx, s.db, box, user.Username, userForwardCredentials{
+		BaseURL:           baseURL,
+		ForwardUsername:   forwardUser,
+		ForwardPassword:   forwardPass,
+		CollectorID:       collectorID,
+		CollectorUsername: collectorUsername,
+		AuthorizationKey:  authKey,
+		DeviceUsername:    deviceUser,
+		DevicePassword:    devicePass,
+		JumpHost:          jumpHost,
+		JumpUsername:      jumpUser,
+		JumpPrivateKey:    jumpKey,
+		JumpCert:          jumpCert,
+	}); err != nil {
+		log.Printf("user forward put: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to store Forward collector settings").Err()
+	}
+
+	return &UserForwardCollectorResponse{
+		Configured:        true,
+		BaseURL:           baseURL,
+		Username:          forwardUser,
+		CollectorID:       collectorID,
+		CollectorUsername: collectorUsername,
+		AuthorizationKey:  authKey,
+		HasPassword:       true,
+		HasJumpKey:        jumpKey != "",
+		HasJumpCert:       jumpCert != "",
+		UpdatedAt:         time.Now().UTC().Format(time.RFC3339),
+	}, nil
+}
+
+// ResetUserForwardCollector rotates the user's Forward collector by creating a new one and storing its authorization key.
+//
+// NOTE: This does not delete any existing collector in Forward; it only updates the Skyforge profile.
+//
+//encore:api auth method=POST path=/api/forward/collector/reset
+func (s *Service) ResetUserForwardCollector(ctx context.Context) (*UserForwardCollectorResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+
+	box := newSecretBox(s.cfg.SessionSecret)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	current, err := getUserForwardCredentials(ctx, s.db, box, user.Username)
+	if err != nil {
+		log.Printf("user forward get: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward collector settings").Err()
+	}
+	if current == nil || strings.TrimSpace(current.ForwardUsername) == "" || strings.TrimSpace(current.ForwardPassword) == "" {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward credentials required").Err()
+	}
+	client, err := newForwardClient(forwardCredentials{
+		BaseURL:  current.BaseURL,
+		Username: current.ForwardUsername,
+		Password: current.ForwardPassword,
+	})
+	if err != nil {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid Forward config").Err()
+	}
+
+	name := fmt.Sprintf("%s-reset-%s", defaultCollectorNameForUser(user.Username), time.Now().UTC().Format("20060102-150405"))
+	collector, err := forwardCreateCollector(ctx, client, name)
+	if err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to create Forward collector").Err()
+	}
+
+	current.CollectorID = strings.TrimSpace(collector.ID)
+	current.CollectorUsername = strings.TrimSpace(collector.Username)
+	current.AuthorizationKey = strings.TrimSpace(collector.AuthorizationKey)
+	if err := putUserForwardCredentials(ctx, s.db, box, user.Username, *current); err != nil {
+		log.Printf("user forward put: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to store Forward collector settings").Err()
+	}
+
+	return &UserForwardCollectorResponse{
+		Configured:        true,
+		BaseURL:           strings.TrimSpace(current.BaseURL),
+		Username:          strings.TrimSpace(current.ForwardUsername),
+		CollectorID:       strings.TrimSpace(current.CollectorID),
+		CollectorUsername: strings.TrimSpace(current.CollectorUsername),
+		AuthorizationKey:  strings.TrimSpace(current.AuthorizationKey),
+		HasPassword:       true,
+		HasJumpKey:        strings.TrimSpace(current.JumpPrivateKey) != "",
+		HasJumpCert:       strings.TrimSpace(current.JumpCert) != "",
+		UpdatedAt:         time.Now().UTC().Format(time.RFC3339),
+	}, nil
+}
+
+// ClearUserForwardCollector deletes the stored user Forward collector settings.
+//
+//encore:api auth method=DELETE path=/api/forward/collector
+func (s *Service) ClearUserForwardCollector(ctx context.Context) (*UserForwardCollectorResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if err := deleteUserForwardCredentials(ctx, s.db, user.Username); err != nil {
+		log.Printf("user forward delete: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to clear Forward collector settings").Err()
+	}
+	return &UserForwardCollectorResponse{
+		Configured:  false,
+		BaseURL:     defaultForwardBaseURL,
+		HasPassword: false,
+	}, nil
+}
+
