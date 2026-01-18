@@ -89,9 +89,21 @@ func initOIDCClient(cfg Config) (*OIDCClient, error) {
 		Scopes:       []string{oidc.ScopeOpenID, "profile", "email", "groups"},
 	}
 
+	verifier := provider.Verifier(&oidc.Config{ClientID: cfg.OIDC.ClientID})
+	// Like TokenURL rewriting above, prefer fetching JWKS from the discovery host
+	// when the external issuer hostname is not directly trusted/valid inside the
+	// cluster (e.g. QA using a wildcard/prod cert).
+	if discoveryURL != "" {
+		if base, err := url.Parse(providerURL); err == nil && base.Scheme == "http" && base.Host != "" {
+			jwksURL := strings.TrimRight(providerURL, "/") + "/keys"
+			keySet := oidc.NewRemoteKeySet(context.Background(), jwksURL)
+			verifier = oidc.NewVerifier(cfg.OIDC.IssuerURL, keySet, &oidc.Config{ClientID: cfg.OIDC.ClientID})
+		}
+	}
+
 	return &OIDCClient{
 		oauth2Config: oauth2Config,
-		verifier:     provider.Verifier(&oidc.Config{ClientID: cfg.OIDC.ClientID}),
+		verifier:     verifier,
 	}, nil
 }
 
