@@ -98,10 +98,10 @@ func (s *Service) FrontendAssets(w http.ResponseWriter, req *http.Request) {
 	s.serveFrontendSPA(w, req)
 }
 
-// FrontendRoot serves the SPA entrypoint.
+// FrontendIndex serves the SPA entrypoint.
 //
-//encore:api public raw method=GET path=/
-func (s *Service) FrontendRoot(w http.ResponseWriter, req *http.Request) {
+//encore:api public raw method=GET path=/index.html
+func (s *Service) FrontendIndex(w http.ResponseWriter, req *http.Request) {
 	s.serveFrontendSPA(w, req)
 }
 
@@ -137,13 +137,6 @@ func (s *Service) FrontendSyslog(w http.ResponseWriter, req *http.Request) {
 //
 //encore:api public raw method=GET path=/snmp/*path
 func (s *Service) FrontendSNMP(w http.ResponseWriter, req *http.Request) {
-	s.serveFrontendSPA(w, req)
-}
-
-// FrontendNotifications serves the SPA for notifications routes.
-//
-//encore:api public raw method=GET path=/notifications/*path
-func (s *Service) FrontendNotifications(w http.ResponseWriter, req *http.Request) {
 	s.serveFrontendSPA(w, req)
 }
 
