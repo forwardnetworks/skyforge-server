@@ -223,7 +223,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		return err
 	}
 
-	topologyBytes, err := prepareC9sTopologyForDeploy(spec.TaskID, topologyName, labName, clabYAML, nodeMounts, e, log)
+	topologyBytes, nodeMounts, err := prepareC9sTopologyForDeploy(spec.TaskID, topologyName, labName, clabYAML, nodeMounts, e, log)
 	if err != nil {
 		return err
 	}
@@ -251,20 +251,20 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	return nil
 }
 
-func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabYAML []byte, nodeMounts map[string][]c9sFileFromConfigMap, e *Engine, log Logger) ([]byte, error) {
+func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabYAML []byte, nodeMounts map[string][]c9sFileFromConfigMap, e *Engine, log Logger) ([]byte, map[string][]c9sFileFromConfigMap, error) {
 	if log == nil {
 		log = noopLogger{}
 	}
 	labName = strings.TrimSpace(labName)
 	topologyName = strings.TrimSpace(topologyName)
 	if len(clabYAML) == 0 {
-		return nil, fmt.Errorf("clab.yml is empty")
+		return nil, nil, fmt.Errorf("clab.yml is empty")
 	}
 
 	// Sanitize node names to DNS-1035 labels so clabernetes can derive K8s resource names.
 	sanitizedYAML, mapping, err := sanitizeContainerlabYAMLForClabernetes(string(clabYAML))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if sanitizedYAML != "" {
 		clabYAML = []byte(sanitizedYAML)
@@ -291,7 +291,7 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 
 	var topo map[string]any
 	if err := yaml.Unmarshal(clabYAML, &topo); err != nil {
-		return nil, fmt.Errorf("failed to parse clab.yml: %w", err)
+		return nil, nil, fmt.Errorf("failed to parse clab.yml: %w", err)
 	}
 	if topo == nil {
 		topo = map[string]any{}
@@ -343,7 +343,6 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 
 	// Rewrite bind sources to the mounted file paths (only for node_files paths).
 	mountRoot := path.Join("/tmp/skyforge-c9s", topologyName)
-	_ = nodeMounts
 	if topology, ok := topo["topology"].(map[string]any); ok {
 		if nodes, ok := topology["nodes"].(map[string]any); ok {
 			for node, nodeAny := range nodes {
@@ -396,7 +395,7 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 
 	topologyBytes, err := yaml.Marshal(topo)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encode clab.yml: %w", err)
+		return nil, nil, fmt.Errorf("failed to encode clab.yml: %w", err)
 	}
-	return topologyBytes, nil
+	return topologyBytes, nodeMounts, nil
 }

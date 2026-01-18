@@ -2,8 +2,10 @@ package skyforge
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"net/url"
 	"path"
 	"sort"
@@ -166,10 +168,21 @@ func (s *Service) GetWorkspaceNetlabTemplates(ctx context.Context, id string, re
 		}
 	}
 
-	templates, err := listNetlabTemplatesRecursive(s.cfg, owner, repo, branch, dir, "", 4, false, 2000)
-	if err != nil {
-		log.Printf("netlab templates list: %v", err)
-		if strings.Contains(strings.ToLower(err.Error()), "too many templates") {
+	var (
+		templates []string
+		listErr   error
+	)
+	// The directory-by-directory contents scan can be extremely slow on large template repos. Prefer a
+	// single Gitea git-tree call when we have a resolved HEAD SHA.
+	if headSHA != "" {
+		templates, listErr = listNetlabTemplatesViaGitTree(s.cfg, owner, repo, headSHA, dir, 2000)
+	}
+	if listErr != nil || templates == nil {
+		templates, listErr = listNetlabTemplatesRecursive(s.cfg, owner, repo, branch, dir, "", 4, false, 2000)
+	}
+	if listErr != nil {
+		log.Printf("netlab templates list: %v", listErr)
+		if strings.Contains(strings.ToLower(listErr.Error()), "too many templates") {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("too many templates in this folder; choose a narrower dir").Err()
 		}
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to query templates").Err()
@@ -192,6 +205,70 @@ func (s *Service) GetWorkspaceNetlabTemplates(ctx context.Context, id string, re
 		Cached:      false,
 		UpdatedAt:   time.Now().UTC().Format(time.RFC3339),
 	}, nil
+}
+
+type giteaTreeResponse struct {
+	Tree []struct {
+		Path string `json:"path"`
+		Type string `json:"type"`
+	} `json:"tree"`
+}
+
+func listNetlabTemplatesViaGitTree(cfg Config, owner, repo, headSHA, dir string, maxResults int) ([]string, error) {
+	owner = strings.TrimSpace(owner)
+	repo = strings.TrimSpace(repo)
+	headSHA = strings.TrimSpace(headSHA)
+	dir = strings.Trim(strings.TrimSpace(dir), "/")
+	if owner == "" || repo == "" || headSHA == "" || dir == "" {
+		return nil, fmt.Errorf("git tree template scan requires owner/repo/headSHA/dir")
+	}
+
+	// Use the Git API to fetch the full tree in one request and filter out template entrypoints.
+	// This is dramatically faster than walking directory-by-directory via the contents API.
+	apiPath := fmt.Sprintf(
+		"/repos/%s/%s/git/trees/%s?recursive=1",
+		url.PathEscape(owner),
+		url.PathEscape(repo),
+		url.PathEscape(headSHA),
+	)
+	resp, body, err := giteaDo(cfg, http.MethodGet, apiPath, nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		fullURL := strings.TrimRight(cfg.Workspaces.GiteaAPIURL, "/") + apiPath
+		return nil, fmt.Errorf("gitea %s responded %d: %s", fullURL, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var parsed giteaTreeResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, err
+	}
+
+	prefix := dir + "/"
+	results := make([]string, 0, 128)
+	for _, entry := range parsed.Tree {
+		if entry.Type != "blob" {
+			continue
+		}
+		p := strings.TrimPrefix(strings.TrimSpace(entry.Path), "/")
+		if !strings.HasPrefix(p, prefix) {
+			continue
+		}
+		base := path.Base(p)
+		if base != "topology.yml" && base != "topology.yaml" {
+			continue
+		}
+		rel := strings.TrimPrefix(p, prefix)
+		if rel == "" {
+			continue
+		}
+		results = append(results, rel)
+		if maxResults > 0 && len(results) >= maxResults {
+			return nil, fmt.Errorf("too many templates")
+		}
+	}
+	return results, nil
 }
 
 func listNetlabTemplatesRecursive(cfg Config, owner, repo, branch, repoPath, relBase string, depth int, nested bool, maxResults int) ([]string, error) {

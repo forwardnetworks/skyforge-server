@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -20,11 +22,22 @@ const (
 	oidcStateCookie = "skyforge_oidc_state"
 	oidcNonceCookie = "skyforge_oidc_nonce"
 	oidcNextCookie  = "skyforge_oidc_next"
+	oidcFlowCookie  = "skyforge_oidc_flow"
 )
 
 type OIDCClient struct {
 	oauth2Config oauth2.Config
 	verifier     *oidc.IDTokenVerifier
+}
+
+type oidcFlowState struct {
+	Nonce     string `json:"nonce"`
+	Next      string `json:"next"`
+	CreatedAt int64  `json:"createdAt"`
+}
+
+type oidcFlowCookiePayload struct {
+	Flows map[string]oidcFlowState `json:"flows"`
 }
 
 func initOIDCClient(cfg Config) (*OIDCClient, error) {
@@ -107,6 +120,79 @@ func initOIDCClient(cfg Config) (*OIDCClient, error) {
 	}, nil
 }
 
+func readOIDCFlowCookie(r *http.Request) map[string]oidcFlowState {
+	if r == nil {
+		return map[string]oidcFlowState{}
+	}
+	c, err := r.Cookie(oidcFlowCookie)
+	if err != nil || strings.TrimSpace(c.Value) == "" {
+		return map[string]oidcFlowState{}
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(c.Value))
+	if err != nil || len(raw) == 0 {
+		return map[string]oidcFlowState{}
+	}
+	var payload oidcFlowCookiePayload
+	if err := json.Unmarshal(raw, &payload); err != nil || payload.Flows == nil {
+		return map[string]oidcFlowState{}
+	}
+	return payload.Flows
+}
+
+func pruneOIDCFlows(flows map[string]oidcFlowState, now time.Time) map[string]oidcFlowState {
+	if flows == nil {
+		return map[string]oidcFlowState{}
+	}
+	out := make(map[string]oidcFlowState, len(flows))
+	cutoff := now.Add(-15 * time.Minute).Unix()
+	for state, f := range flows {
+		if strings.TrimSpace(state) == "" || strings.TrimSpace(f.Nonce) == "" {
+			continue
+		}
+		if f.CreatedAt != 0 && f.CreatedAt < cutoff {
+			continue
+		}
+		out[state] = f
+	}
+
+	// Keep only a small number of in-flight flows to avoid cookie bloat.
+	const maxFlows = 5
+	if len(out) <= maxFlows {
+		return out
+	}
+
+	type entry struct {
+		state string
+		at    int64
+	}
+	list := make([]entry, 0, len(out))
+	for state, f := range out {
+		list = append(list, entry{state: state, at: f.CreatedAt})
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].at < list[j].at })
+	toDrop := len(list) - maxFlows
+	for i := 0; i < toDrop; i++ {
+		delete(out, list[i].state)
+	}
+	return out
+}
+
+func writeOIDCFlowCookie(w http.ResponseWriter, sm *SessionManager, flows map[string]oidcFlowState, secure bool) {
+	flows = pruneOIDCFlows(flows, time.Now())
+	if len(flows) == 0 {
+		clearOIDCCookie(w, sm, oidcFlowCookie)
+		return
+	}
+	payload := oidcFlowCookiePayload{Flows: flows}
+	raw, err := json.Marshal(&payload)
+	if err != nil || len(raw) == 0 {
+		clearOIDCCookie(w, sm, oidcFlowCookie)
+		return
+	}
+	encoded := base64.RawURLEncoding.EncodeToString(raw)
+	setOIDCCookie(w, sm, oidcFlowCookie, encoded, secure)
+}
+
 // OIDCLogin starts the Dex OIDC auth flow and stores state/nonce cookies.
 //
 //encore:api public raw method=GET path=/api/oidc/login
@@ -129,6 +215,15 @@ func (s *Service) OIDCLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	secure := s.sessionManager.cookieSecure(r)
+	flows := readOIDCFlowCookie(r)
+	flows[state] = oidcFlowState{
+		Nonce:     nonce,
+		Next:      url.QueryEscape(next),
+		CreatedAt: time.Now().Unix(),
+	}
+	writeOIDCFlowCookie(w, s.sessionManager, flows, secure)
+
+	// Backward-compatible single-flow cookies (also used by older callers).
 	setOIDCCookie(w, s.sessionManager, oidcStateCookie, state, secure)
 	setOIDCCookie(w, s.sessionManager, oidcNonceCookie, nonce, secure)
 	setOIDCCookie(w, s.sessionManager, oidcNextCookie, url.QueryEscape(next), secure)
@@ -160,15 +255,27 @@ func (s *Service) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stateCookie, err := r.Cookie(oidcStateCookie)
-	if err != nil || stateCookie.Value == "" || stateCookie.Value != state {
-		http.Error(w, "invalid oidc state", http.StatusBadRequest)
-		return
+	expectedNonce := ""
+	nextFromFlow := ""
+	if flows := readOIDCFlowCookie(r); len(flows) > 0 {
+		if f, ok := flows[state]; ok {
+			expectedNonce = strings.TrimSpace(f.Nonce)
+			nextFromFlow = strings.TrimSpace(f.Next)
+		}
 	}
-	nonceCookie, err := r.Cookie(oidcNonceCookie)
-	if err != nil || nonceCookie.Value == "" {
-		http.Error(w, "missing oidc nonce", http.StatusBadRequest)
-		return
+	// Fallback to legacy cookies (single in-flight flow).
+	if expectedNonce == "" {
+		stateCookie, err := r.Cookie(oidcStateCookie)
+		if err != nil || stateCookie.Value == "" || stateCookie.Value != state {
+			http.Error(w, "invalid oidc state", http.StatusBadRequest)
+			return
+		}
+		nonceCookie, err := r.Cookie(oidcNonceCookie)
+		if err != nil || nonceCookie.Value == "" {
+			http.Error(w, "missing oidc nonce", http.StatusBadRequest)
+			return
+		}
+		expectedNonce = strings.TrimSpace(nonceCookie.Value)
 	}
 
 	ctx := r.Context()
@@ -191,7 +298,7 @@ func (s *Service) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id token", http.StatusUnauthorized)
 		return
 	}
-	if strings.TrimSpace(idToken.Nonce) == "" || idToken.Nonce != nonceCookie.Value {
+	if strings.TrimSpace(idToken.Nonce) == "" || idToken.Nonce != expectedNonce {
 		http.Error(w, "invalid oidc nonce", http.StatusUnauthorized)
 		return
 	}
@@ -249,12 +356,24 @@ func (s *Service) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 	clearOIDCCookie(w, s.sessionManager, oidcNonceCookie)
 
 	next := "/"
-	if nextCookie, err := r.Cookie(oidcNextCookie); err == nil && nextCookie.Value != "" {
+	if nextFromFlow != "" {
+		if decoded, err := url.QueryUnescape(nextFromFlow); err == nil {
+			next = sanitizeOIDCNext(decoded)
+		}
+	} else if nextCookie, err := r.Cookie(oidcNextCookie); err == nil && nextCookie.Value != "" {
 		if decoded, err := url.QueryUnescape(nextCookie.Value); err == nil {
 			next = sanitizeOIDCNext(decoded)
 		}
 	}
 	clearOIDCCookie(w, s.sessionManager, oidcNextCookie)
+
+	// Remove this flow from the multi-flow cookie (if present).
+	secure := s.sessionManager.cookieSecure(r)
+	flows := readOIDCFlowCookie(r)
+	if len(flows) > 0 {
+		delete(flows, state)
+		writeOIDCFlowCookie(w, s.sessionManager, flows, secure)
+	}
 
 	if err := s.userStore.upsert(profile.Username); err != nil {
 		rlog.Warn("user store upsert failed", "error", err)
