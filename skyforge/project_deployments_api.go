@@ -722,6 +722,12 @@ func (s *Service) DeleteWorkspaceDeployment(ctx context.Context, id, deploymentI
 			log.Printf("deployments delete labpp cleanup (ignored): %v", err)
 		}
 	}
+	if existing.Type == "netlab-c9s" || existing.Type == "clabernetes" {
+		_, err := s.RunWorkspaceDeploymentAction(ctx, id, deploymentID, &WorkspaceDeploymentOpRequest{Action: "destroy"})
+		if err != nil {
+			log.Printf("deployments delete c9s cleanup (ignored): %v", err)
+		}
+	}
 	if req != nil && req.ForwardDelete {
 		cfgAny, _ := fromJSONMap(existing.Config)
 		if cfgAny == nil {
@@ -928,22 +934,19 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 		if err != nil {
 			return nil, err
 		}
-	case "netlab-c9s":
-		netlabServer, _ := cfgAny["netlabServer"].(string)
-		templateSource, _ := cfgAny["templateSource"].(string)
-		templateRepo, _ := cfgAny["templateRepo"].(string)
-		templatesDir, _ := cfgAny["templatesDir"].(string)
-		template, _ := cfgAny["template"].(string)
-		labName, _ := cfgAny["labName"].(string)
-		k8sNamespace, _ := cfgAny["k8sNamespace"].(string)
+		case "netlab-c9s":
+			netlabServer, _ := cfgAny["netlabServer"].(string)
+			templateSource, _ := cfgAny["templateSource"].(string)
+			templateRepo, _ := cfgAny["templateRepo"].(string)
+			templatesDir, _ := cfgAny["templatesDir"].(string)
+			template, _ := cfgAny["template"].(string)
+			labName, _ := cfgAny["labName"].(string)
+			k8sNamespace, _ := cfgAny["k8sNamespace"].(string)
 
-		netlabServer = strings.TrimSpace(netlabServer)
-		if netlabServer == "" {
-			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
-		}
-		if strings.TrimSpace(template) == "" && op != "destroy" && op != "stop" {
-			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab template is required").Err()
-		}
+			netlabServer = strings.TrimSpace(netlabServer)
+			if strings.TrimSpace(template) == "" && op != "destroy" && op != "stop" {
+				return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab template is required").Err()
+			}
 		if op == "stop" && !infraCreated {
 			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab-c9s deployment must be created before stop").Err()
 		}

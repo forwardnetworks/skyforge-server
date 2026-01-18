@@ -580,15 +580,7 @@ func kubeDeleteConfigMapsByLabel(ctx context.Context, ns string, selector map[st
 	return deleted, nil
 }
 
-func kubeCountConfigMapsByLabel(ctx context.Context, ns string, selector map[string]string) (int, error) {
-	ns = strings.TrimSpace(ns)
-	if ns == "" {
-		return 0, fmt.Errorf("namespace is required")
-	}
-	client, err := kubeHTTPClient()
-	if err != nil {
-		return 0, err
-	}
+func kubeLabelSelectorQuery(selector map[string]string) string {
 	var parts []string
 	for k, v := range selector {
 		k = strings.TrimSpace(k)
@@ -598,10 +590,81 @@ func kubeCountConfigMapsByLabel(ctx context.Context, ns string, selector map[str
 		}
 		parts = append(parts, fmt.Sprintf("%s=%s", k, v))
 	}
-	q := ""
-	if len(parts) > 0 {
-		q = neturl.QueryEscape(strings.Join(parts, ","))
+	if len(parts) == 0 {
+		return ""
 	}
+	return neturl.QueryEscape(strings.Join(parts, ","))
+}
+
+func kubeDeleteCollectionByLabel(ctx context.Context, listURL string, selector map[string]string) error {
+	listURL = strings.TrimSpace(listURL)
+	if listURL == "" {
+		return fmt.Errorf("list URL is required")
+	}
+	client, err := kubeHTTPClient()
+	if err != nil {
+		return err
+	}
+	q := kubeLabelSelectorQuery(selector)
+	url := listURL
+	if q != "" {
+		sep := "?"
+		if strings.Contains(url, "?") {
+			sep = "&"
+		}
+		url = url + sep + "labelSelector=" + q
+	}
+	req, err := kubeRequest(ctx, http.MethodDelete, url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<10))
+		return fmt.Errorf("kube delete collection failed: %s: %s", resp.Status, strings.TrimSpace(string(data)))
+	}
+	return nil
+}
+
+func kubeDeleteOrphanedClabernetesResources(ctx context.Context, ns, topologyOwner string) error {
+	ns = strings.TrimSpace(ns)
+	topologyOwner = strings.TrimSpace(topologyOwner)
+	if ns == "" || topologyOwner == "" {
+		return fmt.Errorf("namespace and topology owner are required")
+	}
+	selector := map[string]string{
+		"clabernetes/topologyOwner": topologyOwner,
+	}
+	// Delete collections (fast) to avoid leaving thousands of crashloop-created ReplicaSets.
+	if err := kubeDeleteCollectionByLabel(ctx, fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/pods?propagationPolicy=Background", ns), selector); err != nil {
+		return err
+	}
+	if err := kubeDeleteCollectionByLabel(ctx, fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/services?propagationPolicy=Background", ns), selector); err != nil {
+		return err
+	}
+	if err := kubeDeleteCollectionByLabel(ctx, fmt.Sprintf("https://kubernetes.default.svc/apis/apps/v1/namespaces/%s/replicasets?propagationPolicy=Background", ns), selector); err != nil {
+		return err
+	}
+	return nil
+}
+
+func kubeCountConfigMapsByLabel(ctx context.Context, ns string, selector map[string]string) (int, error) {
+	ns = strings.TrimSpace(ns)
+	if ns == "" {
+		return 0, fmt.Errorf("namespace is required")
+	}
+	client, err := kubeHTTPClient()
+	if err != nil {
+		return 0, err
+	}
+	q := kubeLabelSelectorQuery(selector)
 	listURL := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/configmaps", ns)
 	if q != "" {
 		listURL = listURL + "?labelSelector=" + q
