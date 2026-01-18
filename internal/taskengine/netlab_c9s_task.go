@@ -303,6 +303,10 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 	// Ensure minimal Linux containers (typically Alpine-based) have sshd running so
 	// SSH connectivity and Forward credential sync work out of the box.
 	linuxSSHExec := `sh -c 'pgrep sshd >/dev/null 2>&1 && exit 0 || true; if command -v sshd >/dev/null 2>&1; then :; elif command -v apk >/dev/null 2>&1; then apk add --no-cache openssh-server openssh-client >/dev/null 2>&1 || apk add --no-cache openssh-server >/dev/null 2>&1 || true; elif command -v apt-get >/dev/null 2>&1; then apt-get update -qq >/dev/null 2>&1 || true; DEBIAN_FRONTEND=noninteractive apt-get install -y -qq openssh-server >/dev/null 2>&1 || true; fi; mkdir -p /var/run/sshd >/dev/null 2>&1 || true; ssh-keygen -A >/dev/null 2>&1 || true; printf \"\\nPermitRootLogin yes\\nPasswordAuthentication yes\\n\" >> /etc/ssh/sshd_config 2>/dev/null || true; echo root:admin | chpasswd >/dev/null 2>&1 || true; ( /usr/sbin/sshd -e 2>/dev/null || sshd -e 2>/dev/null || true )'`
+	// Netlab expects Arista cEOS nodes to be reachable via SSH for Ansible readiness/config.
+	// In some environments (notably native clabernetes mode), SSH may be disabled by default.
+	// Inject a best-effort post-start exec to enable management SSH once the EOS CLI is ready.
+	ceosEnableSSHExec := `sh -c 'if ! command -v Cli >/dev/null 2>&1; then exit 0; fi; i=0; while [ $i -lt 120 ]; do Cli -p 15 -c \"show version\" >/dev/null 2>&1 && break; sleep 2; i=$((i+1)); done; Cli -p 15 -c \"enable\" -c \"configure terminal\" -c \"management ssh\" -c \"end\" -c \"write memory\" >/dev/null 2>&1 || true'`
 	if topology, ok := topo["topology"].(map[string]any); ok {
 		if nodes, ok := topology["nodes"].(map[string]any); ok {
 			for node, nodeAny := range nodes {
@@ -311,6 +315,26 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 					continue
 				}
 				kind := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["kind"])))
+				if kind == "ceos" || kind == "eos" {
+					existingAny, _ := cfg["exec"]
+					out := []any{}
+					if existingList, ok := existingAny.([]any); ok {
+						out = append(out, existingList...)
+					}
+					already := false
+					for _, item := range out {
+						if strings.Contains(strings.ToLower(fmt.Sprintf("%v", item)), "management ssh") {
+							already = true
+							break
+						}
+					}
+					if !already {
+						out = append(out, ceosEnableSSHExec)
+					}
+					cfg["exec"] = out
+					nodes[node] = cfg
+					continue
+				}
 				if kind != "linux" {
 					continue
 				}
