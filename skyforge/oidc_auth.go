@@ -40,6 +40,7 @@ func initOIDCClient(cfg Config) (*OIDCClient, error) {
 	defer cancel()
 
 	providerURL := strings.TrimSpace(cfg.OIDC.IssuerURL)
+	discoveryURL := strings.TrimSpace(cfg.OIDC.DiscoveryURL)
 	if raw := strings.TrimSpace(cfg.OIDC.DiscoveryURL); raw != "" {
 		// Allow callers to specify either the issuer base or the full discovery URL.
 		raw = strings.TrimSuffix(raw, "/.well-known/openid-configuration")
@@ -58,10 +59,29 @@ func initOIDCClient(cfg Config) (*OIDCClient, error) {
 		return nil, err
 	}
 
+	endpoint := provider.Endpoint()
+	// If we discovered the provider via an internal address (e.g. http://dex:5556/dex),
+	// but the issuer is an external HTTPS hostname (e.g. https://skyforge.../dex),
+	// Dex will typically advertise token endpoints using the external issuer URL.
+	//
+	// That breaks in-cluster token exchange when the Skyforge server does not trust
+	// the edge TLS certificate (common in private clusters).
+	//
+	// Workaround: keep the external AuthURL (browser redirect), but force the TokenURL
+	// to use the discovery host/scheme while preserving the advertised path.
+	if discoveryURL != "" {
+		if base, err := url.Parse(providerURL); err == nil && base.Scheme == "http" && base.Host != "" {
+			if token, err := url.Parse(endpoint.TokenURL); err == nil && token.Path != "" {
+				base.Path = strings.TrimRight(base.Path, "/") + token.Path
+				endpoint.TokenURL = base.String()
+			}
+		}
+	}
+
 	oauth2Config := oauth2.Config{
 		ClientID:     cfg.OIDC.ClientID,
 		ClientSecret: cfg.OIDC.ClientSecret,
-		Endpoint:     provider.Endpoint(),
+		Endpoint:     endpoint,
 		RedirectURL:  cfg.OIDC.RedirectURL,
 		Scopes:       []string{oidc.ScopeOpenID, "profile", "email", "groups"},
 	}
