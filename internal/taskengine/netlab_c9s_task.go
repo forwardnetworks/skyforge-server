@@ -334,6 +334,16 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 					out = append(out, linuxSSHExec)
 				}
 				cfg["exec"] = out
+
+				// Ensure the container stays running. Some base images (like python) exit quickly if
+				// no command is provided, which causes clabernetes to repeatedly recreate pods.
+				if strings.TrimSpace(fmt.Sprintf("%v", cfg["cmd"])) == "" {
+					cfg["cmd"] = "sh -c 'sleep infinity'"
+				}
+				if strings.EqualFold(strings.TrimSpace(fmt.Sprintf("%v", cfg["restart-policy"])), "no") {
+					cfg["restart-policy"] = "always"
+				}
+
 				nodes[node] = cfg
 			}
 			topology["nodes"] = nodes
