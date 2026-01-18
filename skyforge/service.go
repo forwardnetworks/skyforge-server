@@ -2597,8 +2597,8 @@ func ensureAWSOIDCClient(ctx context.Context, cfg Config, store awsSSOTokenStore
 	}
 	oidcClient := ssooidc.NewFromConfig(awsCfg)
 	resp, err := oidcClient.RegisterClient(ctx, &ssooidc.RegisterClientInput{
-		ClientName: new("skyforge"),
-		ClientType: new("public"),
+		ClientName: ptr("skyforge"),
+		ClientType: ptr("public"),
 		Scopes:     []string{"sso:account:access"},
 	})
 	if err != nil {
@@ -2637,9 +2637,9 @@ func startAWSDeviceAuthorization(ctx context.Context, cfg Config, store awsSSOTo
 	}
 	oidcClient := ssooidc.NewFromConfig(awsCfg)
 	resp, err := oidcClient.StartDeviceAuthorization(ctx, &ssooidc.StartDeviceAuthorizationInput{
-		ClientId:     new(clientID),
-		ClientSecret: new(clientSecret),
-		StartUrl:     new(startURL),
+		ClientId:     ptr(clientID),
+		ClientSecret: ptr(clientSecret),
+		StartUrl:     ptr(startURL),
 	})
 	if err != nil {
 		return "", awsDeviceAuthSession{}, err
@@ -2727,10 +2727,10 @@ FROM sf_aws_device_auth_requests WHERE request_id=$1`, requestID).Scan(
 	}
 	oidcClient := ssooidc.NewFromConfig(awsCfg)
 	out, err := oidcClient.CreateToken(ctx, &ssooidc.CreateTokenInput{
-		ClientId:     new(clientID),
-		ClientSecret: new(clientSecret),
-		DeviceCode:   new(session.DeviceCode),
-		GrantType:    new("urn:ietf:params:oauth:grant-type:device_code"),
+		ClientId:     ptr(clientID),
+		ClientSecret: ptr(clientSecret),
+		DeviceCode:   ptr(session.DeviceCode),
+		GrantType:    ptr("urn:ietf:params:oauth:grant-type:device_code"),
 	})
 	if err != nil {
 		var pending *ssooidcTypes.AuthorizationPendingException
@@ -2765,10 +2765,10 @@ func refreshAWSAccessToken(ctx context.Context, region, clientID, clientSecret, 
 	}
 	oidcClient := ssooidc.NewFromConfig(awsCfg)
 	return oidcClient.CreateToken(ctx, &ssooidc.CreateTokenInput{
-		ClientId:     new(clientID),
-		ClientSecret: new(clientSecret),
-		RefreshToken: new(refreshToken),
-		GrantType:    new("refresh_token"),
+		ClientId:     ptr(clientID),
+		ClientSecret: ptr(clientSecret),
+		RefreshToken: ptr(refreshToken),
+		GrantType:    ptr("refresh_token"),
 	})
 }
 
@@ -2823,9 +2823,9 @@ func getAWSRoleCredentials(ctx context.Context, cfg Config, store awsSSOTokenSto
 	}
 	ssoClient := sso.NewFromConfig(awsCfg)
 	return ssoClient.GetRoleCredentials(ctx, &sso.GetRoleCredentialsInput{
-		AccessToken: new(accessToken),
-		AccountId:   new(accountID),
-		RoleName:    new(roleName),
+		AccessToken: ptr(accessToken),
+		AccountId:   ptr(accountID),
+		RoleName:    ptr(roleName),
 	})
 }
 
