@@ -140,6 +140,7 @@ func loadNetlabDeviceDefaults() netlabDeviceDefaults {
 func netlabCredentialForDevice(device, image string) (netlabDeviceCredential, bool) {
 	device = strings.ToLower(strings.TrimSpace(device))
 	image = strings.ToLower(strings.TrimSpace(image))
+	image = strings.TrimPrefix(image, "ghcr.io/forwardnetworks/")
 	if device == "" && image == "" {
 		return netlabDeviceCredential{}, false
 	}
