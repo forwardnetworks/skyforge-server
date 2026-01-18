@@ -326,20 +326,20 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 				log.Infof("Waiting for topology to become ready (elapsed %s)", time.Since(started).Truncate(time.Second))
 			}
 		}
-		case "destroy":
-			log.Infof("Clabernetes destroy: namespace=%s topology=%s", ns, name)
-			deleted, err := kubeDeleteClabernetesTopology(ctx, ns, name)
-			if err != nil {
-				return err
-			}
-			if !deleted {
-				_ = kubeDeleteOrphanedClabernetesResources(ctx, ns, name)
-				log.Infof("Topology not found; destroy treated as success.")
-				return nil
-			}
-			started := time.Now()
-			ticker := time.NewTicker(5 * time.Second)
-			defer ticker.Stop()
+	case "destroy":
+		log.Infof("Clabernetes destroy: namespace=%s topology=%s", ns, name)
+		deleted, err := kubeDeleteClabernetesTopology(ctx, ns, name)
+		if err != nil {
+			return err
+		}
+		if !deleted {
+			_ = kubeDeleteOrphanedClabernetesResources(ctx, ns, name)
+			log.Infof("Topology not found; destroy treated as success.")
+			return nil
+		}
+		started := time.Now()
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
@@ -356,11 +356,12 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 					log.Errorf("Topology status error: %v", err)
 					continue
 				}
-					if topo == nil && status == http.StatusNotFound {
-						log.Infof("Topology deleted (elapsed %s)", time.Since(started).Truncate(time.Second))
-						_ = kubeDeleteOrphanedClabernetesResources(ctx, ns, name)
-						return nil
-					}
+				if topo == nil && status == http.StatusNotFound {
+					log.Infof("Topology deleted (elapsed %s)", time.Since(started).Truncate(time.Second))
+					log.Infof("Cleaning orphaned clabernetes resources (topologyOwner=%s)", name)
+					_ = kubeDeleteOrphanedClabernetesResources(ctx, ns, name)
+					return nil
+				}
 				if time.Since(started) >= 5*time.Minute {
 					return fmt.Errorf("clabernetes destroy timed out after %s", time.Since(started).Truncate(time.Second))
 				}

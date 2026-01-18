@@ -178,25 +178,27 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		topologyName = clabernetesTopologyName(labName)
 	}
 
-		if action == "destroy" {
-			clabSpec := clabernetesRunSpec{
-				TaskID:       spec.TaskID,
-				Action:       "destroy",
-				Namespace:    ns,
-				TopologyName: topologyName,
-				LabName:      labName,
-			}
-			if err := e.runClabernetesTask(ctx, clabSpec, log); err != nil {
-				return err
-			}
-			if err := kubeDeleteOrphanedClabernetesResources(ctx, ns, topologyName); err != nil {
-				return err
-			}
-			deleted, err := kubeDeleteConfigMapsByLabel(ctx, ns, map[string]string{
-				"skyforge-c9s-topology": topologyName,
-			})
-			if err != nil {
-				return err
+	if action == "destroy" {
+		clabSpec := clabernetesRunSpec{
+			TaskID:       spec.TaskID,
+			Action:       "destroy",
+			Namespace:    ns,
+			TopologyName: topologyName,
+			LabName:      labName,
+		}
+		if err := e.runClabernetesTask(ctx, clabSpec, log); err != nil {
+			return err
+		}
+		log.Infof("Cleaning orphaned c9s resources (topologyOwner=%s)", topologyName)
+		if err := kubeDeleteOrphanedClabernetesResources(ctx, ns, topologyName); err != nil {
+			return err
+		}
+		log.Infof("Orphaned c9s resources cleanup requested")
+		deleted, err := kubeDeleteConfigMapsByLabel(ctx, ns, map[string]string{
+			"skyforge-c9s-topology": topologyName,
+		})
+		if err != nil {
+			return err
 		}
 		if deleted > 0 {
 			log.Infof("C9s configmaps deleted: %d", deleted)
