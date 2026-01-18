@@ -154,6 +154,37 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 				},
 			},
 		}
+
+		if spec.TopologyYAML != "" {
+			sanitized, mapping, err := sanitizeContainerlabYAMLForClabernetes(spec.TopologyYAML)
+			if err != nil {
+				return err
+			}
+			if sanitized != "" {
+				spec.TopologyYAML = sanitized
+				payload["spec"].(map[string]any)["definition"].(map[string]any)["containerlab"] = spec.TopologyYAML
+			}
+			if len(mapping) > 0 && len(spec.FilesFromConfigMap) > 0 {
+				out := map[string][]c9sFileFromConfigMap{}
+				for node, mounts := range spec.FilesFromConfigMap {
+					newNode := strings.TrimSpace(node)
+					if mapped, ok := mapping[newNode]; ok {
+						newNode = mapped
+					}
+					if newNode == "" {
+						continue
+					}
+					for i := range mounts {
+						// Keep file paths consistent with sanitized node names.
+						for old, newName := range mapping {
+							mounts[i].FilePath = strings.ReplaceAll(mounts[i].FilePath, "/node_files/"+old+"/", "/node_files/"+newName+"/")
+						}
+					}
+					out[newNode] = mounts
+				}
+				spec.FilesFromConfigMap = out
+			}
+		}
 		if connectivity != "" {
 			payload["spec"].(map[string]any)["connectivity"] = connectivity
 		}

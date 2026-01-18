@@ -261,6 +261,34 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 		return nil, fmt.Errorf("clab.yml is empty")
 	}
 
+	// Sanitize node names to DNS-1035 labels so clabernetes can derive K8s resource names.
+	sanitizedYAML, mapping, err := sanitizeContainerlabYAMLForClabernetes(string(clabYAML))
+	if err != nil {
+		return nil, err
+	}
+	if sanitizedYAML != "" {
+		clabYAML = []byte(sanitizedYAML)
+	}
+	if len(mapping) > 0 && len(nodeMounts) > 0 {
+		out := map[string][]c9sFileFromConfigMap{}
+		for node, mounts := range nodeMounts {
+			newNode := strings.TrimSpace(node)
+			if mapped, ok := mapping[newNode]; ok {
+				newNode = mapped
+			}
+			if newNode == "" {
+				continue
+			}
+			for i := range mounts {
+				for old, newName := range mapping {
+					mounts[i].FilePath = strings.ReplaceAll(mounts[i].FilePath, "/node_files/"+old+"/", "/node_files/"+newName+"/")
+				}
+			}
+			out[newNode] = mounts
+		}
+		nodeMounts = out
+	}
+
 	var topo map[string]any
 	if err := yaml.Unmarshal(clabYAML, &topo); err != nil {
 		return nil, fmt.Errorf("failed to parse clab.yml: %w", err)
