@@ -351,6 +351,21 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 				if !ok || cfg == nil {
 					continue
 				}
+				// Some netlab-generated binds (notably /etc/hosts) point at a directory that is
+				// populated via filesFromConfigMap, where the actual file lives under
+				// `<mountRoot>/node_files/<rel>/<configMapPath>`.
+				filePathForMountDir := map[string]string{}
+				if nodeMounts != nil {
+					if mounts, ok := nodeMounts[nodeName]; ok {
+						for _, m := range mounts {
+							if strings.TrimSpace(m.FilePath) == "" || strings.TrimSpace(m.ConfigMapPath) == "" {
+								continue
+							}
+							filePathForMountDir[m.FilePath] = path.Join(m.FilePath, m.ConfigMapPath)
+						}
+					}
+				}
+
 				bindsAny, ok := cfg["binds"]
 				if !ok {
 					continue
@@ -375,6 +390,14 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 					hostPath = strings.TrimPrefix(hostPath, "./")
 					if strings.HasPrefix(hostPath, "node_files/") {
 						newHost := path.Join(mountRoot, hostPath)
+						// If the bind target is /etc/hosts, netlab expects the source to be a file,
+						// but filesFromConfigMap materializes the file under a directory named by
+						// the bind source. Rewrite to the materialized file path when possible.
+						if strings.HasPrefix(rest, "/etc/hosts") {
+							if fp, ok := filePathForMountDir[newHost]; ok && fp != "" {
+								newHost = fp
+							}
+						}
 						out = append(out, newHost+":"+rest)
 						continue
 					}
