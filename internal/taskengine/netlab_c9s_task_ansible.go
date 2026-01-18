@@ -55,20 +55,42 @@ func (e *Engine) runNetlabC9sAnsible(ctx context.Context, spec netlabC9sRunSpec,
 			return fmt.Errorf("netlab-c9s manifest has no nodes")
 		}
 
-		// Discover the pod IPs created by clabernetes for this topology.
-		pods, err := kubeListPods(ctx, ns, nil)
+		// Prefer stable service DNS names over pod IPs.
+		//
+		// clabernetes creates one per-node "expose" Service (type configurable, but always gets a
+		// stable ClusterIP) named "<topology>-<node>", where <node> must be a DNS-1035 label.
+		//
+		// netlab-generated node names can contain uppercase letters (L1/L2/etc); Skyforge sanitizes
+		// the containerlab YAML before creating the Topology, so we must apply the same mapping here.
+		nodeHosts := map[string]string{}
+		_, mapping, err := sanitizeContainerlabYAMLForClabernetes(manifest.ClabYAML)
 		if err != nil {
 			return err
 		}
-		nodeIPs, err := matchC9sNodeIPs(topologyName, nodeNames, pods)
-		if err != nil {
-			return err
+		for _, node := range nodeNames {
+			orig := strings.TrimSpace(node)
+			if orig == "" {
+				continue
+			}
+			sanitized := orig
+			if mapping != nil {
+				if v, ok := mapping[orig]; ok {
+					sanitized = v
+				}
+			}
+			// If the node name did not change, still ensure it's DNS-1035-safe.
+			sanitized = sanitizeDNS1035Label(sanitized)
+			svc := sanitizeDNS1035Label(fmt.Sprintf("%s-%s", topologyName, sanitized))
+			nodeHosts[orig] = fmt.Sprintf("%s.%s.svc", svc, ns)
 		}
-		nodeIPsJSON, _ := json.Marshal(nodeIPs)
+		if len(nodeHosts) == 0 {
+			return fmt.Errorf("failed to compute node host mapping for ansible")
+		}
+		nodeHostsJSON, _ := json.Marshal(nodeHosts)
 
 		// Provide the same flattened topology bundle used by the generator; the ansible runner
 		// re-runs `netlab create` to produce group_vars/host_vars and inventory, then patches
-		// ansible_host values to the in-cluster pod IPs.
+		// ansible_host values to the in-cluster service DNS names.
 		bundleB64, err := e.buildNetlabTopologyBundleB64(ctx, spec.WorkspaceCtx, spec.TemplateSource, spec.TemplateRepo, spec.TemplatesDir, spec.Template)
 		if err != nil {
 			return err
@@ -131,7 +153,7 @@ func (e *Engine) runNetlabC9sAnsible(ctx context.Context, spec netlabC9sRunSpec,
 									"SKYFORGE_C9S_NAMESPACE":          ns,
 									"SKYFORGE_C9S_TOPOLOGY_NAME":      topologyName,
 									"SKYFORGE_C9S_LAB_NAME":           strings.TrimSpace(labName),
-									"SKYFORGE_C9S_NODE_IPS_JSON":      string(nodeIPsJSON),
+									"SKYFORGE_C9S_NODE_IPS_JSON":      string(nodeHostsJSON),
 									"SKYFORGE_C9S_EXPECTED_NODE_LIST": strings.Join(nodeNames, ","),
 								}),
 								"volumeMounts": []map[string]any{
