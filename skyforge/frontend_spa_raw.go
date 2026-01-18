@@ -147,13 +147,6 @@ func (s *Service) FrontendDocs(w http.ResponseWriter, req *http.Request) {
 	s.serveFrontendSPA(w, req)
 }
 
-// FrontendRoot serves the SPA for top-level routes (/, /status, /notifications, etc).
-//
-//encore:api public raw method=GET path=/
-func (s *Service) FrontendRoot(w http.ResponseWriter, req *http.Request) {
-	s.serveFrontendSPA(w, req)
-}
-
 // FrontendStatus serves the SPA status page.
 //
 //encore:api public raw method=GET path=/status
