@@ -72,7 +72,10 @@ func initOIDCClient(cfg Config) (*OIDCClient, error) {
 	if discoveryURL != "" {
 		if base, err := url.Parse(providerURL); err == nil && base.Scheme == "http" && base.Host != "" {
 			if token, err := url.Parse(endpoint.TokenURL); err == nil && token.Path != "" {
-				base.Path = strings.TrimRight(base.Path, "/") + token.Path
+				// Use the discovery host/scheme, but keep the token endpoint path as
+				// advertised by the provider.
+				base.Path = token.Path
+				base.RawQuery = token.RawQuery
 				endpoint.TokenURL = base.String()
 			}
 		}
