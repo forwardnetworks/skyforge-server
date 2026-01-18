@@ -146,3 +146,31 @@ func (s *Service) FrontendSNMP(w http.ResponseWriter, req *http.Request) {
 func (s *Service) FrontendDocs(w http.ResponseWriter, req *http.Request) {
 	s.serveFrontendSPA(w, req)
 }
+
+// FrontendRoot serves the SPA for top-level routes (/, /status, /notifications, etc).
+//
+//encore:api public raw method=GET path=/
+func (s *Service) FrontendRoot(w http.ResponseWriter, req *http.Request) {
+	s.serveFrontendSPA(w, req)
+}
+
+// FrontendStatus serves the SPA status page.
+//
+//encore:api public raw method=GET path=/status
+func (s *Service) FrontendStatus(w http.ResponseWriter, req *http.Request) {
+	s.serveFrontendSPA(w, req)
+}
+
+// FrontendNotifications serves the SPA notifications page.
+//
+//encore:api public raw method=GET path=/notifications
+func (s *Service) FrontendNotifications(w http.ResponseWriter, req *http.Request) {
+	s.serveFrontendSPA(w, req)
+}
+
+// FrontendDesign serves the SPA design sandbox route.
+//
+//encore:api public raw method=GET path=/design
+func (s *Service) FrontendDesign(w http.ResponseWriter, req *http.Request) {
+	s.serveFrontendSPA(w, req)
+}
