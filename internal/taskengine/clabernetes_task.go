@@ -161,7 +161,8 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 					"containerlab": spec.TopologyYAML,
 				},
 				"imagePull": map[string]any{
-					"pullSecrets": []any{secretName},
+					"pullSecrets":  []any{secretName},
+					"dockerConfig": secretName + "-docker-config",
 				},
 			},
 		}

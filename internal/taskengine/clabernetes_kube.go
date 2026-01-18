@@ -117,6 +117,14 @@ func kubeEnsureNamespaceImagePullSecret(ctx context.Context, ns string) error {
 	if err := kubeCreateSecretIfMissing(ctx, ns, secret, map[string]string{"skyforge-managed": "true"}); err != nil {
 		return err
 	}
+
+	// clabernetes "classic" (non-native) mode uses a nested docker engine in the launcher pod, and
+	// docker needs a client config at /root/.docker/config.json to pull from private registries
+	// like GHCR. Create a companion secret with the expected key.
+	if _, err := kubeEnsureDockerConfigSecretFromPullSecret(ctx, ns, secretName, secret); err != nil {
+		return err
+	}
+
 	if err := kubeEnsureServiceAccountImagePullSecret(ctx, ns, "default", secretName); err != nil {
 		return err
 	}
@@ -125,6 +133,48 @@ func kubeEnsureNamespaceImagePullSecret(ctx context.Context, ns string) error {
 		return err
 	}
 	return nil
+}
+
+func kubeEnsureDockerConfigSecretFromPullSecret(ctx context.Context, ns, pullSecretName string, pullSecret map[string]any) (string, error) {
+	ns = strings.TrimSpace(ns)
+	pullSecretName = strings.TrimSpace(pullSecretName)
+	if ns == "" || pullSecretName == "" {
+		return "", fmt.Errorf("namespace and pull secret name are required")
+	}
+	if pullSecret == nil {
+		return "", fmt.Errorf("pull secret payload is required")
+	}
+
+	// K8s docker registry secrets store the docker config JSON under `.dockerconfigjson`.
+	data, _ := pullSecret["data"].(map[string]any)
+	raw := ""
+	if v, ok := data[".dockerconfigjson"].(string); ok {
+		raw = strings.TrimSpace(v)
+	}
+	if raw == "" {
+		return "", fmt.Errorf("pull secret %s has no .dockerconfigjson data", pullSecretName)
+	}
+
+	// Name kept stable so Skyforge can reference it in clabernetes Topology specs.
+	dockerConfigSecretName := pullSecretName + "-docker-config"
+
+	payload := map[string]any{
+		"apiVersion": "v1",
+		"kind":       "Secret",
+		"metadata": map[string]any{
+			"name":      dockerConfigSecretName,
+			"namespace": ns,
+		},
+		"type": "Opaque",
+		"data": map[string]any{
+			"config.json": raw,
+		},
+	}
+	if err := kubeCreateSecretIfMissing(ctx, ns, payload, map[string]string{"skyforge-managed": "true"}); err != nil {
+		return "", err
+	}
+
+	return dockerConfigSecretName, nil
 }
 
 func kubeGetSecret(ctx context.Context, ns, name string) (map[string]any, bool, error) {
