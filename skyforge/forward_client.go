@@ -207,6 +207,24 @@ func forwardCreateCollector(ctx context.Context, c *forwardClient, name string) 
 	return &out, nil
 }
 
+func forwardDeleteCollector(ctx context.Context, c *forwardClient, collectorIDOrName string) error {
+	collectorIDOrName = strings.TrimSpace(collectorIDOrName)
+	if collectorIDOrName == "" {
+		return nil
+	}
+	resp, body, err := c.doJSON(ctx, http.MethodDelete, "/api/collectors/"+url.PathEscape(collectorIDOrName), nil, nil)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("forward delete collector failed: %s", strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
 func forwardGetCollectorStatus(ctx context.Context, c *forwardClient, networkID string) (*forwardCollectorStatus, error) {
 	resp, body, err := c.doJSON(ctx, http.MethodGet, "/api/networks/"+url.PathEscape(strings.TrimSpace(networkID))+"/collector/status", nil, nil)
 	if err != nil {

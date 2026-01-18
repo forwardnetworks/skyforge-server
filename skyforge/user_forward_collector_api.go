@@ -29,12 +29,6 @@ type PutUserForwardCollectorRequest struct {
 	BaseURL        string `json:"baseUrl"`
 	Username       string `json:"username"`
 	Password       string `json:"password"`
-	DeviceUsername string `json:"deviceUsername,omitempty"`
-	DevicePassword string `json:"devicePassword,omitempty"`
-	JumpHost       string `json:"jumpHost,omitempty"`
-	JumpUsername   string `json:"jumpUsername,omitempty"`
-	JumpPrivateKey string `json:"jumpPrivateKey,omitempty"`
-	JumpCert       string `json:"jumpCert,omitempty"`
 }
 
 type userForwardCredentials struct {
@@ -44,12 +38,6 @@ type userForwardCredentials struct {
 	CollectorID       string
 	CollectorUsername string
 	AuthorizationKey  string
-	DeviceUsername    string
-	DevicePassword    string
-	JumpHost          string
-	JumpUsername      string
-	JumpPrivateKey    string
-	JumpCert          string
 	UpdatedAt         time.Time
 }
 
@@ -63,13 +51,9 @@ func getUserForwardCredentials(ctx context.Context, db *sql.DB, box *secretBox, 
 	}
 	var baseURL, forwardUser, forwardPass sql.NullString
 	var collectorID, collectorUser, authKey sql.NullString
-	var deviceUser, devicePass sql.NullString
-	var jumpHost, jumpUser, jumpKey, jumpCert sql.NullString
 	var updatedAt sql.NullTime
 	err := db.QueryRowContext(ctx, `SELECT base_url, forward_username, forward_password,
   COALESCE(collector_id, ''), COALESCE(collector_username, ''), COALESCE(authorization_key, ''),
-  COALESCE(device_username, ''), COALESCE(device_password, ''),
-  COALESCE(jump_host, ''), COALESCE(jump_username, ''), COALESCE(jump_private_key, ''), COALESCE(jump_cert, ''),
   updated_at
 FROM sf_user_forward_credentials WHERE username=$1`, username).Scan(
 		&baseURL,
@@ -78,12 +62,6 @@ FROM sf_user_forward_credentials WHERE username=$1`, username).Scan(
 		&collectorID,
 		&collectorUser,
 		&authKey,
-		&deviceUser,
-		&devicePass,
-		&jumpHost,
-		&jumpUser,
-		&jumpKey,
-		&jumpCert,
 		&updatedAt,
 	)
 	if err != nil {
@@ -116,30 +94,6 @@ FROM sf_user_forward_credentials WHERE username=$1`, username).Scan(
 	if err != nil {
 		return nil, err
 	}
-	deviceUserValue, err := box.decrypt(deviceUser.String)
-	if err != nil {
-		return nil, err
-	}
-	devicePassValue, err := box.decrypt(devicePass.String)
-	if err != nil {
-		return nil, err
-	}
-	jumpHostValue, err := box.decrypt(jumpHost.String)
-	if err != nil {
-		return nil, err
-	}
-	jumpUserValue, err := box.decrypt(jumpUser.String)
-	if err != nil {
-		return nil, err
-	}
-	jumpKeyValue, err := box.decrypt(jumpKey.String)
-	if err != nil {
-		return nil, err
-	}
-	jumpCertValue, err := box.decrypt(jumpCert.String)
-	if err != nil {
-		return nil, err
-	}
 
 	rec := &userForwardCredentials{
 		BaseURL:           strings.TrimSpace(baseURLValue),
@@ -148,12 +102,6 @@ FROM sf_user_forward_credentials WHERE username=$1`, username).Scan(
 		CollectorID:       strings.TrimSpace(collectorIDValue),
 		CollectorUsername: strings.TrimSpace(collectorUserValue),
 		AuthorizationKey:  strings.TrimSpace(authKeyValue),
-		DeviceUsername:    strings.TrimSpace(deviceUserValue),
-		DevicePassword:    strings.TrimSpace(devicePassValue),
-		JumpHost:          strings.TrimSpace(jumpHostValue),
-		JumpUsername:      strings.TrimSpace(jumpUserValue),
-		JumpPrivateKey:    strings.TrimSpace(jumpKeyValue),
-		JumpCert:          strings.TrimSpace(jumpCertValue),
 	}
 	if updatedAt.Valid {
 		rec.UpdatedAt = updatedAt.Time
@@ -202,37 +150,11 @@ func putUserForwardCredentials(ctx context.Context, db *sql.DB, box *secretBox, 
 	if err != nil {
 		return err
 	}
-	encDeviceUser, err := encryptIfPlain(box, rec.DeviceUsername)
-	if err != nil {
-		return err
-	}
-	encDevicePass, err := encryptIfPlain(box, rec.DevicePassword)
-	if err != nil {
-		return err
-	}
-	encJumpHost, err := encryptIfPlain(box, rec.JumpHost)
-	if err != nil {
-		return err
-	}
-	encJumpUser, err := encryptIfPlain(box, rec.JumpUsername)
-	if err != nil {
-		return err
-	}
-	encJumpKey, err := encryptIfPlain(box, rec.JumpPrivateKey)
-	if err != nil {
-		return err
-	}
-	encJumpCert, err := encryptIfPlain(box, rec.JumpCert)
-	if err != nil {
-		return err
-	}
 	_, err = db.ExecContext(ctx, `INSERT INTO sf_user_forward_credentials (
   username, base_url, forward_username, forward_password,
   collector_id, collector_username, authorization_key,
-  device_username, device_password,
-  jump_host, jump_username, jump_private_key, jump_cert,
   updated_at
-) VALUES ($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),NULLIF($12,''),NULLIF($13,''),now())
+) VALUES ($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),now())
 ON CONFLICT (username) DO UPDATE SET
   base_url=excluded.base_url,
   forward_username=excluded.forward_username,
@@ -240,12 +162,6 @@ ON CONFLICT (username) DO UPDATE SET
   collector_id=excluded.collector_id,
   collector_username=excluded.collector_username,
   authorization_key=excluded.authorization_key,
-  device_username=excluded.device_username,
-  device_password=excluded.device_password,
-  jump_host=excluded.jump_host,
-  jump_username=excluded.jump_username,
-  jump_private_key=excluded.jump_private_key,
-  jump_cert=excluded.jump_cert,
   updated_at=now()`,
 		username,
 		encBaseURL,
@@ -254,12 +170,6 @@ ON CONFLICT (username) DO UPDATE SET
 		encCollectorID,
 		encCollectorUser,
 		encAuthKey,
-		encDeviceUser,
-		encDevicePass,
-		encJumpHost,
-		encJumpUser,
-		encJumpKey,
-		encJumpCert,
 	)
 	return err
 }
@@ -338,8 +248,8 @@ func (s *Service) GetUserForwardCollector(ctx context.Context) (*UserForwardColl
 		CollectorUsername: rec.CollectorUsername,
 		AuthorizationKey:  rec.AuthorizationKey,
 		HasPassword:       rec.ForwardPassword != "",
-		HasJumpKey:        strings.TrimSpace(rec.JumpPrivateKey) != "",
-		HasJumpCert:       strings.TrimSpace(rec.JumpCert) != "",
+		HasJumpKey:        false,
+		HasJumpCert:       false,
 		UpdatedAt:         updatedAt,
 	}, nil
 }
@@ -365,12 +275,6 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 	}
 	forwardUser := strings.TrimSpace(req.Username)
 	forwardPass := strings.TrimSpace(req.Password)
-	deviceUser := strings.TrimSpace(req.DeviceUsername)
-	devicePass := strings.TrimSpace(req.DevicePassword)
-	jumpHost := strings.TrimSpace(req.JumpHost)
-	jumpUser := strings.TrimSpace(req.JumpUsername)
-	jumpKey := strings.TrimSpace(req.JumpPrivateKey)
-	jumpCert := strings.TrimSpace(req.JumpCert)
 
 	if forwardUser == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("username is required").Err()
@@ -390,17 +294,6 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 	}
 	if forwardPass == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("password is required").Err()
-	}
-	if current != nil {
-		if devicePass == "" {
-			devicePass = current.DevicePassword
-		}
-		if jumpKey == "" {
-			jumpKey = current.JumpPrivateKey
-		}
-		if jumpCert == "" {
-			jumpCert = current.JumpCert
-		}
 	}
 
 	cfg := forwardCredentials{
@@ -424,8 +317,21 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 		collectorUsername = strings.TrimSpace(current.CollectorUsername)
 		authKey = strings.TrimSpace(current.AuthorizationKey)
 	}
+	name := defaultCollectorNameForUser(user.Username)
 	if collectorID == "" || collectorUsername == "" || authKey == "" {
-		name := defaultCollectorNameForUser(user.Username)
+		collectors, err := forwardListCollectors(ctx, client)
+		if err != nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to list Forward collectors").Err()
+		}
+		for _, existing := range collectors {
+			if strings.EqualFold(strings.TrimSpace(existing.Name), name) {
+				// Best-effort delete so create can succeed and returns a fresh auth key.
+				if err := forwardDeleteCollector(ctx, client, strings.TrimSpace(existing.ID)); err != nil {
+					log.Printf("forward delete existing collector (%s): %v", existing.ID, err)
+				}
+				break
+			}
+		}
 		collector, err := forwardCreateCollector(ctx, client, name)
 		if err != nil {
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to create Forward collector").Err()
@@ -442,12 +348,6 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 		CollectorID:       collectorID,
 		CollectorUsername: collectorUsername,
 		AuthorizationKey:  authKey,
-		DeviceUsername:    deviceUser,
-		DevicePassword:    devicePass,
-		JumpHost:          jumpHost,
-		JumpUsername:      jumpUser,
-		JumpPrivateKey:    jumpKey,
-		JumpCert:          jumpCert,
 	}); err != nil {
 		log.Printf("user forward put: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to store Forward collector settings").Err()
@@ -461,8 +361,8 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 		CollectorUsername: collectorUsername,
 		AuthorizationKey:  authKey,
 		HasPassword:       true,
-		HasJumpKey:        jumpKey != "",
-		HasJumpCert:       jumpCert != "",
+		HasJumpKey:        false,
+		HasJumpCert:       false,
 		UpdatedAt:         time.Now().UTC().Format(time.RFC3339),
 	}, nil
 }
@@ -501,7 +401,19 @@ func (s *Service) ResetUserForwardCollector(ctx context.Context) (*UserForwardCo
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid Forward config").Err()
 	}
 
-	name := fmt.Sprintf("%s-reset-%s", defaultCollectorNameForUser(user.Username), time.Now().UTC().Format("20060102-150405"))
+	name := defaultCollectorNameForUser(user.Username)
+	collectors, err := forwardListCollectors(ctx, client)
+	if err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to list Forward collectors").Err()
+	}
+	for _, existing := range collectors {
+		if strings.EqualFold(strings.TrimSpace(existing.Name), name) {
+			if err := forwardDeleteCollector(ctx, client, strings.TrimSpace(existing.ID)); err != nil {
+				log.Printf("forward delete existing collector (%s): %v", existing.ID, err)
+			}
+			break
+		}
+	}
 	collector, err := forwardCreateCollector(ctx, client, name)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to create Forward collector").Err()
@@ -523,8 +435,8 @@ func (s *Service) ResetUserForwardCollector(ctx context.Context) (*UserForwardCo
 		CollectorUsername: strings.TrimSpace(current.CollectorUsername),
 		AuthorizationKey:  strings.TrimSpace(current.AuthorizationKey),
 		HasPassword:       true,
-		HasJumpKey:        strings.TrimSpace(current.JumpPrivateKey) != "",
-		HasJumpCert:       strings.TrimSpace(current.JumpCert) != "",
+		HasJumpKey:        false,
+		HasJumpCert:       false,
 		UpdatedAt:         time.Now().UTC().Format(time.RFC3339),
 	}, nil
 }
@@ -552,4 +464,3 @@ func (s *Service) ClearUserForwardCollector(ctx context.Context) (*UserForwardCo
 		HasPassword: false,
 	}, nil
 }
-
