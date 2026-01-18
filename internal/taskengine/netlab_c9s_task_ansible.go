@@ -27,6 +27,12 @@ func (e *Engine) runNetlabC9sAnsible(ctx context.Context, spec netlabC9sRunSpec,
 	}
 
 	return taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.ansible", func() error {
+		// The ansible runner image is pulled from GHCR; ensure the workspace namespace has the
+		// pull secret so the Job doesn't get stuck in ImagePullBackOff.
+		if err := kubeEnsureNamespaceImagePullSecret(ctx, ns); err != nil {
+			return err
+		}
+
 		manifestCM := sanitizeKubeNameFallback(fmt.Sprintf("c9s-%s-manifest", topologyName), "c9s-manifest")
 		data, ok, err := kubeGetConfigMap(ctx, ns, manifestCM)
 		if err != nil {

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path"
 	"strings"
 	"time"
@@ -86,6 +87,11 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 	if err := kubeEnsureNamespace(ctx, ns); err != nil {
 		return nil, nil, err
 	}
+	// The generator runs in the workspace namespace and pulls its image from GHCR.
+	// Ensure the image pull secret exists in the workspace namespace before creating the Job.
+	if err := kubeEnsureNamespaceImagePullSecret(ctx, ns); err != nil {
+		return nil, nil, err
+	}
 
 	labels := map[string]string{
 		"skyforge-c9s-topology": topologyName,
@@ -106,6 +112,14 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 	const roleName = "skyforge-netlab-generator"
 	const rbName = "skyforge-netlab-generator"
 	if err := kubeUpsertServiceAccount(ctx, ns, saName, labels); err != nil {
+		return nil, nil, err
+	}
+	// kubeUpsertServiceAccount doesn't include imagePullSecrets; ensure the generator SA can pull.
+	secretName := strings.TrimSpace(os.Getenv("SKYFORGE_IMAGE_PULL_SECRET_NAME"))
+	if secretName == "" {
+		secretName = "ghcr-pull"
+	}
+	if err := kubeEnsureServiceAccountImagePullSecret(ctx, ns, saName, secretName); err != nil {
 		return nil, nil, err
 	}
 	rules := []map[string]any{
