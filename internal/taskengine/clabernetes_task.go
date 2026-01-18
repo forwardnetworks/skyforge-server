@@ -137,7 +137,6 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		connectivity := strings.ToLower(envString(spec.Environment, "SKYFORGE_CLABERNETES_CONNECTIVITY"))
 		nativeMode := envBool(spec.Environment, "SKYFORGE_CLABERNETES_NATIVE_MODE", true)
 		hostNetwork := envBool(spec.Environment, "SKYFORGE_CLABERNETES_HOST_NETWORK", false)
-		forceNativeMode := envBool(spec.Environment, "SKYFORGE_CLABERNETES_FORCE_NATIVE_MODE", false)
 
 		payload := map[string]any{
 			"apiVersion": "clabernetes.containerlab.dev/v1alpha1",
@@ -188,16 +187,6 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		}
 		if connectivity != "" {
 			payload["spec"].(map[string]any)["connectivity"] = connectivity
-		}
-
-		// cEOS and other systemd-based NOS images can fail to boot as a "native" Kubernetes
-		// container depending on host kernel/cgroup configuration. The legacy (launcher-only)
-		// mode is more compatible because containerlab controls the container runtime details.
-		//
-		// If the topology contains cEOS nodes, default to legacy mode unless explicitly forced.
-		if nativeMode && !forceNativeMode && containerlabTopologyHasKind(spec.TopologyYAML, "ceos") {
-			log.Infof("Clabernetes: disabling native mode for cEOS nodes (set SKYFORGE_CLABERNETES_FORCE_NATIVE_MODE=true to override)")
-			nativeMode = false
 		}
 
 		deployment := map[string]any{

@@ -272,33 +272,5 @@ func sanitizeContainerlabYAMLForClabernetes(containerlabYAML string) (string, ma
 	return string(out), mapping, nil
 }
 
-func containerlabTopologyHasKind(containerlabYAML, kind string) bool {
-	containerlabYAML = strings.TrimSpace(containerlabYAML)
-	kind = strings.ToLower(strings.TrimSpace(kind))
-	if containerlabYAML == "" || kind == "" {
-		return false
-	}
-	var doc map[string]any
-	if err := yaml.Unmarshal([]byte(containerlabYAML), &doc); err != nil || doc == nil {
-		return false
-	}
-	topology, ok := doc["topology"].(map[string]any)
-	if !ok || topology == nil {
-		return false
-	}
-	nodes, ok := topology["nodes"].(map[string]any)
-	if !ok || nodes == nil || len(nodes) == 0 {
-		return false
-	}
-	for _, cfg := range nodes {
-		cfgMap, ok := cfg.(map[string]any)
-		if !ok || cfgMap == nil {
-			continue
-		}
-		nodeKind := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfgMap["kind"])))
-		if nodeKind == kind {
-			return true
-		}
-	}
-	return false
-}
+// containerlabTopologyHasKind is intentionally unused in Skyforge: prefer feature detection at the
+// clabernetes layer (where pod specs are rendered), not by forcing compatibility modes in Skyforge.
