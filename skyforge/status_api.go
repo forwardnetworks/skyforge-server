@@ -24,7 +24,9 @@ type StatusSummaryResponse struct {
 	Down      int                   `json:"down"`
 	Checks    []StatusCheckResponse `json:"checks,omitempty"`
 
-	WorkspacesTotal int `json:"workspacesTotal,omitempty"`
+	WorkspacesTotal   int `json:"workspacesTotal,omitempty"`
+	DeploymentsTotal  int `json:"deploymentsTotal,omitempty"`
+	DeploymentsActive int `json:"deploymentsActive,omitempty"`
 }
 
 func countWorkspaces(ctx context.Context, db *sql.DB) (int, error) {
@@ -36,6 +38,24 @@ func countWorkspaces(ctx context.Context, db *sql.DB) (int, error) {
 		return 0, err
 	}
 	return count, nil
+}
+
+func countDeployments(ctx context.Context, db *sql.DB) (total int, active int, err error) {
+	if db == nil {
+		return 0, 0, nil
+	}
+	// Active = 'running', 'active', 'healthy', 'succeeded', 'success', 'ready'
+	// (Note: 'created', 'stopped', 'failed', 'error', 'canceled' are not active)
+	err = db.QueryRowContext(ctx, `
+SELECT
+  COUNT(*) AS total,
+  COUNT(*) FILTER (WHERE lower(last_status) IN ('running', 'active', 'healthy', 'succeeded', 'success', 'ready')) AS active
+FROM sf_deployments
+`).Scan(&total, &active)
+	if err != nil {
+		return 0, 0, err
+	}
+	return total, active, nil
 }
 
 func taskQueueSummary(ctx context.Context, db *sql.DB) (queued int, running int, oldestQueuedAgeSeconds int, err error) {
@@ -141,6 +161,10 @@ func (s *Service) StatusSummary(ctx context.Context) (*StatusSummaryResponse, er
 
 	if total, err := countWorkspaces(ctx, s.db); err == nil {
 		resp.WorkspacesTotal = total
+	}
+	if total, active, err := countDeployments(ctx, s.db); err == nil {
+		resp.DeploymentsTotal = total
+		resp.DeploymentsActive = active
 	}
 
 	return resp, nil
