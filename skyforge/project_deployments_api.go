@@ -2389,8 +2389,8 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 }
 
 func (s *Service) touchDeploymentFromRun(ctx context.Context, workspaceID, deploymentID string, cfg JSONMap, run *WorkspaceRunResponse) (*WorkspaceDeployment, error) {
-	if s.db == nil {
-		return nil, fmt.Errorf("db unavailable")
+	if s == nil || s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 	taskWorkspaceID := 0
 	taskID := 0
@@ -2420,14 +2420,14 @@ func (s *Service) touchDeploymentFromRun(ctx context.Context, workspaceID, deplo
   updated_at=now()
 WHERE workspace_id=$5 AND id=$6`, cfgBytes, nullIfZeroInt(taskWorkspaceID), nullIfZeroInt(taskID), nullIfEmpty(status), workspaceID, deploymentID)
 	if err != nil {
-		return nil, err
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to update deployment").Err()
 	}
 	return s.getWorkspaceDeployment(ctx, workspaceID, deploymentID)
 }
 
 func (s *Service) updateDeploymentStatus(ctx context.Context, workspaceID, deploymentID string, status string, finishedAt *time.Time) error {
-	if s.db == nil {
-		return fmt.Errorf("db unavailable")
+	if s == nil || s.db == nil {
+		return errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
@@ -2471,7 +2471,7 @@ func nullIfZeroInt(v int) any {
 }
 
 func (s *Service) getWorkspaceDeployment(ctx context.Context, workspaceID, deploymentID string) (*WorkspaceDeployment, error) {
-	if s.db == nil {
+	if s == nil || s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
