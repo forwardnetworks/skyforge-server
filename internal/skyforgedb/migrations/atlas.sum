@@ -28,3 +28,4 @@ h1:O9AnubdV0Cr3EEq3ppUpYJSgLSlzp2vwk/8nc75Z5sA=
 20260116000100_task_priority.up.sql h1:bK+mnj/V9QdPImQhTZE8N9GXpSbtt1Tsa7sx9ZQcVgU=
 20260116000200_deployment_types.up.sql h1:TRaRsuEJokMoFK6qQ/s90tK/40tEb8y9ZMl29uNVo0U=
 20260116000300_ensure_legacy_workspace_id.up.sql h1:w4QAS4DNV7ulwQIMY675dKtbv94cR+q5L/Ckh40FOeE=
+20260118000200_user_forward_skip_tls_verify.up.sql h1:I16IhP4MzaoAsz3tcEMPt6gFCamotqgq7LznHzbX3K8=

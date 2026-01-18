@@ -1009,6 +1009,7 @@ func deleteWorkspaceAWSStaticCredentials(ctx context.Context, db *sql.DB, worksp
 
 type forwardCredentials struct {
 	BaseURL        string
+	SkipTLSVerify  bool
 	Username       string
 	Password       string
 	CollectorID    string

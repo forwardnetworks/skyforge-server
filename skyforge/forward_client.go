@@ -3,6 +3,7 @@ package skyforge
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -94,12 +95,18 @@ func newForwardClient(cfg forwardCredentials) (*forwardClient, error) {
 	if username == "" || password == "" {
 		return nil, fmt.Errorf("forward credentials are required")
 	}
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if cfg.SkipTLSVerify {
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
 	return &forwardClient{
 		baseURL:  baseURL,
 		username: username,
 		password: password,
 		client: &http.Client{
-			Timeout: 15 * time.Second,
+			Timeout:   15 * time.Second,
+			Transport: transport,
 		},
 	}, nil
 }

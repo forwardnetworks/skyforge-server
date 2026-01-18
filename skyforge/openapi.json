@@ -3565,6 +3565,9 @@
                     "runtime": {
                       "$ref": "#/components/schemas/skyforge.collectorRuntimeStatus"
                     },
+                    "skipTlsVerify": {
+                      "type": "boolean"
+                    },
                     "updatedAt": {
                       "type": "string"
                     },
@@ -3575,6 +3578,7 @@
                   "required": [
                     "configured",
                     "baseUrl",
+                    "skipTlsVerify",
                     "username",
                     "collectorId",
                     "collectorUsername",
@@ -3632,6 +3636,9 @@
                     "runtime": {
                       "$ref": "#/components/schemas/skyforge.collectorRuntimeStatus"
                     },
+                    "skipTlsVerify": {
+                      "type": "boolean"
+                    },
                     "updatedAt": {
                       "type": "string"
                     },
@@ -3642,6 +3649,7 @@
                   "required": [
                     "configured",
                     "baseUrl",
+                    "skipTlsVerify",
                     "username",
                     "collectorId",
                     "collectorUsername",
@@ -3677,12 +3685,16 @@
                   "password": {
                     "type": "string"
                   },
+                  "skipTlsVerify": {
+                    "type": "boolean"
+                  },
                   "username": {
                     "type": "string"
                   }
                 },
                 "required": [
                   "baseUrl",
+                  "skipTlsVerify",
                   "username",
                   "password"
                 ],
@@ -3724,6 +3736,9 @@
                     "runtime": {
                       "$ref": "#/components/schemas/skyforge.collectorRuntimeStatus"
                     },
+                    "skipTlsVerify": {
+                      "type": "boolean"
+                    },
                     "updatedAt": {
                       "type": "string"
                     },
@@ -3734,6 +3749,7 @@
                   "required": [
                     "configured",
                     "baseUrl",
+                    "skipTlsVerify",
                     "username",
                     "collectorId",
                     "collectorUsername",
@@ -3794,6 +3810,9 @@
                     "runtime": {
                       "$ref": "#/components/schemas/skyforge.collectorRuntimeStatus"
                     },
+                    "skipTlsVerify": {
+                      "type": "boolean"
+                    },
                     "updatedAt": {
                       "type": "string"
                     },
@@ -3804,6 +3823,7 @@
                   "required": [
                     "configured",
                     "baseUrl",
+                    "skipTlsVerify",
                     "username",
                     "collectorId",
                     "collectorUsername",

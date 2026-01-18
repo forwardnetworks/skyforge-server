@@ -13,27 +13,30 @@ import (
 )
 
 type UserForwardCollectorResponse struct {
-	Configured        bool   `json:"configured"`
-	BaseURL           string `json:"baseUrl"`
-	Username          string `json:"username,omitempty"`
-	CollectorID       string `json:"collectorId,omitempty"`
-	CollectorUsername string `json:"collectorUsername,omitempty"`
-	AuthorizationKey  string `json:"authorizationKey,omitempty"`
+	Configured        bool                    `json:"configured"`
+	BaseURL           string                  `json:"baseUrl"`
+	SkipTLSVerify     bool                    `json:"skipTlsVerify"`
+	Username          string                  `json:"username,omitempty"`
+	CollectorID       string                  `json:"collectorId,omitempty"`
+	CollectorUsername string                  `json:"collectorUsername,omitempty"`
+	AuthorizationKey  string                  `json:"authorizationKey,omitempty"`
 	Runtime           *collectorRuntimeStatus `json:"runtime,omitempty"`
-	HasPassword       bool   `json:"hasPassword"`
-	HasJumpKey        bool   `json:"hasJumpPrivateKey"`
-	HasJumpCert       bool   `json:"hasJumpCert"`
-	UpdatedAt         string `json:"updatedAt,omitempty"`
+	HasPassword       bool                    `json:"hasPassword"`
+	HasJumpKey        bool                    `json:"hasJumpPrivateKey"`
+	HasJumpCert       bool                    `json:"hasJumpCert"`
+	UpdatedAt         string                  `json:"updatedAt,omitempty"`
 }
 
 type PutUserForwardCollectorRequest struct {
-	BaseURL        string `json:"baseUrl"`
-	Username       string `json:"username"`
-	Password       string `json:"password"`
+	BaseURL       string `json:"baseUrl"`
+	SkipTLSVerify bool   `json:"skipTlsVerify"`
+	Username      string `json:"username"`
+	Password      string `json:"password"`
 }
 
 type userForwardCredentials struct {
 	BaseURL           string
+	SkipTLSVerify     bool
 	ForwardUsername   string
 	ForwardPassword   string
 	CollectorID       string
@@ -52,9 +55,11 @@ func getUserForwardCredentials(ctx context.Context, db *sql.DB, box *secretBox, 
 	}
 	var baseURL, forwardUser, forwardPass sql.NullString
 	var collectorID, collectorUser, authKey sql.NullString
+	var skipTLSVerify sql.NullBool
 	var updatedAt sql.NullTime
 	err := db.QueryRowContext(ctx, `SELECT base_url, forward_username, forward_password,
   COALESCE(collector_id, ''), COALESCE(collector_username, ''), COALESCE(authorization_key, ''),
+  COALESCE(skip_tls_verify, false),
   updated_at
 FROM sf_user_forward_credentials WHERE username=$1`, username).Scan(
 		&baseURL,
@@ -63,6 +68,7 @@ FROM sf_user_forward_credentials WHERE username=$1`, username).Scan(
 		&collectorID,
 		&collectorUser,
 		&authKey,
+		&skipTLSVerify,
 		&updatedAt,
 	)
 	if err != nil {
@@ -98,6 +104,7 @@ FROM sf_user_forward_credentials WHERE username=$1`, username).Scan(
 
 	rec := &userForwardCredentials{
 		BaseURL:           strings.TrimSpace(baseURLValue),
+		SkipTLSVerify:     skipTLSVerify.Valid && skipTLSVerify.Bool,
 		ForwardUsername:   strings.TrimSpace(forwardUserValue),
 		ForwardPassword:   strings.TrimSpace(forwardPassValue),
 		CollectorID:       strings.TrimSpace(collectorIDValue),
@@ -153,13 +160,15 @@ func putUserForwardCredentials(ctx context.Context, db *sql.DB, box *secretBox, 
 	}
 	_, err = db.ExecContext(ctx, `INSERT INTO sf_user_forward_credentials (
   username, base_url, forward_username, forward_password,
+  skip_tls_verify,
   collector_id, collector_username, authorization_key,
   updated_at
-) VALUES ($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),now())
+) VALUES ($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),now())
 ON CONFLICT (username) DO UPDATE SET
   base_url=excluded.base_url,
   forward_username=excluded.forward_username,
   forward_password=excluded.forward_password,
+  skip_tls_verify=excluded.skip_tls_verify,
   collector_id=excluded.collector_id,
   collector_username=excluded.collector_username,
   authorization_key=excluded.authorization_key,
@@ -168,6 +177,7 @@ ON CONFLICT (username) DO UPDATE SET
 		encBaseURL,
 		encFwdUser,
 		encFwdPass,
+		rec.SkipTLSVerify,
 		encCollectorID,
 		encCollectorUser,
 		encAuthKey,
@@ -226,12 +236,13 @@ func (s *Service) GetUserForwardCollector(ctx context.Context) (*UserForwardColl
 	}
 	if rec == nil {
 		return &UserForwardCollectorResponse{
-			Configured:  false,
-			BaseURL:     defaultForwardBaseURL,
-			Runtime:     nil,
-			HasPassword: false,
-			HasJumpKey:  false,
-			HasJumpCert: false,
+			Configured:    false,
+			BaseURL:       defaultForwardBaseURL,
+			SkipTLSVerify: false,
+			Runtime:       nil,
+			HasPassword:   false,
+			HasJumpKey:    false,
+			HasJumpCert:   false,
 		}, nil
 	}
 	updatedAt := ""
@@ -253,6 +264,7 @@ func (s *Service) GetUserForwardCollector(ctx context.Context) (*UserForwardColl
 	return &UserForwardCollectorResponse{
 		Configured:        baseURL != "" && rec.ForwardUsername != "" && rec.ForwardPassword != "",
 		BaseURL:           baseURL,
+		SkipTLSVerify:     rec.SkipTLSVerify,
 		Username:          rec.ForwardUsername,
 		CollectorID:       rec.CollectorID,
 		CollectorUsername: rec.CollectorUsername,
@@ -284,6 +296,7 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 	if baseURL == "" {
 		baseURL = defaultForwardBaseURL
 	}
+	skipTLSVerify := req.SkipTLSVerify
 	forwardUser := strings.TrimSpace(req.Username)
 	forwardPass := strings.TrimSpace(req.Password)
 
@@ -308,9 +321,10 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 	}
 
 	cfg := forwardCredentials{
-		BaseURL:  baseURL,
-		Username: forwardUser,
-		Password: forwardPass,
+		BaseURL:       baseURL,
+		SkipTLSVerify: skipTLSVerify,
+		Username:      forwardUser,
+		Password:      forwardPass,
 	}
 	client, err := newForwardClient(cfg)
 	if err != nil {
@@ -354,6 +368,7 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 
 	if err := putUserForwardCredentials(ctx, s.db, box, user.Username, userForwardCredentials{
 		BaseURL:           baseURL,
+		SkipTLSVerify:     skipTLSVerify,
 		ForwardUsername:   forwardUser,
 		ForwardPassword:   forwardPass,
 		CollectorID:       collectorID,
@@ -378,6 +393,7 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 	return &UserForwardCollectorResponse{
 		Configured:        true,
 		BaseURL:           baseURL,
+		SkipTLSVerify:     skipTLSVerify,
 		Username:          forwardUser,
 		CollectorID:       collectorID,
 		CollectorUsername: collectorUsername,
@@ -416,9 +432,10 @@ func (s *Service) ResetUserForwardCollector(ctx context.Context) (*UserForwardCo
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward credentials required").Err()
 	}
 	client, err := newForwardClient(forwardCredentials{
-		BaseURL:  current.BaseURL,
-		Username: current.ForwardUsername,
-		Password: current.ForwardPassword,
+		BaseURL:       current.BaseURL,
+		SkipTLSVerify: current.SkipTLSVerify,
+		Username:      current.ForwardUsername,
+		Password:      current.ForwardPassword,
 	})
 	if err != nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid Forward config").Err()
@@ -464,6 +481,7 @@ func (s *Service) ResetUserForwardCollector(ctx context.Context) (*UserForwardCo
 	return &UserForwardCollectorResponse{
 		Configured:        true,
 		BaseURL:           strings.TrimSpace(current.BaseURL),
+		SkipTLSVerify:     current.SkipTLSVerify,
 		Username:          strings.TrimSpace(current.ForwardUsername),
 		CollectorID:       strings.TrimSpace(current.CollectorID),
 		CollectorUsername: strings.TrimSpace(current.CollectorUsername),
