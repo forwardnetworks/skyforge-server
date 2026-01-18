@@ -138,6 +138,7 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		connectivity := strings.ToLower(envString(spec.Environment, "SKYFORGE_CLABERNETES_CONNECTIVITY"))
 		nativeMode := envBool(spec.Environment, "SKYFORGE_CLABERNETES_NATIVE_MODE", true)
 		hostNetwork := envBool(spec.Environment, "SKYFORGE_CLABERNETES_HOST_NETWORK", false)
+		forceNativeMode := envBool(spec.Environment, "SKYFORGE_CLABERNETES_FORCE_NATIVE_MODE", false)
 		// Ensure clabernetes launcher pods can pull private images (launcher/NOS) by wiring the
 		// namespace pull secret into the topology service account via spec.imagePull.pullSecrets.
 		secretName := strings.TrimSpace(os.Getenv("SKYFORGE_IMAGE_PULL_SECRET_NAME"))
@@ -197,6 +198,14 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		}
 		if connectivity != "" {
 			payload["spec"].(map[string]any)["connectivity"] = connectivity
+		}
+
+		// Arista cEOS (and some other systemd-based NOS images) do not reliably boot as a "native"
+		// Kubernetes container on all kernels/cgroup setups. The launcher-based mode (nativeMode=false)
+		// is more compatible because containerlab controls the container runtime details.
+		if nativeMode && !forceNativeMode && containerlabTopologyHasKind(spec.TopologyYAML, "ceos") {
+			log.Infof("Clabernetes: disabling native mode for cEOS nodes (set SKYFORGE_CLABERNETES_FORCE_NATIVE_MODE=true to override)")
+			nativeMode = false
 		}
 
 		deployment := map[string]any{
