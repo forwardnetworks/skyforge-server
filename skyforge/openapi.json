@@ -1471,6 +1471,56 @@
         ],
         "type": "object"
       },
+      "skyforge.TopologyEdge": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "target",
+          "label"
+        ],
+        "type": "object"
+      },
+      "skyforge.TopologyNode": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "mgmtIp": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "kind",
+          "mgmtIp",
+          "status"
+        ],
+        "type": "object"
+      },
       "skyforge.UserProfile": {
         "properties": {
           "actorUsername": {
@@ -1702,6 +1752,41 @@
         ],
         "type": "object"
       },
+      "skyforge.collectorRuntimeStatus": {
+        "properties": {
+          "deploymentName": {
+            "type": "string"
+          },
+          "logsCommandHint": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "podName": {
+            "type": "string"
+          },
+          "podPhase": {
+            "type": "string"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "startTime": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "namespace",
+          "deploymentName",
+          "podName",
+          "podPhase",
+          "ready",
+          "startTime",
+          "logsCommandHint"
+        ],
+        "type": "object"
+      },
       "skyforge.storageObjectSummary": {
         "properties": {
           "contentType": {
@@ -1773,6 +1858,33 @@
   },
   "openapi": "3.0.0",
   "paths": {
+    "/admin/{path}": {
+      "get": {
+        "operationId": "GET:skyforge.FrontendAdmin",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "FrontendAdmin serves the SPA for admin routes.\n"
+      }
+    },
     "/api/admin/audit": {
       "get": {
         "operationId": "GET:skyforge.GetAdminAudit",
@@ -3415,6 +3527,333 @@
           }
         },
         "summary": "GetEveStats returns basic EVE-NG server stats for the status dashboard.\n"
+      }
+    },
+    "/api/forward/collector": {
+      "delete": {
+        "operationId": "DELETE:skyforge.ClearUserForwardCollector",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "authorizationKey": {
+                      "type": "string"
+                    },
+                    "baseUrl": {
+                      "type": "string"
+                    },
+                    "collectorId": {
+                      "type": "string"
+                    },
+                    "collectorUsername": {
+                      "type": "string"
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "hasJumpCert": {
+                      "type": "boolean"
+                    },
+                    "hasJumpPrivateKey": {
+                      "type": "boolean"
+                    },
+                    "hasPassword": {
+                      "type": "boolean"
+                    },
+                    "runtime": {
+                      "$ref": "#/components/schemas/skyforge.collectorRuntimeStatus"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "username": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "configured",
+                    "baseUrl",
+                    "username",
+                    "collectorId",
+                    "collectorUsername",
+                    "authorizationKey",
+                    "runtime",
+                    "hasPassword",
+                    "hasJumpPrivateKey",
+                    "hasJumpCert",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ClearUserForwardCollector deletes the stored user Forward collector settings.\n"
+      },
+      "get": {
+        "operationId": "GET:skyforge.GetUserForwardCollector",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "authorizationKey": {
+                      "type": "string"
+                    },
+                    "baseUrl": {
+                      "type": "string"
+                    },
+                    "collectorId": {
+                      "type": "string"
+                    },
+                    "collectorUsername": {
+                      "type": "string"
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "hasJumpCert": {
+                      "type": "boolean"
+                    },
+                    "hasJumpPrivateKey": {
+                      "type": "boolean"
+                    },
+                    "hasPassword": {
+                      "type": "boolean"
+                    },
+                    "runtime": {
+                      "$ref": "#/components/schemas/skyforge.collectorRuntimeStatus"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "username": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "configured",
+                    "baseUrl",
+                    "username",
+                    "collectorId",
+                    "collectorUsername",
+                    "authorizationKey",
+                    "runtime",
+                    "hasPassword",
+                    "hasJumpPrivateKey",
+                    "hasJumpCert",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetUserForwardCollector returns the authenticated user's Forward collector\nsettings.\n"
+      },
+      "put": {
+        "operationId": "PUT:skyforge.PutUserForwardCollector",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "baseUrl": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  },
+                  "username": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "baseUrl",
+                  "username",
+                  "password"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "authorizationKey": {
+                      "type": "string"
+                    },
+                    "baseUrl": {
+                      "type": "string"
+                    },
+                    "collectorId": {
+                      "type": "string"
+                    },
+                    "collectorUsername": {
+                      "type": "string"
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "hasJumpCert": {
+                      "type": "boolean"
+                    },
+                    "hasJumpPrivateKey": {
+                      "type": "boolean"
+                    },
+                    "hasPassword": {
+                      "type": "boolean"
+                    },
+                    "runtime": {
+                      "$ref": "#/components/schemas/skyforge.collectorRuntimeStatus"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "username": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "configured",
+                    "baseUrl",
+                    "username",
+                    "collectorId",
+                    "collectorUsername",
+                    "authorizationKey",
+                    "runtime",
+                    "hasPassword",
+                    "hasJumpPrivateKey",
+                    "hasJumpCert",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "PutUserForwardCollector stores Forward credentials and ensures a per-user\ncollector exists.\n"
+      }
+    },
+    "/api/forward/collector/reset": {
+      "post": {
+        "description": "NOTE: This does not delete any existing collector in Forward; it only updates the Skyforge profile.\n",
+        "operationId": "POST:skyforge.ResetUserForwardCollector",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "authorizationKey": {
+                      "type": "string"
+                    },
+                    "baseUrl": {
+                      "type": "string"
+                    },
+                    "collectorId": {
+                      "type": "string"
+                    },
+                    "collectorUsername": {
+                      "type": "string"
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "hasJumpCert": {
+                      "type": "boolean"
+                    },
+                    "hasJumpPrivateKey": {
+                      "type": "boolean"
+                    },
+                    "hasPassword": {
+                      "type": "boolean"
+                    },
+                    "runtime": {
+                      "$ref": "#/components/schemas/skyforge.collectorRuntimeStatus"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "username": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "configured",
+                    "baseUrl",
+                    "username",
+                    "collectorId",
+                    "collectorUsername",
+                    "authorizationKey",
+                    "runtime",
+                    "hasPassword",
+                    "hasJumpPrivateKey",
+                    "hasJumpCert",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ResetUserForwardCollector rotates the user's Forward collector by creating a new\none and storing its authorization key.\n"
+      }
+    },
+    "/api/forward/collector/runtime": {
+      "get": {
+        "operationId": "GET:skyforge.GetUserCollectorRuntime",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "runtime": {
+                      "$ref": "#/components/schemas/skyforge.collectorRuntimeStatus"
+                    }
+                  },
+                  "required": [
+                    "runtime"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetUserCollectorRuntime returns the in-cluster runtime status for the user's\ncollector.\n"
       }
     },
     "/api/gcp/console": {
@@ -8460,6 +8899,82 @@
         "summary": "StopWorkspaceDeployment attempts to stop the most recent task for this\ndeployment.\n"
       }
     },
+    "/api/workspaces/{id}/deployments/{deploymentID}/topology": {
+      "get": {
+        "description": "For containerlab, the topology is sourced from the containerlab API after deploy so we can reflect the resolved management IPs.\n",
+        "operationId": "GET:skyforge.GetWorkspaceDeploymentTopology",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "deploymentID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "artifactKey": {
+                      "type": "string"
+                    },
+                    "edges": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.TopologyEdge"
+                      },
+                      "type": "array"
+                    },
+                    "generatedAt": {
+                      "type": "string"
+                    },
+                    "nodes": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.TopologyNode"
+                      },
+                      "type": "array"
+                    },
+                    "source": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "generatedAt",
+                    "source",
+                    "nodes",
+                    "edges",
+                    "artifactKey"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspaceDeploymentTopology returns a lightweight, provider-derived topology\nview.\n"
+      }
+    },
     "/api/workspaces/{id}/eve": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceEve",
@@ -10520,7 +11035,13 @@
                     "branch": {
                       "type": "string"
                     },
+                    "cached": {
+                      "type": "boolean"
+                    },
                     "dir": {
+                      "type": "string"
+                    },
+                    "headSha": {
                       "type": "string"
                     },
                     "repo": {
@@ -10532,6 +11053,9 @@
                       },
                       "type": "array"
                     },
+                    "updatedAt": {
+                      "type": "string"
+                    },
                     "workspaceId": {
                       "type": "string"
                     }
@@ -10541,7 +11065,10 @@
                     "repo",
                     "branch",
                     "dir",
-                    "templates"
+                    "templates",
+                    "headSha",
+                    "cached",
+                    "updatedAt"
                   ],
                   "type": "object"
                 }
@@ -10878,7 +11405,7 @@
               "schema": {
                 "properties": {
                   "action": {
-                    "title": "up, create, restart, collect, status, down, clab-tarball\n",
+                    "title": "up, create, restart, collect, status, down\n",
                     "type": "string"
                   },
                   "clabCleanup": {
@@ -10933,6 +11460,14 @@
                   "templatesDir": {
                     "title": "repo-relative directory (default: blueprints/netlab)\n",
                     "type": "string"
+                  },
+                  "topologyPath": {
+                    "title": "remote workdir-relative (or absolute) topology file\n",
+                    "type": "string"
+                  },
+                  "topologyUrl": {
+                    "title": "remote URL (only if netlab supports it)\n",
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -10946,6 +11481,8 @@
                   "netlabWorkspaceDir",
                   "netlabMultilabId",
                   "netlabDeployment",
+                  "topologyPath",
+                  "topologyUrl",
                   "templateSource",
                   "templateRepo",
                   "templatesDir",
@@ -11735,6 +12272,33 @@
         "summary": "YaadeSSO performs a one-time login against Yaade using the shared admin account\n"
       }
     },
+    "/assets/skyforge/{path}": {
+      "get": {
+        "operationId": "GET:skyforge.FrontendAssets",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "FrontendAssets serves hashed frontend assets built by Vite.\n"
+      }
+    },
     "/auth/login": {
       "post": {
         "operationId": "POST:skyforge.AuthLogin",
@@ -11912,6 +12476,33 @@
         }
       }
     },
+    "/dashboard/{path}": {
+      "get": {
+        "operationId": "GET:skyforge.FrontendDashboard",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "FrontendDashboard serves the SPA for dashboard routes.\n"
+      }
+    },
     "/data/platform-health.json": {
       "get": {
         "operationId": "GET:skyforge.PlatformHealth",
@@ -11924,6 +12515,47 @@
           }
         },
         "summary": "PlatformHealth serves the platform health payload.\n"
+      }
+    },
+    "/design": {
+      "get": {
+        "operationId": "GET:skyforge.FrontendDesign",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "FrontendDesign serves the SPA design sandbox route.\n"
+      }
+    },
+    "/docs/{path}": {
+      "get": {
+        "operationId": "GET:skyforge.FrontendDocs",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "FrontendDocs serves embedded UI docs pages.\n"
       }
     },
     "/health": {
@@ -12010,6 +12642,20 @@
           }
         },
         "summary": "WebhookIngestAny receives webhook events via tokenized URLs.\n"
+      }
+    },
+    "/index.html": {
+      "get": {
+        "operationId": "GET:skyforge.FrontendIndex",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "FrontendIndex serves the SPA entrypoint.\n"
       }
     },
     "/ingest/metrics/node": {
@@ -12255,47 +12901,6 @@
         "summary": "InternalRunMaintenance executes a maintenance job by kind.\n"
       }
     },
-    "/internal/tasks/notify": {
-      "post": {
-        "description": "\\- create user notifications - update deployment status fields - trigger pg\\_notify updates so SSE streams refresh quickly\n\nTask status updates in sf\\_tasks are handled by the worker.\n",
-        "operationId": "POST:skyforge.InternalNotifyTaskStatus",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "error": {
-                    "type": "string"
-                  },
-                  "status": {
-                    "type": "string"
-                  },
-                  "taskId": {
-                    "format": "int64",
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "taskId",
-                  "status",
-                  "error"
-                ],
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "InternalNotifyTaskStatus performs best-effort side effects for a task status\ntransition:\n"
-      }
-    },
     "/internal/worker/heartbeat": {
       "post": {
         "description": "This is used to detect whether any worker pods are alive when tasks are queued.\n",
@@ -12380,7 +12985,115 @@
         "summary": "LabsRedirectAny handles subpaths under /labs.\n"
       }
     },
+    "/logout": {
+      "get": {
+        "operationId": "GET:skyforge.LogoutAll",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "LogoutAll clears the Skyforge cookie and redirects to the landing page (used for\nmanual \"reset\").\n"
+      }
+    },
+    "/nautobot/logout": {
+      "get": {
+        "operationId": "GET:skyforge.NautobotLogout",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "NautobotLogout clears the Skyforge session cookie and redirects to the Skyforge\nlanding page.\n"
+      }
+    },
+    "/nautobot/logout/{rest}": {
+      "get": {
+        "operationId": "GET:skyforge.NautobotLogoutAny",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "rest",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "NautobotLogoutAny handles `/nautobot/logout/*` (including a trailing slash).\n"
+      }
+    },
+    "/netbox/logout": {
+      "get": {
+        "operationId": "GET:skyforge.NetboxLogout",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "NetboxLogout clears the Skyforge session cookie and redirects to the Skyforge\nlanding page.\n"
+      }
+    },
+    "/netbox/logout/{rest}": {
+      "get": {
+        "operationId": "GET:skyforge.NetboxLogoutAny",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "rest",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "NetboxLogoutAny handles `/netbox/logout/*` (including a trailing slash).\n"
+      }
+    },
     "/notifications": {
+      "get": {
+        "operationId": "GET:skyforge.FrontendNotifications",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "FrontendNotifications serves the SPA notifications page.\n"
+      },
       "post": {
         "operationId": "POST:skyforge.CreateNotification",
         "requestBody": {
@@ -12645,6 +13358,47 @@
         "summary": "MarkNotificationAsRead marks a notification as read.\n"
       }
     },
+    "/snmp/{path}": {
+      "get": {
+        "operationId": "GET:skyforge.FrontendSNMP",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "FrontendSNMP serves the SPA for SNMP routes.\n"
+      }
+    },
+    "/status": {
+      "get": {
+        "operationId": "GET:skyforge.FrontendStatus",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "FrontendStatus serves the SPA status page.\n"
+      }
+    },
     "/status/summary": {
       "get": {
         "description": "This is designed for an unauthenticated landing page and must not leak user/workspace identifiers.\n",
@@ -12660,6 +13414,14 @@
                         "$ref": "#/components/schemas/skyforge.StatusCheckResponse"
                       },
                       "type": "array"
+                    },
+                    "deploymentsActive": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "deploymentsTotal": {
+                      "format": "int64",
+                      "type": "integer"
                     },
                     "down": {
                       "format": "int64",
@@ -12687,7 +13449,9 @@
                     "up",
                     "down",
                     "checks",
-                    "workspacesTotal"
+                    "workspacesTotal",
+                    "deploymentsTotal",
+                    "deploymentsActive"
                   ],
                   "type": "object"
                 }
@@ -13035,6 +13799,33 @@
         "summary": "SwaggerOpenAPI serves the OpenAPI schema.\n"
       }
     },
+    "/syslog/{path}": {
+      "get": {
+        "operationId": "GET:skyforge.FrontendSyslog",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "FrontendSyslog serves the SPA for syslog routes.\n"
+      }
+    },
     "/system/settings/notifications": {
       "get": {
         "operationId": "GET:skyforge.GetNotificationSettings",
@@ -13265,6 +14056,20 @@
           }
         },
         "summary": "Version reports the running server version info.\n"
+      }
+    },
+    "/webhooks": {
+      "get": {
+        "operationId": "GET:skyforge.FrontendWebhooks",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "FrontendWebhooks serves the SPA for the webhook inbox UI route.\n"
       }
     }
   },
