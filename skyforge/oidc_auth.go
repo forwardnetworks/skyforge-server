@@ -175,6 +175,7 @@ func (s *Service) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 
 	idToken, err := s.oidc.verifier.Verify(ctx, rawIDToken)
 	if err != nil {
+		rlog.Error("invalid id token", "error", err)
 		http.Error(w, "invalid id token", http.StatusUnauthorized)
 		return
 	}
