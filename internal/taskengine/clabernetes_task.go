@@ -73,6 +73,21 @@ type clabernetesRunSpec struct {
 	FilesFromConfigMap map[string][]c9sFileFromConfigMap
 }
 
+func normalizeClabernetesExposeType(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "":
+		return ""
+	case "none":
+		return "None"
+	case "clusterip", "cluster-ip":
+		return "ClusterIP"
+	case "loadbalancer", "load-balancer":
+		return "LoadBalancer"
+	default:
+		return ""
+	}
+}
+
 func (e *Engine) dispatchClabernetesTask(ctx context.Context, task *taskstore.TaskRecord, log Logger) error {
 	if task == nil {
 		return nil
@@ -139,6 +154,17 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		nativeMode := envBool(spec.Environment, "SKYFORGE_CLABERNETES_NATIVE_MODE", true)
 		hostNetwork := envBool(spec.Environment, "SKYFORGE_CLABERNETES_HOST_NETWORK", false)
 		forceNativeMode := envBool(spec.Environment, "SKYFORGE_CLABERNETES_FORCE_NATIVE_MODE", false)
+		disableExpose := envBool(spec.Environment, "SKYFORGE_CLABERNETES_DISABLE_EXPOSE", false)
+		disableAutoExpose := envBool(spec.Environment, "SKYFORGE_CLABERNETES_DISABLE_AUTO_EXPOSE", true)
+
+		// Default away from LoadBalancer to avoid klipper-lb hostPort conflicts (80/443) that can
+		// prevent ingress/traefik from scheduling.
+		exposeType := normalizeClabernetesExposeType(envString(spec.Environment, "SKYFORGE_CLABERNETES_EXPOSE_TYPE"))
+		if exposeType == "" && !disableExpose {
+			exposeType = "ClusterIP"
+		}
+
+		disableNativeForCeos := envBool(spec.Environment, "SKYFORGE_CLABERNETES_DISABLE_NATIVE_FOR_CEOS", false)
 		// Ensure clabernetes launcher pods can pull private images (launcher/NOS) by wiring the
 		// namespace pull secret into the topology service account via spec.imagePull.pullSecrets.
 		secretName := strings.TrimSpace(os.Getenv("SKYFORGE_IMAGE_PULL_SECRET_NAME"))
@@ -201,10 +227,20 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 			payload["spec"].(map[string]any)["connectivity"] = connectivity
 		}
 
-		// Arista cEOS (and some other systemd-based NOS images) do not reliably boot as a "native"
-		// Kubernetes container on all kernels/cgroup setups. The launcher-based mode (nativeMode=false)
-		// is more compatible because containerlab controls the container runtime details.
-		if nativeMode && !forceNativeMode && containerlabTopologyHasKind(spec.TopologyYAML, "ceos") {
+		if disableExpose {
+			payload["spec"].(map[string]any)["expose"] = map[string]any{
+				"disableExpose": true,
+			}
+		} else if exposeType != "" {
+			payload["spec"].(map[string]any)["expose"] = map[string]any{
+				"exposeType":        exposeType,
+				"disableAutoExpose": disableAutoExpose,
+			}
+		}
+
+		// Some NOS images can be finicky in native mode depending on host kernel/cgroup setup.
+		// Keep this opt-in so that "native + no-DIND" is the default path.
+		if nativeMode && disableNativeForCeos && !forceNativeMode && containerlabTopologyHasKind(spec.TopologyYAML, "ceos") {
 			log.Infof("Clabernetes: disabling native mode for cEOS nodes (set SKYFORGE_CLABERNETES_FORCE_NATIVE_MODE=true to override)")
 			nativeMode = false
 		}
