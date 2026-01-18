@@ -94,7 +94,7 @@ SELECT r.id, r.workspace_id, p.name, r.provider, r.resource_id, r.resource_type,
   LEFT JOIN sf_workspaces p ON p.id = r.workspace_id
  WHERE 1=1`
 
-	var args []interface{}
+	var args []any
 	argIndex := 1
 
 	addFilter := func(condition string, value string) {
@@ -176,7 +176,7 @@ SELECT c.id, c.workspace_id, p.name, c.resource_id, c.provider, c.period_start, 
   FROM sf_cost_snapshots c
   LEFT JOIN sf_workspaces p ON p.id = c.workspace_id
  WHERE 1=1`
-	var args []interface{}
+	var args []any
 	argIndex := 1
 	if strings.TrimSpace(params.WorkspaceID) != "" {
 		query += fmt.Sprintf(" AND c.workspace_id = $%d", argIndex)
@@ -254,7 +254,7 @@ SELECT u.id, u.workspace_id, p.name, u.provider, u.scope_type, u.scope_id, u.met
   FROM sf_usage_snapshots u
   LEFT JOIN sf_workspaces p ON p.id = u.workspace_id
  WHERE 1=1`
-	var args []interface{}
+	var args []any
 	argIndex := 1
 	if strings.TrimSpace(params.WorkspaceID) != "" {
 		query += fmt.Sprintf(" AND u.workspace_id = $%d", argIndex)

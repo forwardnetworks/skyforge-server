@@ -373,8 +373,8 @@ func parseGiteaBlueprintSlug(blueprint string) (string, string, bool) {
 			return "", "", false
 		}
 		segment := strings.Trim(parsed.Path, "/")
-		if strings.HasPrefix(segment, "git/") {
-			segment = strings.TrimPrefix(segment, "git/")
+		if after, ok := strings.CutPrefix(segment, "git/"); ok {
+			segment = after
 		}
 		segment = strings.TrimSuffix(segment, ".git")
 		parts := strings.Split(segment, "/")
@@ -384,8 +384,8 @@ func parseGiteaBlueprintSlug(blueprint string) (string, string, bool) {
 		return parts[len(parts)-2], parts[len(parts)-1], true
 	}
 	segment := strings.Trim(strings.TrimPrefix(blueprint, "/"), "/")
-	if strings.HasPrefix(segment, "git/") {
-		segment = strings.TrimPrefix(segment, "git/")
+	if after, ok := strings.CutPrefix(segment, "git/"); ok {
+		segment = after
 	}
 	segment = strings.TrimSuffix(segment, ".git")
 	parts := strings.Split(segment, "/")

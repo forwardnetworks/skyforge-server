@@ -9,13 +9,13 @@ import (
 )
 
 func DeploymentAdvisoryLockKey(workspaceID, deploymentID string) int64 {
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%s", workspaceID, deploymentID)))
+	sum := sha256.Sum256(fmt.Appendf(nil, "%s:%s", workspaceID, deploymentID))
 	u := binary.LittleEndian.Uint64(sum[:8])
 	return int64(u)
 }
 
 func WorkspaceAdvisoryLockKey(workspaceID string) int64 {
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:__workspace__", workspaceID)))
+	sum := sha256.Sum256(fmt.Appendf(nil, "%s:__workspace__", workspaceID))
 	u := binary.LittleEndian.Uint64(sum[:8])
 	return int64(u)
 }

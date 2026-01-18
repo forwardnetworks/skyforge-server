@@ -69,8 +69,8 @@ func parseWorkspaceServerRef(value string) (string, bool) {
 		return "", false
 	}
 	const prefix = "ws:"
-	if strings.HasPrefix(value, prefix) {
-		id := strings.TrimSpace(strings.TrimPrefix(value, prefix))
+	if after, ok := strings.CutPrefix(value, prefix); ok {
+		id := strings.TrimSpace(after)
 		if id == "" {
 			return "", false
 		}

@@ -72,11 +72,11 @@ func extractNetlabC9sTarball(data []byte) (*netlabC9sTarball, error) {
 			continue
 		}
 
-		idx := strings.Index(name, "node_files/")
-		if idx < 0 {
+		_, after, ok := strings.Cut(name, "node_files/")
+		if !ok {
 			continue
 		}
-		rel := strings.TrimPrefix(name[idx+len("node_files/"):], "/")
+		rel := strings.TrimPrefix(after, "/")
 		parts := strings.SplitN(rel, "/", 2)
 		if len(parts) != 2 {
 			continue

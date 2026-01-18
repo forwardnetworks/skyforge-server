@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path"
@@ -74,8 +75,8 @@ func (e *Engine) dispatchTerraformTask(ctx context.Context, task *taskstore.Task
 	action := strings.ToLower(strings.TrimSpace(specIn.Action))
 	if action == "" {
 		// Best-effort fallback for legacy callers.
-		if strings.HasPrefix(strings.ToLower(task.TaskType), "terraform-") {
-			action = strings.TrimPrefix(strings.ToLower(task.TaskType), "terraform-")
+		if after, ok := strings.CutPrefix(strings.ToLower(task.TaskType), "terraform-"); ok {
+			action = after
 		}
 	}
 	if action == "" {
@@ -226,9 +227,7 @@ func runTerraformCommand(ctx context.Context, log Logger, binary string, workDir
 			envMap[parts[0]] = parts[1]
 		}
 	}
-	for k, v := range env {
-		envMap[k] = v
-	}
+	maps.Copy(envMap, env)
 	if _, ok := envMap["TF_CLI_ARGS_init"]; !ok {
 		envMap["TF_CLI_ARGS_init"] = "-input=false -no-color"
 	}

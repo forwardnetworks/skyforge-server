@@ -179,8 +179,8 @@ func isSafeRelativePath(path string) bool {
 	if strings.HasPrefix(path, "/") || strings.Contains(path, "\\") {
 		return false
 	}
-	parts := strings.Split(path, "/")
-	for _, p := range parts {
+	parts := strings.SplitSeq(path, "/")
+	for p := range parts {
 		p = strings.TrimSpace(p)
 		if p == "" || p == "." || p == ".." {
 			return false
@@ -330,8 +330,8 @@ func normalizeEveServer(s EveServerConfig, fallback LabsConfig) EveServerConfig 
 
 	if s.WebURL == "" && s.APIURL != "" {
 		web := s.APIURL
-		if strings.HasSuffix(web, "/api") {
-			web = strings.TrimSuffix(web, "/api")
+		if before, ok := strings.CutSuffix(web, "/api"); ok {
+			web = before
 		}
 		s.WebURL = strings.TrimRight(web, "/")
 	}
@@ -869,12 +869,12 @@ type awsSSOTokenRecord struct {
 	Region                 string    `json:"region"`
 	ClientID               string    `json:"clientId,omitempty"`
 	ClientSecret           string    `json:"clientSecret,omitempty"`
-	ClientSecretExpiresAt  time.Time `json:"clientSecretExpiresAt,omitempty"`
+	ClientSecretExpiresAt  time.Time `json:"clientSecretExpiresAt"`
 	AccessToken            string    `json:"accessToken,omitempty"`
-	AccessTokenExpiresAt   time.Time `json:"accessTokenExpiresAt,omitempty"`
+	AccessTokenExpiresAt   time.Time `json:"accessTokenExpiresAt"`
 	RefreshToken           string    `json:"refreshToken,omitempty"`
-	RefreshTokenExpiresAt  time.Time `json:"refreshTokenExpiresAt,omitempty"`
-	LastAuthenticatedAtUTC time.Time `json:"lastAuthenticatedAtUtc,omitempty"`
+	RefreshTokenExpiresAt  time.Time `json:"refreshTokenExpiresAt"`
+	LastAuthenticatedAtUTC time.Time `json:"lastAuthenticatedAtUtc"`
 }
 
 type awsSSOTokenStore interface {
@@ -3242,7 +3242,7 @@ func (sm *SessionManager) Parse(r *http.Request) (*SessionClaims, error) {
 	if err != nil {
 		return nil, err
 	}
-	token, err := jwt.ParseWithClaims(cookie.Value, &SessionClaims{}, func(t *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(cookie.Value, &SessionClaims{}, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method")
 		}
@@ -4493,8 +4493,8 @@ func eveLabExistsViaSSH(ctx context.Context, cfg LabsConfig, server EveServerCon
 
 func candidateEveBaseURLs(raw string) []string {
 	base := strings.TrimRight(raw, "/")
-	if strings.HasSuffix(base, "/api") {
-		root := strings.TrimSuffix(base, "/api")
+	if before, ok := strings.CutSuffix(base, "/api"); ok {
+		root := before
 		return []string{base, root + "/api", root}
 	}
 	return []string{base, base + "/api"}
@@ -4678,8 +4678,8 @@ func eveEscapeLabPath(labPath string) string {
 
 func eveLabHasRunningNodes(ctx context.Context, client *http.Client, base string, username string, labPath string) (bool, string, error) {
 	base = strings.TrimRight(base, "/")
-	if strings.HasSuffix(base, "/api") {
-		base = strings.TrimSuffix(base, "/api")
+	if before, ok := strings.CutSuffix(base, "/api"); ok {
+		base = before
 	}
 	labPath = strings.TrimSpace(labPath)
 	if labPath == "" {
@@ -4690,8 +4690,8 @@ func eveLabHasRunningNodes(ctx context.Context, client *http.Client, base string
 	// EVE installs differ: some want the lab path with a leading '/', some without.
 	// Try both encodings to make the status check robust.
 	labCandidates := []string{labPath}
-	if strings.HasPrefix(labPath, "/") {
-		labCandidates = append(labCandidates, strings.TrimPrefix(labPath, "/"))
+	if after, ok := strings.CutPrefix(labPath, "/"); ok {
+		labCandidates = append(labCandidates, after)
 	}
 	seen := map[string]bool{}
 	lastEndpoint := ""
@@ -4811,8 +4811,8 @@ func eveNodesHasRunning(endpoint string, resp *http.Response) (bool, string, err
 func eveListLabs(ctx context.Context, client *http.Client, base string, username string, query EveLabQuery) ([]LabSummary, string, error) {
 	// Normalize base to the EVE host root (strip trailing /api if present).
 	base = strings.TrimRight(base, "/")
-	if strings.HasSuffix(base, "/api") {
-		base = strings.TrimSuffix(base, "/api")
+	if before, ok := strings.CutSuffix(base, "/api"); ok {
+		base = before
 	}
 
 	foldersToQuery := []string{}

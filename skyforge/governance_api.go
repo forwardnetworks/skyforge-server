@@ -282,7 +282,7 @@ func (s *Service) IngestGovernanceResources(ctx context.Context, params *Governa
 		resources = append(resources, record)
 	}
 
-	details, _ := json.Marshal(map[string]interface{}{
+	details, _ := json.Marshal(map[string]any{
 		"source":  strings.TrimSpace(params.Source),
 		"count":   len(resources),
 		"attempt": len(params.Resources),
@@ -315,7 +315,7 @@ func (s *Service) IngestGovernanceCosts(ctx context.Context, params *GovernanceC
 		}
 		costs = append(costs, record)
 	}
-	details, _ := json.Marshal(map[string]interface{}{
+	details, _ := json.Marshal(map[string]any{
 		"count": len(costs),
 	})
 	writeAuditEvent(ctx, s.db, user.Username, user.IsAdmin, "", "governance.costs.ingest", "", string(details))
@@ -345,7 +345,7 @@ func (s *Service) IngestGovernanceUsage(ctx context.Context, params *GovernanceU
 		}
 		usage = append(usage, record)
 	}
-	details, _ := json.Marshal(map[string]interface{}{
+	details, _ := json.Marshal(map[string]any{
 		"count": len(usage),
 	})
 	writeAuditEvent(ctx, s.db, user.Username, user.IsAdmin, "", "governance.usage.ingest", "", string(details))
@@ -441,7 +441,7 @@ func (s *Service) SyncGovernanceSources(ctx context.Context) (*GovernanceSyncRes
 		}
 	}
 
-	details, _ := json.Marshal(map[string]interface{}{
+	details, _ := json.Marshal(map[string]any{
 		"resources": resp.ResourceCount,
 		"usage":     resp.UsageCount,
 		"warnings":  resp.Warnings,

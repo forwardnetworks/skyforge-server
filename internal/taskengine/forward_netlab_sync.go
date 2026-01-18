@@ -215,8 +215,8 @@ func parseNetlabStatusOutput(logText string) []netlabStatusDevice {
 	}
 	rows := []netlabStatusDevice{}
 	cleaned := stripANSICodes(logText)
-	lines := strings.Split(cleaned, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(cleaned, "\n")
+	for line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if !strings.HasPrefix(trimmed, "│") {
 			continue

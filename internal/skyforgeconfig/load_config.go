@@ -190,8 +190,8 @@ func normalizeEveServer(s skyforgecore.EveServerConfig, fallback skyforgecore.La
 
 	if s.WebURL == "" && s.APIURL != "" {
 		web := s.APIURL
-		if strings.HasSuffix(web, "/api") {
-			web = strings.TrimSuffix(web, "/api")
+		if before, ok := strings.CutSuffix(web, "/api"); ok {
+			web = before
 		}
 		s.WebURL = strings.TrimRight(web, "/")
 	}

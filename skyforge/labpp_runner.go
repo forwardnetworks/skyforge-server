@@ -363,7 +363,7 @@ func kubeFindJobPod(ctx context.Context, client *http.Client, ns, name string) (
 }
 
 func appendJobLogs(raw string, log *taskLogger) {
-	for _, line := range strings.Split(raw, "\n") {
+	for line := range strings.SplitSeq(raw, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue

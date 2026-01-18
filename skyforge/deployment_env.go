@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"maps"
 	"regexp"
 	"strconv"
 	"strings"
@@ -31,12 +32,8 @@ func (s *Service) mergeDeploymentEnvironment(ctx context.Context, workspaceID st
 	}
 
 	env := map[string]string{}
-	for k, v := range groupEnv {
-		env[k] = v
-	}
-	for k, v := range parseEnvMap(cfgAny["environment"]) {
-		env[k] = v
-	}
+	maps.Copy(env, groupEnv)
+	maps.Copy(env, parseEnvMap(cfgAny["environment"]))
 	for k, v := range parseEnvMap(cfgAny["env"]) {
 		if _, exists := env[k]; exists {
 			continue

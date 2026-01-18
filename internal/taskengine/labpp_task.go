@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -385,9 +386,7 @@ func (e *Engine) runLabppTask(ctx context.Context, spec labppRunSpec, log Logger
 	if spec.ThreadCount > 0 {
 		jobEnv["LABPP_THREAD_COUNT"] = strconv.Itoa(spec.ThreadCount)
 	}
-	for key, value := range spec.Environment {
-		jobEnv[key] = value
-	}
+	maps.Copy(jobEnv, spec.Environment)
 
 	log.Infof("Starting LabPP runner job (%s)", strings.Join(customArgs, " "))
 	jobName := fmt.Sprintf("labpp-%d", spec.TaskID)

@@ -197,8 +197,8 @@ func parseNetlabStatusOutput(logText string) []netlabStatusDevice {
 	}
 	rows := []netlabStatusDevice{}
 	cleaned := stripANSICodes(logText)
-	lines := strings.Split(cleaned, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(cleaned, "\n")
+	for line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if !strings.HasPrefix(trimmed, "│") {
 			continue
@@ -479,7 +479,7 @@ func forwardCreateNetworkWithRetry(ctx context.Context, client *forwardClient, b
 	if name == "" {
 		name = fmt.Sprintf("deployment-%s", time.Now().UTC().Format("20060102-1504"))
 	}
-	for attempt := 0; attempt < 3; attempt++ {
+	for attempt := range 3 {
 		network, err := forwardCreateNetwork(ctx, client, name)
 		if err == nil {
 			return network, nil

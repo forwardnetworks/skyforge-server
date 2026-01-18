@@ -171,7 +171,7 @@ func pruneOIDCFlows(flows map[string]oidcFlowState, now time.Time) map[string]oi
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].at < list[j].at })
 	toDrop := len(list) - maxFlows
-	for i := 0; i < toDrop; i++ {
+	for i := range toDrop {
 		delete(out, list[i].state)
 	}
 	return out

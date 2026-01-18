@@ -151,6 +151,13 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 			log.Infof("Clabernetes file mounts: nodes=%d", len(spec.FilesFromConfigMap))
 		}
 		connectivity := strings.ToLower(envString(spec.Environment, "SKYFORGE_CLABERNETES_CONNECTIVITY"))
+		if connectivity == "" {
+			// Default to Multus connectivity; VXLAN is treated as legacy.
+			connectivity = "multus"
+		}
+		if connectivity == "vxlan" {
+			log.Infof("Clabernetes connectivity=vxlan requested (legacy); prefer multus")
+		}
 		nativeMode := envBool(spec.Environment, "SKYFORGE_CLABERNETES_NATIVE_MODE", true)
 		hostNetwork := envBool(spec.Environment, "SKYFORGE_CLABERNETES_HOST_NETWORK", false)
 		forceNativeMode := envBool(spec.Environment, "SKYFORGE_CLABERNETES_FORCE_NATIVE_MODE", false)

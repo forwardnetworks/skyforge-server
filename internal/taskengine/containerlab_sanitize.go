@@ -201,8 +201,8 @@ func sanitizeContainerlabYAMLForClabernetes(containerlabYAML string) (string, ma
 							continue
 						}
 						hostPath := strings.TrimPrefix(strings.TrimSpace(parts[0]), "./")
-						if strings.HasPrefix(hostPath, "node_files/") {
-							rest := strings.TrimPrefix(hostPath, "node_files/")
+						if after, ok0 := strings.CutPrefix(hostPath, "node_files/"); ok0 {
+							rest := after
 							seg := strings.SplitN(rest, "/", 2)
 							if len(seg) >= 1 {
 								if mapped, ok := mapping[seg[0]]; ok {

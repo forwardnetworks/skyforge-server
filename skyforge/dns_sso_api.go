@@ -37,7 +37,7 @@ type technitiumTokenEnvelope struct {
 	Message      string `json:"message,omitempty"`
 	Response     struct {
 		Token string `json:"token,omitempty"`
-	} `json:"response,omitempty"`
+	} `json:"response"`
 }
 
 func (t technitiumTokenEnvelope) extractToken() string {

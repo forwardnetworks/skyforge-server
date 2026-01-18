@@ -352,7 +352,7 @@ func forwardCreateNetworkWithRetry(ctx context.Context, client *forwardClient, b
 	if name == "" {
 		name = fmt.Sprintf("deployment-%s", time.Now().UTC().Format("20060102-1504"))
 	}
-	for attempt := 0; attempt < 3; attempt++ {
+	for attempt := range 3 {
 		network, err := forwardCreateNetwork(ctx, client, name)
 		if err == nil {
 			return network, nil

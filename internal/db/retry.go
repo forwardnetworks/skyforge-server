@@ -33,10 +33,7 @@ func OpenStdlibWithRetry(ctx context.Context, sqlDB *sqldb.Database, maxRetries 
 		)
 
 		if attempt < maxRetries {
-			delay := initialDelay * time.Duration(1<<uint(attempt))
-			if delay > 15*time.Second {
-				delay = 15 * time.Second
-			}
+			delay := min(initialDelay*time.Duration(1<<uint(attempt)), 15*time.Second)
 			rlog.Info("Waiting before retry", "delay_seconds", delay.Seconds(), "next_attempt", attempt+1)
 			select {
 			case <-ctx.Done():
@@ -66,10 +63,7 @@ func WaitForDB(ctx context.Context, db *sqldb.Database, maxRetries int, initialD
 		)
 
 		if attempt < maxRetries {
-			delay := initialDelay * time.Duration(1<<uint(attempt))
-			if delay > 15*time.Second {
-				delay = 15 * time.Second
-			}
+			delay := min(initialDelay*time.Duration(1<<uint(attempt)), 15*time.Second)
 			rlog.Info("Waiting before retry", "delay_seconds", delay.Seconds(), "next_attempt", attempt+1)
 
 			select {

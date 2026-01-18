@@ -352,7 +352,7 @@ func appendJobLogs(raw string, log Logger) {
 	if raw == "" {
 		return
 	}
-	for _, line := range strings.Split(raw, "\n") {
+	for line := range strings.SplitSeq(raw, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue

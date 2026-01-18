@@ -79,7 +79,7 @@ func taskDedupeLockKey(workspaceID string, deploymentID *string, taskType, dedup
 	if deploymentID != nil {
 		dep = strings.TrimSpace(*deploymentID)
 	}
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%s:%s", workspaceID, dep, taskType, dedupeKey)))
+	sum := sha256.Sum256(fmt.Appendf(nil, "%s:%s:%s:%s", workspaceID, dep, taskType, dedupeKey))
 	u := binary.LittleEndian.Uint64(sum[:8])
 	return int64(u)
 }
@@ -417,4 +417,3 @@ WHERE id=$1`, taskID)
 }
 
 var errDBUnavailable = errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
-
