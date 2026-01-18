@@ -158,6 +158,31 @@ func sanitizeContainerlabYAMLForClabernetes(containerlabYAML string) (string, ma
 				if len(binds) > 0 {
 					cfgMap["binds"] = binds
 				}
+
+				// systemd refuses to run when it believes it's running in a chroot. In Kubernetes,
+				// this can happen due to how the container filesystem is mounted. The cEOS node
+				// image uses systemd as PID 1, so set the recommended env vars.
+				env := map[string]any{}
+				switch cur := cfgMap["env"].(type) {
+				case map[string]any:
+					env = cur
+				case map[any]any:
+					for k, v := range cur {
+						key := strings.TrimSpace(fmt.Sprintf("%v", k))
+						if key != "" {
+							env[key] = v
+						}
+					}
+				}
+				if _, ok := env["SYSTEMD_IGNORE_CHROOT"]; !ok {
+					env["SYSTEMD_IGNORE_CHROOT"] = "1"
+				}
+				if _, ok := env["container"]; !ok {
+					env["container"] = "docker"
+				}
+				if len(env) > 0 {
+					cfgMap["env"] = env
+				}
 			}
 		}
 		// Also rewrite any node_files binds that include the original node directory name.
