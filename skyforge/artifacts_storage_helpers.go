@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"encore.dev/storage/objects"
@@ -15,6 +16,7 @@ type artifactsBucketPerms interface {
 	objects.Lister
 	objects.Remover
 	objects.Attrser
+	objects.Downloader
 }
 
 func artifactsBucket() artifactsBucketPerms {
@@ -65,6 +67,27 @@ func artifactAttrs(ctx context.Context, workspaceID, key string) (*objects.Objec
 		return nil, err
 	}
 	return attrs, nil
+}
+
+func readWorkspaceArtifact(ctx context.Context, workspaceID, key string, maxBytes int) ([]byte, error) {
+	if maxBytes <= 0 || maxBytes > 10<<20 {
+		maxBytes = 2 << 20
+	}
+	objectName := artifactObjectName(workspaceID, key)
+	bucket := artifactsBucket()
+	r := bucket.Download(ctx, objectName)
+	if r == nil {
+		return nil, nil
+	}
+	defer r.Close()
+	data, _ := io.ReadAll(io.LimitReader(r, int64(maxBytes)))
+	if err := r.Err(); err != nil {
+		if errors.Is(err, objects.ErrObjectNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return data, nil
 }
 
 func deleteWorkspaceArtifacts(ctx context.Context, workspaceID string) error {

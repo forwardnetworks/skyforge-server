@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"encore.app/internal/taskdispatch"
 	"encore.app/internal/taskstore"
@@ -26,6 +27,7 @@ type containerlabTaskSpec struct {
 
 type containerlabRunSpec struct {
 	TaskID      int
+	WorkspaceID string
 	APIURL      string
 	Token       string
 	Action      string
@@ -91,6 +93,7 @@ func (e *Engine) dispatchContainerlabTask(ctx context.Context, task *taskstore.T
 
 	runSpec := containerlabRunSpec{
 		TaskID:      task.ID,
+		WorkspaceID: strings.TrimSpace(task.WorkspaceID),
 		APIURL:      apiURL,
 		Token:       token,
 		Action:      strings.TrimSpace(specIn.Action),
@@ -126,6 +129,7 @@ func (e *Engine) runContainerlabTask(ctx context.Context, spec containerlabRunSp
 	}
 	switch strings.ToLower(strings.TrimSpace(spec.Action)) {
 	case "deploy":
+		labName := strings.TrimSpace(spec.LabName)
 		payload := containerlabDeployRequest{TopologyContent: spec.Topology}
 		url := fmt.Sprintf("%s/api/v1/labs", strings.TrimRight(strings.TrimSpace(spec.APIURL), "/"))
 		if spec.Reconfigure {
@@ -140,6 +144,11 @@ func (e *Engine) runContainerlabTask(ctx context.Context, spec containerlabRunSp
 		}
 		if len(body) > 0 {
 			log.Infof("%s", string(body))
+		}
+		if labName != "" && spec.TaskID > 0 && strings.TrimSpace(spec.WorkspaceID) != "" {
+			if err := e.captureContainerlabTopologyArtifact(ctx, spec, labName); err != nil {
+				log.Infof("Containerlab topology capture skipped: %v", err)
+			}
 		}
 		return nil
 	case "destroy":
@@ -166,4 +175,66 @@ func (e *Engine) runContainerlabTask(ctx context.Context, spec containerlabRunSp
 	default:
 		return fmt.Errorf("unknown containerlab action")
 	}
+}
+
+func (e *Engine) captureContainerlabTopologyArtifact(ctx context.Context, spec containerlabRunSpec, labName string) error {
+	if e == nil || spec.TaskID <= 0 || strings.TrimSpace(spec.WorkspaceID) == "" {
+		return fmt.Errorf("invalid task spec")
+	}
+	labName = strings.TrimSpace(labName)
+	if labName == "" {
+		return fmt.Errorf("lab name is required")
+	}
+	url := fmt.Sprintf("%s/api/v1/labs/%s", strings.TrimRight(strings.TrimSpace(spec.APIURL), "/"), labName)
+	resp, body, err := containerlabAPIGet(ctx, url, spec.Token, spec.SkipTLS)
+	if err != nil {
+		return fmt.Errorf("failed to reach containerlab API: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("containerlab API rejected request: %s", strings.TrimSpace(string(body)))
+	}
+	graph, err := containerlabLabBytesToTopologyGraph(body)
+	if err != nil {
+		return err
+	}
+	graphBytes, err := json.Marshal(graph)
+	if err != nil {
+		return err
+	}
+	key := fmt.Sprintf("topology/containerlab/%s.json", sanitizeArtifactKeySegment(labName))
+	ctxPut, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	putKey, err := putWorkspaceArtifact(ctxPut, e.cfg, spec.WorkspaceID, key, graphBytes, "application/json")
+	if err != nil {
+		return err
+	}
+	e.setTaskMetadataKey(spec.TaskID, "topologyKey", putKey)
+	return nil
+}
+
+func sanitizeArtifactKeySegment(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "unknown"
+	}
+	raw = strings.ToLower(raw)
+	var b strings.Builder
+	b.Grow(len(raw))
+	for _, ch := range raw {
+		switch {
+		case ch >= 'a' && ch <= 'z':
+			b.WriteRune(ch)
+		case ch >= '0' && ch <= '9':
+			b.WriteRune(ch)
+		case ch == '-' || ch == '_' || ch == '.':
+			b.WriteRune(ch)
+		default:
+			b.WriteRune('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return "unknown"
+	}
+	return out
 }

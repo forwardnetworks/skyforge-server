@@ -144,3 +144,26 @@ func containerlabAPIDelete(ctx context.Context, url string, token string, skipTL
 	data, _ := io.ReadAll(resp.Body)
 	return resp, data, nil
 }
+
+func containerlabAPIGet(ctx context.Context, url string, token string, skipTLS bool) (*http.Response, []byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	if strings.TrimSpace(token) != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	client := &http.Client{
+		Timeout: 20 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: skipTLS},
+		},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	return resp, data, nil
+}
