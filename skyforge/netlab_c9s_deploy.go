@@ -61,6 +61,11 @@ func (s *Service) runNetlabC9sDeploymentAction(
 	if mode == "" {
 		mode = "k8s"
 	}
+	// Skyforge is moving away from BYOS netlab runners for netlab-c9s; treat "remote" as legacy
+	// and default to the in-cluster generator.
+	if mode == "remote" {
+		mode = "k8s"
+	}
 	if mode == "remote" {
 		netlabServer = strings.TrimSpace(netlabServer)
 		if netlabServer == "" {

@@ -2193,6 +2193,11 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 		if generatorMode == "" {
 			generatorMode = "k8s"
 		}
+		// Skyforge is moving away from BYOS netlab runners for netlab-c9s; treat "remote" as legacy
+		// and default to the in-cluster generator.
+		if generatorMode == "remote" {
+			generatorMode = "k8s"
+		}
 		if generatorMode == "remote" {
 			if netlabServer == "" {
 				return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
