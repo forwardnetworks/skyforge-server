@@ -159,6 +159,7 @@ func (s *Service) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	token, err := s.oidc.oauth2Config.Exchange(ctx, code)
 	if err != nil {
+		rlog.Error("oidc exchange failed", "error", err)
 		http.Error(w, "oidc exchange failed", http.StatusUnauthorized)
 		return
 	}
