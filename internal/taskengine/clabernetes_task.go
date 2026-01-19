@@ -2,6 +2,7 @@ package taskengine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -63,6 +64,7 @@ type clabernetesTaskSpec struct {
 
 type clabernetesRunSpec struct {
 	TaskID             int
+	WorkspaceID        string
 	Action             string
 	Namespace          string
 	TopologyName       string
@@ -98,6 +100,7 @@ func (e *Engine) dispatchClabernetesTask(ctx context.Context, task *taskstore.Ta
 	}
 	runSpec := clabernetesRunSpec{
 		TaskID:             task.ID,
+		WorkspaceID:        strings.TrimSpace(task.WorkspaceID),
 		Action:             strings.TrimSpace(specIn.Action),
 		Namespace:          strings.TrimSpace(specIn.Namespace),
 		TopologyName:       strings.TrimSpace(specIn.TopologyName),
@@ -318,6 +321,12 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 				}
 				if topo != nil && topo.Status.TopologyReady {
 					log.Infof("Topology is ready (elapsed %s)", time.Since(started).Truncate(time.Second))
+
+					// Best-effort: capture a topology graph artifact after deploy so the UI can render
+					// resolved management IPs from clabernetes pods.
+					if err := e.captureClabernetesTopologyArtifact(ctx, spec, name); err != nil {
+						log.Infof("clabernetes topology capture failed: %v", err)
+					}
 					return nil
 				}
 				if time.Since(started) >= 15*time.Minute {
@@ -371,4 +380,63 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 	default:
 		return fmt.Errorf("unknown clabernetes action")
 	}
+}
+
+func (e *Engine) captureClabernetesTopologyArtifact(ctx context.Context, spec clabernetesRunSpec, topologyOwner string) error {
+	if e == nil || spec.TaskID <= 0 || strings.TrimSpace(spec.WorkspaceID) == "" {
+		return fmt.Errorf("invalid task context")
+	}
+	ns := strings.TrimSpace(spec.Namespace)
+	if ns == "" {
+		return fmt.Errorf("namespace is required")
+	}
+	topologyOwner = strings.TrimSpace(topologyOwner)
+	if topologyOwner == "" {
+		return fmt.Errorf("topology owner label is required")
+	}
+
+	pods, err := kubeListPods(ctx, ns, map[string]string{
+		"clabernetes/topologyOwner": topologyOwner,
+	})
+	if err != nil {
+		return err
+	}
+	podInfo := map[string]TopologyNode{}
+	for _, pod := range pods {
+		node := strings.TrimSpace(pod.Metadata.Labels["clabernetes/topologyNode"])
+		if node == "" {
+			continue
+		}
+		podInfo[node] = TopologyNode{
+			ID:     node,
+			Label:  node,
+			MgmtIP: strings.TrimSpace(pod.Status.PodIP),
+			Status: strings.TrimSpace(pod.Status.Phase),
+		}
+	}
+
+	graph, err := containerlabYAMLBytesToTopologyGraph([]byte(spec.TopologyYAML), podInfo)
+	if err != nil {
+		return err
+	}
+	graph.GeneratedAt = time.Now().UTC().Format(time.RFC3339)
+
+	graphBytes, err := json.Marshal(graph)
+	if err != nil {
+		return err
+	}
+
+	labName := strings.TrimSpace(spec.LabName)
+	if labName == "" {
+		labName = topologyOwner
+	}
+	key := fmt.Sprintf("topology/clabernetes/%s.json", sanitizeArtifactKeySegment(labName))
+	ctxPut, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	putKey, err := putWorkspaceArtifact(ctxPut, e.cfg, spec.WorkspaceID, key, graphBytes, "application/json")
+	if err != nil {
+		return err
+	}
+	e.setTaskMetadataKey(spec.TaskID, "topologyKey", putKey)
+	return nil
 }
