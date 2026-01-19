@@ -138,14 +138,31 @@ func (s *Service) GetWorkspaceDeploymentNodeRunningConfig(ctx context.Context, i
 	stdout, stderr, err := execPodShell(ctxExec, kcfg, k8sNamespace, podName, container, script)
 	cancel()
 	if err != nil {
+		if s.db != nil {
+			_ = insertDeploymentUIEvent(ctx, s.db, pc.workspace.ID, dep.ID, pc.claims.Username, "node.running-config.failed", map[string]any{
+				"node":      node,
+				"podName":   podName,
+				"container": container,
+			})
+			_ = notifyDeploymentEventPG(ctx, s.db, pc.workspace.ID, dep.ID)
+		}
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to fetch running config").Err()
 	}
-	return &DeploymentNodeRunningConfigResponse{
+	resp := &DeploymentNodeRunningConfigResponse{
 		Namespace: k8sNamespace,
 		PodName:   podName,
 		Container: container,
 		Node:      node,
 		Stdout:    strings.TrimSpace(stdout),
 		Stderr:    strings.TrimSpace(stderr),
-	}, nil
+	}
+	if s.db != nil {
+		_ = insertDeploymentUIEvent(ctx, s.db, pc.workspace.ID, dep.ID, pc.claims.Username, "node.running-config", map[string]any{
+			"node":      node,
+			"podName":   podName,
+			"container": container,
+		})
+		_ = notifyDeploymentEventPG(ctx, s.db, pc.workspace.ID, dep.ID)
+	}
+	return resp, nil
 }

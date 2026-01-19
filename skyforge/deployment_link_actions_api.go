@@ -12,6 +12,8 @@ import (
 	"encore.dev/rlog"
 
 	"encore.app/storage"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type DeploymentLinkAdminRequest struct {
@@ -342,6 +344,9 @@ func (s *Service) CaptureWorkspaceDeploymentLinkPcap(ctx context.Context, id, de
 			container = c
 		}
 	}
+	if container == "" {
+		container = "launcher"
+	}
 
 	key := fmt.Sprintf("captures/%s/%s-%s-%s.pcap", strings.TrimSpace(deploymentID), sanitizeArtifactPart(edgeID), side, time.Now().UTC().Format("20060102T150405Z"))
 	script := buildTcpdumpCaptureScript(ifName, dur, pkts, snaplen, maxBytes)
@@ -349,7 +354,34 @@ func (s *Service) CaptureWorkspaceDeploymentLinkPcap(ctx context.Context, id, de
 	stdout, stderr, err := execPodShell(runCtx, kcfg, k8sNamespace, podName, container, script)
 	cancel()
 	if err != nil {
+		// If tcpdump isn't present in the selected container, try other non-NOS containers.
+		if strings.Contains(stderr, "tcpdump not found") || strings.Contains(stderr, "timeout not found") {
+			ctxGet, cancelGet := context.WithTimeout(ctx, 5*time.Second)
+			pod, getErr := clientset.CoreV1().Pods(k8sNamespace).Get(ctxGet, podName, metav1.GetOptions{})
+			cancelGet()
+			if getErr == nil && pod != nil {
+				for _, c := range pod.Spec.Containers {
+					name := strings.TrimSpace(c.Name)
+					if name == "" || name == "nos" || name == container {
+						continue
+					}
+					runCtx2, cancel2 := context.WithTimeout(ctx, time.Duration(dur+20)*time.Second)
+					stdout2, stderr2, err2 := execPodShell(runCtx2, kcfg, k8sNamespace, podName, name, script)
+					cancel2()
+					if err2 == nil {
+						stdout, stderr, err = stdout2, stderr2, nil
+						container = name
+						break
+					}
+				}
+			}
+		}
+	}
+	if err != nil {
 		rlog.Warn("pcap capture failed", "node", node, "pod", podName, "err", err, "stderr", strings.TrimSpace(stderr))
+		if strings.Contains(stderr, "tcpdump not found") || strings.Contains(stderr, "timeout not found") {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("pcap capture requires tcpdump+timeout in the launcher container image").Err()
+		}
 		return nil, errs.B().Code(errs.Unavailable).Msg("pcap capture failed").Err()
 	}
 

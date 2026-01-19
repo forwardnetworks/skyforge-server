@@ -153,7 +153,27 @@ echo "ok: write memory"`
 	}
 	if execErr != nil {
 		rlog.Warn("save-config failed", "workspace", pc.workspace.ID, "deployment", dep.ID, "node", node, "err", execErr)
+		if s.db != nil {
+			_ = insertDeploymentUIEvent(ctx, s.db, pc.workspace.ID, dep.ID, pc.claims.Username, "node.save-config.failed", map[string]any{
+				"node":      node,
+				"nodeKind":  nodeKind,
+				"podName":   podName,
+				"container": container,
+				"stderr":    resp.Stderr,
+			})
+			_ = notifyDeploymentEventPG(ctx, s.db, pc.workspace.ID, dep.ID)
+		}
 		return resp, errs.B().Code(errs.Unavailable).Msg("save-config failed").Err()
+	}
+
+	if s.db != nil {
+		_ = insertDeploymentUIEvent(ctx, s.db, pc.workspace.ID, dep.ID, pc.claims.Username, "node.save-config", map[string]any{
+			"node":      node,
+			"nodeKind":  nodeKind,
+			"podName":   podName,
+			"container": container,
+		})
+		_ = notifyDeploymentEventPG(ctx, s.db, pc.workspace.ID, dep.ID)
 	}
 
 	return resp, nil
