@@ -206,6 +206,9 @@ func (s *Service) ListGovernanceResources(ctx context.Context, params *Governanc
 	if _, err := requireAdmin(); err != nil {
 		return nil, err
 	}
+	if params == nil {
+		params = &GovernanceResourceQuery{}
+	}
 	resources, err := listGovernanceResources(ctx, s.db, params)
 	if err != nil {
 		return nil, errs.B().Code(errs.Internal).Msg("failed to load resources").Err()
@@ -223,6 +226,9 @@ func (s *Service) ListGovernanceCosts(ctx context.Context, params *GovernanceCos
 	if _, err := requireAdmin(); err != nil {
 		return nil, err
 	}
+	if params == nil {
+		params = &GovernanceCostQuery{}
+	}
 	costs, err := listGovernanceCosts(ctx, s.db, params)
 	if err != nil {
 		return nil, errs.B().Code(errs.Internal).Msg("failed to load costs").Err()
@@ -239,6 +245,9 @@ func (s *Service) ListGovernanceUsage(ctx context.Context, params *GovernanceUsa
 	}
 	if _, err := requireAdmin(); err != nil {
 		return nil, err
+	}
+	if params == nil {
+		params = &GovernanceUsageQuery{}
 	}
 	usage, err := listGovernanceUsage(ctx, s.db, params)
 	if err != nil {

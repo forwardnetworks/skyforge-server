@@ -19,12 +19,15 @@ import (
 )
 
 type LinkImpairmentRequest struct {
-	EdgeID   string  `json:"edgeId"`
-	Action   string  `json:"action"` // set|clear
-	DelayMs  int     `json:"delayMs,omitempty"`
-	JitterMs int     `json:"jitterMs,omitempty"`
-	LossPct  float64 `json:"lossPct,omitempty"`
-	RateKbps int     `json:"rateKbps,omitempty"`
+	EdgeID     string  `json:"edgeId"`
+	Action     string  `json:"action"` // set|clear
+	DelayMs    int     `json:"delayMs,omitempty"`
+	JitterMs   int     `json:"jitterMs,omitempty"`
+	LossPct    float64 `json:"lossPct,omitempty"`
+	DupPct     float64 `json:"dupPct,omitempty"`
+	CorruptPct float64 `json:"corruptPct,omitempty"`
+	ReorderPct float64 `json:"reorderPct,omitempty"`
+	RateKbps   int     `json:"rateKbps,omitempty"`
 }
 
 type LinkImpairmentResponse struct {
@@ -77,11 +80,11 @@ func (s *Service) SetWorkspaceDeploymentLinkImpairment(ctx context.Context, id, 
 	if action != "set" && action != "clear" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("action must be 'set' or 'clear'").Err()
 	}
-	if req.DelayMs < 0 || req.JitterMs < 0 || req.LossPct < 0 || req.RateKbps < 0 {
+	if req.DelayMs < 0 || req.JitterMs < 0 || req.LossPct < 0 || req.DupPct < 0 || req.CorruptPct < 0 || req.ReorderPct < 0 || req.RateKbps < 0 {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("impairment values must be non-negative").Err()
 	}
-	if req.LossPct > 100 {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("lossPct must be <= 100").Err()
+	if req.LossPct > 100 || req.DupPct > 100 || req.CorruptPct > 100 || req.ReorderPct > 100 {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("impairment pct fields must be <= 100").Err()
 	}
 
 	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
@@ -207,6 +210,15 @@ func tcScript(action, ifName string, req *LinkImpairmentRequest) string {
 	}
 	if req.LossPct > 0 {
 		netemParts = append(netemParts, fmt.Sprintf("loss %.3f%%", req.LossPct))
+	}
+	if req.DupPct > 0 {
+		netemParts = append(netemParts, fmt.Sprintf("duplicate %.3f%%", req.DupPct))
+	}
+	if req.CorruptPct > 0 {
+		netemParts = append(netemParts, fmt.Sprintf("corrupt %.3f%%", req.CorruptPct))
+	}
+	if req.ReorderPct > 0 {
+		netemParts = append(netemParts, fmt.Sprintf("reorder %.3f%%", req.ReorderPct))
 	}
 	netemArgs := strings.Join(netemParts, " ")
 	netemSuffix := ""
