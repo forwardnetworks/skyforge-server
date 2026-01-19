@@ -3,7 +3,6 @@ package taskengine
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -26,8 +25,6 @@ func (e *Engine) CancelTask(ctx context.Context, task *taskstore.TaskRecord, log
 	switch {
 	case strings.HasPrefix(typ, "netlab"):
 		e.cancelNetlabTask(ctx, task, log)
-	case strings.HasPrefix(typ, "labpp"):
-		e.cancelLabppTask(ctx, task, log)
 	}
 	e.markCancelApplied(task.ID, typ)
 }
@@ -73,9 +70,6 @@ func (e *Engine) cancelNetlabTask(ctx context.Context, task *taskstore.TaskRecor
 	if serverRef == "" {
 		serverRef = strings.TrimSpace(pc.workspace.NetlabServer)
 	}
-	if serverRef == "" {
-		serverRef = strings.TrimSpace(pc.workspace.EveServer)
-	}
 	server, err := e.resolveWorkspaceNetlabServer(ctx, pc.workspace.ID, serverRef)
 	if err != nil || server == nil {
 		return
@@ -92,26 +86,6 @@ func (e *Engine) cancelNetlabTask(ctx context.Context, task *taskstore.TaskRecor
 	defer cancel()
 	for attempt := 1; attempt <= 3; attempt++ {
 		if err := e.cancelNetlabJob(ctxReq, apiURL, jobID, server.APIInsecure, auth, log); err == nil {
-			break
-		}
-		time.Sleep(time.Duration(attempt) * 250 * time.Millisecond)
-	}
-}
-
-func (e *Engine) cancelLabppTask(ctx context.Context, task *taskstore.TaskRecord, log Logger) {
-	if e == nil || task == nil || log == nil {
-		return
-	}
-	if task.ID <= 0 {
-		return
-	}
-	name := sanitizeKubeName("labpp-" + strconv.Itoa(task.ID))
-	ns := kubeNamespace()
-	for attempt := 1; attempt <= 3; attempt++ {
-		ctxReq, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		err := kubeDeleteJob(ctxReq, ns, name)
-		cancel()
-		if err == nil {
 			break
 		}
 		time.Sleep(time.Duration(attempt) * 250 * time.Millisecond)

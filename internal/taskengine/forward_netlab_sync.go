@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 	"time"
 
@@ -22,6 +21,8 @@ const (
 	forwardCliCredentialMap    = "forwardCliCredentialIdsByDevice"
 	forwardSnmpCredentialIDKey = "forwardSnmpCredentialId"
 	forwardJumpServerIDKey     = "forwardJumpServerId"
+	forwardEnabledKey          = "forwardEnabled"
+	forwardCollectorUserKey    = "forwardCollectorUsername"
 )
 
 const defaultForwardBaseURL = "https://fwd.app"
@@ -42,29 +43,6 @@ type forwardCredentials struct {
 	JumpUsername   string
 	JumpPrivateKey string
 	JumpCert       string
-}
-
-func getenv(key string, fallback string) string {
-	v := strings.TrimSpace(os.Getenv(key))
-	if v == "" {
-		return fallback
-	}
-	return v
-}
-
-func getenvBool(key string, fallback bool) bool {
-	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" {
-		return fallback
-	}
-	switch strings.ToLower(raw) {
-	case "1", "true", "yes", "y", "on":
-		return true
-	case "0", "false", "no", "n", "off":
-		return false
-	default:
-		return fallback
-	}
 }
 
 func (e *Engine) forwardDeviceTypes(ctx context.Context) map[string]string {
@@ -251,13 +229,13 @@ func parseNetlabStatusOutput(logText string) []netlabStatusDevice {
 	return rows
 }
 
-func (e *Engine) forwardConfigForWorkspace(ctx context.Context, workspaceID string) (*forwardCredentials, error) {
+func (e *Engine) forwardConfigForUser(ctx context.Context, username string) (*forwardCredentials, error) {
 	if e == nil || e.db == nil || e.box == nil {
 		return nil, fmt.Errorf("database unavailable")
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	rec, err := e.getWorkspaceForwardCredentials(ctxReq, workspaceID)
+	rec, err := e.getUserForwardCredentials(ctxReq, username)
 	if err != nil {
 		return nil, err
 	}
@@ -273,15 +251,15 @@ func (e *Engine) forwardConfigForWorkspace(ctx context.Context, workspaceID stri
 	return rec, nil
 }
 
-func (e *Engine) getWorkspaceForwardCredentials(ctx context.Context, workspaceID string) (*forwardCredentials, error) {
+func (e *Engine) getUserForwardCredentials(ctx context.Context, username string) (*forwardCredentials, error) {
 	if e == nil || e.db == nil || e.box == nil {
 		return nil, fmt.Errorf("db unavailable")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace id is required")
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil, fmt.Errorf("username is required")
 	}
-	var baseURL, username, password sql.NullString
+	var baseURL, fwdUser, fwdPass sql.NullString
 	var collectorUser sql.NullString
 	var deviceUser, devicePass sql.NullString
 	var jumpHost, jumpUser, jumpKey, jumpCert sql.NullString
@@ -289,10 +267,10 @@ func (e *Engine) getWorkspaceForwardCredentials(ctx context.Context, workspaceID
   COALESCE(collector_username, ''),
   COALESCE(device_username, ''), COALESCE(device_password, ''),
   COALESCE(jump_host, ''), COALESCE(jump_username, ''), COALESCE(jump_private_key, ''), COALESCE(jump_cert, '')
-FROM sf_workspace_forward_credentials WHERE workspace_id=$1`, workspaceID).Scan(
+FROM sf_user_forward_credentials WHERE username=$1`, username).Scan(
 		&baseURL,
-		&username,
-		&password,
+		&fwdUser,
+		&fwdPass,
 		&collectorUser,
 		&deviceUser,
 		&devicePass,
@@ -315,11 +293,11 @@ FROM sf_workspace_forward_credentials WHERE workspace_id=$1`, workspaceID).Scan(
 	if err != nil {
 		return nil, err
 	}
-	usernameValue, err := dec(username)
+	usernameValue, err := dec(fwdUser)
 	if err != nil {
 		return nil, err
 	}
-	passwordValue, err := dec(password)
+	passwordValue, err := dec(fwdPass)
 	if err != nil {
 		return nil, err
 	}
@@ -368,7 +346,22 @@ func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *work
 	if cfgAny == nil {
 		cfgAny = map[string]any{}
 	}
-	forwardCfg, err := e.forwardConfigForWorkspace(ctx, pc.workspace.ID)
+	enabled := false
+	if raw, ok := cfgAny[forwardEnabledKey]; ok {
+		if b, ok := raw.(bool); ok {
+			enabled = b
+		} else if s, ok := raw.(string); ok {
+			s = strings.TrimSpace(s)
+			enabled = strings.EqualFold(s, "true") || s == "1" || strings.EqualFold(s, "yes")
+		} else if raw != nil {
+			s := strings.TrimSpace(fmt.Sprintf("%v", raw))
+			enabled = strings.EqualFold(s, "true") || s == "1" || strings.EqualFold(s, "yes")
+		}
+	}
+	if !enabled {
+		return cfgAny, nil
+	}
+	forwardCfg, err := e.forwardConfigForUser(ctx, pc.claims.Username)
 	if err != nil || forwardCfg == nil {
 		return cfgAny, err
 	}
@@ -405,7 +398,10 @@ func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *work
 		changed = true
 	}
 
-	collectorUser := strings.TrimSpace(forwardCfg.CollectorUser)
+	collectorUser := strings.TrimSpace(getString(forwardCollectorUserKey))
+	if collectorUser == "" {
+		collectorUser = strings.TrimSpace(forwardCfg.CollectorUser)
+	}
 	if collectorUser != "" {
 		status, err := forwardGetCollectorStatus(ctx, client, networkID)
 		if err != nil {
@@ -419,8 +415,8 @@ func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *work
 	}
 
 	snmpCredentialID := getString(forwardSnmpCredentialIDKey)
-	if snmpCredentialID == "" && getenvBool("SKYFORGE_FORWARD_SNMP_CREATE_PLACEHOLDER", true) {
-		community := strings.TrimSpace(getenv("SKYFORGE_FORWARD_SNMP_COMMUNITY", "public"))
+	if snmpCredentialID == "" && e.cfg.Forward.SNMPPlaceholderEnabled {
+		community := strings.TrimSpace(e.cfg.Forward.SNMPCommunity)
 		if community != "" {
 			cred, err := forwardCreateSnmpCredential(ctx, client, networkID, credentialName, community)
 			if err != nil {
@@ -463,6 +459,38 @@ func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *work
 	return cfgAny, nil
 }
 
+func sanitizeCredentialComponent(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	raw = strings.ToLower(raw)
+	var b strings.Builder
+	b.Grow(len(raw))
+	for _, ch := range raw {
+		switch {
+		case ch >= 'a' && ch <= 'z':
+			b.WriteRune(ch)
+		case ch >= '0' && ch <= '9':
+			b.WriteRune(ch)
+		case ch == '-' || ch == '_' || ch == '.':
+			b.WriteRune(ch)
+		default:
+			b.WriteRune('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return ""
+	}
+	// Keep within Forward credential name constraints.
+	if len(out) > 48 {
+		out = out[:48]
+		out = strings.TrimRight(out, "-")
+	}
+	return out
+}
+
 func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *workspaceContext, dep *WorkspaceDeployment, logText string) (int, error) {
 	cfgAny, _ := fromJSONMap(dep.Config)
 	if cfgAny == nil {
@@ -472,7 +500,7 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 	if err != nil {
 		return 0, err
 	}
-	forwardCfg, err := e.forwardConfigForWorkspace(ctx, pc.workspace.ID)
+	forwardCfg, err := e.forwardConfigForUser(ctx, pc.claims.Username)
 	if err != nil || forwardCfg == nil {
 		return 0, err
 	}
@@ -641,6 +669,174 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 	if taskID > 0 {
 		_ = taskstore.AppendTaskEvent(context.Background(), e.db, taskID, "forward.devices.upload.succeeded", map[string]any{
 			"source":      "netlab",
+			"networkId":   networkID,
+			"deviceCount": len(devices),
+		})
+	}
+	return len(devices), nil
+}
+
+func forwardDeviceKeyFromKind(kind string) string {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	switch kind {
+	case "ceos", "eos", "arista", "arista-eos":
+		return "eos"
+	case "linux", "alpine":
+		return "linux"
+	default:
+		return kind
+	}
+}
+
+func forwardDefaultCredentialForKind(kind string) (username, password string, ok bool) {
+	switch forwardDeviceKeyFromKind(kind) {
+	case "eos":
+		return "admin", "admin", true
+	case "linux":
+		return "root", "admin", true
+	default:
+		return "", "", false
+	}
+}
+
+func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int, pc *workspaceContext, dep *WorkspaceDeployment, graph *TopologyGraph) (int, error) {
+	if e == nil || pc == nil || dep == nil || graph == nil {
+		return 0, nil
+	}
+	cfgAny, _ := fromJSONMap(dep.Config)
+	if cfgAny == nil {
+		cfgAny = map[string]any{}
+	}
+	cfgAny, err := e.ensureForwardNetworkForDeployment(ctx, pc, dep)
+	if err != nil {
+		return 0, err
+	}
+	forwardCfg, err := e.forwardConfigForUser(ctx, pc.claims.Username)
+	if err != nil || forwardCfg == nil {
+		return 0, err
+	}
+	client, err := newForwardClient(*forwardCfg)
+	if err != nil {
+		return 0, err
+	}
+
+	getString := func(key string) string {
+		raw, ok := cfgAny[key]
+		if !ok {
+			return ""
+		}
+		if v, ok := raw.(string); ok {
+			return strings.TrimSpace(v)
+		}
+		return strings.TrimSpace(fmt.Sprintf("%v", raw))
+	}
+
+	networkID := getString(forwardNetworkIDKey)
+	if networkID == "" {
+		return 0, nil
+	}
+
+	forwardTypes := e.forwardDeviceTypes(ctx)
+	jumpServerID := getString(forwardJumpServerIDKey)
+	snmpCredentialID := getString(forwardSnmpCredentialIDKey)
+
+	credentialIDsByKind := map[string]string{}
+	if raw, ok := cfgAny[forwardCliCredentialMap]; ok {
+		if m, ok := raw.(map[string]any); ok {
+			for k, v := range m {
+				if s, ok := v.(string); ok {
+					credentialIDsByKind[strings.ToLower(strings.TrimSpace(k))] = strings.TrimSpace(s)
+				}
+			}
+		}
+	}
+	changed := false
+
+	credentialNameForKind := func(kind string) string {
+		base := sanitizeCredentialComponent(dep.Name)
+		if base == "" {
+			base = "deployment"
+		}
+		k := sanitizeCredentialComponent(kind)
+		if k == "" {
+			k = "default"
+		}
+		name := fmt.Sprintf("%s-%s", base, k)
+		if len(name) > 80 {
+			name = strings.TrimRight(name[:80], "-")
+		}
+		return name
+	}
+
+	devices := []forwardClassicDevice{}
+	seen := map[string]bool{}
+	for _, node := range graph.Nodes {
+		mgmt := strings.TrimSpace(node.MgmtIP)
+		if mgmt == "" || mgmt == "—" {
+			continue
+		}
+		key := strings.ToLower(mgmt)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+
+		deviceKey := forwardDeviceKeyFromKind(node.Kind)
+		cliCredentialID := credentialIDsByKind[deviceKey]
+		if cliCredentialID == "" {
+			if u, p, ok := forwardDefaultCredentialForKind(deviceKey); ok {
+				created, err := forwardCreateCliCredentialNamed(ctx, client, networkID, credentialNameForKind(deviceKey), u, p)
+				if err == nil && created != nil {
+					cliCredentialID = created.ID
+					credentialIDsByKind[deviceKey] = cliCredentialID
+					changed = true
+				}
+			}
+		}
+
+		name := strings.TrimSpace(node.Label)
+		if name == "" {
+			name = strings.TrimSpace(node.ID)
+		}
+		if name == "" {
+			name = mgmt
+		}
+
+		forwardType := ""
+		if deviceKey != "" {
+			forwardType = forwardTypes[deviceKey]
+		}
+
+		devices = append(devices, forwardClassicDevice{
+			Name:                     name,
+			Type:                     forwardType,
+			Host:                     mgmt,
+			Port:                     22,
+			CliCredentialID:          cliCredentialID,
+			SnmpCredentialID:         snmpCredentialID,
+			JumpServerID:             jumpServerID,
+			CollectBgpAdvertisements: true,
+			BgpTableType:             "BOTH",
+			BgpPeerType:              "BOTH",
+			EnableSnmpCollection:     true,
+		})
+	}
+	if len(devices) == 0 {
+		return 0, nil
+	}
+	if err := forwardPutClassicDevices(ctx, client, networkID, devices); err != nil {
+		return 0, err
+	}
+	_ = forwardStartCollection(ctx, client, networkID)
+	if changed {
+		cfgAny[forwardCliCredentialMap] = credentialIDsByKind
+		if err := e.updateDeploymentConfig(ctx, pc.workspace.ID, dep.ID, cfgAny); err != nil {
+			return 0, err
+		}
+	}
+	if taskID > 0 {
+		_ = taskstore.AppendTaskEvent(context.Background(), e.db, taskID, "forward.devices.upload.succeeded", map[string]any{
+			"source":      "topology",
 			"networkId":   networkID,
 			"deviceCount": len(devices),
 		})

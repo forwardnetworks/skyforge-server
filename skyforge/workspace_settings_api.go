@@ -10,7 +10,6 @@ import (
 
 type WorkspaceSettingsRequest struct {
 	AllowExternalTemplateRepos bool                   `json:"allowExternalTemplateRepos,omitempty"`
-	AllowCustomEveServers      bool                   `json:"allowCustomEveServers,omitempty"`
 	AllowCustomNetlabServers   bool                   `json:"allowCustomNetlabServers,omitempty"`
 	ExternalTemplateRepos      []ExternalTemplateRepo `json:"externalTemplateRepos,omitempty"`
 }
@@ -91,7 +90,6 @@ func (s *Service) UpdateWorkspaceSettings(ctx context.Context, id string, req *W
 			continue
 		}
 		workspaces[i].AllowExternalTemplateRepos = req.AllowExternalTemplateRepos
-		workspaces[i].AllowCustomEveServers = req.AllowCustomEveServers
 		workspaces[i].AllowCustomNetlabServers = req.AllowCustomNetlabServers
 		if req.AllowExternalTemplateRepos {
 			validated, err := validateExternalTemplateRepos(req.ExternalTemplateRepos)

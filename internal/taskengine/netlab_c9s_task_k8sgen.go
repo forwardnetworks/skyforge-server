@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path"
 	"strings"
 	"time"
@@ -51,7 +50,7 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 
 	image := strings.TrimSpace(e.cfg.NetlabGeneratorImage)
 	if image == "" {
-		return nil, nil, fmt.Errorf("netlab-c9s generator mode is k8s but NetlabGeneratorImage is not configured (set ENCORE_CFG_SKYFORGE.NetlabGenerator.GeneratorImage or SKYFORGE_NETLAB_GENERATOR_IMAGE)")
+		return nil, nil, fmt.Errorf("netlab-c9s generator mode is k8s but NetlabGeneratorImage is not configured (set ENCORE_CFG_SKYFORGE.NetlabGenerator.GeneratorImage)")
 	}
 	pullPolicy := strings.TrimSpace(e.cfg.NetlabGeneratorPullPolicy)
 	if pullPolicy == "" {
@@ -96,7 +95,7 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 	}
 	// The generator runs in the workspace namespace and pulls its image from GHCR.
 	// Ensure the image pull secret exists in the workspace namespace before creating the Job.
-	if err := kubeEnsureNamespaceImagePullSecret(ctx, ns); err != nil {
+	if err := kubeEnsureNamespaceImagePullSecret(ctx, ns, strings.TrimSpace(e.cfg.ImagePullSecretName), strings.TrimSpace(e.cfg.ImagePullSecretNamespace)); err != nil {
 		return nil, nil, err
 	}
 
@@ -122,7 +121,7 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 		return nil, nil, err
 	}
 	// kubeUpsertServiceAccount doesn't include imagePullSecrets; ensure the generator SA can pull.
-	secretName := strings.TrimSpace(os.Getenv("SKYFORGE_IMAGE_PULL_SECRET_NAME"))
+	secretName := strings.TrimSpace(e.cfg.ImagePullSecretName)
 	if secretName == "" {
 		secretName = "ghcr-pull"
 	}

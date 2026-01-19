@@ -2,15 +2,9 @@ package skyforge
 
 import (
 	"context"
-	"encoding/csv"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"log"
-	"net"
-	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -142,46 +136,6 @@ func netlabCredentialForDevice(device, image string) (netlabDeviceCredential, bo
 	return netlabDeviceCredential{}, false
 }
 
-func labppCredentialForDevice(deviceType string) (netlabDeviceCredential, bool) {
-	t := strings.ToLower(strings.TrimSpace(deviceType))
-	if t == "" {
-		return netlabDeviceCredential{
-			Username: "admin",
-			Password: "Testpasswd!",
-		}, true
-	}
-	switch {
-	case strings.Contains(t, "nxos"):
-		return netlabDeviceCredential{Username: "admin", Password: "4h9MK7rSo6q2qua"}, true
-	case strings.Contains(t, "docker"):
-		return netlabDeviceCredential{Username: "root", Password: "Testpasswd!"}, true
-	case strings.Contains(t, "xrv"):
-		return netlabDeviceCredential{Username: "testuser", Password: "Testpasswd!"}, true
-	case strings.Contains(t, "a10"):
-		return netlabDeviceCredential{Username: "admin", Password: "a10"}, true
-	case strings.Contains(t, "nokia") || strings.Contains(t, "vsim"):
-		return netlabDeviceCredential{Username: "admin", Password: "admin"}, true
-	case strings.Contains(t, "alpine"):
-		return netlabDeviceCredential{Username: "root", Password: "Forward123"}, true
-	}
-	switch {
-	case strings.Contains(t, "vmx"):
-		return netlabCredentialForDevice("vmx", "")
-	case strings.Contains(t, "vjunos-switch"):
-		return netlabCredentialForDevice("vjunos-switch", "")
-	case strings.Contains(t, "vjunos"):
-		return netlabCredentialForDevice("vjunos-router", "")
-	case strings.Contains(t, "vsrx"):
-		return netlabCredentialForDevice("vsrx", "")
-	case strings.Contains(t, "vptx"):
-		return netlabCredentialForDevice("vptx", "")
-	}
-	return netlabDeviceCredential{
-		Username: "admin",
-		Password: "Testpasswd!",
-	}, true
-}
-
 type netlabStatusDevice struct {
 	Node     string
 	Device   string
@@ -260,18 +214,6 @@ func stripANSICodes(value string) string {
 		b.WriteByte(ch)
 	}
 	return b.String()
-}
-
-type labppDeviceInfo struct {
-	Name   string `json:"name"`
-	Type   string `json:"type"`
-	MgmtIP string `json:"mgmtIp"`
-	Port   int    `json:"port"`
-}
-
-type labppDevicesResponse struct {
-	ID      string            `json:"id"`
-	Devices []labppDeviceInfo `json:"devices"`
 }
 
 func (s *Service) forwardConfigForWorkspace(ctx context.Context, workspaceID string) (*forwardCredentials, error) {
@@ -392,8 +334,8 @@ func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *wor
 	}
 
 	snmpCredentialID := getString(forwardSnmpCredentialIDKey)
-	if snmpCredentialID == "" && getenvBool("SKYFORGE_FORWARD_SNMP_CREATE_PLACEHOLDER", true) {
-		community := strings.TrimSpace(getenv("SKYFORGE_FORWARD_SNMP_COMMUNITY", "public"))
+	if snmpCredentialID == "" && s.cfg.Forward.SNMPPlaceholderEnabled {
+		community := strings.TrimSpace(s.cfg.Forward.SNMPCommunity)
 		if community != "" {
 			cred, err := forwardCreateSnmpCredential(ctx, client, networkID, credentialName, community)
 			if err != nil {
@@ -420,32 +362,6 @@ func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *wor
 	if dep.Type == "netlab" && useUserJump {
 		if userName := strings.TrimSpace(pc.claims.Username); userName != "" {
 			jumpUser = userName
-		}
-	}
-	if dep.Type == "labpp" && useUserJump {
-		if userName := strings.TrimSpace(pc.claims.Username); userName != "" {
-			jumpUser = userName
-		}
-	}
-	if dep.Type == "netlab" && (jumpHost == "" || jumpKey == "" || jumpUser == "") {
-		netlabServerName := getString("netlabServer")
-		_ = netlabServerName
-	}
-	if dep.Type == "labpp" && (jumpHost == "" || jumpKey == "" || jumpUser == "") {
-		eveServerRef := getString("eveServer")
-		if eveServerRef != "" {
-			if resolvedEve, err := s.resolveWorkspaceEveServerConfig(ctx, pc.workspace.ID, eveServerRef); err == nil && resolvedEve != nil {
-				eve := resolvedEve.Server
-				if jumpHost == "" {
-					jumpHost = strings.TrimSpace(eve.SSHHost)
-				}
-				if jumpUser == "" || !useUserJump {
-					jumpUser = strings.TrimSpace(eve.SSHUser)
-				}
-				if jumpKey == "" && strings.TrimSpace(resolvedEve.SSHKey) != "" {
-					jumpKey = strings.TrimSpace(resolvedEve.SSHKey)
-				}
-			}
 		}
 	}
 	if jumpUser == "" {
@@ -755,185 +671,6 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *
 	return len(devices), nil
 }
 
-func readLabppDataSourcesCSV(path string) ([]labppDeviceInfo, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	reader := csv.NewReader(f)
-	reader.TrimLeadingSpace = true
-	records, err := reader.ReadAll()
-	if err != nil && !errors.Is(err, io.EOF) {
-		return nil, err
-	}
-	devices := []labppDeviceInfo{}
-	if len(records) == 0 {
-		return nil, fmt.Errorf("data_sources.csv contains no devices")
-	}
-	header := make([]string, len(records[0]))
-	for i, value := range records[0] {
-		header[i] = strings.ToLower(strings.TrimSpace(value))
-	}
-	findIndex := func(names ...string) int {
-		for _, name := range names {
-			for idx, value := range header {
-				if value == name {
-					return idx
-				}
-			}
-		}
-		return -1
-	}
-	nameIdx := findIndex("name")
-	if nameIdx == -1 {
-		nameIdx = 0
-	}
-	ipIdx := findIndex("ip_address", "mgmt_ip", "mgmt_ip_address", "management_ip", "management_ipv4", "ip")
-	hostIdx := findIndex("host", "hostname", "ssh_host")
-	portIdx := findIndex("ssh_port", "port")
-
-	extractIPv4 := func(value string) (string, bool) {
-		clean := strings.TrimSpace(value)
-		if clean == "" {
-			return "", false
-		}
-		if slash := strings.Index(clean, "/"); slash > 0 {
-			clean = clean[:slash]
-		}
-		if host, _, err := net.SplitHostPort(clean); err == nil {
-			if ip := net.ParseIP(host); ip != nil && ip.To4() != nil {
-				return host, true
-			}
-		}
-		if ip := net.ParseIP(clean); ip != nil && ip.To4() != nil {
-			return clean, true
-		}
-		return "", false
-	}
-
-	for i := 1; i < len(records); i++ {
-		record := records[i]
-		if len(record) <= nameIdx {
-			continue
-		}
-		name := strings.TrimSpace(record[nameIdx])
-		if name == "" {
-			continue
-		}
-
-		mgmtIP := ""
-		host := ""
-		if ipIdx >= 0 && len(record) > ipIdx {
-			raw := strings.TrimSpace(record[ipIdx])
-			if ip, ok := extractIPv4(raw); ok {
-				mgmtIP = ip
-			} else if raw != "" {
-				// LabPP's data_sources.csv may use hostnames in the ip_address column
-				// (e.g. EVE host + per-device ssh_port). Preserve it as a host so we
-				// can still upload devices to Forward using host+port.
-				host = raw
-			}
-		}
-		if mgmtIP == "" {
-			for _, value := range record {
-				if ip, ok := extractIPv4(value); ok {
-					mgmtIP = ip
-					break
-				}
-			}
-		}
-
-		if mgmtIP == "" && hostIdx >= 0 && len(record) > hostIdx {
-			host = firstNonEmptyTrimmed(host, record[hostIdx])
-		}
-		if mgmtIP == "" && host == "" {
-			continue
-		}
-
-		port := 22
-		if mgmtIP == "" {
-			// Only honor explicit port values when we don't have a management IPv4.
-			if portIdx >= 0 && len(record) > portIdx {
-				if rawPort := strings.TrimSpace(record[portIdx]); rawPort != "" {
-					if parsed, err := strconv.Atoi(rawPort); err == nil && parsed > 0 {
-						port = parsed
-					}
-				}
-			} else if host != "" {
-				if hostOnly, portStr, err := net.SplitHostPort(host); err == nil {
-					host = hostOnly
-					if parsed, err := strconv.Atoi(strings.TrimSpace(portStr)); err == nil && parsed > 0 {
-						port = parsed
-					}
-				}
-			}
-		}
-
-		devices = append(devices, labppDeviceInfo{
-			Name:   name,
-			MgmtIP: firstNonEmptyTrimmed(mgmtIP, host),
-			Port:   port,
-		})
-	}
-	if len(devices) == 0 {
-		return nil, fmt.Errorf("data_sources.csv contains no devices")
-	}
-	return devices, nil
-}
-
-func firstNonEmptyTrimmed(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
-}
-
-func (s *Service) syncForwardLabppDevicesFromCSV(ctx context.Context, taskID int, pc *workspaceContext, deploymentID, csvPath string, startCollection bool, override *forwardCredentials) error {
-	if pc == nil {
-		return fmt.Errorf("workspace context unavailable")
-	}
-	if strings.TrimSpace(deploymentID) == "" {
-		return fmt.Errorf("deployment id is required")
-	}
-	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
-	if err != nil {
-		return err
-	}
-	if dep == nil {
-		return fmt.Errorf("deployment not found")
-	}
-	cfgAny, _ := fromJSONMap(dep.Config)
-	if cfgAny == nil {
-		cfgAny = map[string]any{}
-	}
-	cfgAny, err = s.ensureForwardNetworkForDeployment(ctx, pc, dep)
-	if err != nil {
-		return err
-	}
-	devices, err := readLabppDataSourcesCSV(csvPath)
-	if err != nil {
-		return err
-	}
-	forwardCfg, err := s.forwardConfigForWorkspace(ctx, pc.workspace.ID)
-	if err != nil {
-		return err
-	}
-	forwardCfg = applyForwardOverrides(forwardCfg, override)
-	if forwardCfg == nil {
-		return nil
-	}
-	client, err := newForwardClient(*forwardCfg)
-	if err != nil {
-		return err
-	}
-	deviceUsername := strings.TrimSpace(forwardCfg.DeviceUsername)
-	devicePassword := strings.TrimSpace(forwardCfg.DevicePassword)
-	return s.syncForwardLabppDevicesWithList(ctx, taskID, pc, dep, cfgAny, client, deviceUsername, devicePassword, devices, startCollection)
-}
-
 func applyForwardOverrides(base *forwardCredentials, override *forwardCredentials) *forwardCredentials {
 	if override == nil {
 		return base
@@ -962,154 +699,6 @@ func applyForwardOverrides(base *forwardCredentials, override *forwardCredential
 	return base
 }
 
-func (s *Service) syncForwardLabppDevicesWithList(ctx context.Context, taskID int, pc *workspaceContext, dep *WorkspaceDeployment, cfgAny map[string]any, client *forwardClient, deviceUsername, devicePassword string, devicesResp []labppDeviceInfo, startCollection bool) error {
-	if pc == nil || dep == nil {
-		return fmt.Errorf("workspace context unavailable")
-	}
-	if client == nil {
-		return fmt.Errorf("forward client is required")
-	}
-	if cfgAny == nil {
-		cfgAny = map[string]any{}
-	}
-	getString := func(key string) string {
-		raw, ok := cfgAny[key]
-		if !ok {
-			return ""
-		}
-		if v, ok := raw.(string); ok {
-			return strings.TrimSpace(v)
-		}
-		return strings.TrimSpace(fmt.Sprintf("%v", raw))
-	}
-	networkID := getString(forwardNetworkIDKey)
-	if networkID == "" {
-		return fmt.Errorf("forward network missing for deployment")
-	}
-	if s != nil && s.db != nil && taskID > 0 {
-		_ = appendTaskEvent(context.Background(), s.db, taskID, "forward.devices.upload.started", map[string]any{
-			"source":    "labpp",
-			"networkId": networkID,
-		})
-	}
-	credentialName := strings.TrimSpace(getString(forwardNetworkNameKey))
-	jumpServerID := getString(forwardJumpServerIDKey)
-	defaultCliCredentialID := getString(forwardCliCredentialIDKey)
-	snmpCredentialID := getString(forwardSnmpCredentialIDKey)
-
-	credentialIDsByDevice := map[string]string{}
-	if raw, ok := cfgAny[forwardCliCredentialMap]; ok {
-		if decoded, ok := raw.(map[string]any); ok {
-			for key, value := range decoded {
-				if str, ok := value.(string); ok {
-					credentialIDsByDevice[key] = str
-				}
-			}
-		}
-	}
-
-	devices := []forwardClassicDevice{}
-	for _, device := range devicesResp {
-		name := strings.TrimSpace(device.Name)
-		host := strings.TrimSpace(device.MgmtIP)
-		if name == "" || host == "" {
-			continue
-		}
-		port := device.Port
-		if port <= 0 {
-			port = 22
-		}
-		cliID := defaultCliCredentialID
-		if cliID == "" && deviceUsername != "" && devicePassword != "" {
-			cred, err := forwardCreateCliCredentialNamed(ctx, client, networkID, credentialName, deviceUsername, devicePassword)
-			if err != nil {
-				if strings.Contains(err.Error(), "No collector configured") {
-					log.Printf("forward cli credential skipped: %v", err)
-				} else {
-					return err
-				}
-			} else {
-				cliID = cred.ID
-				credentialIDsByDevice[name] = cliID
-			}
-		} else if cliID == "" {
-			cred, ok := labppCredentialForDevice(device.Type)
-			if !ok {
-				cred, ok = netlabCredentialForDevice("", "")
-			}
-			if ok {
-				created, err := forwardCreateCliCredentialNamed(ctx, client, networkID, credentialName, cred.Username, cred.Password)
-				if err != nil {
-					if strings.Contains(err.Error(), "No collector configured") {
-						log.Printf("forward cli credential skipped: %v", err)
-					} else {
-						return err
-					}
-				} else {
-					cliID = created.ID
-					credentialIDsByDevice[name] = cliID
-				}
-			}
-		}
-
-		devices = append(devices, forwardClassicDevice{
-			Name:                     name,
-			Host:                     host,
-			Port:                     port,
-			CliCredentialID:          cliID,
-			SnmpCredentialID:         snmpCredentialID,
-			JumpServerID:             jumpServerID,
-			CollectBgpAdvertisements: true,
-			BgpTableType:             "BOTH",
-			BgpPeerType:              "BOTH",
-			EnableSnmpCollection:     true,
-		})
-	}
-
-	if err := forwardPutClassicDevices(ctx, client, networkID, devices); err != nil {
-		if isForwardJumpServerMissing(err) && jumpServerID != "" {
-			cfgAny[forwardJumpServerIDKey] = ""
-			refreshed, refreshErr := s.ensureForwardNetworkForDeployment(ctx, pc, dep)
-			if refreshErr != nil {
-				return refreshErr
-			}
-			cfgAny = refreshed
-			jumpServerID = getString(forwardJumpServerIDKey)
-			for i := range devices {
-				devices[i].JumpServerID = jumpServerID
-			}
-			if retryErr := forwardPutClassicDevices(ctx, client, networkID, devices); retryErr != nil {
-				return retryErr
-			}
-		} else {
-			if s != nil && s.db != nil && taskID > 0 {
-				_ = appendTaskEvent(context.Background(), s.db, taskID, "forward.devices.upload.failed", map[string]any{
-					"source":    "labpp",
-					"networkId": networkID,
-					"error":     strings.TrimSpace(err.Error()),
-				})
-			}
-			return err
-		}
-	}
-	if startCollection {
-		if err := forwardStartCollection(ctx, client, networkID); err != nil {
-			log.Printf("forward start collection: %v", err)
-		}
-	}
-	if s != nil && s.db != nil && taskID > 0 {
-		_ = appendTaskEvent(context.Background(), s.db, taskID, "forward.devices.upload.succeeded", map[string]any{
-			"source":      "labpp",
-			"networkId":   networkID,
-			"deviceCount": len(devices),
-		})
-	}
-	cfgAny[forwardCliCredentialMap] = credentialIDsByDevice
-	if err := s.updateDeploymentConfig(ctx, pc.workspace.ID, dep.ID, cfgAny); err != nil {
-		return err
-	}
-	return nil
-}
 
 func (s *Service) updateDeploymentConfig(ctx context.Context, workspaceID, deploymentID string, cfgAny map[string]any) error {
 	if s.db == nil {

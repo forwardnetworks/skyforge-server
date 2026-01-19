@@ -58,7 +58,8 @@ func (s *Service) handleTaskEnqueued(ctx context.Context, msg *taskqueue.TaskEnq
 	return taskexec.ProcessQueuedTask(ctx, stdlib, msg.TaskID, taskexec.Deps{
 		Dispatch: func(ctx context.Context, task *taskstore.TaskRecord, log taskexec.Logger) error {
 			eng := taskengine.New(getWorkerCoreCfg(), stdlib)
-			if handled, err := eng.DispatchTask(ctx, task, log); handled {
+			taskLog := taskDBLogger{db: stdlib, taskID: task.ID}
+			if handled, err := eng.DispatchTask(ctx, task, taskLog); handled {
 				return err
 			}
 			return fmt.Errorf("unsupported task type: %s", strings.TrimSpace(task.TaskType))
@@ -94,6 +95,40 @@ type rlogLogger struct{}
 
 func (rlogLogger) Infof(format string, args ...any)  { rlog.Info(fmt.Sprintf(format, args...)) }
 func (rlogLogger) Errorf(format string, args ...any) { rlog.Error(fmt.Sprintf(format, args...)) }
+
+type taskDBLogger struct {
+	db     *sql.DB
+	taskID int
+}
+
+func (l taskDBLogger) Infof(format string, args ...any) {
+	l.append("stdout", fmt.Sprintf(format, args...))
+}
+
+func (l taskDBLogger) Errorf(format string, args ...any) {
+	l.append("stderr", fmt.Sprintf(format, args...))
+}
+
+func (l taskDBLogger) append(stream string, msg string) {
+	if l.db == nil || l.taskID <= 0 {
+		return
+	}
+	msg = strings.TrimSpace(msg)
+	if msg == "" {
+		return
+	}
+	if len(msg) > 1<<20 {
+		msg = msg[:1<<20]
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_ = taskstore.AppendTaskLog(ctx, l.db, l.taskID, stream, msg)
+	if stream == "stderr" {
+		rlog.Error(msg, "task_id", l.taskID)
+		return
+	}
+	rlog.Info(msg, "task_id", l.taskID)
+}
 
 func getTaskPriority(ctx context.Context, db *sql.DB, taskID int) int {
 	if db == nil || taskID <= 0 {

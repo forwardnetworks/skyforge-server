@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"encore.app/internal/maintenance"
-	"encore.app/skyforge"
+	"encore.app/internal/maintenancejobs"
 	"encore.dev/pubsub"
 	"encore.dev/rlog"
 )
@@ -28,7 +28,12 @@ func (s *Service) handleMaintenanceEvent(ctx context.Context, msg *maintenance.M
 	if kind == "" {
 		return nil
 	}
-	if err := skyforge.InternalRunMaintenance(ctx, &skyforge.InternalRunMaintenanceParams{Kind: kind}); err != nil {
+	stdlib, err := getWorkerDB(ctx)
+	if err != nil {
+		rlog.Error("maintenance db unavailable", "kind", kind, "err", err)
+		return err
+	}
+	if err := maintenancejobs.Run(ctx, getWorkerCoreCfg(), stdlib, kind); err != nil {
 		rlog.Error("maintenance run failed", "kind", kind, "err", err)
 		return err
 	}

@@ -37,6 +37,29 @@ func putWorkspaceArtifact(ctx context.Context, cfg skyforgecore.Config, workspac
 	return key, nil
 }
 
+func readWorkspaceArtifact(ctx context.Context, cfg skyforgecore.Config, workspaceID, key string, maxBytes int) ([]byte, error) {
+	if maxBytes <= 0 || maxBytes > 10<<20 {
+		maxBytes = 2 << 20
+	}
+	key = strings.TrimPrefix(strings.TrimSpace(key), "/")
+	if key == "" {
+		return nil, fmt.Errorf("artifact key is required")
+	}
+	obj := artifactObjectNameForWorkspace(workspaceID, key)
+	client, err := objectStoreClientFor(cfg)
+	if err != nil {
+		return nil, err
+	}
+	data, err := client.GetObject(ctx, skyforgeArtifactsBucket, obj)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxBytes {
+		return nil, fmt.Errorf("artifact too large")
+	}
+	return data, nil
+}
+
 func (e *Engine) setTaskMetadataKey(taskID int, k string, v any) {
 	if e == nil || e.db == nil || taskID <= 0 {
 		return
@@ -61,4 +84,3 @@ func (e *Engine) setTaskMetadataKey(taskID int, k string, v any) {
 		_ = taskstore.UpdateTaskMetadata(ctx, e.db, taskID, metaJSON)
 	}
 }
-

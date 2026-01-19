@@ -253,10 +253,17 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 
 	// Capture a lightweight topology graph after deploy so the UI can render
 	// resolved management IPs without querying netlab output.
-	if err := e.captureC9sTopologyArtifact(ctx, spec, ns, topologyName, labName, topologyBytes, log); err != nil {
+	graph, err := e.captureC9sTopologyArtifact(ctx, spec, ns, topologyName, labName, topologyBytes, log)
+	if err != nil {
 		// Don't fail the run if topology capture fails; it is a best-effort UX enhancement.
 		if log != nil {
 			log.Infof("c9s topology capture failed: %v", err)
+		}
+	} else if graph != nil {
+		if dep, err := e.loadDeployment(ctx, spec.WorkspaceCtx.workspace.ID, strings.TrimSpace(spec.DeploymentID)); err == nil && dep != nil {
+			if _, err := e.syncForwardTopologyGraphDevices(ctx, spec.TaskID, spec.WorkspaceCtx, dep, graph); err != nil && log != nil {
+				log.Infof("forward sync skipped: %v", err)
+			}
 		}
 	}
 
@@ -267,21 +274,21 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	return nil
 }
 
-func (e *Engine) captureC9sTopologyArtifact(ctx context.Context, spec netlabC9sRunSpec, ns, topologyName, labName string, topologyYAML []byte, log Logger) error {
+func (e *Engine) captureC9sTopologyArtifact(ctx context.Context, spec netlabC9sRunSpec, ns, topologyName, labName string, topologyYAML []byte, log Logger) (*TopologyGraph, error) {
 	if e == nil || e.db == nil || spec.TaskID <= 0 || spec.WorkspaceCtx == nil || strings.TrimSpace(spec.WorkspaceCtx.workspace.ID) == "" {
-		return fmt.Errorf("invalid task context")
+		return nil, fmt.Errorf("invalid task context")
 	}
 	ns = strings.TrimSpace(ns)
 	topologyName = strings.TrimSpace(topologyName)
 	if ns == "" || topologyName == "" {
-		return fmt.Errorf("namespace and topology name are required")
+		return nil, fmt.Errorf("namespace and topology name are required")
 	}
 
 	pods, err := kubeListPods(ctx, ns, map[string]string{
 		"clabernetes/topologyOwner": topologyName,
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	podInfo := map[string]TopologyNode{}
 	for _, pod := range pods {
@@ -299,13 +306,13 @@ func (e *Engine) captureC9sTopologyArtifact(ctx context.Context, spec netlabC9sR
 
 	graph, err := containerlabYAMLBytesToTopologyGraph(topologyYAML, podInfo)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	graph.GeneratedAt = time.Now().UTC().Format(time.RFC3339)
 
 	graphBytes, err := json.Marshal(graph)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if strings.TrimSpace(labName) == "" {
@@ -316,13 +323,13 @@ func (e *Engine) captureC9sTopologyArtifact(ctx context.Context, spec netlabC9sR
 	defer cancel()
 	putKey, err := putWorkspaceArtifact(ctxPut, e.cfg, spec.WorkspaceCtx.workspace.ID, key, graphBytes, "application/json")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	e.setTaskMetadataKey(spec.TaskID, "topologyKey", putKey)
 	if log != nil {
 		log.Infof("c9s topology artifact stored: %s", putKey)
 	}
-	return nil
+	return graph, nil
 }
 
 func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabYAML []byte, nodeMounts map[string][]c9sFileFromConfigMap, e *Engine, log Logger) ([]byte, map[string][]c9sFileFromConfigMap, error) {

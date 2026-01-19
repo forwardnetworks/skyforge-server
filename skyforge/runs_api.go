@@ -191,7 +191,7 @@ func (s *Service) CancelRun(ctx context.Context, id int, params *RunsOutputParam
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to cancel task").Err()
 	}
 
-	// Worker-owned: best-effort propagate cancellation to external runners (netlab API job cancel, labpp job delete).
+	// Worker-owned: best-effort propagate cancellation to external runners.
 	_, _ = taskqueue.CancelTopic.Publish(ctx, &taskqueue.TaskCancelEvent{TaskID: task.ID})
 
 	// Notify + update deployment status for UI.

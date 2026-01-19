@@ -60,7 +60,7 @@ func ensureGiteaUserFromProfile(cfg skyforgecore.Config, username, displayName, 
 	if username == "" {
 		return fmt.Errorf("missing username")
 	}
-	identity := gitea.Identity(displayName, username, email)
+	identity := gitea.Identity(displayName, username, email, cfg.CorpEmailDomain)
 	derivedEmail, _ := identity["email"].(string)
 	derivedName, _ := identity["name"].(string)
 	if err := giteaClientFor(cfg, true).EnsureUser(username, derivedEmail, derivedName); err != nil {

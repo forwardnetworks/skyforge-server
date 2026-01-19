@@ -22,6 +22,7 @@ type Config struct {
 	AdminPassword             string
 	WorkspaceSyncSeconds      int
 	UI                        UIConfig
+	PublicURL                 string
 	NotificationsEnabled      bool
 	NotificationsInterval     time.Duration
 	CloudCredentialChecks     time.Duration
@@ -38,8 +39,6 @@ type Config struct {
 	YaadeBaseURL              string
 	YaadeInternalBaseURL      string
 	Netlab                    NetlabConfig
-	NetlabServers             []NetlabServerConfig
-	Labs                      LabsConfig
 	OIDC                      OIDCConfig
 	LDAP                      LDAPConfig
 	LDAPLookupBindDN          string
@@ -48,24 +47,6 @@ type Config struct {
 	TerraformBinaryPath       string
 	TerraformVersion          string
 	TerraformURL              string
-	EveServers                []EveServerConfig
-	LabppRunnerImage          string
-	LabppRunnerPullPolicy     string
-	LabppRunnerPVCName        string
-	LabppConfigDirBase        string
-	LabppConfigVersion        string
-	LabppNetboxURL            string
-	LabppNetboxUsername       string
-	LabppNetboxPassword       string
-	LabppNetboxToken          string
-	LabppNetboxMgmtSubnet     string
-	LabppS3AccessKey          string
-	LabppS3SecretKey          string
-	LabppS3Region             string
-	LabppS3BucketName         string
-	LabppS3Endpoint           string
-	LabppS3DisableSSL         bool
-	LabppS3DisableChecksum    bool
 	YaadeAdminUsername        string
 	YaadeAdminPassword        string
 	ContainerlabAPIPath       string
@@ -88,6 +69,14 @@ type Config struct {
 	DNSAdminUsername          string
 	DNSUserZoneSuffix         string
 	TaskWorkerEnabled         bool
+	ImagePullSecretName       string
+	ImagePullSecretNamespace  string
+	Forward                   ForwardConfig
+}
+
+type ForwardConfig struct {
+	SNMPPlaceholderEnabled bool
+	SNMPCommunity          string
 }
 
 type OIDCConfig struct {
@@ -146,32 +135,6 @@ type NetlabServerConfig struct {
 	APIToken                  string `json:"apiToken,omitempty"`
 	ContainerlabAPIURL        string `json:"containerlabApiUrl,omitempty"`
 	ContainerlabSkipTLSVerify bool   `json:"containerlabSkipTlsVerify,omitempty"`
-}
-
-type LabsConfig struct {
-	PublicURL        string
-	EveAPIURL        string
-	EveUsername      string
-	EvePassword      string
-	EveSkipTLSVerify bool
-	EveSSHKeyFile    string
-	EveSSHUser       string
-	EveSSHTunnel     bool
-	EveLabsPath      string
-	EveTmpPath       string
-}
-
-type EveServerConfig struct {
-	Name          string `json:"name"`
-	APIURL        string `json:"apiUrl"`
-	WebURL        string `json:"webUrl,omitempty"`
-	Username      string `json:"username,omitempty"`
-	Password      string `json:"password,omitempty"`
-	SkipTLSVerify bool   `json:"skipTlsVerify,omitempty"`
-	SSHHost       string `json:"sshHost,omitempty"`
-	SSHUser       string `json:"sshUser,omitempty"`
-	LabsPath      string `json:"labsPath,omitempty"`
-	TmpPath       string `json:"tmpPath,omitempty"`
 }
 
 type WorkspacesConfig struct {
@@ -253,10 +216,5 @@ type Secrets struct {
 	PKICACert                       string
 	PKICAKey                        string
 	SSHCAKey                        string
-	LabppNetboxUsername             string
-	LabppNetboxPassword             string
-	LabppNetboxToken                string
-	LabppS3AccessKey                string
-	LabppS3SecretKey                string
 	YaadeAdminPassword              string
 }

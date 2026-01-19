@@ -71,9 +71,6 @@ func (s *Service) runNetlabC9sDeploymentAction(
 		if netlabServer == "" {
 			netlabServer = strings.TrimSpace(pc.workspace.NetlabServer)
 		}
-		if netlabServer == "" {
-			netlabServer = strings.TrimSpace(pc.workspace.EveServer)
-		}
 		server, err := s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, netlabServer)
 		if err != nil {
 			return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()

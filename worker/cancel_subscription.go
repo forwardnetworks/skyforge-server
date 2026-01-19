@@ -19,6 +19,9 @@ func (s *Service) handleTaskCancel(ctx context.Context, msg *taskqueue.TaskCance
 	if msg == nil || msg.TaskID <= 0 {
 		return nil
 	}
+	if !workerEncoreCfg.TaskWorkerEnabled {
+		return nil
+	}
 	stdlib, err := getWorkerDB(ctx)
 	if err != nil {
 		return err
@@ -27,7 +30,7 @@ func (s *Service) handleTaskCancel(ctx context.Context, msg *taskqueue.TaskCance
 	if err != nil || rec == nil {
 		return nil
 	}
-	eng := taskengine.New(workerCoreCfg, stdlib)
+	eng := taskengine.New(getWorkerCoreCfg(), stdlib)
 	eng.CancelTask(ctx, rec, rlogLogger{})
 	rlog.Info("task cancel handled", "task_id", msg.TaskID)
 	return nil

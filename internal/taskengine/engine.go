@@ -43,14 +43,14 @@ func (e *Engine) DispatchTask(ctx context.Context, task *taskstore.TaskRecord, l
 		return true, e.dispatchNetlabTask(ctx, task, log)
 	case typ == "netlab-c9s-run":
 		return true, e.dispatchNetlabC9sTask(ctx, task, taskLogAdapter(log))
-	case typ == "labpp-run":
-		return true, e.dispatchLabppTask(ctx, task, taskLogAdapter(log))
 	case typ == "containerlab-run":
 		return true, e.dispatchContainerlabTask(ctx, task, taskLogAdapter(log))
 	case typ == "clabernetes-run":
 		return true, e.dispatchClabernetesTask(ctx, task, taskLogAdapter(log))
 	case strings.HasPrefix(typ, "terraform-"):
 		return true, e.dispatchTerraformTask(ctx, task, taskLogAdapter(log))
+	case typ == "forward-sync":
+		return true, e.dispatchForwardSyncTask(ctx, task, taskLogAdapter(log))
 	default:
 		return false, nil
 	}

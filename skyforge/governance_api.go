@@ -3,7 +3,6 @@ package skyforge
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 
@@ -365,81 +364,7 @@ func (s *Service) SyncGovernanceSources(ctx context.Context) (*GovernanceSyncRes
 	}
 
 	resp := &GovernanceSyncResponse{}
-
-	stats, err := s.GetEveStats(ctx, &EveStatsParams{})
-	if err != nil {
-		resp.Warnings = append(resp.Warnings, "eve stats unavailable")
-	} else {
-		fmtFloat := func(v *float64) string {
-			if v == nil {
-				return ""
-			}
-			return fmt.Sprintf("%.2f", *v)
-		}
-		fmtInt := func(v *int) string {
-			if v == nil {
-				return ""
-			}
-			return fmt.Sprintf("%d", *v)
-		}
-		fmtInt64 := func(v *int64) string {
-			if v == nil {
-				return ""
-			}
-			return fmt.Sprintf("%d", *v)
-		}
-		for _, server := range stats.Servers {
-			input := GovernanceResourceInput{
-				Provider:     "eve",
-				ResourceID:   server.Name,
-				ResourceType: "lab-server",
-				Name:         server.Name,
-				Status:       strings.ToLower(strings.TrimSpace(server.Status)),
-				Metadata: map[string]string{
-					"version":       server.Version,
-					"cpu_percent":   fmtFloat(server.CpuPercent),
-					"mem_percent":   fmtFloat(server.MemPercent),
-					"disk_percent":  fmtFloat(server.DiskPercent),
-					"vcpu":          fmtInt(server.VCPU),
-					"mem_total":     fmtInt64(server.MemTotal),
-					"disk_free":     fmtFloat(server.DiskAvailable),
-					"qemu_nodes":    fmtInt(server.QemuNodes),
-					"dynamips":      fmtInt(server.DynamipsNodes),
-					"vpcs":          fmtInt(server.VpcsNodes),
-					"docker_nodes":  fmtInt(server.DockerNodes),
-					"cluster_nodes": fmtInt(server.ClusterNodes),
-					"cluster_up":    fmtInt(server.ClusterOnline),
-					"error":         server.Error,
-				},
-			}
-			if _, err := upsertGovernanceResource(ctx, s.db, input, time.Now(), user); err != nil {
-				resp.Warnings = append(resp.Warnings, "failed to ingest eve server "+server.Name)
-				continue
-			}
-			resp.ResourceCount++
-			metrics := make([]GovernanceUsageInput, 0, 5)
-			if server.CpuPercent != nil {
-				metrics = append(metrics, GovernanceUsageInput{Provider: "eve", ScopeType: "server", ScopeID: server.Name, Metric: "cpu_percent", Value: *server.CpuPercent, Unit: "%"})
-			}
-			if server.MemPercent != nil {
-				metrics = append(metrics, GovernanceUsageInput{Provider: "eve", ScopeType: "server", ScopeID: server.Name, Metric: "mem_percent", Value: *server.MemPercent, Unit: "%"})
-			}
-			if server.DiskPercent != nil {
-				metrics = append(metrics, GovernanceUsageInput{Provider: "eve", ScopeType: "server", ScopeID: server.Name, Metric: "disk_percent", Value: *server.DiskPercent, Unit: "%"})
-			}
-			if server.QemuNodes != nil {
-				metrics = append(metrics, GovernanceUsageInput{Provider: "eve", ScopeType: "server", ScopeID: server.Name, Metric: "qemu_nodes", Value: float64(*server.QemuNodes), Unit: "count"})
-			}
-			if server.DockerNodes != nil {
-				metrics = append(metrics, GovernanceUsageInput{Provider: "eve", ScopeType: "server", ScopeID: server.Name, Metric: "docker_nodes", Value: float64(*server.DockerNodes), Unit: "count"})
-			}
-			for _, metric := range metrics {
-				if _, err := insertGovernanceUsage(ctx, s.db, metric); err == nil {
-					resp.UsageCount++
-				}
-			}
-		}
-	}
+	// EVE health/stats removed; governance sync no longer ingests EVE server resources.
 
 	details, _ := json.Marshal(map[string]any{
 		"resources": resp.ResourceCount,

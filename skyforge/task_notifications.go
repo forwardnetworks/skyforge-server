@@ -16,10 +16,10 @@ func (s *Service) notifyTaskEvent(ctx context.Context, task *TaskRecord, status 
 	defer cancel()
 
 	meta, _ := fromJSONMap(task.Metadata)
-	action := strings.TrimSpace(labppMetaString(meta, "action"))
-	deploymentName := strings.TrimSpace(labppMetaString(meta, "deployment"))
-	template := strings.TrimSpace(labppMetaString(meta, "template"))
-	serverName := strings.TrimSpace(labppMetaString(meta, "server"))
+	action := strings.TrimSpace(metaString(meta, "action"))
+	deploymentName := strings.TrimSpace(metaString(meta, "deployment"))
+	template := strings.TrimSpace(metaString(meta, "template"))
+	serverName := strings.TrimSpace(metaString(meta, "server"))
 
 	if deploymentName == "" {
 		deploymentName = task.DeploymentID.String

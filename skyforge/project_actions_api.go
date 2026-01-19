@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 	"time"
 
@@ -133,89 +132,6 @@ func (s *Service) UpdateWorkspaceMembers(ctx context.Context, id string, req *Wo
 	return &pc.workspace, nil
 }
 
-type WorkspaceEveConfigResponse struct {
-	WorkspaceID string   `json:"workspaceId"`
-	EveServer   string   `json:"eveServer"`
-	EveServers  []string `json:"eveServers"`
-}
-
-type WorkspaceEveConfigRequest struct {
-	EveServer string `json:"eveServer"`
-}
-
-// GetWorkspaceEve returns the workspace's EVE server selection.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/eve
-func (s *Service) GetWorkspaceEve(ctx context.Context, id string) (*WorkspaceEveConfigResponse, error) {
-	user, err := requireAuthUser()
-	if err != nil {
-		return nil, err
-	}
-	pc, err := s.workspaceContextForUser(user, id)
-	if err != nil {
-		return nil, err
-	}
-	if pc.access == "viewer" {
-		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
-	}
-	_ = ctx
-	return &WorkspaceEveConfigResponse{
-		WorkspaceID: pc.workspace.ID,
-		EveServer:   pc.workspace.EveServer,
-		EveServers:  []string{},
-	}, nil
-}
-
-// UpdateWorkspaceEve updates the workspace's EVE server selection.
-//
-//encore:api auth method=PUT path=/api/workspaces/:id/eve
-func (s *Service) UpdateWorkspaceEve(ctx context.Context, id string, req *WorkspaceEveConfigRequest) (*SkyforgeWorkspace, error) {
-	user, err := requireAuthUser()
-	if err != nil {
-		return nil, err
-	}
-	pc, err := s.workspaceContextForUser(user, id)
-	if err != nil {
-		return nil, err
-	}
-	if pc.access == "viewer" {
-		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
-	}
-	if req == nil {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid payload").Err()
-	}
-	next := strings.TrimSpace(req.EveServer)
-	if next != "" {
-		serverID, ok := parseWorkspaceServerRef(next)
-		if !ok {
-			return nil, errs.B().Code(errs.InvalidArgument).Msg("eveServer must be a workspace server (ws:...)").Err()
-		}
-		if s.db == nil {
-			return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
-		}
-		rec, err := getWorkspaceEveServerByID(ctx, s.db, s.box, pc.workspace.ID, serverID)
-		if err != nil || rec == nil {
-			return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown eveServer").Err()
-		}
-	}
-	pc.workspace.EveServer = next
-	if err := s.workspaceStore.upsert(pc.workspace); err != nil {
-		log.Printf("workspace upsert: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist eve server").Err()
-	}
-	if s.db != nil {
-		_ = notifyWorkspacesUpdatePG(ctx, s.db, "*")
-		_ = notifyDashboardUpdatePG(ctx, s.db)
-	}
-	{
-		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
-		defer cancel()
-		actor, actorIsAdmin, impersonated := auditActor(s.cfg, pc.claims)
-		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "workspace.eve.update", pc.workspace.ID, fmt.Sprintf("eveServer=%s", next))
-	}
-	return &pc.workspace, nil
-}
-
 type WorkspaceNetlabConfigResponse struct {
 	WorkspaceID   string   `json:"workspaceId"`
 	NetlabServer  string   `json:"netlabServer"`
@@ -297,99 +213,6 @@ func (s *Service) UpdateWorkspaceNetlab(ctx context.Context, id string, req *Wor
 		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "workspace.netlab.update", pc.workspace.ID, fmt.Sprintf("netlabServer=%s", next))
 	}
 	return &pc.workspace, nil
-}
-
-type WorkspaceEveLabResponse struct {
-	WorkspaceID   string `json:"workspaceId"`
-	WorkspaceSlug string `json:"workspaceSlug"`
-	Owner         string `json:"owner"`
-	EveServer     string `json:"eveServer"`
-	LabPath       string `json:"labPath"`
-	Exists        bool   `json:"exists"`
-	Created       bool   `json:"created"`
-}
-
-// GetWorkspaceEveLab returns EVE lab state for the workspace.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/eve/lab
-func (s *Service) GetWorkspaceEveLab(ctx context.Context, id string) (*WorkspaceEveLabResponse, error) {
-	return s.handleWorkspaceEveLab(ctx, id, false)
-}
-
-// CreateWorkspaceEveLab creates an EVE lab for the workspace.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/eve/lab
-func (s *Service) CreateWorkspaceEveLab(ctx context.Context, id string) (*WorkspaceEveLabResponse, error) {
-	return s.handleWorkspaceEveLab(ctx, id, true)
-}
-
-func (s *Service) handleWorkspaceEveLab(ctx context.Context, id string, create bool) (*WorkspaceEveLabResponse, error) {
-	user, err := requireAuthUser()
-	if err != nil {
-		return nil, err
-	}
-	pc, err := s.workspaceContextForUser(user, id)
-	if err != nil {
-		return nil, err
-	}
-	if create && pc.access == "viewer" {
-		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
-	}
-	owner := workspacePrimaryOwner(pc.workspace)
-	if owner == "" {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("workspace owner is required").Err()
-	}
-	serverRef := strings.TrimSpace(pc.workspace.EveServer)
-	resolvedEve, err := s.resolveWorkspaceEveServerConfig(ctx, pc.workspace.ID, serverRef)
-	if err != nil {
-		return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
-	}
-	server := resolvedEve.Server
-	labsCfg := s.cfg.Labs
-	if strings.TrimSpace(resolvedEve.SSHKey) != "" {
-		f, err := os.CreateTemp("", "skyforge-eve-ssh-*.key")
-		if err != nil {
-			return nil, errs.B().Code(errs.Unavailable).Msg("failed to stage eve ssh key").Err()
-		}
-		path := f.Name()
-		defer os.Remove(path)
-		_ = f.Chmod(0o600)
-		_, _ = f.WriteString(strings.TrimSpace(resolvedEve.SSHKey))
-		_ = f.Close()
-		labsCfg.EveSSHKeyFile = path
-	}
-	labsPath := strings.TrimSpace(server.LabsPath)
-	if labsPath == "" {
-		labsPath = strings.TrimSpace(s.cfg.Labs.EveLabsPath)
-	}
-	labPath := eveLabPathForProject(labsPath, owner, pc.workspace.Slug)
-	exists := false
-	created := false
-
-	if create {
-		path, existed, err := ensureEveLabViaSSH(ctx, labsCfg, server, owner, pc.workspace.Slug)
-		if err != nil {
-			log.Printf("ensure eve lab: %v", err)
-			return nil, errs.B().Code(errs.Unavailable).Msg("failed to create lab").Err()
-		}
-		labPath = path
-		exists = true
-		created = !existed
-	} else if labPath != "" && strings.TrimSpace(labsCfg.EveSSHKeyFile) != "" {
-		if ok, _, err := eveLabExistsViaSSH(ctx, labsCfg, server, owner, pc.workspace.Slug); err == nil {
-			exists = ok
-		}
-	}
-
-	return &WorkspaceEveLabResponse{
-		WorkspaceID:   pc.workspace.ID,
-		WorkspaceSlug: pc.workspace.Slug,
-		Owner:         owner,
-		EveServer:     serverRef,
-		LabPath:       labPath,
-		Exists:        exists,
-		Created:       created,
-	}, nil
 }
 
 type WorkspaceAWSStaticGetResponse struct {

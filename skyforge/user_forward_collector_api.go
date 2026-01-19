@@ -75,31 +75,64 @@ FROM sf_user_forward_credentials WHERE username=$1`, username).Scan(
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
-		return nil, err
+		if isMissingDBRelation(err) {
+			return nil, nil
+		}
+		if isMissingDBColumn(err, "skip_tls_verify") {
+			// Backward-compat: older clusters might not have the skip_tls_verify column yet.
+			skipTLSVerify = sql.NullBool{Valid: true, Bool: false}
+			err2 := db.QueryRowContext(ctx, `SELECT base_url, forward_username, forward_password,
+  COALESCE(collector_id, ''), COALESCE(collector_username, ''), COALESCE(authorization_key, ''),
+  updated_at
+FROM sf_user_forward_credentials WHERE username=$1`, username).Scan(
+				&baseURL,
+				&forwardUser,
+				&forwardPass,
+				&collectorID,
+				&collectorUser,
+				&authKey,
+				&updatedAt,
+			)
+			if err2 != nil {
+				if errors.Is(err2, sql.ErrNoRows) || isMissingDBRelation(err2) {
+					return nil, nil
+				}
+				return nil, err2
+			}
+			err = nil
+		} else {
+			return nil, err
+		}
 	}
 	baseURLValue, err := box.decrypt(baseURL.String)
 	if err != nil {
-		return nil, err
+		log.Printf("user forward decrypt base_url (%s): %v", username, err)
+		return nil, nil
 	}
 	forwardUserValue, err := box.decrypt(forwardUser.String)
 	if err != nil {
-		return nil, err
+		log.Printf("user forward decrypt forward_username (%s): %v", username, err)
+		return nil, nil
 	}
 	forwardPassValue, err := box.decrypt(forwardPass.String)
 	if err != nil {
-		return nil, err
+		log.Printf("user forward decrypt forward_password (%s): %v", username, err)
+		return nil, nil
 	}
 	collectorIDValue, err := box.decrypt(collectorID.String)
 	if err != nil {
-		return nil, err
+		log.Printf("user forward decrypt collector_id (%s): %v", username, err)
+		return nil, nil
 	}
 	collectorUserValue, err := box.decrypt(collectorUser.String)
 	if err != nil {
-		return nil, err
+		log.Printf("user forward decrypt collector_username (%s): %v", username, err)
+		return nil, nil
 	}
 	authKeyValue, err := box.decrypt(authKey.String)
 	if err != nil {
-		return nil, err
+		log.Printf("user forward decrypt authorization_key (%s): %v", username, err)
+		return nil, nil
 	}
 
 	rec := &userForwardCredentials{
@@ -182,6 +215,36 @@ ON CONFLICT (username) DO UPDATE SET
 		encCollectorUser,
 		encAuthKey,
 	)
+	if isMissingDBRelation(err) {
+		return fmt.Errorf("forward credentials store not initialized")
+	}
+	if isMissingDBColumn(err, "skip_tls_verify") {
+		_, err2 := db.ExecContext(ctx, `INSERT INTO sf_user_forward_credentials (
+  username, base_url, forward_username, forward_password,
+  collector_id, collector_username, authorization_key,
+  updated_at
+) VALUES ($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),now())
+ON CONFLICT (username) DO UPDATE SET
+  base_url=excluded.base_url,
+  forward_username=excluded.forward_username,
+  forward_password=excluded.forward_password,
+  collector_id=excluded.collector_id,
+  collector_username=excluded.collector_username,
+  authorization_key=excluded.authorization_key,
+  updated_at=now()`,
+			username,
+			encBaseURL,
+			encFwdUser,
+			encFwdPass,
+			encCollectorID,
+			encCollectorUser,
+			encAuthKey,
+		)
+		if isMissingDBRelation(err2) {
+			return fmt.Errorf("forward credentials store not initialized")
+		}
+		return err2
+	}
 	return err
 }
 
@@ -194,6 +257,9 @@ func deleteUserForwardCredentials(ctx context.Context, db *sql.DB, username stri
 		return nil
 	}
 	_, err := db.ExecContext(ctx, `DELETE FROM sf_user_forward_credentials WHERE username=$1`, username)
+	if isMissingDBRelation(err) {
+		return nil
+	}
 	return err
 }
 

@@ -61,7 +61,7 @@ func ensureGiteaUserFromProfile(cfg Config, profile *UserProfile) error {
 	if username == "" {
 		return fmt.Errorf("missing username")
 	}
-	identity := gitea.Identity(profile.DisplayName, username, profile.Email)
+	identity := gitea.Identity(profile.DisplayName, username, profile.Email, cfg.CorpEmailDomain)
 	email, _ := identity["email"].(string)
 	name, _ := identity["name"].(string)
 	if err := giteaClientFor(cfg).EnsureUser(username, email, name); err != nil {
@@ -135,7 +135,7 @@ func ensureGiteaUserPassword(cfg Config, username, displayName, email, password 
 		return fmt.Errorf("gitea user missing username")
 	}
 	if email == "" {
-		identity := gitea.Identity(displayName, username, email)
+		identity := gitea.Identity(displayName, username, email, cfg.CorpEmailDomain)
 		if name, ok := identity["name"].(string); ok && strings.TrimSpace(name) != "" {
 			displayName = strings.TrimSpace(name)
 		}
@@ -461,7 +461,7 @@ func syncBlueprintCatalogIntoWorkspaceRepo(sourceCfg, targetCfg Config, targetOw
 	// The deployment UX expects `blueprints/<type>` (workspace repo), while the catalog repo is
 	// `<type>` at the repo root.
 	destRoot := "blueprints"
-	expected := []string{"containerlab", "labpp", "netlab", "terraform"}
+	expected := []string{"containerlab", "netlab", "terraform"}
 	for _, dir := range expected {
 		if err := syncGiteaDirectoryWithSourceToTarget(sourceCfg, targetCfg, sourceOwner, sourceRepo, targetOwner, targetRepo, dir, path.Join(destRoot, dir), sourceBranch, targetBranch, claims); err != nil {
 			return err
@@ -543,15 +543,15 @@ func ensureGiteaRepoFromBlueprint(cfg Config, owner, repo, blueprint string, rep
 	return ensureGiteaRepo(cfg, owner, repo, repoPrivate)
 }
 
-func giteaIdentityFromClaims(claims *SessionClaims) map[string]any {
+func giteaIdentityFromClaims(cfg Config, claims *SessionClaims) map[string]any {
 	if claims == nil {
 		return nil
 	}
-	return gitea.Identity(claims.DisplayName, claims.Username, claims.Email)
+	return gitea.Identity(claims.DisplayName, claims.Username, claims.Email, cfg.CorpEmailDomain)
 }
 
 func ensureGiteaFile(cfg Config, owner, repo, filePath, content, message, branch string, claims *SessionClaims) error {
-	return giteaClientFor(cfg).EnsureFile(owner, repo, filePath, content, message, branch, giteaIdentityFromClaims(claims))
+	return giteaClientFor(cfg).EnsureFile(owner, repo, filePath, content, message, branch, giteaIdentityFromClaims(cfg, claims))
 }
 
 func ensureGiteaCollaborator(cfg Config, owner, repo, username, permission string) error {

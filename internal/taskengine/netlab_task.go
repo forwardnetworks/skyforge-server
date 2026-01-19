@@ -69,10 +69,6 @@ func (e *Engine) dispatchNetlabTask(ctx context.Context, task *taskstore.TaskRec
 	if serverRef == "" {
 		serverRef = strings.TrimSpace(pc.workspace.NetlabServer)
 	}
-	if serverRef == "" {
-		// backward-compat fallback (historically overloaded field)
-		serverRef = strings.TrimSpace(pc.workspace.EveServer)
-	}
 	server, err := e.resolveWorkspaceNetlabServer(ctx, pc.workspace.ID, serverRef)
 	if err != nil {
 		return err

@@ -26,16 +26,18 @@ type containerlabTaskSpec struct {
 }
 
 type containerlabRunSpec struct {
-	TaskID      int
-	WorkspaceID string
-	APIURL      string
-	Token       string
-	Action      string
-	LabName     string
-	Environment map[string]string
-	Topology    map[string]any
-	Reconfigure bool
-	SkipTLS     bool
+	TaskID       int
+	WorkspaceCtx *workspaceContext
+	WorkspaceID  string
+	DeploymentID string
+	APIURL       string
+	Token        string
+	Action       string
+	LabName      string
+	Environment  map[string]string
+	Topology     map[string]any
+	Reconfigure  bool
+	SkipTLS      bool
 }
 
 func (e *Engine) dispatchContainerlabTask(ctx context.Context, task *taskstore.TaskRecord, log Logger) error {
@@ -71,10 +73,6 @@ func (e *Engine) dispatchContainerlabTask(ctx context.Context, task *taskstore.T
 		if serverRef == "" {
 			serverRef = strings.TrimSpace(pc.workspace.NetlabServer)
 		}
-		if serverRef == "" {
-			// backward-compat fallback
-			serverRef = strings.TrimSpace(pc.workspace.EveServer)
-		}
 		server, err := e.resolveWorkspaceNetlabServer(ctx, pc.workspace.ID, serverRef)
 		if err != nil {
 			return err
@@ -92,8 +90,15 @@ func (e *Engine) dispatchContainerlabTask(ctx context.Context, task *taskstore.T
 	}
 
 	runSpec := containerlabRunSpec{
-		TaskID:      task.ID,
-		WorkspaceID: strings.TrimSpace(task.WorkspaceID),
+		TaskID:       task.ID,
+		WorkspaceCtx: pc,
+		WorkspaceID:  strings.TrimSpace(task.WorkspaceID),
+		DeploymentID: func() string {
+			if task.DeploymentID.Valid {
+				return strings.TrimSpace(task.DeploymentID.String)
+			}
+			return ""
+		}(),
 		APIURL:      apiURL,
 		Token:       token,
 		Action:      strings.TrimSpace(specIn.Action),
@@ -146,8 +151,13 @@ func (e *Engine) runContainerlabTask(ctx context.Context, spec containerlabRunSp
 			log.Infof("%s", string(body))
 		}
 		if labName != "" && spec.TaskID > 0 && strings.TrimSpace(spec.WorkspaceID) != "" {
-			if err := e.captureContainerlabTopologyArtifact(ctx, spec, labName); err != nil {
+			graph, err := e.captureContainerlabTopologyArtifact(ctx, spec, labName)
+			if err != nil {
 				log.Infof("Containerlab topology capture skipped: %v", err)
+			} else if graph != nil && spec.WorkspaceCtx != nil && strings.TrimSpace(spec.DeploymentID) != "" {
+				if dep, err := e.loadDeployment(ctx, spec.WorkspaceID, strings.TrimSpace(spec.DeploymentID)); err == nil && dep != nil {
+					_, _ = e.syncForwardTopologyGraphDevices(ctx, spec.TaskID, spec.WorkspaceCtx, dep, graph)
+				}
 			}
 		}
 		return nil
@@ -177,39 +187,39 @@ func (e *Engine) runContainerlabTask(ctx context.Context, spec containerlabRunSp
 	}
 }
 
-func (e *Engine) captureContainerlabTopologyArtifact(ctx context.Context, spec containerlabRunSpec, labName string) error {
+func (e *Engine) captureContainerlabTopologyArtifact(ctx context.Context, spec containerlabRunSpec, labName string) (*TopologyGraph, error) {
 	if e == nil || spec.TaskID <= 0 || strings.TrimSpace(spec.WorkspaceID) == "" {
-		return fmt.Errorf("invalid task spec")
+		return nil, fmt.Errorf("invalid task spec")
 	}
 	labName = strings.TrimSpace(labName)
 	if labName == "" {
-		return fmt.Errorf("lab name is required")
+		return nil, fmt.Errorf("lab name is required")
 	}
 	url := fmt.Sprintf("%s/api/v1/labs/%s", strings.TrimRight(strings.TrimSpace(spec.APIURL), "/"), labName)
 	resp, body, err := containerlabAPIGet(ctx, url, spec.Token, spec.SkipTLS)
 	if err != nil {
-		return fmt.Errorf("failed to reach containerlab API: %w", err)
+		return nil, fmt.Errorf("failed to reach containerlab API: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("containerlab API rejected request: %s", strings.TrimSpace(string(body)))
+		return nil, fmt.Errorf("containerlab API rejected request: %s", strings.TrimSpace(string(body)))
 	}
 	graph, err := containerlabLabBytesToTopologyGraph(body)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	graphBytes, err := json.Marshal(graph)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	key := fmt.Sprintf("topology/containerlab/%s.json", sanitizeArtifactKeySegment(labName))
 	ctxPut, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	putKey, err := putWorkspaceArtifact(ctxPut, e.cfg, spec.WorkspaceID, key, graphBytes, "application/json")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	e.setTaskMetadataKey(spec.TaskID, "topologyKey", putKey)
-	return nil
+	return graph, nil
 }
 
 func sanitizeArtifactKeySegment(raw string) string {

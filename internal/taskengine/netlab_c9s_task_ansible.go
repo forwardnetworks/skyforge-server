@@ -18,7 +18,7 @@ func (e *Engine) runNetlabC9sAnsible(ctx context.Context, spec netlabC9sRunSpec,
 		return fmt.Errorf("engine unavailable")
 	}
 	if strings.TrimSpace(e.cfg.AnsibleRunnerImage) == "" {
-		return fmt.Errorf("netlab-c9s ansible requested but AnsibleRunnerImage is not configured (set ENCORE_CFG_SKYFORGE.NetlabGenerator.AnsibleImage or SKYFORGE_ANSIBLE_RUNNER_IMAGE)")
+		return fmt.Errorf("netlab-c9s ansible requested but AnsibleRunnerImage is not configured (set ENCORE_CFG_SKYFORGE.NetlabGenerator.AnsibleImage)")
 	}
 	ns = strings.TrimSpace(ns)
 	topologyName = strings.TrimSpace(topologyName)
@@ -29,7 +29,7 @@ func (e *Engine) runNetlabC9sAnsible(ctx context.Context, spec netlabC9sRunSpec,
 	return taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.ansible", func() error {
 		// The ansible runner image is pulled from GHCR; ensure the workspace namespace has the
 		// pull secret so the Job doesn't get stuck in ImagePullBackOff.
-		if err := kubeEnsureNamespaceImagePullSecret(ctx, ns); err != nil {
+		if err := kubeEnsureNamespaceImagePullSecret(ctx, ns, strings.TrimSpace(e.cfg.ImagePullSecretName), strings.TrimSpace(e.cfg.ImagePullSecretNamespace)); err != nil {
 			return err
 		}
 

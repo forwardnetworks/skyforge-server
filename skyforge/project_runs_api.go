@@ -367,26 +367,6 @@ type WorkspaceNetlabRunRequest struct {
 	ClabCleanup        bool    `json:"clabCleanup,omitempty"`
 }
 
-type WorkspaceLabppRunRequest struct {
-	Message           string  `json:"message,omitempty"`
-	GitBranch         string  `json:"gitBranch,omitempty"`
-	Environment       JSONMap `json:"environment,omitempty"`
-	Action            string  `json:"action,omitempty"` // e2e, upload, start, stop, delete, configure
-	EveServer         string  `json:"eveServer,omitempty"`
-	EveUsername       string  `json:"eveUsername,omitempty"`
-	EvePassword       string  `json:"evePassword,omitempty"`
-	TemplatesRoot     string  `json:"templatesRoot,omitempty"`
-	Template          string  `json:"template,omitempty"`
-	TemplateSource    string  `json:"templateSource,omitempty"`    // workspace (default), blueprints, or custom
-	TemplateRepo      string  `json:"templateRepo,omitempty"`      // owner/repo or URL (custom only)
-	TemplatesDir      string  `json:"templatesDir,omitempty"`      // repo-relative directory (default: blueprints/labpp)
-	TemplatesDestRoot string  `json:"templatesDestRoot,omitempty"` // host path for synced templates (default: /var/lib/skyforge/labpp/templates)
-	LabPath           string  `json:"labPath,omitempty"`
-	ThreadCount       int     `json:"threadCount,omitempty"`
-	Deployment        string  `json:"deployment,omitempty"`
-	DeploymentID      string  `json:"deploymentId,omitempty"`
-}
-
 type WorkspaceContainerlabRunRequest struct {
 	Message        string  `json:"message,omitempty"`
 	GitBranch      string  `json:"gitBranch,omitempty"`
@@ -430,10 +410,6 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 	serverRef := strings.TrimSpace(req.NetlabServer)
 	if serverRef == "" {
 		serverRef = strings.TrimSpace(pc.workspace.NetlabServer)
-	}
-	if serverRef == "" {
-		// Back-compat for older workspaces that used EveServer as the default runner pool.
-		serverRef = strings.TrimSpace(pc.workspace.EveServer)
 	}
 	server, err := s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, serverRef)
 	if err != nil {
@@ -620,192 +596,6 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 	}, nil
 }
 
-// RunWorkspaceLabpp triggers a LabPP run for a workspace.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/runs/labpp-run
-func (s *Service) RunWorkspaceLabpp(ctx context.Context, id string, req *WorkspaceLabppRunRequest) (*WorkspaceRunResponse, error) {
-	user, err := requireAuthUser()
-	if err != nil {
-		return nil, err
-	}
-	pc, err := s.workspaceContextForUser(user, id)
-	if err != nil {
-		return nil, err
-	}
-	if pc.access == "viewer" {
-		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
-	}
-	if s.db == nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
-	}
-	if req == nil {
-		req = &WorkspaceLabppRunRequest{}
-	}
-
-	serverRef := strings.TrimSpace(req.EveServer)
-	if serverRef == "" {
-		serverRef = strings.TrimSpace(pc.workspace.EveServer)
-	}
-	resolvedEve, err := s.resolveWorkspaceEveServerConfig(ctx, pc.workspace.ID, serverRef)
-	if err != nil {
-		return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
-	}
-	eveServer := &resolvedEve.Server
-
-	eveURL := strings.TrimSpace(eveServer.WebURL)
-	if eveURL == "" {
-		eveURL = strings.TrimSpace(eveServer.APIURL)
-	}
-	eveUsername := strings.TrimSpace(req.EveUsername)
-	evePassword := strings.TrimSpace(req.EvePassword)
-	if eveUsername == "" {
-		eveUsername = strings.TrimSpace(pc.claims.Username)
-	}
-	if evePassword == "" {
-		cached, ok := getCachedLDAPPassword(s.db, pc.claims.Username)
-		if ok {
-			evePassword = strings.TrimSpace(cached)
-		}
-	}
-	if strings.TrimSpace(eveUsername) == "" || strings.TrimSpace(evePassword) == "" {
-		return nil, errs.B().Code(errs.FailedPrecondition).Msg("eve credentials are required for labpp (username/password)").Err()
-	}
-	if strings.TrimSpace(eveURL) == "" || eveUsername == "" || strings.TrimSpace(evePassword) == "" {
-		return nil, errs.B().Code(errs.FailedPrecondition).Msg("eve credentials are required for labpp (url/username/password)").Err()
-	}
-
-	action := strings.ToLower(strings.TrimSpace(req.Action))
-	if action == "" {
-		action = "e2e"
-	}
-	switch action {
-	case "e2e", "upload", "start", "stop", "delete", "configure", "config":
-	default:
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid labpp action").Err()
-	}
-
-	// The LabPP API uses this to parallelize per-node setup/configuration.
-	threadCount := req.ThreadCount
-
-	deployment := strings.TrimSpace(req.Deployment)
-	if deployment == "" {
-		deployment = strings.TrimSpace(pc.workspace.Slug)
-	}
-	templatesRoot := strings.TrimSpace(req.TemplatesRoot)
-	template := strings.TrimSpace(req.Template)
-	if template == "" {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("template is required").Err()
-	}
-	source := strings.TrimSpace(req.TemplateSource)
-	repo := strings.TrimSpace(req.TemplateRepo)
-	dir := strings.TrimSpace(req.TemplatesDir)
-	if source == "" {
-		source = "blueprints"
-	}
-	labPath := strings.TrimSpace(req.LabPath)
-	if labPath == "" && strings.TrimSpace(req.DeploymentID) != "" {
-		if dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, strings.TrimSpace(req.DeploymentID)); err == nil && dep != nil {
-			if raw, ok := dep.Config["labPath"]; ok {
-				var v string
-				if err := json.Unmarshal(raw, &v); err == nil {
-					labPath = strings.TrimSpace(v)
-				}
-			}
-		}
-	}
-	if labPath == "" {
-		labPath = labppLabPath(pc.claims.Username, deployment, template, time.Now())
-	}
-	labPath = labppNormalizeFolderPath(labPath)
-	log.Printf("labpp run config: template=%s templatesRoot=%s labPath=%s action=%s", template, templatesRoot, labPath, action)
-
-	message := strings.TrimSpace(req.Message)
-	if message == "" {
-		message = fmt.Sprintf("Skyforge labpp run (%s)", pc.claims.Username)
-	}
-	{
-		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
-		defer cancel()
-		actor, actorIsAdmin, impersonated := auditActor(s.cfg, pc.claims)
-		writeAuditEvent(
-			ctx,
-			s.db,
-			actor,
-			actorIsAdmin,
-			impersonated,
-			"workspace.run.labpp",
-			pc.workspace.ID,
-			fmt.Sprintf("action=%s server=%s", action, strings.TrimSpace(eveServer.Name)),
-		)
-	}
-	if s.db == nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
-	}
-	envAny, _ := fromJSONMap(req.Environment)
-	envMap := parseEnvMap(envAny)
-	evePasswordEnc := ""
-	// Under OIDC there is no LDAP password to reuse for EVE; the user supplies an
-	// EVE password at run-time. Never store plaintext passwords in task metadata.
-	if strings.TrimSpace(req.EvePassword) != "" {
-		evePasswordEnc = encryptUserSecret(strings.TrimSpace(req.EvePassword))
-	}
-	meta, err := toJSONMap(map[string]any{
-		"action":     action,
-		"server":     strings.TrimSpace(eveServer.Name),
-		"serverRef":  serverRef,
-		"deployment": deployment,
-		"template":   template,
-		"priority":   taskPriorityInteractive,
-		"dedupeKey":  fmt.Sprintf("labpp:%s:%s:%s:%s", pc.workspace.ID, strings.TrimSpace(req.DeploymentID), action, template),
-		"spec": map[string]any{
-			"action":         action,
-			"eveServer":      serverRef,
-			"eveServerLabel": strings.TrimSpace(eveServer.Name),
-			"eveUrl":         eveURL,
-			"eveUsername":    eveUsername,
-			"evePasswordEnc": evePasswordEnc,
-			"deployment":     deployment,
-			"deploymentId":   strings.TrimSpace(req.DeploymentID),
-			"templatesRoot":  templatesRoot,
-			"template":       template,
-			"labPath":        labPath,
-			"threadCount":    threadCount,
-			"maxSeconds":     1200,
-			"environment":    envMap,
-			"templateSource": source,
-			"templateRepo":   repo,
-			"templatesDir":   dir,
-		},
-	})
-	if err != nil {
-		log.Printf("labpp meta encode: %v", err)
-		return nil, errs.B().Code(errs.Internal).Msg("failed to encode metadata").Err()
-	}
-	deploymentID := strings.TrimSpace(req.DeploymentID)
-	allowActive := action == "stop" || action == "delete"
-	var task *TaskRecord
-	if allowActive {
-		task, err = createTaskAllowActive(ctx, s.db, pc.workspace.ID, &deploymentID, "labpp-run", message, pc.claims.Username, meta)
-	} else {
-		task, err = createTask(ctx, s.db, pc.workspace.ID, &deploymentID, "labpp-run", message, pc.claims.Username, meta)
-	}
-	if err != nil {
-		return nil, err
-	}
-	s.queueTask(task)
-
-	taskJSON, err := toJSONMap(taskToRunInfo(*task))
-	if err != nil {
-		log.Printf("labpp task encode: %v", err)
-		return nil, errs.B().Code(errs.Internal).Msg("failed to encode run").Err()
-	}
-	return &WorkspaceRunResponse{
-		WorkspaceID: pc.workspace.ID,
-		Task:        taskJSON,
-		User:        pc.claims.Username,
-	}, nil
-}
-
 // RunWorkspaceContainerlab triggers a Containerlab run for a workspace.
 //
 //encore:api auth method=POST path=/api/workspaces/:id/runs/containerlab-run
@@ -831,9 +621,6 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 	serverRef := strings.TrimSpace(req.NetlabServer)
 	if serverRef == "" {
 		serverRef = strings.TrimSpace(pc.workspace.NetlabServer)
-	}
-	if serverRef == "" {
-		serverRef = strings.TrimSpace(pc.workspace.EveServer)
 	}
 	server, err := s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, serverRef)
 	if err != nil {

@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 )
@@ -258,10 +257,11 @@ func (c *Client) ListDirectory(owner, repo, dir, ref string) ([]ContentEntry, er
 	return entries, nil
 }
 
-func Identity(name, username, email string) map[string]any {
+func Identity(name, username, email, fallbackDomain string) map[string]any {
 	name = strings.TrimSpace(name)
 	username = strings.TrimSpace(username)
 	email = strings.TrimSpace(email)
+	fallbackDomain = strings.TrimSpace(fallbackDomain)
 	if name == "" {
 		name = username
 	}
@@ -269,19 +269,8 @@ func Identity(name, username, email string) map[string]any {
 		email = username
 	}
 	if email == "" {
-		domain := strings.TrimSpace(os.Getenv("SKYFORGE_CORP_EMAIL_DOMAIN"))
-		if domain == "" {
-			domain = strings.TrimSpace(os.Getenv("SKYFORGE_HOSTNAME"))
-			domain = strings.Split(domain, ",")[0]
-			domain = strings.TrimPrefix(domain, "https://")
-			domain = strings.TrimPrefix(domain, "http://")
-			domain = strings.TrimPrefix(domain, "*.")
-			if idx := strings.Index(domain, "."); idx != -1 && idx+1 < len(domain) {
-				domain = domain[idx+1:]
-			}
-		}
-		if strings.TrimSpace(domain) != "" {
-			email = fmt.Sprintf("%s@%s", username, domain)
+		if fallbackDomain != "" {
+			email = fmt.Sprintf("%s@%s", username, fallbackDomain)
 		}
 	}
 	return map[string]any{"name": name, "email": email}

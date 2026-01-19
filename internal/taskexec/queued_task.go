@@ -85,6 +85,11 @@ func ProcessQueuedTask(ctx context.Context, db *sql.DB, taskID int, deps Deps, l
 		status = "failed"
 		errMsg = runErr.Error()
 		log.Errorf("ERROR: %s", errMsg)
+		// Ensure the UI has at least one log entry to display even when the
+		// worker logger only writes to Encore logs.
+		ctxLog, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_ = taskstore.AppendTaskLog(ctxLog, db, task.ID, "stderr", "ERROR: "+errMsg)
+		cancel()
 	}
 	if rec, recErr := taskstore.GetTask(ctx, db, task.ID); recErr == nil && rec != nil && strings.EqualFold(strings.TrimSpace(rec.Status), "canceled") {
 		status = "canceled"
@@ -127,4 +132,3 @@ type noopLogger struct{}
 
 func (noopLogger) Infof(string, ...any)  {}
 func (noopLogger) Errorf(string, ...any) {}
-

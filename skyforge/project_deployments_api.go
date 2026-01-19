@@ -5,16 +5,13 @@ import (
 	"context"
 	"crypto/tls"
 	"database/sql"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"io"
 	"log"
 	"net/http"
-	"net/http/cookiejar"
 	"net/url"
-	"os"
 	"path"
 	"regexp"
 	"sort"
@@ -23,7 +20,6 @@ import (
 	"time"
 
 	"encore.app/internal/taskqueue"
-	"encore.app/storage"
 	"encore.dev/beta/errs"
 	"github.com/google/uuid"
 )
@@ -86,7 +82,6 @@ type WorkspaceDeploymentInfoResponse struct {
 	ForwardID    string               `json:"forwardNetworkId,omitempty"`
 	ForwardURL   string               `json:"forwardSnapshotUrl,omitempty"`
 	Netlab       *NetlabInfo          `json:"netlab,omitempty"`
-	Labpp        *LabppInfo           `json:"labpp,omitempty"`
 	Containerlab *ContainerlabInfo    `json:"containerlab,omitempty"`
 	Clabernetes  *ClabernetesInfo     `json:"clabernetes,omitempty"`
 }
@@ -120,21 +115,6 @@ type NetlabConnectResponse struct {
 	Output string `json:"output"`
 }
 
-type LabppInfo struct {
-	EveServer      string `json:"eveServer"`
-	EveURL         string `json:"eveUrl,omitempty"`
-	LabPath        string `json:"labPath"`
-	Endpoint       string `json:"endpoint,omitempty"`
-	JobID          string `json:"jobId,omitempty"`
-	DataSourcesCSV string `json:"dataSourcesCsv,omitempty"`
-}
-
-type LabppDataSourcesDownloadResponse struct {
-	Status   string `json:"status"`
-	Filename string `json:"filename"`
-	FileData string `json:"fileData"`
-}
-
 type ContainerlabInfo struct {
 	LabName string `json:"labName"`
 	APIURL  string `json:"apiUrl"`
@@ -160,10 +140,10 @@ func normalizeDeploymentName(name string) (string, error) {
 func normalizeDeploymentType(raw string) (string, error) {
 	t := strings.ToLower(strings.TrimSpace(raw))
 	switch t {
-	case "terraform", "netlab", "netlab-c9s", "labpp", "containerlab", "clabernetes":
+	case "terraform", "netlab", "netlab-c9s", "containerlab", "clabernetes":
 		return t, nil
 	default:
-		return "", errs.B().Code(errs.InvalidArgument).Msg("deployment type must be terraform, netlab, netlab-c9s, labpp, containerlab, or clabernetes").Err()
+		return "", errs.B().Code(errs.InvalidArgument).Msg("deployment type must be terraform, netlab, netlab-c9s, containerlab, or clabernetes").Err()
 	}
 }
 
@@ -436,25 +416,31 @@ func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req 
 		}
 		cfgAny["templatesDir"] = templatesDir
 		cfgAny["template"] = template
-	case "labpp":
-		if getString("eveServer") == "" {
-			return nil, errs.B().Code(errs.InvalidArgument).Msg("eveServer is required").Err()
-		}
+	case "netlab-c9s":
 		template := strings.TrimSpace(getString("template"))
 		if template == "" {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("template is required").Err()
 		}
-		if strings.TrimSpace(getString("labPath")) == "" {
-			cfgAny["labPath"] = labppLabPath(pc.claims.Username, name, template, time.Now())
+		templateSource := strings.ToLower(getString("templateSource"))
+		if templateSource == "" {
+			templateSource = "blueprints"
 		}
-		// Never persist plaintext passwords in deployment config; store an encrypted
-		// version instead for worker-side use.
-		if pwd := strings.TrimSpace(getString("evePassword")); pwd != "" {
-			if enc := encryptUserSecret(pwd); enc != "" {
-				cfgAny["evePasswordEnc"] = enc
-			}
-			delete(cfgAny, "evePassword")
+		templateRepo := strings.TrimSpace(getString("templateRepo"))
+		templatesDir := strings.Trim(getString("templatesDir"), "/")
+		if templateSource == "custom" && templateRepo == "" {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("custom repo is required").Err()
 		}
+		templatesDir = normalizeNetlabTemplatesDir(templateSource, templatesDir)
+		if !isSafeRelativePath(templatesDir) {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("templatesDir must be a safe repo-relative path").Err()
+		}
+		cfgAny["templateSource"] = templateSource
+		if templateRepo != "" {
+			cfgAny["templateRepo"] = templateRepo
+		}
+		cfgAny["templatesDir"] = templatesDir
+		cfgAny["template"] = template
+		cfgAny["labName"] = containerlabLabName(pc.workspace.Slug, name)
 	case "clabernetes":
 		template := strings.TrimSpace(getString("template"))
 		if template == "" {
@@ -535,6 +521,19 @@ func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req 
 		cfgAny["template"] = template
 		cfgAny["labName"] = containerlabLabName(pc.workspace.Slug, name)
 	}
+
+	// Per-deployment Forward sync configuration (optional for all deployment types).
+	//
+	// UI stores these keys under the deployment config so the worker can decide
+	// whether to sync post-deploy.
+	if enabled, ok := cfgAny["forwardEnabled"].(bool); ok {
+		cfgAny["forwardEnabled"] = enabled
+	} else if v := strings.TrimSpace(getString("forwardEnabled")); v != "" {
+		cfgAny["forwardEnabled"] = strings.EqualFold(v, "true") || v == "1" || strings.EqualFold(v, "yes")
+	}
+	if v := strings.TrimSpace(getString("forwardCollectorUsername")); v != "" {
+		cfgAny["forwardCollectorUsername"] = v
+	}
 	cfg, _ = toJSONMap(cfgAny)
 	cfgBytes, _ := json.Marshal(cfg)
 
@@ -556,28 +555,13 @@ func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req 
 	if err != nil {
 		return nil, err
 	}
-	if dep != nil && (typ == "netlab" || typ == "labpp") {
-		if _, err := s.ensureForwardNetworkForDeployment(ctx, pc, dep); err != nil {
-			log.Printf("forward network create: %v", err)
-			_, _ = s.db.ExecContext(ctx, `DELETE FROM sf_deployments WHERE workspace_id=$1 AND id=$2`, pc.workspace.ID, deploymentID)
-			return nil, errs.B().Code(errs.Unavailable).Msg("failed to create Forward network").Err()
-		}
-		if typ == "netlab" {
-			// Kick off a `netlab create` run immediately so a subsequent start has less work to do.
-			// This is best-effort: keep the deployment even if the create run fails.
-			ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			defer cancel()
-			if _, err := s.RunWorkspaceDeploymentAction(ctx, id, deploymentID, &WorkspaceDeploymentOpRequest{Action: "create"}); err != nil {
-				log.Printf("netlab create on deployment create: %v", err)
-			}
-		}
-		if typ == "labpp" {
-			_, err := s.RunWorkspaceDeploymentAction(ctx, id, deploymentID, &WorkspaceDeploymentOpRequest{Action: "create"})
-			if err != nil {
-				log.Printf("labpp create upload: %v", err)
-				_, _ = s.db.ExecContext(ctx, `DELETE FROM sf_deployments WHERE workspace_id=$1 AND id=$2`, pc.workspace.ID, deploymentID)
-				return nil, err
-			}
+	if dep != nil && typ == "netlab" {
+		// Kick off a `netlab create` run immediately so a subsequent start has less work to do.
+		// This is best-effort: keep the deployment even if the create run fails.
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if _, err := s.RunWorkspaceDeploymentAction(ctx, id, deploymentID, &WorkspaceDeploymentOpRequest{Action: "create"}); err != nil {
+			log.Printf("netlab create on deployment create: %v", err)
 		}
 		return s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
 	}
@@ -622,26 +606,6 @@ func (s *Service) UpdateWorkspaceDeployment(ctx context.Context, id, deploymentI
 	}
 	if req.Config != nil {
 		cfg := req.Config
-		// Sanitize config updates based on existing deployment type.
-		existing, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
-		if err != nil {
-			return nil, err
-		}
-		if existing != nil && existing.Type == "labpp" {
-			cfgAny, _ := fromJSONMap(cfg)
-			if cfgAny == nil {
-				cfgAny = map[string]any{}
-			}
-			if rawPwd, ok := cfgAny["evePassword"].(string); ok {
-				if pwd := strings.TrimSpace(rawPwd); pwd != "" {
-					if enc := encryptUserSecret(pwd); enc != "" {
-						cfgAny["evePasswordEnc"] = enc
-					}
-				}
-				delete(cfgAny, "evePassword")
-			}
-			cfg, _ = toJSONMap(cfgAny)
-		}
 		cfgBytes, _ := json.Marshal(cfg)
 		fields = append(fields, "config="+arg(cfgBytes))
 	}
@@ -699,9 +663,6 @@ func (s *Service) DeleteWorkspaceDeployment(ctx context.Context, id, deploymentI
 		if strings.TrimSpace(netlabServer) == "" {
 			netlabServer = strings.TrimSpace(pc.workspace.NetlabServer)
 		}
-		if strings.TrimSpace(netlabServer) == "" {
-			netlabServer = strings.TrimSpace(pc.workspace.EveServer)
-		}
 		if strings.TrimSpace(netlabServer) != "" {
 			_, err := s.RunWorkspaceNetlab(ctx, id, &WorkspaceNetlabRunRequest{
 				Message:          strings.TrimSpace(fmt.Sprintf("Skyforge netlab cleanup (%s)", pc.claims.Username)),
@@ -714,12 +675,6 @@ func (s *Service) DeleteWorkspaceDeployment(ctx context.Context, id, deploymentI
 			if err != nil {
 				log.Printf("deployments delete netlab cleanup (ignored): %v", err)
 			}
-		}
-	}
-	if existing.Type == "labpp" {
-		_, err := s.RunWorkspaceDeploymentAction(ctx, id, deploymentID, &WorkspaceDeploymentOpRequest{Action: "destroy"})
-		if err != nil {
-			log.Printf("deployments delete labpp cleanup (ignored): %v", err)
 		}
 	}
 	if existing.Type == "netlab-c9s" || existing.Type == "clabernetes" {
@@ -934,19 +889,19 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 		if err != nil {
 			return nil, err
 		}
-		case "netlab-c9s":
-			netlabServer, _ := cfgAny["netlabServer"].(string)
-			templateSource, _ := cfgAny["templateSource"].(string)
-			templateRepo, _ := cfgAny["templateRepo"].(string)
-			templatesDir, _ := cfgAny["templatesDir"].(string)
-			template, _ := cfgAny["template"].(string)
-			labName, _ := cfgAny["labName"].(string)
-			k8sNamespace, _ := cfgAny["k8sNamespace"].(string)
+	case "netlab-c9s":
+		netlabServer, _ := cfgAny["netlabServer"].(string)
+		templateSource, _ := cfgAny["templateSource"].(string)
+		templateRepo, _ := cfgAny["templateRepo"].(string)
+		templatesDir, _ := cfgAny["templatesDir"].(string)
+		template, _ := cfgAny["template"].(string)
+		labName, _ := cfgAny["labName"].(string)
+		k8sNamespace, _ := cfgAny["k8sNamespace"].(string)
 
-			netlabServer = strings.TrimSpace(netlabServer)
-			if strings.TrimSpace(template) == "" && op != "destroy" && op != "stop" {
-				return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab template is required").Err()
-			}
+		netlabServer = strings.TrimSpace(netlabServer)
+		if strings.TrimSpace(template) == "" && op != "destroy" && op != "stop" {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab template is required").Err()
+		}
 		if op == "stop" && !infraCreated {
 			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab-c9s deployment must be created before stop").Err()
 		}
@@ -982,78 +937,6 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 			strings.TrimSpace(labName),
 			strings.TrimSpace(k8sNamespace),
 		)
-		if err != nil {
-			return nil, err
-		}
-	case "labpp":
-		template, _ := cfgAny["template"].(string)
-		eveServer, _ := cfgAny["eveServer"].(string)
-		templateSource, _ := cfgAny["templateSource"].(string)
-		templateRepo, _ := cfgAny["templateRepo"].(string)
-		templatesDir, _ := cfgAny["templatesDir"].(string)
-		templatesDestRoot, _ := cfgAny["templatesDestRoot"].(string)
-		labPath, _ := cfgAny["labPath"].(string)
-		threadCount, _ := cfgAny["threadCount"].(float64)
-		eveUsername, _ := cfgAny["eveUsername"].(string)
-		evePassword, _ := cfgAny["evePassword"].(string)
-		evePasswordEnc, _ := cfgAny["evePasswordEnc"].(string)
-		if strings.TrimSpace(evePassword) == "" && strings.TrimSpace(evePasswordEnc) != "" {
-			if plaintext, err := decryptUserSecret(evePasswordEnc); err == nil {
-				evePassword = plaintext
-			}
-		}
-
-		eveServer = strings.TrimSpace(eveServer)
-		if eveServer == "" {
-			return nil, errs.B().Code(errs.FailedPrecondition).Msg("eve-ng server selection is required").Err()
-		}
-		if strings.TrimSpace(template) == "" {
-			return nil, errs.B().Code(errs.FailedPrecondition).Msg("labpp template is required").Err()
-		}
-		if op == "stop" && !infraCreated {
-			return nil, errs.B().Code(errs.FailedPrecondition).Msg("labpp deployment must be created before start/stop").Err()
-		}
-		labPath = strings.TrimSpace(labPath)
-		if labPath == "" {
-			labPath = labppLabPath(pc.claims.Username, dep.Name, template, time.Now())
-		}
-		labPath = labppNormalizeFolderPath(labPath)
-		cfgAny["labPath"] = labPath
-
-		labppAction := "e2e"
-		switch op {
-		case "create":
-			labppAction = "upload"
-		case "start":
-			if !infraCreated {
-				labppAction = "e2e"
-			} else {
-				labppAction = "start"
-			}
-		case "stop":
-			labppAction = "stop"
-		case "destroy":
-			labppAction = "delete"
-		}
-
-		run, err = s.RunWorkspaceLabpp(ctx, id, &WorkspaceLabppRunRequest{
-			Message:           strings.TrimSpace(fmt.Sprintf("Skyforge labpp run (%s)", pc.claims.Username)),
-			Environment:       envJSON,
-			Action:            labppAction,
-			EveServer:         eveServer,
-			EveUsername:       strings.TrimSpace(eveUsername),
-			EvePassword:       strings.TrimSpace(evePassword),
-			Template:          strings.TrimSpace(template),
-			TemplatesRoot:     "",
-			TemplateSource:    strings.TrimSpace(templateSource),
-			TemplateRepo:      strings.TrimSpace(templateRepo),
-			TemplatesDir:      strings.TrimSpace(templatesDir),
-			TemplatesDestRoot: strings.TrimSpace(templatesDestRoot),
-			LabPath:           labPath,
-			ThreadCount:       int(threadCount),
-			Deployment:        dep.Name,
-			DeploymentID:      dep.ID,
-		})
 		if err != nil {
 			return nil, err
 		}
@@ -1397,88 +1280,6 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 			APIURL:     apiURL,
 		}
 		return resp, nil
-	case "labpp":
-		template, _ := cfgAny["template"].(string)
-		template = strings.TrimSpace(template)
-		eveServerRef, _ := cfgAny["eveServer"].(string)
-		eveServerRef = strings.TrimSpace(eveServerRef)
-		if eveServerRef == "" {
-			return nil, errs.B().Code(errs.FailedPrecondition).Msg("eve-ng server selection is required").Err()
-		}
-		resolvedEve, err := s.resolveWorkspaceEveServerConfig(ctx, pc.workspace.ID, eveServerRef)
-		if err != nil {
-			return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
-		}
-		eveServer := &resolvedEve.Server
-
-		labPath, _ := cfgAny["labPath"].(string)
-		labPath = strings.TrimSpace(labPath)
-		if labPath == "" && template != "" {
-			labPath = labppLabPath(pc.claims.Username, dep.Name, template, time.Now())
-		}
-		labPath = labppNormalizeFolderPath(labPath)
-		if labPath == "" {
-			resp.Note = "lab path is not configured yet"
-			return resp, nil
-		}
-		labFilePath := labppLabFilePath(labPath, template)
-
-		base := strings.TrimRight(strings.TrimSpace(eveServer.APIURL), "/")
-		if base == "" {
-			base = strings.TrimRight(strings.TrimSpace(eveServer.WebURL), "/")
-		}
-		if base == "" {
-			resp.Note = "eve server is missing apiUrl/webUrl"
-			resp.Labpp = &LabppInfo{EveServer: eveServerRef, LabPath: labFilePath}
-			return resp, nil
-		}
-
-		username := strings.TrimSpace(pc.claims.Username)
-		password, ok := getCachedLDAPPassword(s.db, pc.claims.Username)
-		if username == "" || !ok || strings.TrimSpace(password) == "" {
-			resp.Note = "EVE password unavailable; reauthenticate to check lab status"
-			resp.Labpp = &LabppInfo{EveServer: eveServerRef, EveURL: base, LabPath: labFilePath}
-			return resp, nil
-		}
-
-		checkCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-		defer cancel()
-
-		jar, _ := cookiejar.New(nil)
-		client := &http.Client{
-			Timeout: checkCtxTimeout(checkCtx, 8*time.Second),
-			Jar:     jar,
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: eveServer.SkipTLSVerify},
-			},
-		}
-		if err := eveLogin(checkCtx, client, base, username, password); err != nil {
-			resp.Note = "failed to login to eve-ng"
-			resp.Status = "error"
-			resp.Labpp = &LabppInfo{EveServer: eveServerRef, EveURL: base, LabPath: labPath}
-			return resp, nil
-		}
-
-		hasRunning, endpoint, err := eveLabHasRunningNodes(checkCtx, client, base, username, labFilePath)
-		if err != nil {
-			resp.Note = sanitizeError(err)
-			resp.Status = "error"
-		} else if hasRunning {
-			resp.Status = "running"
-		} else {
-			resp.Status = "stopped"
-		}
-
-		labppInfo := &LabppInfo{EveServer: eveServerRef, EveURL: base, LabPath: labFilePath, Endpoint: endpoint}
-		if task, err := getLatestDeploymentTask(ctx, s.db, pc.workspace.ID, dep.ID, "labpp-run"); err == nil && task != nil {
-			if key := strings.TrimSpace(getJSONMapString(task.Metadata, "labppDataSourcesKey")); key != "" {
-				labppInfo.DataSourcesCSV = key
-			} else {
-				labppInfo.DataSourcesCSV = strings.TrimSpace(getJSONMapString(task.Metadata, "labppDataSourcesCsv"))
-			}
-		}
-		resp.Labpp = labppInfo
-		return resp, nil
 	case "terraform":
 		stateKey := strings.TrimSpace(pc.workspace.TerraformStateKey)
 		if stateKey == "" {
@@ -1605,147 +1406,6 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 		resp.Note = "info is not yet supported for this deployment type"
 		return resp, nil
 	}
-}
-
-// SyncWorkspaceDeploymentForward triggers a Forward Networks sync for a deployment.
-// Currently supported for LabPP deployments.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/deployments/:deploymentID/forward-sync
-func (s *Service) SyncWorkspaceDeploymentForward(ctx context.Context, id, deploymentID string) (*WorkspaceDeploymentActionResponse, error) {
-	user, err := requireAuthUser()
-	if err != nil {
-		return nil, err
-	}
-	pc, err := s.workspaceContextForUser(user, id)
-	if err != nil {
-		return nil, err
-	}
-	if pc.access == "viewer" {
-		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
-	}
-	if s.db == nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
-	}
-	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
-	if err != nil {
-		return nil, err
-	}
-	if dep == nil {
-		return nil, errs.B().Code(errs.NotFound).Msg("deployment not found").Err()
-	}
-	if dep.Type != "labpp" {
-		return nil, errs.B().Code(errs.FailedPrecondition).Msg("forward sync is only supported for labpp deployments").Err()
-	}
-	cfgAny, _ := fromJSONMap(dep.Config)
-	if cfgAny == nil {
-		cfgAny = map[string]any{}
-	}
-	forwardCfg, err := s.forwardConfigForWorkspace(ctx, pc.workspace.ID)
-	if err != nil {
-		return nil, err
-	}
-	if forwardCfg == nil {
-		return nil, errs.B().Code(errs.FailedPrecondition).Msg("forward networks is not configured").Err()
-	}
-	task, err := getLatestDeploymentTask(ctx, s.db, pc.workspace.ID, dep.ID, "labpp-run")
-	if err != nil {
-		return nil, err
-	}
-	if task == nil {
-		return nil, errs.B().Code(errs.NotFound).Msg("no labpp run metadata found").Err()
-	}
-	csvPath := strings.TrimSpace(getJSONMapString(task.Metadata, "labppDataSourcesCsv"))
-	csvKey := strings.TrimSpace(getJSONMapString(task.Metadata, "labppDataSourcesKey"))
-	if csvPath == "" && csvKey == "" {
-		return nil, errs.B().Code(errs.NotFound).Msg("labpp data sources file not found").Err()
-	}
-
-	if csvKey != "" {
-		ctxDL, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		obj := artifactObjectName(pc.workspace.ID, csvKey)
-		resp, err := storage.Read(ctxDL, &storage.ReadRequest{ObjectName: obj})
-		if err != nil {
-			return nil, errs.B().Code(errs.Unavailable).Msg("failed to download labpp data sources").Err()
-		}
-		tmp, err := os.CreateTemp("", "skyforge-labpp-data-sources-*.csv")
-		if err != nil {
-			return nil, errs.B().Code(errs.Unavailable).Msg("failed to stage labpp data sources").Err()
-		}
-		tmpPath := tmp.Name()
-		_, _ = tmp.Write(resp.Data)
-		_ = tmp.Close()
-		defer func() { _ = os.Remove(tmpPath) }()
-		csvPath = tmpPath
-	}
-
-	syncCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	if err := s.syncForwardLabppDevicesFromCSV(syncCtx, 0, pc, dep.ID, csvPath, true, nil); err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg(err.Error()).Err()
-	}
-	return &WorkspaceDeploymentActionResponse{
-		WorkspaceID: pc.workspace.ID,
-		Deployment:  dep,
-	}, nil
-}
-
-// DownloadLabppDataSourcesCSV returns the generated LabPP `data_sources.csv` for a deployment.
-//
-// The CSV is created by the LabPP runner and stored in Skyforge object storage; Skyforge serves it
-// back to the user as a base64 payload for easy browser download (legacy file-backed paths are still supported).
-//
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/labpp/data-sources.csv
-func (s *Service) DownloadLabppDataSourcesCSV(ctx context.Context, id, deploymentID string) (*LabppDataSourcesDownloadResponse, error) {
-	user, err := requireAuthUser()
-	if err != nil {
-		return nil, err
-	}
-	pc, err := s.workspaceContextForUser(user, id)
-	if err != nil {
-		return nil, err
-	}
-	if s.db == nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
-	}
-	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
-	if err != nil {
-		return nil, err
-	}
-	if dep == nil {
-		return nil, errs.B().Code(errs.NotFound).Msg("deployment not found").Err()
-	}
-	if dep.Type != "labpp" {
-		return nil, errs.B().Code(errs.FailedPrecondition).Msg("data sources csv is only available for labpp deployments").Err()
-	}
-	task, err := getLatestDeploymentTask(ctx, s.db, pc.workspace.ID, dep.ID, "labpp-run")
-	if err != nil {
-		return nil, err
-	}
-	if task == nil {
-		return nil, errs.B().Code(errs.NotFound).Msg("no labpp run metadata found").Err()
-	}
-	csvKey := strings.TrimSpace(getJSONMapString(task.Metadata, "labppDataSourcesKey"))
-	if csvKey == "" {
-		return nil, errs.B().Code(errs.NotFound).Msg("labpp data sources file not available (rerun LabPP to regenerate)").Err()
-	}
-
-	obj := artifactObjectName(pc.workspace.ID, csvKey)
-	resp, err := storage.Read(ctx, &storage.ReadRequest{ObjectName: obj})
-	if err != nil {
-		return nil, errs.B().Code(errs.NotFound).Msg("labpp data sources file not found").Err()
-	}
-	data := resp.Data
-	// Keep responses small and predictable; this file is expected to be tiny.
-	if len(data) > 2<<20 {
-		return nil, errs.B().Code(errs.FailedPrecondition).Msg("csv too large").Err()
-	}
-
-	return &LabppDataSourcesDownloadResponse{
-		Status:   "ok",
-		Filename: "data_sources.csv",
-		FileData: base64.StdEncoding.EncodeToString(data),
-	}, nil
 }
 
 // NetlabConnect executes `netlab connect` on the Netlab runner host and returns its output.
@@ -2252,53 +1912,6 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 		}
 		if next, err := toJSONMap(cfgAny); err == nil {
 			cfgOut = next
-		}
-	case "labpp":
-		template, _ := cfgAny["template"].(string)
-		eveServer, _ := cfgAny["eveServer"].(string)
-		templateSource, _ := cfgAny["templateSource"].(string)
-		templateRepo, _ := cfgAny["templateRepo"].(string)
-		templatesDir, _ := cfgAny["templatesDir"].(string)
-		templatesDestRoot, _ := cfgAny["templatesDestRoot"].(string)
-		labPath, _ := cfgAny["labPath"].(string)
-		threadCount, _ := cfgAny["threadCount"].(float64)
-		eveUsername, _ := cfgAny["eveUsername"].(string)
-		evePassword, _ := cfgAny["evePassword"].(string)
-		evePasswordEnc, _ := cfgAny["evePasswordEnc"].(string)
-		if strings.TrimSpace(evePassword) == "" && strings.TrimSpace(evePasswordEnc) != "" {
-			if plaintext, err := decryptUserSecret(evePasswordEnc); err == nil {
-				evePassword = plaintext
-			}
-		}
-
-		labppAction := "e2e"
-		switch mode {
-		case "destroy":
-			labppAction = "delete"
-		case "start":
-			labppAction = "e2e"
-		}
-
-		run, err = s.RunWorkspaceLabpp(ctx, id, &WorkspaceLabppRunRequest{
-			Message:           strings.TrimSpace(fmt.Sprintf("Skyforge labpp run (%s)", pc.claims.Username)),
-			Environment:       envJSON,
-			Action:            labppAction,
-			EveServer:         strings.TrimSpace(eveServer),
-			EveUsername:       strings.TrimSpace(eveUsername),
-			EvePassword:       strings.TrimSpace(evePassword),
-			Template:          strings.TrimSpace(template),
-			TemplatesRoot:     "",
-			TemplateSource:    strings.TrimSpace(templateSource),
-			TemplateRepo:      strings.TrimSpace(templateRepo),
-			TemplatesDir:      strings.TrimSpace(templatesDir),
-			TemplatesDestRoot: strings.TrimSpace(templatesDestRoot),
-			LabPath:           strings.TrimSpace(labPath),
-			ThreadCount:       int(threadCount),
-			Deployment:        dep.Name,
-			DeploymentID:      dep.ID,
-		})
-		if err != nil {
-			return nil, err
 		}
 	case "containerlab":
 		netlabServer, _ := cfgAny["netlabServer"].(string)

@@ -3,6 +3,20 @@
 // These defaults can be overridden at deploy time using ENCORE_CFG_SKYFORGE.
 
 TaskWorkerEnabled: true
+DisableEncoreCache: false
+NotificationsEnabled: true
+StaticRoot: "/opt/skyforge/static"
+AdminUsers: ""
+AdminUsername: "skyforge"
+CorpEmailDomain: ""
+ListenAddr: ":8085"
+SessionCookie: "skyforge_session"
+SessionTTL: "8h"
+CookieSecure: "auto"
+CookieDomain: ""
+MaxGroups: 50
+PKIDefaultDays: 365
+SSHCADefaultDays: 30
 
 // Default polling interval for notifications (server-side).
 NotificationsIntervalSeconds: 30
@@ -10,17 +24,11 @@ NotificationsIntervalSeconds: 30
 // Default interval for cloud credential checks (AWS/Azure/GCP).
 CloudCheckIntervalMinutes: 30
 
-// When querying EVE labs for a specific owner, optionally fall back to scanning the root folder.
-// This is useful for EVE installs that don't follow the `Users/<owner>` folder convention.
-EveUserRootFallback: false
-
-// Limits and time budget for the public "running labs" endpoint when scanning EVE-NG.
-EveRunningScan: {
-	Limit:                25
-	Workers:              8
-	BudgetSeconds:        4
-	PerLabTimeoutSeconds: 3
-}
+AwsSSOStartURL: ""
+AwsSSORegion: "us-east-1"
+AwsSSOAccountID: ""
+AwsSSORoleName: ""
+YaadeAdminUsername: "admin"
 
 // Netlab defaults.
 Netlab: {
@@ -28,22 +36,6 @@ Netlab: {
 	SSHUser:    ""
 	SSHKeyFile: ""
 	StateRoot:  "/var/lib/skyforge/netlab"
-}
-
-// LabPP defaults. Secrets still come from env/secrets.
-Labpp: {
-	RunnerImage:        ""
-	RunnerPullPolicy:   "IfNotPresent"
-	RunnerPVCName:      "skyforge-server-data"
-	ConfigDirBase:      "/var/lib/skyforge/labpp/configs"
-	ConfigVersion:      "1.0"
-	NetboxURL:          ""
-	NetboxMgmtSubnet:   ""
-	S3Region:           ""
-	S3BucketName:       ""
-	S3Endpoint:         ""
-	S3DisableSSL:       true
-	S3DisableChecksum:  false
 }
 
 // General service defaults (non-secret). These can be overridden at deploy time
@@ -58,19 +50,79 @@ Integrations: {
 	YaadeInternalBaseURL: ""
 }
 
-Labs: {
-	EveSSHUser:       ""
-	EveSSHTunnel:     true
-	EveLabsPath:      "/opt/unetlab/labs"
-	EveTmpPath:       "/opt/unetlab/tmp"
+UI: {
+	ProductName: "Skyforge"
+	ProductSubtitle: "Automation Hub"
+	LogoURL: ""
+	LogoAlt: "Skyforge"
+	HeaderBackground: ""
+	SupportText: "Need access? Contact your platform admin."
+	SupportURL: ""
+	ThemeDefault: ""
 }
+
+PublicURL: ""
 
 DNS: {
 	URL: "http://technitium-dns:5380"
+	AdminUsername: "admin"
+	UserZoneSuffix: "skyforge"
+}
+
+OIDC: {
+	IssuerURL: ""
+	DiscoveryURL: ""
+	RedirectURL: ""
+}
+
+LDAP: {
+	BaseDN: ""
+	DisplayNameAttr: ""
+	MailAttr: ""
+	GroupAttr: ""
+	UseStartTLS: false
+	SkipTLSVerify: false
 }
 
 Containerlab: {
 	APIPath: "/containerlab"
+	SkipTLSVerify: false
+}
+
+Workspaces: {
+	DataDir: "/var/lib/skyforge"
+	GiteaAPIURL: ""
+	GiteaUsername: "skyforge"
+	GiteaRepoPrivate: true
+	DeleteMode: "live"
+}
+
+ObjectStorage: {
+	Endpoint: "minio:9000"
+	UseSSL: false
+}
+
+Terraform: {
+	BinaryPath: ""
+	Version: ""
+	URL: ""
+}
+
+Forward: {
+	// When enabled, Skyforge creates a placeholder SNMP credential in Forward for each
+	// deployment network so that enabling SNMP collection later doesn't require manual setup.
+	SNMPPlaceholderEnabled: true
+	// Default SNMPv2c community string used for the placeholder credential.
+	SNMPCommunity: "public"
+}
+
+Kubernetes: {
+	// ImagePullSecretName is the name of a docker registry secret that allows
+	// pulling images (e.g. from GHCR). When set, Skyforge can mirror it into
+	// per-workspace namespaces used by clabernetes/netlab-c9s.
+	ImagePullSecretName: "ghcr-pull"
+	// ImagePullSecretNamespace is the namespace where ImagePullSecretName exists.
+	ImagePullSecretNamespace: "skyforge"
 }
 
 // Netlab-on-C9s (netlab-c9s) defaults.

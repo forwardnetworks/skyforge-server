@@ -18,6 +18,17 @@ func loadGovernanceSummary(ctx context.Context, db *sql.DB) (*GovernanceSummary,
 	var resourceCount int
 	var activeCount int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sf_resources`).Scan(&resourceCount); err != nil {
+		if isMissingDBRelation(err) || isMissingDBColumn(err, "") {
+			return &GovernanceSummary{
+				ResourceCount:     0,
+				ActiveResources:   0,
+				WorkspacesTracked: 0,
+				CostLast30Days:    0,
+				CostCurrency:      "USD",
+				LastCostPeriodEnd: "",
+				ProviderBreakdown: nil,
+			}, nil
+		}
 		return nil, err
 	}
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sf_resources WHERE status ILIKE 'active' OR status ILIKE 'running'`).Scan(&activeCount); err != nil {
@@ -45,6 +56,17 @@ SELECT provider,
  GROUP BY provider
  ORDER BY provider ASC`)
 	if err != nil {
+		if isMissingDBRelation(err) || isMissingDBColumn(err, "") {
+			return &GovernanceSummary{
+				ResourceCount:     resourceCount,
+				ActiveResources:   activeCount,
+				WorkspacesTracked: workspaceCount,
+				CostLast30Days:    totalCost,
+				CostCurrency:      "USD",
+				LastCostPeriodEnd: "",
+				ProviderBreakdown: nil,
+			}, nil
+		}
 		return nil, err
 	}
 	defer rows.Close()
@@ -124,6 +146,9 @@ SELECT r.id, r.workspace_id, p.name, r.provider, r.resource_id, r.resource_type,
 
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
+		if isMissingDBRelation(err) || isMissingDBColumn(err, "") {
+			return []GovernanceResource{}, nil
+		}
 		return nil, err
 	}
 	defer rows.Close()
@@ -193,6 +218,9 @@ SELECT c.id, c.workspace_id, p.name, c.resource_id, c.provider, c.period_start, 
 
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
+		if isMissingDBRelation(err) || isMissingDBColumn(err, "") {
+			return []GovernanceCostSnapshot{}, nil
+		}
 		return nil, err
 	}
 	defer rows.Close()
@@ -276,6 +304,9 @@ SELECT u.id, u.workspace_id, p.name, u.provider, u.scope_type, u.scope_id, u.met
 
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
+		if isMissingDBRelation(err) || isMissingDBColumn(err, "") {
+			return []GovernanceUsageSnapshot{}, nil
+		}
 		return nil, err
 	}
 	defer rows.Close()

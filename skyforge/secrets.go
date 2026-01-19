@@ -21,11 +21,6 @@ var secrets struct {
 	SKYFORGE_PKI_CA_CERT                         string `secret:"SKYFORGE_PKI_CA_CERT"`
 	SKYFORGE_PKI_CA_KEY                          string `secret:"SKYFORGE_PKI_CA_KEY"`
 	SKYFORGE_SSH_CA_KEY                          string `secret:"SKYFORGE_SSH_CA_KEY"`
-	SKYFORGE_LABPP_NETBOX_USERNAME               string `secret:"SKYFORGE_LABPP_NETBOX_USERNAME"`
-	SKYFORGE_LABPP_NETBOX_PASSWORD               string `secret:"SKYFORGE_LABPP_NETBOX_PASSWORD"`
-	SKYFORGE_LABPP_NETBOX_TOKEN                  string `secret:"SKYFORGE_LABPP_NETBOX_TOKEN"`
-	SKYFORGE_LABPP_S3_ACCESS_KEY                 string `secret:"SKYFORGE_LABPP_S3_ACCESS_KEY"`
-	SKYFORGE_LABPP_S3_SECRET_KEY                 string `secret:"SKYFORGE_LABPP_S3_SECRET_KEY"`
 	YAADE_ADMIN_PASSWORD                         string `secret:"YAADE_ADMIN_PASSWORD"`
 }
 
@@ -48,11 +43,6 @@ func getSecrets() skyforgecore.Secrets {
 		PKICACert:                       secrets.SKYFORGE_PKI_CA_CERT,
 		PKICAKey:                        secrets.SKYFORGE_PKI_CA_KEY,
 		SSHCAKey:                        secrets.SKYFORGE_SSH_CA_KEY,
-		LabppNetboxUsername:             secrets.SKYFORGE_LABPP_NETBOX_USERNAME,
-		LabppNetboxPassword:             secrets.SKYFORGE_LABPP_NETBOX_PASSWORD,
-		LabppNetboxToken:                secrets.SKYFORGE_LABPP_NETBOX_TOKEN,
-		LabppS3AccessKey:                secrets.SKYFORGE_LABPP_S3_ACCESS_KEY,
-		LabppS3SecretKey:                secrets.SKYFORGE_LABPP_S3_SECRET_KEY,
 		YaadeAdminPassword:              secrets.YAADE_ADMIN_PASSWORD,
 	}
 }

@@ -29,10 +29,12 @@ type TopologyNode struct {
 }
 
 type TopologyEdge struct {
-	ID     string `json:"id"`
-	Source string `json:"source"`
-	Target string `json:"target"`
-	Label  string `json:"label,omitempty"`
+	ID       string `json:"id"`
+	Source   string `json:"source"`
+	Target   string `json:"target"`
+	SourceIf string `json:"sourceIf,omitempty"`
+	TargetIf string `json:"targetIf,omitempty"`
+	Label    string `json:"label,omitempty"`
 }
 
 // GetWorkspaceDeploymentTopology returns a lightweight, provider-derived topology view.
@@ -280,25 +282,51 @@ func parseContainerlabLinks(primary any, fallback any) []TopologyEdge {
 		}
 		src := strings.TrimSpace(firstStringValue(m, "a_node", "source", "src", "from"))
 		dst := strings.TrimSpace(firstStringValue(m, "b_node", "target", "dst", "to"))
+		srcIf := strings.TrimSpace(firstStringValue(m, "a_intf", "a_intf_name", "a_iface", "a_interface", "src_if", "src_intf", "source_if"))
+		dstIf := strings.TrimSpace(firstStringValue(m, "b_intf", "b_intf_name", "b_iface", "b_interface", "dst_if", "dst_intf", "target_if"))
 		if src == "" || dst == "" {
 			a := strings.TrimSpace(firstStringValue(m, "a", "endpoint_a", "a_endpoint"))
 			b := strings.TrimSpace(firstStringValue(m, "b", "endpoint_b", "b_endpoint"))
-			src = strings.Split(a, ":")[0]
-			dst = strings.Split(b, ":")[0]
+			apart := strings.SplitN(a, ":", 2)
+			bpart := strings.SplitN(b, ":", 2)
+			src = strings.TrimSpace(apart[0])
+			dst = strings.TrimSpace(bpart[0])
+			if len(apart) == 2 && srcIf == "" {
+				srcIf = strings.TrimSpace(apart[1])
+			}
+			if len(bpart) == 2 && dstIf == "" {
+				dstIf = strings.TrimSpace(bpart[1])
+			}
+		} else {
+			a := strings.TrimSpace(firstStringValue(m, "a", "endpoint_a", "a_endpoint"))
+			b := strings.TrimSpace(firstStringValue(m, "b", "endpoint_b", "b_endpoint"))
+			apart := strings.SplitN(a, ":", 2)
+			bpart := strings.SplitN(b, ":", 2)
+			if len(apart) == 2 && strings.TrimSpace(apart[0]) == src && srcIf == "" {
+				srcIf = strings.TrimSpace(apart[1])
+			}
+			if len(bpart) == 2 && strings.TrimSpace(bpart[0]) == dst && dstIf == "" {
+				dstIf = strings.TrimSpace(bpart[1])
+			}
 		}
 		if src == "" || dst == "" {
 			continue
 		}
 		label := strings.TrimSpace(firstStringValue(m, "label", "name"))
+		if label == "" && srcIf != "" && dstIf != "" {
+			label = fmt.Sprintf("%s:%s ↔ %s:%s", src, srcIf, dst, dstIf)
+		}
 		id := strings.TrimSpace(firstStringValue(m, "id"))
 		if id == "" {
 			id = fmt.Sprintf("e-%d", idx)
 		}
 		edges = append(edges, TopologyEdge{
-			ID:     id,
-			Source: src,
-			Target: dst,
-			Label:  label,
+			ID:       id,
+			Source:   src,
+			Target:   dst,
+			SourceIf: srcIf,
+			TargetIf: dstIf,
+			Label:    label,
 		})
 	}
 	return edges

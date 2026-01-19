@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -144,7 +143,7 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		if err := kubeEnsureNamespace(ctx, ns); err != nil {
 			return err
 		}
-		if err := kubeEnsureNamespaceImagePullSecret(ctx, ns); err != nil {
+		if err := kubeEnsureNamespaceImagePullSecret(ctx, ns, strings.TrimSpace(e.cfg.ImagePullSecretName), strings.TrimSpace(e.cfg.ImagePullSecretNamespace)); err != nil {
 			return err
 		}
 		if _, err := kubeDeleteClabernetesTopology(ctx, ns, name); err != nil {
@@ -177,7 +176,7 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		disableNativeForCeos := envBool(spec.Environment, "SKYFORGE_CLABERNETES_DISABLE_NATIVE_FOR_CEOS", false)
 		// Ensure clabernetes launcher pods can pull private images (launcher/NOS) by wiring the
 		// namespace pull secret into the topology service account via spec.imagePull.pullSecrets.
-		secretName := strings.TrimSpace(os.Getenv("SKYFORGE_IMAGE_PULL_SECRET_NAME"))
+		secretName := strings.TrimSpace(e.cfg.ImagePullSecretName)
 		if secretName == "" {
 			secretName = "ghcr-pull"
 		}

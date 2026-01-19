@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-func labppMetaString(meta map[string]any, key string) string {
+func metaString(meta map[string]any, key string) string {
 	if meta == nil {
 		return ""
 	}

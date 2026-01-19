@@ -7,42 +7,45 @@ import "time"
 // NOTE: This type must live in the service package (not a type alias to an internal package)
 // to satisfy Encore's API schema rules.
 type SkyforgeWorkspace struct {
-	ID                         string                 `json:"id"`
-	Slug                       string                 `json:"slug"`
-	Name                       string                 `json:"name"`
-	Description                string                 `json:"description,omitempty"`
-	CreatedAt                  time.Time              `json:"createdAt"`
-	CreatedBy                  string                 `json:"createdBy"`
-	IsPublic                   bool                   `json:"isPublic"`
-	Owners                     []string               `json:"owners,omitempty"`
-	OwnerGroups                []string               `json:"ownerGroups,omitempty"`
-	Editors                    []string               `json:"editors,omitempty"`
-	EditorGroups               []string               `json:"editorGroups,omitempty"`
-	Viewers                    []string               `json:"viewers,omitempty"`
-	ViewerGroups               []string               `json:"viewerGroups,omitempty"`
-	Blueprint                  string                 `json:"blueprint,omitempty"`
-	DefaultBranch              string                 `json:"defaultBranch,omitempty"`
-	AllowExternalTemplateRepos bool                   `json:"allowExternalTemplateRepos,omitempty"`
-	AllowCustomEveServers      bool                   `json:"allowCustomEveServers,omitempty"`
-	AllowCustomNetlabServers   bool                   `json:"allowCustomNetlabServers,omitempty"`
-	ExternalTemplateRepos      []ExternalTemplateRepo `json:"externalTemplateRepos,omitempty"`
-	TerraformStateKey          string                 `json:"terraformStateKey,omitempty"`
-	TerraformInitTemplateID    int                    `json:"terraformInitTemplateId,omitempty"`
-	TerraformPlanTemplateID    int                    `json:"terraformPlanTemplateId,omitempty"`
-	TerraformApplyTemplateID   int                    `json:"terraformApplyTemplateId,omitempty"`
-	AnsibleRunTemplateID       int                    `json:"ansibleRunTemplateId,omitempty"`
-	NetlabRunTemplateID        int                    `json:"netlabRunTemplateId,omitempty"`
-	LabppRunTemplateID         int                    `json:"labppRunTemplateId,omitempty"`
-	ContainerlabRunTemplateID  int                    `json:"containerlabRunTemplateId,omitempty"`
-	AWSAccountID               string                 `json:"awsAccountId,omitempty"`
-	AWSRoleName                string                 `json:"awsRoleName,omitempty"`
-	AWSRegion                  string                 `json:"awsRegion,omitempty"`
-	AWSAuthMethod              string                 `json:"awsAuthMethod,omitempty"`
-	ArtifactsBucket            string                 `json:"artifactsBucket,omitempty"`
-	EveServer                  string                 `json:"eveServer,omitempty"`
-	NetlabServer               string                 `json:"netlabServer,omitempty"`
-	GiteaOwner                 string                 `json:"giteaOwner"`
-	GiteaRepo                  string                 `json:"giteaRepo"`
+	ID                         string    `json:"id"`
+	Slug                       string    `json:"slug"`
+	Name                       string    `json:"name"`
+	Description                string    `json:"description,omitempty"`
+	CreatedAt                  time.Time `json:"createdAt"`
+	CreatedBy                  string    `json:"createdBy"`
+	IsPublic                   bool      `json:"isPublic"`
+	Owners                     []string  `json:"owners,omitempty"`
+	OwnerGroups                []string  `json:"ownerGroups,omitempty"`
+	Editors                    []string  `json:"editors,omitempty"`
+	EditorGroups               []string  `json:"editorGroups,omitempty"`
+	Viewers                    []string  `json:"viewers,omitempty"`
+	ViewerGroups               []string  `json:"viewerGroups,omitempty"`
+	Blueprint                  string    `json:"blueprint,omitempty"`
+	DefaultBranch              string    `json:"defaultBranch,omitempty"`
+	AllowExternalTemplateRepos bool      `json:"allowExternalTemplateRepos,omitempty"`
+	// Deprecated: EVE is no longer a supported provider; retained for DB/back-compat.
+	AllowCustomEveServers    bool                   `json:"-"`
+	AllowCustomNetlabServers bool                   `json:"allowCustomNetlabServers,omitempty"`
+	ExternalTemplateRepos    []ExternalTemplateRepo `json:"externalTemplateRepos,omitempty"`
+	TerraformStateKey        string                 `json:"terraformStateKey,omitempty"`
+	TerraformInitTemplateID  int                    `json:"terraformInitTemplateId,omitempty"`
+	TerraformPlanTemplateID  int                    `json:"terraformPlanTemplateId,omitempty"`
+	TerraformApplyTemplateID int                    `json:"terraformApplyTemplateId,omitempty"`
+	AnsibleRunTemplateID     int                    `json:"ansibleRunTemplateId,omitempty"`
+	NetlabRunTemplateID      int                    `json:"netlabRunTemplateId,omitempty"`
+	// Deprecated: LabPP tasks were retired; retained for DB/back-compat.
+	LabppRunTemplateID        int    `json:"-"`
+	ContainerlabRunTemplateID int    `json:"containerlabRunTemplateId,omitempty"`
+	AWSAccountID              string `json:"awsAccountId,omitempty"`
+	AWSRoleName               string `json:"awsRoleName,omitempty"`
+	AWSRegion                 string `json:"awsRegion,omitempty"`
+	AWSAuthMethod             string `json:"awsAuthMethod,omitempty"`
+	ArtifactsBucket           string `json:"artifactsBucket,omitempty"`
+	// Deprecated: EVE is no longer a supported provider; retained for DB/back-compat.
+	EveServer    string `json:"-"`
+	NetlabServer string `json:"netlabServer,omitempty"`
+	GiteaOwner   string `json:"giteaOwner"`
+	GiteaRepo    string `json:"giteaRepo"`
 }
 
 type ExternalTemplateRepo struct {

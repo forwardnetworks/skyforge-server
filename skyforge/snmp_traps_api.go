@@ -125,7 +125,7 @@ func (s *Service) GetSnmpTrapToken(ctx context.Context) (*SnmpTrapTokenResponse,
 		}
 		rec = &snmpTrapTokenRecord{Community: comm, UpdatedAt: time.Now().UTC()}
 	}
-	host := strings.TrimSpace(s.cfg.Labs.PublicURL)
+	host := strings.TrimSpace(s.cfg.PublicURL)
 	host = strings.TrimPrefix(host, "https://")
 	host = strings.TrimPrefix(host, "http://")
 	host = strings.TrimSuffix(host, "/")
@@ -152,7 +152,7 @@ func (s *Service) RotateSnmpTrapToken(ctx context.Context) (*SnmpTrapTokenRespon
 	if err := s.putSnmpTrapToken(ctx, user.Username, comm); err != nil {
 		return nil, errs.B().Code(errs.Internal).Msg("failed to store community").Err()
 	}
-	host := strings.TrimSpace(s.cfg.Labs.PublicURL)
+	host := strings.TrimSpace(s.cfg.PublicURL)
 	host = strings.TrimPrefix(host, "https://")
 	host = strings.TrimPrefix(host, "http://")
 	host = strings.TrimSuffix(host, "/")

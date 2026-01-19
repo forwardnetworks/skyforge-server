@@ -1,7 +1,6 @@
 package skyforge
 
 import (
-	"os"
 	"strings"
 	"time"
 
@@ -63,5 +62,5 @@ func cacheDirKey(dir string) string {
 }
 
 func envDisableEncoreCache() bool {
-	return strings.EqualFold(strings.TrimSpace(os.Getenv("SKYFORGE_DISABLE_ENCORE_CACHE")), "true")
+	return skyforgeEncoreCfg.DisableEncoreCache
 }

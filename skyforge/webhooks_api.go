@@ -129,7 +129,7 @@ func (s *Service) GetWebhookToken(ctx context.Context) (*WebhookTokenResponse, e
 	}
 	return &WebhookTokenResponse{
 		Token:         rec.Token,
-		IngestBaseURL: strings.TrimRight(s.cfg.Labs.PublicURL, "/") + "/hooks/" + rec.Token,
+		IngestBaseURL: strings.TrimRight(s.cfg.PublicURL, "/") + "/hooks/" + rec.Token,
 		UpdatedAt:     rec.UpdatedAt.UTC().Format(time.RFC3339),
 	}, nil
 }
@@ -151,7 +151,7 @@ func (s *Service) RotateWebhookToken(ctx context.Context) (*WebhookTokenResponse
 	}
 	return &WebhookTokenResponse{
 		Token:         token,
-		IngestBaseURL: strings.TrimRight(s.cfg.Labs.PublicURL, "/") + "/hooks/" + token,
+		IngestBaseURL: strings.TrimRight(s.cfg.PublicURL, "/") + "/hooks/" + token,
 		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
 	}, nil
 }

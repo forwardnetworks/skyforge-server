@@ -174,7 +174,7 @@ func (e *Engine) dispatchWorkspaceBootstrapTask(ctx context.Context, task *tasks
 		}
 		sourceBranch := e.giteaDefaultBranch(sourceOwner, sourceRepo)
 		destRoot := "blueprints"
-		expected := []string{"containerlab", "labpp", "netlab", "terraform"}
+		expected := []string{"containerlab", "netlab", "terraform"}
 		for _, dir := range expected {
 			if err := e.syncGiteaDirectoryWithSourceToTarget(ctx, sourceOwner, sourceRepo, owner, repo, dir, path.Join(destRoot, dir), sourceBranch, branch); err != nil {
 				return err

@@ -206,10 +206,8 @@ type WorkspaceCreateRequest struct {
 	AWSRoleName                string                 `json:"awsRoleName,omitempty"`
 	AWSRegion                  string                 `json:"awsRegion,omitempty"`
 	AWSAuthMethod              string                 `json:"awsAuthMethod,omitempty"`
-	EveServer                  string                 `json:"eveServer,omitempty"`
 	NetlabServer               string                 `json:"netlabServer,omitempty"`
 	AllowExternalTemplateRepos bool                   `json:"allowExternalTemplateRepos,omitempty"`
-	AllowCustomEveServers      bool                   `json:"allowCustomEveServers,omitempty"`
 	AllowCustomNetlabServers   bool                   `json:"allowCustomNetlabServers,omitempty"`
 	ExternalTemplateRepos      []ExternalTemplateRepo `json:"externalTemplateRepos,omitempty"`
 }
@@ -241,13 +239,9 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 		slug = slugify(slug)
 	}
 
-	if strings.TrimSpace(req.EveServer) != "" {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("eveServer cannot be set at workspace creation (configure in workspace settings)").Err()
-	}
 	if strings.TrimSpace(req.NetlabServer) != "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("netlabServer cannot be set at workspace creation (configure in workspace settings)").Err()
 	}
-	eveServer := ""
 	netlabServer := ""
 	externalRepos := []ExternalTemplateRepo{}
 	if req.AllowExternalTemplateRepos {
@@ -337,7 +331,6 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 	terraformApplyID := 0
 	ansibleRunID := 0
 	netlabRunID := 0
-	labppRunID := 0
 	containerlabRunID := 0
 
 	created := SkyforgeWorkspace{
@@ -359,17 +352,14 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 		TerraformApplyTemplateID:   terraformApplyID,
 		AnsibleRunTemplateID:       ansibleRunID,
 		NetlabRunTemplateID:        netlabRunID,
-		LabppRunTemplateID:         labppRunID,
 		ContainerlabRunTemplateID:  containerlabRunID,
 		AWSAccountID:               strings.TrimSpace(req.AWSAccountID),
 		AWSRoleName:                strings.TrimSpace(req.AWSRoleName),
 		AWSRegion:                  strings.TrimSpace(req.AWSRegion),
 		AWSAuthMethod:              strings.TrimSpace(strings.ToLower(req.AWSAuthMethod)),
 		ArtifactsBucket:            artifactsBucket,
-		EveServer:                  eveServer,
 		NetlabServer:               netlabServer,
 		AllowExternalTemplateRepos: req.AllowExternalTemplateRepos,
-		AllowCustomEveServers:      req.AllowCustomEveServers,
 		AllowCustomNetlabServers:   req.AllowCustomNetlabServers,
 		ExternalTemplateRepos:      externalRepos,
 		GiteaOwner:                 owner,
