@@ -2089,7 +2089,7 @@ func workspaceAccessLevel(cfg Config, p SkyforgeWorkspace, username string) stri
 	if containsUser(p.Viewers, username) {
 		return "viewer"
 	}
-	if p.IsPublic {
+	if p.IsPublic && !strings.EqualFold(strings.TrimSpace(p.CreatedBy), "skyforge") {
 		return "viewer"
 	}
 	return "none"
@@ -2115,7 +2115,7 @@ func workspaceAccessLevelForClaims(cfg Config, p SkyforgeWorkspace, claims *Sess
 	if containsUser(p.Viewers, username) || containsGroup(p.ViewerGroups, claims.Groups) {
 		return "viewer"
 	}
-	if p.IsPublic {
+	if p.IsPublic && !strings.EqualFold(strings.TrimSpace(p.CreatedBy), "skyforge") {
 		return "viewer"
 	}
 	return "none"
