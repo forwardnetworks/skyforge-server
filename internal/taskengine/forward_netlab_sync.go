@@ -263,7 +263,7 @@ func (e *Engine) getUserForwardCredentials(ctx context.Context, username string)
 	var collectorUser sql.NullString
 	var deviceUser, devicePass sql.NullString
 	var jumpHost, jumpUser, jumpKey, jumpCert sql.NullString
-	err := e.db.QueryRowContext(ctx, `SELECT base_url, username, password,
+	err := e.db.QueryRowContext(ctx, `SELECT base_url, forward_username, forward_password,
   COALESCE(collector_username, ''),
   COALESCE(device_username, ''), COALESCE(device_password, ''),
   COALESCE(jump_host, ''), COALESCE(jump_username, ''), COALESCE(jump_private_key, ''), COALESCE(jump_cert, '')
