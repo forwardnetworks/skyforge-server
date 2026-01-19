@@ -108,7 +108,7 @@ func newForwardClient(cfg forwardCredentials) (*forwardClient, error) {
 		username: username,
 		password: password,
 		client: &http.Client{
-			Timeout:   15 * time.Second,
+			Timeout:   30 * time.Second,
 			Transport: transport,
 		},
 	}, nil

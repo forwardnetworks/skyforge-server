@@ -371,7 +371,9 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 	}
 
 	box := newSecretBox(s.cfg.SessionSecret)
-	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	// Forward collector provisioning can be slow (multiple API calls + possible TLS/network latency).
+	// Keep a generous timeout so the UI doesn't get flaky 503s under mild load.
+	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
 
 	current, err := getUserForwardCredentials(ctx, s.db, box, user.Username)
