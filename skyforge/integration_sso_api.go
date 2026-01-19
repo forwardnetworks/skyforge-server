@@ -73,7 +73,12 @@ func (s *Service) YaadeSSO(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	// Never proxy in-cluster service calls through environment proxies.
+	// Some clusters set HTTP(S)_PROXY for egress which can break service DNS.
+	transport := &http.Transport{
+		Proxy: func(*http.Request) (*url.URL, error) { return nil, nil },
+	}
+	client := &http.Client{Timeout: 8 * time.Second, Transport: transport}
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("yaade sso: login failed url=%q err=%v", loginURL, err)
