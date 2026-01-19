@@ -332,7 +332,7 @@ func (e *Engine) captureC9sTopologyArtifact(ctx context.Context, spec netlabC9sR
 	return graph, nil
 }
 
-func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabYAML []byte, nodeMounts map[string][]c9sFileFromConfigMap, e *Engine, log Logger) ([]byte, map[string][]c9sFileFromConfigMap, error) {
+func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabYAML []byte, nodeMounts map[string][]c9sFileFromConfigMap, startupConfigs map[string]c9sFileFromConfigMap, e *Engine, log Logger) ([]byte, map[string][]c9sFileFromConfigMap, error) {
 	if log == nil {
 		log = noopLogger{}
 	}
@@ -482,12 +482,31 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 					}
 				}
 
+				// Rewrite startup-config if present
+				if sc, ok := cfg["startup-config"].(string); ok {
+					sc = strings.TrimSpace(sc)
+					if strings.HasPrefix(sc, "config/") {
+						rel := strings.TrimPrefix(sc, "config/")
+						if mount, exists := startupConfigs[rel]; exists {
+							cfg["startup-config"] = mount.FilePath
+							// Ensure we mount it
+							if _, ok := nodeMounts[nodeName]; !ok {
+								nodeMounts[nodeName] = []c9sFileFromConfigMap{}
+							}
+							nodeMounts[nodeName] = append(nodeMounts[nodeName], mount)
+						}
+					}
+				}
+
 				bindsAny, ok := cfg["binds"]
 				if !ok {
+					// Even if no binds, we might have updated nodeMounts with startup-config
+					nodes[node] = cfg
 					continue
 				}
 				rawBinds, ok := bindsAny.([]any)
 				if !ok || len(rawBinds) == 0 {
+					nodes[node] = cfg
 					continue
 				}
 				out := make([]any, 0, len(rawBinds))
@@ -530,9 +549,22 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 						out = append(out, newHost+":"+rest)
 						continue
 					}
+					if strings.HasPrefix(hostPath, "config/") {
+						rel := strings.TrimPrefix(hostPath, "config/")
+						if mount, exists := startupConfigs[rel]; exists {
+							out = append(out, mount.FilePath+":"+rest)
+							// Ensure we mount it
+							if _, ok := nodeMounts[nodeName]; !ok {
+								nodeMounts[nodeName] = []c9sFileFromConfigMap{}
+							}
+							nodeMounts[nodeName] = append(nodeMounts[nodeName], mount)
+							continue
+						}
+					}
+
 					if !strings.HasPrefix(hostPath, "/") && hostPath != "" {
 						if e != nil {
-							e.appendTaskWarning(taskID, fmt.Sprintf("c9s: bind path %q for node %s is relative and not under node_files", hostPath, nodeName))
+							e.appendTaskWarning(taskID, fmt.Sprintf("c9s: bind path %q for node %s is relative and not under node_files or config", hostPath, nodeName))
 						}
 					}
 					out = append(out, bind)
