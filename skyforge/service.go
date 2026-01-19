@@ -2080,9 +2080,6 @@ func workspaceAccessLevel(cfg Config, p SkyforgeWorkspace, username string) stri
 	if isAdminUser(cfg, username) {
 		return "admin"
 	}
-	if p.IsPublic {
-		return "viewer"
-	}
 	if containsUser(p.Owners, username) || strings.EqualFold(p.CreatedBy, username) {
 		return "owner"
 	}
@@ -2090,6 +2087,9 @@ func workspaceAccessLevel(cfg Config, p SkyforgeWorkspace, username string) stri
 		return "editor"
 	}
 	if containsUser(p.Viewers, username) {
+		return "viewer"
+	}
+	if p.IsPublic {
 		return "viewer"
 	}
 	return "none"
@@ -2106,9 +2106,6 @@ func workspaceAccessLevelForClaims(cfg Config, p SkyforgeWorkspace, claims *Sess
 	if username == "" {
 		return "none"
 	}
-	if p.IsPublic {
-		return "viewer"
-	}
 	if strings.EqualFold(p.CreatedBy, username) || containsUser(p.Owners, username) || containsGroup(p.OwnerGroups, claims.Groups) {
 		return "owner"
 	}
@@ -2116,6 +2113,9 @@ func workspaceAccessLevelForClaims(cfg Config, p SkyforgeWorkspace, claims *Sess
 		return "editor"
 	}
 	if containsUser(p.Viewers, username) || containsGroup(p.ViewerGroups, claims.Groups) {
+		return "viewer"
+	}
+	if p.IsPublic {
 		return "viewer"
 	}
 	return "none"
