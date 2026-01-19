@@ -8969,6 +8969,45 @@
         "summary": "StopWorkspaceDeployment attempts to stop the most recent task for this\ndeployment.\n"
       }
     },
+    "/api/workspaces/{id}/deployments/{deploymentID}/terminal/ws": {
+      "get": {
+        "description": "using Kubernetes \\`pods/exec\\` (SPDY) and a WebSocket transport to the browser.\n\nQuery params: - node: required (clabernetes/topologyNode) - container: optional - command: optional (defaults to \"sh\"; for EOS nodes use \"Cli\")\n",
+        "operationId": "GET:skyforge.TerminalExecWS",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "deploymentID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "TerminalExecWS provides an interactive in-browser terminal into\nclabernetes-backed nodes\n"
+      }
+    },
     "/api/workspaces/{id}/deployments/{deploymentID}/topology": {
       "get": {
         "description": "For containerlab, the topology is sourced from the containerlab API after deploy so we can reflect the resolved management IPs.\n",

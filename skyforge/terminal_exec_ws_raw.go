@@ -1,0 +1,359 @@
+package skyforge
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
+	"encore.dev/rlog"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/remotecommand"
+	"nhooyr.io/websocket"
+	"nhooyr.io/websocket/wsjson"
+)
+
+type terminalClientMsg struct {
+	Type string `json:"type"`
+	Data string `json:"data,omitempty"`
+	Cols uint16 `json:"cols,omitempty"`
+	Rows uint16 `json:"rows,omitempty"`
+}
+
+type terminalServerMsg struct {
+	Type   string `json:"type"`
+	Data   string `json:"data,omitempty"`
+	Stream string `json:"stream,omitempty"`
+}
+
+type terminalSizeQueue struct {
+	ch chan remotecommand.TerminalSize
+}
+
+func newTerminalSizeQueue() *terminalSizeQueue {
+	return &terminalSizeQueue{ch: make(chan remotecommand.TerminalSize, 8)}
+}
+
+func (q *terminalSizeQueue) Next() *remotecommand.TerminalSize {
+	size, ok := <-q.ch
+	if !ok {
+		return nil
+	}
+	return &size
+}
+
+func kubeInClusterConfig() (*rest.Config, error) {
+	cfg, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, err
+	}
+	// Be explicit about TLS defaults; allow insecure only if explicitly requested elsewhere.
+	if cfg.TLSClientConfig.CAFile == "" {
+		// Some distros mount CA at a standard location; fall back if present.
+		if _, err := os.Stat("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"); err == nil {
+			cfg.TLSClientConfig.CAFile = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+		}
+	}
+	if cfg.TLSClientConfig.Insecure {
+		cfg.TLSClientConfig.Insecure = false
+	}
+	// Remotecommand uses the REST transport; keep timeouts conservative.
+	cfg.Timeout = 30 * time.Second
+	return cfg, nil
+}
+
+func resolveClabernetesNodePod(ctx context.Context, ns, topologyName, node string) (podName string, err error) {
+	ns = strings.TrimSpace(ns)
+	topologyName = strings.TrimSpace(topologyName)
+	node = strings.TrimSpace(node)
+	if ns == "" || topologyName == "" || node == "" {
+		return "", fmt.Errorf("namespace, topology name, and node are required")
+	}
+
+	// Reuse the existing in-cluster HTTP kube client used elsewhere in Skyforge (RBAC is already wired).
+	client, err := kubeHTTPClient()
+	if err != nil {
+		return "", err
+	}
+	reqURL := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/pods?labelSelector=%s",
+		url.PathEscape(ns),
+		url.QueryEscape("clabernetes/topologyOwner="+topologyName+",clabernetes/topologyNode="+node),
+	)
+	req, err := kubeRequest(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 16<<10))
+		return "", fmt.Errorf("kube list pods failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	var payload struct {
+		Items []struct {
+			Metadata struct {
+				Name string `json:"name"`
+			} `json:"metadata"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return "", err
+	}
+	if len(payload.Items) == 0 {
+		return "", fmt.Errorf("node pod not found")
+	}
+	return strings.TrimSpace(payload.Items[0].Metadata.Name), nil
+}
+
+// TerminalExecWS provides an interactive in-browser terminal into clabernetes-backed nodes
+// using Kubernetes `pods/exec` (SPDY) and a WebSocket transport to the browser.
+//
+// Query params:
+// - node: required (clabernetes/topologyNode)
+// - container: optional
+// - command: optional (defaults to "sh"; for EOS nodes use "Cli")
+//
+//encore:api auth raw method=GET path=/api/workspaces/:id/deployments/:deploymentID/terminal/ws
+func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
+	if s == nil || s.db == nil || s.sessionManager == nil {
+		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	claims, err := s.sessionManager.Parse(req)
+	if err != nil || claims == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	workspaceKey := strings.TrimSpace(req.PathValue("id"))
+	deploymentID := strings.TrimSpace(req.PathValue("deploymentID"))
+	if workspaceKey == "" || deploymentID == "" {
+		http.Error(w, "invalid path params", http.StatusBadRequest)
+		return
+	}
+
+	_, _, ws, err := s.loadWorkspaceByKey(workspaceKey)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if workspaceAccessLevelForClaims(s.cfg, ws, claims) == "none" {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	ctx := req.Context()
+	dep, err := s.getWorkspaceDeployment(ctx, ws.ID, deploymentID)
+	if err != nil || dep == nil {
+		http.Error(w, "deployment not found", http.StatusNotFound)
+		return
+	}
+	typ := strings.ToLower(strings.TrimSpace(dep.Type))
+	if typ != "netlab-c9s" && typ != "clabernetes" {
+		http.Error(w, "terminal is only available for clabernetes-backed deployments", http.StatusBadRequest)
+		return
+	}
+
+	node := strings.TrimSpace(req.URL.Query().Get("node"))
+	if node == "" {
+		http.Error(w, "node query param is required", http.StatusBadRequest)
+		return
+	}
+	container := strings.TrimSpace(req.URL.Query().Get("container"))
+	command := strings.TrimSpace(req.URL.Query().Get("command"))
+	if command == "" {
+		command = "sh"
+	}
+	cmd := strings.Fields(command)
+	if len(cmd) == 0 {
+		cmd = []string{"sh"}
+	}
+
+	cfgAny, _ := fromJSONMap(dep.Config)
+	k8sNamespace, _ := cfgAny["k8sNamespace"].(string)
+	topologyName, _ := cfgAny["topologyName"].(string)
+	k8sNamespace = strings.TrimSpace(k8sNamespace)
+	topologyName = strings.TrimSpace(topologyName)
+	if k8sNamespace == "" {
+		k8sNamespace = clabernetesWorkspaceNamespace(ws.Slug)
+	}
+	if topologyName == "" {
+		// When config is absent, fall back to labName-derived topology name.
+		labName, _ := cfgAny["labName"].(string)
+		topologyName = clabernetesTopologyName(strings.TrimSpace(labName))
+	}
+	if topologyName == "" {
+		http.Error(w, "missing topology name", http.StatusPreconditionFailed)
+		return
+	}
+
+	// Upgrade to websocket.
+	conn, err := websocket.Accept(w, req, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "")
+	conn.SetReadLimit(1 << 20)
+
+	// Resolve pod name.
+	resolveCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	podName, err := resolveClabernetesNodePod(resolveCtx, k8sNamespace, topologyName, node)
+	cancel()
+	if err != nil {
+		_ = wsjson.Write(ctx, conn, terminalServerMsg{Type: "error", Data: err.Error()})
+		return
+	}
+
+	kcfg, err := kubeInClusterConfig()
+	if err != nil {
+		_ = wsjson.Write(ctx, conn, terminalServerMsg{Type: "error", Data: "kube config unavailable"})
+		return
+	}
+
+	clientset, err := kubernetes.NewForConfig(kcfg)
+	if err != nil {
+		_ = wsjson.Write(ctx, conn, terminalServerMsg{Type: "error", Data: "kube client unavailable"})
+		return
+	}
+
+	// If container isn't specified and the pod has multiple containers, pick a sensible default.
+	if container == "" {
+		ctxGet, cancel := context.WithTimeout(ctx, 3*time.Second)
+		pod, err := clientset.CoreV1().Pods(k8sNamespace).Get(ctxGet, podName, metav1.GetOptions{})
+		cancel()
+		if err == nil && pod != nil {
+			best := ""
+			for _, c := range pod.Spec.Containers {
+				name := strings.TrimSpace(c.Name)
+				if name == "" {
+					continue
+				}
+				if best == "" {
+					best = name
+				}
+				if name == "nos" {
+					best = name
+					break
+				}
+				if name == "node" {
+					best = name
+				}
+			}
+			container = best
+		}
+	}
+
+	opts := &corev1.PodExecOptions{
+		Container: container,
+		Command:   cmd,
+		Stdin:     true,
+		Stdout:    true,
+		Stderr:    true,
+		TTY:       true,
+	}
+
+	reqExec := clientset.CoreV1().RESTClient().
+		Post().
+		Resource("pods").
+		Name(podName).
+		Namespace(k8sNamespace).
+		SubResource("exec")
+	reqExec.VersionedParams(opts, scheme.ParameterCodec)
+
+	execURL := reqExec.URL()
+	executor, err := remotecommand.NewSPDYExecutor(kcfg, http.MethodPost, execURL)
+	if err != nil {
+		_ = wsjson.Write(ctx, conn, terminalServerMsg{Type: "error", Data: "failed to start exec"})
+		return
+	}
+
+	stdinR, stdinW := io.Pipe()
+	defer stdinR.Close()
+	defer stdinW.Close()
+
+	outCh := make(chan terminalServerMsg, 256)
+	var outWg sync.WaitGroup
+	outWg.Add(1)
+	go func() {
+		defer outWg.Done()
+		for msg := range outCh {
+			_ = wsjson.Write(ctx, conn, msg)
+		}
+	}()
+
+	writeBytes := func(stream string) io.Writer {
+		return writerFunc(func(p []byte) (int, error) {
+			if len(p) == 0 {
+				return 0, nil
+			}
+			outCh <- terminalServerMsg{Type: "output", Data: string(p), Stream: stream}
+			return len(p), nil
+		})
+	}
+
+	sizeQ := newTerminalSizeQueue()
+	sizeQ.ch <- remotecommand.TerminalSize{Width: 120, Height: 35}
+
+	// Reader loop: websocket -> stdin + resize.
+	go func() {
+		defer func() {
+			_ = stdinW.Close()
+		}()
+		for {
+			var in terminalClientMsg
+			if err := wsjson.Read(ctx, conn, &in); err != nil {
+				return
+			}
+			switch strings.ToLower(strings.TrimSpace(in.Type)) {
+			case "stdin":
+				if in.Data == "" {
+					continue
+				}
+				_, _ = io.WriteString(stdinW, in.Data)
+			case "resize":
+				if in.Cols == 0 || in.Rows == 0 {
+					continue
+				}
+				select {
+				case sizeQ.ch <- remotecommand.TerminalSize{Width: uint16(in.Cols), Height: uint16(in.Rows)}:
+				default:
+				}
+			default:
+			}
+		}
+	}()
+
+	outCh <- terminalServerMsg{Type: "info", Data: fmt.Sprintf("connected: %s/%s (%s)", k8sNamespace, podName, strings.Join(cmd, " "))}
+
+	streamErr := executor.StreamWithContext(ctx, remotecommand.StreamOptions{
+		Stdin:             stdinR,
+		Stdout:            writeBytes("stdout"),
+		Stderr:            writeBytes("stderr"),
+		Tty:               true,
+		TerminalSizeQueue: sizeQ,
+	})
+	close(outCh)
+	outWg.Wait()
+
+	if streamErr != nil && !errors.Is(streamErr, context.Canceled) {
+		rlog.Warn("terminal exec ended", "err", streamErr)
+	}
+}
+
+type writerFunc func(p []byte) (int, error)
+
+func (w writerFunc) Write(p []byte) (int, error) { return w(p) }
