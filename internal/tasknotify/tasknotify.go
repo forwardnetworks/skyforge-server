@@ -16,6 +16,7 @@ const (
 	SyslogChannel        = "skyforge_syslog_updates"
 	SnmpChannel          = "skyforge_snmp_updates"
 	WorkspacesChannel    = "skyforge_workspaces_updates"
+	DeploymentEventsChan = "skyforge_deployment_events"
 )
 
 func NotifyTaskUpdate(ctx context.Context, db *sql.DB, taskID int) error {
@@ -96,3 +97,15 @@ func NotifyWorkspacesUpdate(ctx context.Context, db *sql.DB, payload string) err
 	return err
 }
 
+func NotifyDeploymentEvent(ctx context.Context, db *sql.DB, workspaceID, deploymentID string) error {
+	workspaceID = strings.TrimSpace(workspaceID)
+	deploymentID = strings.TrimSpace(deploymentID)
+	if db == nil || workspaceID == "" || deploymentID == "" {
+		return nil
+	}
+	ctxReq, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+	payload := workspaceID + ":" + deploymentID
+	_, err := db.ExecContext(ctxReq, "SELECT pg_notify($1, $2)", DeploymentEventsChan, payload)
+	return err
+}

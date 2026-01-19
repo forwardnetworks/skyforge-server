@@ -184,6 +184,24 @@ func (s *Service) SetWorkspaceDeploymentLinkImpairment(ctx context.Context, id, 
 
 	rlog.Info("link impairment applied", "workspace", pc.workspace.ID, "deployment", dep.ID, "edge", edgeID, "action", action)
 
+	if s.db != nil {
+		ev := map[string]any{
+			"edgeId":     edgeID,
+			"action":     action,
+			"delayMs":    req.DelayMs,
+			"jitterMs":   req.JitterMs,
+			"lossPct":    req.LossPct,
+			"dupPct":     req.DupPct,
+			"corruptPct": req.CorruptPct,
+			"reorderPct": req.ReorderPct,
+			"rateKbps":   req.RateKbps,
+			"results":    results,
+		}
+		if err := insertDeploymentUIEvent(ctx, s.db, pc.workspace.ID, dep.ID, pc.claims.Username, "link.impair."+action, ev); err == nil {
+			_ = notifyDeploymentEventPG(ctx, s.db, pc.workspace.ID, dep.ID)
+		}
+	}
+
 	return &LinkImpairmentResponse{
 		AppliedAt: time.Now().UTC().Format(time.RFC3339),
 		Edge:      *edge,

@@ -20,6 +20,7 @@ const (
 	pgNotifySyslogChannel        = "skyforge_syslog_updates"
 	pgNotifySnmpChannel          = "skyforge_snmp_updates"
 	pgNotifyWorkspacesChannel    = "skyforge_workspaces_updates"
+	pgNotifyDeploymentEventsChan = "skyforge_deployment_events"
 )
 
 type pgNotification struct {
@@ -142,6 +143,9 @@ func (h *pgNotifyHub) listenOnce(ctx context.Context) error {
 		if _, err := conn.Exec(ctx, "LISTEN "+pgNotifyWorkspacesChannel); err != nil {
 			return err
 		}
+		if _, err := conn.Exec(ctx, "LISTEN "+pgNotifyDeploymentEventsChan); err != nil {
+			return err
+		}
 
 		for {
 			n, err := conn.WaitForNotification(ctx)
@@ -231,6 +235,19 @@ func notifyWorkspacesUpdatePG(ctx context.Context, db *sql.DB, payload string) e
 	ctxReq, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
 	_, err := db.ExecContext(ctxReq, "SELECT pg_notify($1, $2)", pgNotifyWorkspacesChannel, payload)
+	return err
+}
+
+func notifyDeploymentEventPG(ctx context.Context, db *sql.DB, workspaceID, deploymentID string) error {
+	workspaceID = strings.TrimSpace(workspaceID)
+	deploymentID = strings.TrimSpace(deploymentID)
+	if db == nil || workspaceID == "" || deploymentID == "" {
+		return nil
+	}
+	ctxReq, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+	payload := workspaceID + ":" + deploymentID
+	_, err := db.ExecContext(ctxReq, "SELECT pg_notify($1, $2)", pgNotifyDeploymentEventsChan, payload)
 	return err
 }
 
@@ -396,6 +413,33 @@ func waitForWorkspacesUpdateSignal(ctx context.Context, db *sql.DB, username str
 			}
 			payload := strings.ToLower(strings.TrimSpace(n.Payload))
 			if payload == "*" || payload == username {
+				return true
+			}
+		}
+	}
+}
+
+func waitForDeploymentEventSignal(ctx context.Context, db *sql.DB, workspaceID, deploymentID string) bool {
+	workspaceID = strings.TrimSpace(workspaceID)
+	deploymentID = strings.TrimSpace(deploymentID)
+	if workspaceID == "" || deploymentID == "" {
+		return false
+	}
+	payloadWant := workspaceID + ":" + deploymentID
+	hub := ensurePGNotifyHub(db)
+	ch := hub.subscribe(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case n, ok := <-ch:
+			if !ok {
+				return false
+			}
+			if n.Channel != pgNotifyDeploymentEventsChan {
+				continue
+			}
+			if strings.TrimSpace(n.Payload) == payloadWant {
 				return true
 			}
 		}
