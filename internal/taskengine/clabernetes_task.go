@@ -382,8 +382,13 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 }
 
 func (e *Engine) captureClabernetesTopologyArtifact(ctx context.Context, spec clabernetesRunSpec, topologyOwner string) error {
-	if e == nil || spec.TaskID <= 0 || strings.TrimSpace(spec.WorkspaceID) == "" {
+	if e == nil || spec.TaskID <= 0 {
 		return fmt.Errorf("invalid task context")
+	}
+	if strings.TrimSpace(spec.WorkspaceID) == "" {
+		// Best-effort enhancement: storing topology graphs requires a workspace scope.
+		// Skip silently rather than failing the overall run.
+		return nil
 	}
 	ns := strings.TrimSpace(spec.Namespace)
 	if ns == "" {
@@ -434,6 +439,9 @@ func (e *Engine) captureClabernetesTopologyArtifact(ctx context.Context, spec cl
 	defer cancel()
 	putKey, err := putWorkspaceArtifact(ctxPut, e.cfg, spec.WorkspaceID, key, graphBytes, "application/json")
 	if err != nil {
+		if isObjectStoreNotConfigured(err) {
+			return nil
+		}
 		return err
 	}
 	e.setTaskMetadataKey(spec.TaskID, "topologyKey", putKey)

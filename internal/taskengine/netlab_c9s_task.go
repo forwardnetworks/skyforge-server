@@ -237,6 +237,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 
 	clabSpec := clabernetesRunSpec{
 		TaskID:             spec.TaskID,
+		WorkspaceID:        strings.TrimSpace(spec.WorkspaceCtx.workspace.ID),
 		Action:             "deploy",
 		Namespace:          ns,
 		TopologyName:       topologyName,
@@ -247,6 +248,14 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	}
 	if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "c9s.deploy", func() error {
 		return e.runClabernetesTask(ctx, clabSpec, log)
+	}); err != nil {
+		return err
+	}
+
+	// Run netlab-generated Linux configuration scripts (initial + routing) directly
+	// inside the Linux pods. This mirrors netlab's "faster without Ansible" workflow.
+	if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.linux-scripts", func() error {
+		return runNetlabC9sLinuxScripts(ctx, ns, topologyName, topologyBytes, log)
 	}); err != nil {
 		return err
 	}
@@ -267,10 +276,6 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		}
 	}
 
-	// Optional Phase 2: post-deploy Ansible.
-	if !strings.EqualFold(strings.TrimSpace(spec.Environment["SKYFORGE_NETLAB_C9S_RUN_ANSIBLE"]), "false") {
-		return e.runNetlabC9sAnsible(ctx, spec, ns, topologyName, labName, log)
-	}
 	return nil
 }
 
@@ -323,6 +328,12 @@ func (e *Engine) captureC9sTopologyArtifact(ctx context.Context, spec netlabC9sR
 	defer cancel()
 	putKey, err := putWorkspaceArtifact(ctxPut, e.cfg, spec.WorkspaceCtx.workspace.ID, key, graphBytes, "application/json")
 	if err != nil {
+		if isObjectStoreNotConfigured(err) {
+			if log != nil {
+				log.Infof("c9s topology capture skipped: %v", err)
+			}
+			return graph, nil
+		}
 		return nil, err
 	}
 	e.setTaskMetadataKey(spec.TaskID, "topologyKey", putKey)
@@ -561,7 +572,6 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 							continue
 						}
 					}
-
 					if !strings.HasPrefix(hostPath, "/") && hostPath != "" {
 						if e != nil {
 							e.appendTaskWarning(taskID, fmt.Sprintf("c9s: bind path %q for node %s is relative and not under node_files or config", hostPath, nodeName))
