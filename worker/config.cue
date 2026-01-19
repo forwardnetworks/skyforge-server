@@ -123,6 +123,4 @@ NetlabGenerator: {
 	C9sGeneratorMode: "k8s"
 	GeneratorImage:   ""
 	PullPolicy:       "IfNotPresent"
-	AnsibleImage:     ""
-	AnsiblePullPolicy:"IfNotPresent"
 }

@@ -58,8 +58,6 @@ type Config struct {
 	NetlabC9sGeneratorMode    string
 	NetlabGeneratorImage      string
 	NetlabGeneratorPullPolicy string
-	AnsibleRunnerImage        string
-	AnsibleRunnerPullPolicy   string
 	PKICACert                 string
 	PKICAKey                  string
 	PKIDefaultDays            int

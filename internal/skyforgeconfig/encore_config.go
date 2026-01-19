@@ -44,11 +44,9 @@ type ContainerlabDefaultsConfig struct {
 }
 
 type NetlabGeneratorDefaultsConfig struct {
-	C9sGeneratorMode  string
-	GeneratorImage    string
-	PullPolicy        string
-	AnsibleImage      string
-	AnsiblePullPolicy string
+	C9sGeneratorMode string
+	GeneratorImage   string
+	PullPolicy       string
 }
 
 type KubernetesDefaultsConfig struct {

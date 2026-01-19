@@ -134,6 +134,4 @@ NetlabGenerator: {
 
 	GeneratorImage:    ""
 	PullPolicy:        "IfNotPresent"
-	AnsibleImage:      ""
-	AnsiblePullPolicy: "IfNotPresent"
 }

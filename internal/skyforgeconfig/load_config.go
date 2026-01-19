@@ -133,8 +133,6 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 	}
 	netlabGeneratorImage := strings.TrimSpace(enc.NetlabGenerator.GeneratorImage)
 	netlabGeneratorPullPolicy := strings.TrimSpace(enc.NetlabGenerator.PullPolicy)
-	ansibleRunnerImage := strings.TrimSpace(enc.NetlabGenerator.AnsibleImage)
-	ansibleRunnerPullPolicy := strings.TrimSpace(enc.NetlabGenerator.AnsiblePullPolicy)
 
 	uiCfg := skyforgecore.UIConfig{
 		ProductName:      strings.TrimSpace(enc.UI.ProductName),
@@ -299,7 +297,5 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		NetlabC9sGeneratorMode:    netlabC9sGeneratorMode,
 		NetlabGeneratorImage:      netlabGeneratorImage,
 		NetlabGeneratorPullPolicy: netlabGeneratorPullPolicy,
-		AnsibleRunnerImage:        ansibleRunnerImage,
-		AnsibleRunnerPullPolicy:   ansibleRunnerPullPolicy,
 	}
 }
