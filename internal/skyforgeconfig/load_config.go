@@ -2,6 +2,7 @@ package skyforgeconfig
 
 import (
 	"log"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -40,6 +41,8 @@ func parseUserList(raw string) []string {
 // The Encore-managed config values must be passed in from a service package,
 // since config.Load cannot be called from a non-service library.
 func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config {
+	getEnv := func(key string) string { return strings.TrimSpace(os.Getenv(key)) }
+
 	sessionTTL := 8 * time.Hour
 	if raw := strings.TrimSpace(enc.SessionTTL); raw != "" {
 		if parsed, err := time.ParseDuration(raw); err == nil {
@@ -63,6 +66,10 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 	}
 
 	giteaBaseURL := strings.TrimRight(strings.TrimSpace(enc.Integrations.GiteaBaseURL), "/")
+	if giteaBaseURL == "" {
+		// Backward-compat for deployments that set env vars instead of Encore runtime config.
+		giteaBaseURL = strings.TrimRight(getEnv("SKYFORGE_GITEA_URL"), "/")
+	}
 	netboxBaseURL := strings.TrimRight(strings.TrimSpace(enc.Integrations.NetboxBaseURL), "/")
 	nautobotBaseURL := strings.TrimRight(strings.TrimSpace(enc.Integrations.NautobotBaseURL), "/")
 	yaadeBaseURL := strings.TrimRight(strings.TrimSpace(enc.Integrations.YaadeBaseURL), "/")
@@ -182,6 +189,20 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		ObjectStorageUseSSL:             enc.ObjectStorage.UseSSL,
 		ObjectStorageTerraformAccessKey: strings.TrimSpace(sec.ObjectStorageTerraformAccessKey),
 		ObjectStorageTerraformSecretKey: strings.TrimSpace(sec.ObjectStorageTerraformSecretKey),
+	}
+	if strings.TrimSpace(workspacesCfg.GiteaAPIURL) == "" {
+		workspacesCfg.GiteaAPIURL = strings.TrimRight(getEnv("SKYFORGE_GITEA_API_URL"), "/")
+	}
+	if strings.TrimSpace(workspacesCfg.GiteaUsername) == "" {
+		if v := getEnv("SKYFORGE_GITEA_USERNAME"); v != "" {
+			workspacesCfg.GiteaUsername = v
+		}
+	}
+	if !workspacesCfg.GiteaRepoPrivate {
+		// env fallback only if Encore config didn't set it true.
+		if v := strings.ToLower(getEnv("SKYFORGE_GITEA_REPO_PRIVATE")); v != "" {
+			workspacesCfg.GiteaRepoPrivate = v == "true" || v == "1" || v == "yes"
+		}
 	}
 	if strings.TrimSpace(workspacesCfg.DataDir) == "" {
 		workspacesCfg.DataDir = "/var/lib/skyforge"

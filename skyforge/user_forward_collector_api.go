@@ -449,7 +449,7 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 	{
 		ctx2, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
-		if st, err := ensureCollectorDeployed(ctx2, user.Username, authKey); err != nil {
+		if st, err := ensureCollectorDeployed(ctx2, s.cfg, user.Username, authKey); err != nil {
 			log.Printf("collector deploy failed: %v", err)
 		} else {
 			runtime = st
@@ -537,7 +537,7 @@ func (s *Service) ResetUserForwardCollector(ctx context.Context) (*UserForwardCo
 	{
 		ctx2, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
-		if st, err := ensureCollectorDeployed(ctx2, user.Username, current.AuthorizationKey); err != nil {
+		if st, err := ensureCollectorDeployed(ctx2, s.cfg, user.Username, current.AuthorizationKey); err != nil {
 			log.Printf("collector deploy failed: %v", err)
 		} else {
 			runtime = st
@@ -562,6 +562,15 @@ func (s *Service) ResetUserForwardCollector(ctx context.Context) (*UserForwardCo
 
 type UserCollectorRuntimeResponse struct {
 	Runtime *collectorRuntimeStatus `json:"runtime,omitempty"`
+}
+
+type UserCollectorLogsParams struct {
+	Tail int `query:"tail" encore:"optional"`
+}
+
+type UserCollectorLogsResponse struct {
+	PodName string `json:"podName,omitempty"`
+	Logs    string `json:"logs,omitempty"`
 }
 
 type RestartUserCollectorResponse struct {
@@ -603,6 +612,43 @@ func (s *Service) GetUserCollectorRuntime(ctx context.Context) (*UserCollectorRu
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load collector runtime").Err()
 	}
 	return &UserCollectorRuntimeResponse{Runtime: st}, nil
+}
+
+// GetUserCollectorLogs returns recent log lines from the user's in-cluster collector pod.
+//
+//encore:api auth method=GET path=/api/forward/collector/logs
+func (s *Service) GetUserCollectorLogs(ctx context.Context, params *UserCollectorLogsParams) (*UserCollectorLogsResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	tail := 200
+	if params != nil && params.Tail > 0 {
+		if params.Tail > 2000 {
+			tail = 2000
+		} else {
+			tail = params.Tail
+		}
+	}
+
+	ctxSt, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	st, err := getCollectorRuntimeStatus(ctxSt, user.Username)
+	if err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load collector runtime").Err()
+	}
+	if st == nil || strings.TrimSpace(st.PodName) == "" {
+		return &UserCollectorLogsResponse{}, nil
+	}
+
+	ctxReq, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	logs, err := getCollectorPodLogs(ctxReq, st.Namespace, st.PodName, "collector", tail)
+	if err != nil {
+		log.Printf("collector logs failed: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load collector logs").Err()
+	}
+	return &UserCollectorLogsResponse{PodName: st.PodName, Logs: logs}, nil
 }
 
 // ClearUserForwardCollector deletes the stored user Forward collector settings.

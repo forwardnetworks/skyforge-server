@@ -3646,6 +3646,52 @@
         "summary": "PutUserForwardCollector stores Forward credentials and ensures a per-user\ncollector exists.\n"
       }
     },
+    "/api/forward/collector/logs": {
+      "get": {
+        "operationId": "GET:skyforge.GetUserCollectorLogs",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "tail",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "logs": {
+                      "type": "string"
+                    },
+                    "podName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "podName",
+                    "logs"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetUserCollectorLogs returns recent log lines from the user's in-cluster\ncollector pod.\n"
+      }
+    },
     "/api/forward/collector/reset": {
       "post": {
         "description": "NOTE: This does not delete any existing collector in Forward; it only updates the Skyforge profile.\n",

@@ -555,6 +555,20 @@ func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req 
 	if err != nil {
 		return nil, err
 	}
+	if enabled, ok := cfgAny["forwardEnabled"].(bool); ok && enabled {
+		// Best-effort: create the Forward network early so the user can see it immediately
+		// after creating the deployment (before any lab is started).
+		metaAny := map[string]any{
+			"deploymentId": deploymentID,
+		}
+		meta, _ := toJSONMap(metaAny)
+		msg := fmt.Sprintf("Skyforge Forward init (%s)", pc.claims.Username)
+		if task, err := createTaskAllowActive(ctx, s.db, pc.workspace.ID, &deploymentID, "forward-init", msg, pc.claims.Username, meta); err != nil {
+			log.Printf("forward init enqueue: %v", err)
+		} else {
+			s.enqueueTask(ctx, task)
+		}
+	}
 	if dep != nil && typ == "netlab" {
 		// Kick off a `netlab create` run immediately so a subsequent start has less work to do.
 		// This is best-effort: keep the deployment even if the create run fails.

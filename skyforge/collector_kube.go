@@ -55,7 +55,7 @@ func collectorResourceNameForUser(username string) string {
 	return "skyforge-collector-" + base
 }
 
-func ensureCollectorDeployed(ctx context.Context, username, token string) (*collectorRuntimeStatus, error) {
+func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token string) (*collectorRuntimeStatus, error) {
 	ns := kubeNamespace()
 	name := collectorResourceNameForUser(username)
 	labels := map[string]string{
@@ -129,6 +129,11 @@ func ensureCollectorDeployed(ctx context.Context, username, token string) (*coll
 
 	// 2) Deployment
 	{
+		var imagePullSecrets []any
+		// imagePullSecrets must exist in the same namespace as the Pod.
+		if strings.TrimSpace(cfg.ImagePullSecretName) != "" && strings.TrimSpace(cfg.ImagePullSecretNamespace) == strings.TrimSpace(ns) {
+			imagePullSecrets = []any{map[string]any{"name": strings.TrimSpace(cfg.ImagePullSecretName)}}
+		}
 		payload := map[string]any{
 			"apiVersion": "apps/v1",
 			"kind":       "Deployment",
@@ -160,6 +165,7 @@ func ensureCollectorDeployed(ctx context.Context, username, token string) (*coll
 					},
 					"spec": map[string]any{
 						"serviceAccountName": "default",
+						"imagePullSecrets":   imagePullSecrets,
 						"containers": []any{
 							map[string]any{
 								"name":            "collector",
@@ -199,6 +205,13 @@ func ensureCollectorDeployed(ctx context.Context, username, token string) (*coll
 			return nil, fmt.Errorf("kube deployment create failed: %s: %s", resp.Status, strings.TrimSpace(string(data)))
 		}
 		if resp.StatusCode == http.StatusConflict {
+			var patchImagePullSecrets []any
+			if len(imagePullSecrets) > 0 {
+				patchImagePullSecrets = imagePullSecrets
+			} else {
+				// Ensure we clear any previous value if config changed.
+				patchImagePullSecrets = []any{}
+			}
 			patchBody, _ := json.Marshal(map[string]any{
 				"metadata": map[string]any{"labels": labels},
 				"spec": map[string]any{
@@ -211,6 +224,7 @@ func ensureCollectorDeployed(ctx context.Context, username, token string) (*coll
 						},
 						"spec": map[string]any{
 							"serviceAccountName": "default",
+							"imagePullSecrets":   patchImagePullSecrets,
 							"containers": []any{
 								map[string]any{
 									"name":            "collector",
@@ -344,6 +358,47 @@ func getCollectorRuntimeStatus(ctx context.Context, username string) (*collector
 	return out, nil
 }
 
+func getCollectorPodLogs(ctx context.Context, namespace, podName, containerName string, tailLines int) (string, error) {
+	namespace = strings.TrimSpace(namespace)
+	podName = strings.TrimSpace(podName)
+	containerName = strings.TrimSpace(containerName)
+	if namespace == "" || podName == "" {
+		return "", fmt.Errorf("pod not specified")
+	}
+	if tailLines <= 0 {
+		tailLines = 200
+	}
+
+	client, err := kubeHTTPClient()
+	if err != nil {
+		return "", err
+	}
+
+	qs := url.Values{}
+	if containerName != "" {
+		qs.Set("container", containerName)
+	}
+	qs.Set("tailLines", fmt.Sprintf("%d", tailLines))
+	qs.Set("timestamps", "true")
+	u := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/pods/%s/log?%s",
+		url.PathEscape(namespace), url.PathEscape(podName), qs.Encode())
+	req, err := kubeRequest(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<10))
+		return "", fmt.Errorf("kube logs failed: %s: %s", resp.Status, strings.TrimSpace(string(data)))
+	}
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 512<<10))
+	return string(data), nil
+}
+
 func checkGHCRTagDigest(ctx context.Context, image string) (digest string, status string) {
 	image = strings.TrimSpace(image)
 	if image == "" {
@@ -379,7 +434,7 @@ func checkGHCRTagDigest(ctx context.Context, image string) (digest string, statu
 		}
 		return d, "ok"
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return "", "unauthorized"
+		return "", "unknown"
 	default:
 		return "", "unknown"
 	}

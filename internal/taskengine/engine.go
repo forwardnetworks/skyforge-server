@@ -49,6 +49,8 @@ func (e *Engine) DispatchTask(ctx context.Context, task *taskstore.TaskRecord, l
 		return true, e.dispatchClabernetesTask(ctx, task, taskLogAdapter(log))
 	case strings.HasPrefix(typ, "terraform-"):
 		return true, e.dispatchTerraformTask(ctx, task, taskLogAdapter(log))
+	case typ == "forward-init":
+		return true, e.dispatchForwardInitTask(ctx, task, taskLogAdapter(log))
 	case typ == "forward-sync":
 		return true, e.dispatchForwardSyncTask(ctx, task, taskLogAdapter(log))
 	default:
