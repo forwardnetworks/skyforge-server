@@ -73,9 +73,9 @@ func (s *Service) RunWorkspaceTerraformPlan(ctx context.Context, id string) (*Wo
 		"AWS_SDK_LOAD_CONFIG":       "0",
 		"AWS_PROFILE":               "",
 	}
-	if s.cfg.Workspaces.ObjectStorageTerraformAccessKey != "" && s.cfg.Workspaces.ObjectStorageTerraformSecretKey != "" {
-		env["AWS_ACCESS_KEY_ID"] = s.cfg.Workspaces.ObjectStorageTerraformAccessKey
-		env["AWS_SECRET_ACCESS_KEY"] = s.cfg.Workspaces.ObjectStorageTerraformSecretKey
+	if s.cfg.Workspaces.ObjectStorageAccessKey != "" && s.cfg.Workspaces.ObjectStorageSecretKey != "" {
+		env["AWS_ACCESS_KEY_ID"] = s.cfg.Workspaces.ObjectStorageAccessKey
+		env["AWS_SECRET_ACCESS_KEY"] = s.cfg.Workspaces.ObjectStorageSecretKey
 	}
 	if shouldUseAWS(pc.workspace) {
 		if strings.TrimSpace(pc.workspace.AWSAuthMethod) == "" {
@@ -245,9 +245,9 @@ func (s *Service) RunWorkspaceTerraformApply(ctx context.Context, id string, par
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("template must be a safe repo-relative path").Err()
 		}
 	}
-	if s.cfg.Workspaces.ObjectStorageTerraformAccessKey != "" && s.cfg.Workspaces.ObjectStorageTerraformSecretKey != "" {
-		env["AWS_ACCESS_KEY_ID"] = s.cfg.Workspaces.ObjectStorageTerraformAccessKey
-		env["AWS_SECRET_ACCESS_KEY"] = s.cfg.Workspaces.ObjectStorageTerraformSecretKey
+	if s.cfg.Workspaces.ObjectStorageAccessKey != "" && s.cfg.Workspaces.ObjectStorageSecretKey != "" {
+		env["AWS_ACCESS_KEY_ID"] = s.cfg.Workspaces.ObjectStorageAccessKey
+		env["AWS_SECRET_ACCESS_KEY"] = s.cfg.Workspaces.ObjectStorageSecretKey
 	}
 	if cloud == "aws" && shouldUseAWS(pc.workspace) {
 		if strings.TrimSpace(pc.workspace.AWSAuthMethod) == "" {

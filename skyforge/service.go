@@ -2205,9 +2205,9 @@ func workspaceTerraformEnv(cfg Config, workspace SkyforgeWorkspace) map[string]s
 		"TF_VAR_ssh_key_name":       "REPLACE_ME",
 		"TF_VAR_artifacts_bucket":   "REPLACE_ME",
 	}
-	if cfg.Workspaces.ObjectStorageTerraformAccessKey != "" && cfg.Workspaces.ObjectStorageTerraformSecretKey != "" {
-		env["AWS_ACCESS_KEY_ID"] = cfg.Workspaces.ObjectStorageTerraformAccessKey
-		env["AWS_SECRET_ACCESS_KEY"] = cfg.Workspaces.ObjectStorageTerraformSecretKey
+	if cfg.Workspaces.ObjectStorageAccessKey != "" && cfg.Workspaces.ObjectStorageSecretKey != "" {
+		env["AWS_ACCESS_KEY_ID"] = cfg.Workspaces.ObjectStorageAccessKey
+		env["AWS_SECRET_ACCESS_KEY"] = cfg.Workspaces.ObjectStorageSecretKey
 	}
 	return env
 }

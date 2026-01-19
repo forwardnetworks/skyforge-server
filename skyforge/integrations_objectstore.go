@@ -17,7 +17,7 @@ func objectStoreClientFor(cfg Config) (*objectstore.Client, error) {
 	objectStoreMu.Lock()
 	defer objectStoreMu.Unlock()
 
-	key := cfg.Workspaces.ObjectStorageEndpoint + "|" + cfg.Workspaces.ObjectStorageTerraformAccessKey + "|" + cfg.Workspaces.ObjectStorageTerraformSecretKey
+	key := cfg.Workspaces.ObjectStorageEndpoint + "|" + cfg.Workspaces.ObjectStorageAccessKey + "|" + cfg.Workspaces.ObjectStorageSecretKey
 	if cfg.Workspaces.ObjectStorageUseSSL {
 		key += "|ssl"
 	} else {
@@ -29,8 +29,8 @@ func objectStoreClientFor(cfg Config) (*objectstore.Client, error) {
 	client, err := objectstore.New(objectstore.Config{
 		Endpoint:  cfg.Workspaces.ObjectStorageEndpoint,
 		UseSSL:    cfg.Workspaces.ObjectStorageUseSSL,
-		AccessKey: cfg.Workspaces.ObjectStorageTerraformAccessKey,
-		SecretKey: cfg.Workspaces.ObjectStorageTerraformSecretKey,
+		AccessKey: cfg.Workspaces.ObjectStorageAccessKey,
+		SecretKey: cfg.Workspaces.ObjectStorageSecretKey,
 	})
 	if err != nil {
 		return nil, err

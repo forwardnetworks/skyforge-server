@@ -179,16 +179,16 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 	}
 
 	workspacesCfg := skyforgecore.WorkspacesConfig{
-		DataDir:                         strings.TrimSpace(enc.Workspaces.DataDir),
-		GiteaAPIURL:                     strings.TrimRight(strings.TrimSpace(enc.Workspaces.GiteaAPIURL), "/"),
-		GiteaUsername:                   strings.TrimSpace(enc.Workspaces.GiteaUsername),
-		GiteaPassword:                   strings.TrimSpace(sec.GiteaPassword),
-		GiteaRepoPrivate:                enc.Workspaces.GiteaRepoPrivate,
-		DeleteMode:                      strings.TrimSpace(enc.Workspaces.DeleteMode),
-		ObjectStorageEndpoint:           strings.TrimRight(strings.TrimSpace(enc.ObjectStorage.Endpoint), "/"),
-		ObjectStorageUseSSL:             enc.ObjectStorage.UseSSL,
-		ObjectStorageTerraformAccessKey: strings.TrimSpace(sec.ObjectStorageTerraformAccessKey),
-		ObjectStorageTerraformSecretKey: strings.TrimSpace(sec.ObjectStorageTerraformSecretKey),
+		DataDir:                strings.TrimSpace(enc.Workspaces.DataDir),
+		GiteaAPIURL:            strings.TrimRight(strings.TrimSpace(enc.Workspaces.GiteaAPIURL), "/"),
+		GiteaUsername:          strings.TrimSpace(enc.Workspaces.GiteaUsername),
+		GiteaPassword:          strings.TrimSpace(sec.GiteaPassword),
+		GiteaRepoPrivate:       enc.Workspaces.GiteaRepoPrivate,
+		DeleteMode:             strings.TrimSpace(enc.Workspaces.DeleteMode),
+		ObjectStorageEndpoint:  strings.TrimRight(strings.TrimSpace(enc.ObjectStorage.Endpoint), "/"),
+		ObjectStorageUseSSL:    enc.ObjectStorage.UseSSL,
+		ObjectStorageAccessKey: strings.TrimSpace(sec.ObjectStorageAccessKey),
+		ObjectStorageSecretKey: strings.TrimSpace(sec.ObjectStorageSecretKey),
 	}
 	if strings.TrimSpace(workspacesCfg.GiteaAPIURL) == "" {
 		workspacesCfg.GiteaAPIURL = strings.TrimRight(getEnv("SKYFORGE_GITEA_API_URL"), "/")

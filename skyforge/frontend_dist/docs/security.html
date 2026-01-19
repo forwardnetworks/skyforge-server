@@ -108,7 +108,7 @@
           <li>Internal credentials are stored as Docker secrets under <code>./secrets/</code> (gitignored).</li>
           <li>Services read secrets from <code>/run/secrets/…</code> inside containers.</li>
           <li>Bootstrap (dev defaults): populate <code>./secrets/</code> with local values (no committed defaults).</li>
-          <li>Terraform/OpenTofu state uses object storage bucket <code>terraform-state</code> with a scoped service account (<code>object_storage_terraform_access_key</code>/<code>object_storage_terraform_secret_key</code>).</li>
+          <li>Terraform/OpenTofu state uses object storage bucket <code>terraform-state</code> with a scoped service account (<code>object_storage_access_key</code>/<code>object_storage_secret_key</code>).</li>
         </ul>
       </section>
 

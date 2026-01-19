@@ -20,8 +20,8 @@ func objectStoreClientFor(cfg skyforgecore.Config) (*objectstore.Client, error) 
 	defer objectStoreMu.Unlock()
 
 	key := strings.TrimSpace(cfg.Workspaces.ObjectStorageEndpoint) + "|" +
-		strings.TrimSpace(cfg.Workspaces.ObjectStorageTerraformAccessKey) + "|" +
-		strings.TrimSpace(cfg.Workspaces.ObjectStorageTerraformSecretKey)
+		strings.TrimSpace(cfg.Workspaces.ObjectStorageAccessKey) + "|" +
+		strings.TrimSpace(cfg.Workspaces.ObjectStorageSecretKey)
 	if cfg.Workspaces.ObjectStorageUseSSL {
 		key += "|ssl"
 	} else {
@@ -33,8 +33,8 @@ func objectStoreClientFor(cfg skyforgecore.Config) (*objectstore.Client, error) 
 	client, err := objectstore.New(objectstore.Config{
 		Endpoint:  cfg.Workspaces.ObjectStorageEndpoint,
 		UseSSL:    cfg.Workspaces.ObjectStorageUseSSL,
-		AccessKey: cfg.Workspaces.ObjectStorageTerraformAccessKey,
-		SecretKey: cfg.Workspaces.ObjectStorageTerraformSecretKey,
+		AccessKey: cfg.Workspaces.ObjectStorageAccessKey,
+		SecretKey: cfg.Workspaces.ObjectStorageSecretKey,
 	})
 	if err != nil {
 		return nil, err

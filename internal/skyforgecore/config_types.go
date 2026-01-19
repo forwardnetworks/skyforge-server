@@ -138,16 +138,16 @@ type NetlabServerConfig struct {
 }
 
 type WorkspacesConfig struct {
-	DataDir                         string
-	GiteaAPIURL                     string
-	GiteaUsername                   string
-	GiteaPassword                   string
-	GiteaRepoPrivate                bool
-	DeleteMode                      string
-	ObjectStorageEndpoint           string
-	ObjectStorageUseSSL             bool
-	ObjectStorageTerraformAccessKey string
-	ObjectStorageTerraformSecretKey string
+	DataDir                string
+	GiteaAPIURL            string
+	GiteaUsername          string
+	GiteaPassword          string
+	GiteaRepoPrivate       bool
+	DeleteMode             string
+	ObjectStorageEndpoint  string
+	ObjectStorageUseSSL    bool
+	ObjectStorageAccessKey string
+	ObjectStorageSecretKey string
 }
 
 // SkyforgeWorkspace is the user-facing workspace object stored in Postgres and
@@ -199,22 +199,22 @@ type ExternalTemplateRepo struct {
 }
 
 type Secrets struct {
-	SessionSecret                   string
-	AdminPassword                   string
-	OIDCClientID                    string
-	OIDCClientSecret                string
-	LDAPURL                         string
-	LDAPBindTemplate                string
-	LDAPLookupBindDN                string
-	LDAPLookupBindPassword          string
-	DBPassword                      string
-	GiteaPassword                   string
-	ObjectStorageTerraformAccessKey string
-	ObjectStorageTerraformSecretKey string
-	InternalToken                   string
-	ContainerlabJWTSecret           string
-	PKICACert                       string
-	PKICAKey                        string
-	SSHCAKey                        string
-	YaadeAdminPassword              string
+	SessionSecret          string
+	AdminPassword          string
+	OIDCClientID           string
+	OIDCClientSecret       string
+	LDAPURL                string
+	LDAPBindTemplate       string
+	LDAPLookupBindDN       string
+	LDAPLookupBindPassword string
+	DBPassword             string
+	GiteaPassword          string
+	ObjectStorageAccessKey string
+	ObjectStorageSecretKey string
+	InternalToken          string
+	ContainerlabJWTSecret  string
+	PKICACert              string
+	PKICAKey               string
+	SSHCAKey               string
+	YaadeAdminPassword     string
 }
