@@ -42,14 +42,14 @@ func loadGovernanceSummary(ctx context.Context, db *sql.DB) (*GovernanceSummary,
 
 	var totalCost float64
 	var lastPeriodEnd sql.NullString
-	if err := db.QueryRowContext(ctx, `SELECT COALESCE(SUM(cost_amount), 0), MAX(period_end)::text FROM sf_cost_snapshots WHERE period_end >= CURRENT_DATE - INTERVAL '30 days'`).Scan(&totalCost, &lastPeriodEnd); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT COALESCE(SUM(cost_amount), 0)::double precision, MAX(period_end)::text FROM sf_cost_snapshots WHERE period_end >= CURRENT_DATE - INTERVAL '30 days'`).Scan(&totalCost, &lastPeriodEnd); err != nil {
 		totalCost = 0
 	}
 
 	rows, err := db.QueryContext(ctx, `
 SELECT provider,
        COUNT(*) AS resource_count,
-       COALESCE(SUM(cost_amount), 0) AS cost_total,
+       COALESCE(SUM(cost_amount), 0)::double precision AS cost_total,
        COALESCE(MAX(cost_currency), 'USD') AS currency
   FROM sf_resources r
   LEFT JOIN sf_cost_snapshots c ON c.resource_id = r.id
@@ -197,7 +197,7 @@ func listGovernanceCosts(ctx context.Context, db *sql.DB, params *GovernanceCost
 	}
 	query := `
 SELECT c.id, c.workspace_id, p.name, c.resource_id, c.provider, c.period_start, c.period_end,
-       c.cost_amount, c.cost_currency, c.source, c.metadata, c.created_at
+       c.cost_amount::double precision, c.cost_currency, c.source, c.metadata, c.created_at
   FROM sf_cost_snapshots c
   LEFT JOIN sf_workspaces p ON p.id = c.workspace_id
  WHERE 1=1`
@@ -278,7 +278,7 @@ func listGovernanceUsage(ctx context.Context, db *sql.DB, params *GovernanceUsag
 	}
 	query := `
 SELECT u.id, u.workspace_id, p.name, u.provider, u.scope_type, u.scope_id, u.metric,
-       u.value, u.unit, u.metadata, u.collected_at
+       u.value::double precision, u.unit, u.metadata, u.collected_at
   FROM sf_usage_snapshots u
   LEFT JOIN sf_workspaces p ON p.id = u.workspace_id
  WHERE 1=1`
