@@ -97,6 +97,9 @@ func newForwardClient(cfg forwardCredentials) (*forwardClient, error) {
 	}
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
+	// Do not use environment proxy variables for Forward traffic; these often
+	// break in-cluster egress and cause confusing 503s in the UI.
+	transport.Proxy = func(*http.Request) (*url.URL, error) { return nil, nil }
 	if cfg.SkipTLSVerify {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
@@ -170,7 +173,7 @@ func forwardListCollectors(ctx context.Context, c *forwardClient) ([]forwardColl
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("forward list collectors failed: %s", strings.TrimSpace(string(body)))
+		return nil, fmt.Errorf("forward list collectors failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	var payload any
 	if err := json.Unmarshal(body, &payload); err != nil {
@@ -202,7 +205,7 @@ func forwardCreateCollector(ctx context.Context, c *forwardClient, name string) 
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("forward create collector failed: %s", strings.TrimSpace(string(body)))
+		return nil, fmt.Errorf("forward create collector failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	var out forwardCollectorCreateResponse
 	if err := json.Unmarshal(body, &out); err != nil {
