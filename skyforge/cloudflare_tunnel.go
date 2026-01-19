@@ -21,6 +21,14 @@ var (
 	cloudflaredURLCacheFetched time.Time
 )
 
+type kubePodList struct {
+	Items []struct {
+		Metadata struct {
+			Name string `json:"name"`
+		} `json:"metadata"`
+	} `json:"items"`
+}
+
 // detectCloudflaredQuickTunnelURL best-effort discovers the current trycloudflare.com URL by
 // reading recent logs from the skyforge-cloudflared deployment (quick tunnel mode).
 //
