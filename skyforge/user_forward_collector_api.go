@@ -417,8 +417,8 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 		for _, existing := range collectors {
 			if strings.EqualFold(strings.TrimSpace(existing.Name), name) {
 				// Best-effort delete so create can succeed and returns a fresh auth key.
-				if err := forwardDeleteCollector(ctx, client, strings.TrimSpace(existing.ID)); err != nil {
-					log.Printf("forward delete existing collector (%s): %v", existing.ID, err)
+				if err := forwardDeleteCollector(ctx, client, strings.TrimSpace(existing.Name)); err != nil {
+					log.Printf("forward delete existing collector (%s): %v", existing.Name, err)
 				}
 				break
 			}
@@ -514,8 +514,8 @@ func (s *Service) ResetUserForwardCollector(ctx context.Context) (*UserForwardCo
 	}
 	for _, existing := range collectors {
 		if strings.EqualFold(strings.TrimSpace(existing.Name), name) {
-			if err := forwardDeleteCollector(ctx, client, strings.TrimSpace(existing.ID)); err != nil {
-				log.Printf("forward delete existing collector (%s): %v", existing.ID, err)
+			if err := forwardDeleteCollector(ctx, client, strings.TrimSpace(existing.Name)); err != nil {
+				log.Printf("forward delete existing collector (%s): %v", existing.Name, err)
 			}
 			break
 		}
