@@ -7,6 +7,11 @@
     "cloud": "local",
     "base_url": "http://skyforge-server:8085"
   },
+  "service_discovery": {
+    "skyforge": {
+      "base_url": "http://skyforge-server:8085"
+    }
+  },
   "sql_servers": [
     {
       "host": "db:5432",
