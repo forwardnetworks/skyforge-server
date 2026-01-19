@@ -10,7 +10,9 @@ import (
 	"encore.app/internal/taskstore"
 )
 
-const skyforgeArtifactsBucket = "skyforge"
+// Keep artifacts in the same bucket as general Skyforge file storage.
+// The MinIO bootstrap creates `skyforge-files` and enables access.
+const skyforgeArtifactsBucket = "skyforge-files"
 
 func artifactObjectNameForWorkspace(workspaceID, key string) string {
 	workspaceID = strings.TrimSpace(workspaceID)
