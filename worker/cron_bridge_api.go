@@ -30,7 +30,7 @@ func requireInternalCron(token string) error {
 
 // CronWorkerHeartbeatBridge triggers the worker heartbeat task.
 //
-//encore:api public method=POST path=/internal/cron/worker/heartbeat
+//encore:api public method=POST path=/internal/bridge/worker/heartbeat
 func CronWorkerHeartbeatBridge(ctx context.Context, params *InternalCronAuth) error {
 	if params == nil {
 		return errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
@@ -43,7 +43,7 @@ func CronWorkerHeartbeatBridge(ctx context.Context, params *InternalCronAuth) er
 
 // CronReconcileQueuedTasksBridge triggers reconciliation for queued tasks.
 //
-//encore:api public method=POST path=/internal/cron/worker/tasks/reconcile
+//encore:api public method=POST path=/internal/bridge/worker/tasks/reconcile
 func CronReconcileQueuedTasksBridge(ctx context.Context, params *InternalCronAuth) error {
 	if params == nil {
 		return errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
@@ -56,7 +56,7 @@ func CronReconcileQueuedTasksBridge(ctx context.Context, params *InternalCronAut
 
 // CronReconcileRunningTasksBridge triggers reconciliation for running tasks.
 //
-//encore:api public method=POST path=/internal/cron/worker/tasks/reconcile-running
+//encore:api public method=POST path=/internal/bridge/worker/tasks/reconcile-running
 func CronReconcileRunningTasksBridge(ctx context.Context, params *InternalCronAuth) error {
 	if params == nil {
 		return errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
@@ -69,7 +69,7 @@ func CronReconcileRunningTasksBridge(ctx context.Context, params *InternalCronAu
 
 // CronWorkspaceSyncBridge triggers workspace sync maintenance.
 //
-//encore:api public method=POST path=/internal/cron/workspaces/sync
+//encore:api public method=POST path=/internal/bridge/workspaces/sync
 func CronWorkspaceSyncBridge(ctx context.Context, params *InternalCronAuth) error {
 	if params == nil {
 		return errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
@@ -82,7 +82,7 @@ func CronWorkspaceSyncBridge(ctx context.Context, params *InternalCronAuth) erro
 
 // CronCloudCredentialChecksBridge triggers cloud credential checks maintenance.
 //
-//encore:api public method=POST path=/internal/cron/cloud/checks
+//encore:api public method=POST path=/internal/bridge/cloud/checks
 func CronCloudCredentialChecksBridge(ctx context.Context, params *InternalCronAuth) error {
 	if params == nil {
 		return errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
