@@ -373,7 +373,7 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 	box := newSecretBox(s.cfg.SessionSecret)
 	// Forward collector provisioning can be slow (multiple API calls + possible TLS/network latency).
 	// Keep a generous timeout so the UI doesn't get flaky 503s under mild load.
-	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 
 	current, err := getUserForwardCredentials(ctx, s.db, box, user.Username)
@@ -399,6 +399,7 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid Forward config").Err()
 	}
 	if _, err := forwardListCollectors(ctx, client); err != nil {
+		log.Printf("forward auth check failed (%s): %v", user.Username, err)
 		return nil, errs.B().Code(errs.Unauthenticated).Msg("Forward authentication failed").Err()
 	}
 
