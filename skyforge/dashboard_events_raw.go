@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"encore.app/internal/skyforgecore"
 )
 
 type dashboardSnapshot struct {
@@ -221,7 +223,7 @@ func loadDashboardSnapshot(ctx context.Context, svc *Service, claims *SessionCla
 					// Hide internal bootstrap tasks from the dashboard. These run as part
 					// of first-login/workspace creation and are not actionable for users.
 					switch strings.TrimSpace(task.TaskType) {
-					case "user-bootstrap", "workspace-bootstrap":
+					case skyforgecore.TaskTypeUserBootstrap, skyforgecore.TaskTypeWorkspaceBootstrap:
 						continue
 					}
 					run := taskToRunInfo(task)
@@ -293,24 +295,15 @@ func (s *Service) DashboardEvents(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache, no-transform")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-
-	flusher, ok := w.(http.Flusher)
-	if !ok {
+	stream, err := newSSEStream(w)
+	if err != nil {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
 
-	write := func(format string, args ...any) {
-		_, _ = fmt.Fprintf(w, format, args...)
-	}
-
 	ctx := req.Context()
-	write(": ok\n\n")
-	flusher.Flush()
+	stream.comment("ok")
+	stream.flush()
 
 	lastPayload := ""
 	id := int64(0)
@@ -318,24 +311,22 @@ func (s *Service) DashboardEvents(w http.ResponseWriter, req *http.Request) {
 	for {
 		snap, err := loadDashboardSnapshot(ctx, s, claims)
 		if err != nil {
-			write(": retry\n\n")
-			flusher.Flush()
+			stream.comment("retry")
+			stream.flush()
 		} else {
 			payloadBytes, _ := json.Marshal(snap)
 			payload := strings.TrimSpace(string(payloadBytes))
 			if payload == "" {
-				write(": retry\n\n")
-				flusher.Flush()
+				stream.comment("retry")
+				stream.flush()
 			} else if payload != lastPayload {
 				lastPayload = payload
 				id++
-				write("id: %d\n", id)
-				write("event: snapshot\n")
-				write("data: %s\n\n", payload)
-				flusher.Flush()
+				stream.event(id, skyforgecore.SSEEventSnapshot, []byte(payload))
+				stream.flush()
 			} else {
-				write(": ping\n\n")
-				flusher.Flush()
+				stream.comment("ping")
+				stream.flush()
 			}
 		}
 
@@ -346,7 +337,7 @@ func (s *Service) DashboardEvents(w http.ResponseWriter, req *http.Request) {
 		if updated {
 			continue
 		}
-		write(": ping\n\n")
-		flusher.Flush()
+		stream.comment("ping")
+		stream.flush()
 	}
 }

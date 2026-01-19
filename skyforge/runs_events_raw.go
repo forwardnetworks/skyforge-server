@@ -2,12 +2,12 @@ package skyforge
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"encore.app/internal/skyforgecore"
 )
 
 // RunEvents streams task output as Server-Sent Events (SSE).
@@ -70,24 +70,13 @@ func (s *Service) RunEvents(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache, no-transform")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-
-	flusher, ok := w.(http.Flusher)
-	if !ok {
+	stream, err := newSSEStream(w)
+	if err != nil {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
-
-	write := func(format string, args ...any) {
-		_, _ = fmt.Fprintf(w, format, args...)
-	}
-
-	// Open stream.
-	write(": ok\n\n")
-	flusher.Flush()
+	stream.comment("ok")
+	stream.flush()
 
 	for {
 		select {
@@ -99,8 +88,8 @@ func (s *Service) RunEvents(w http.ResponseWriter, req *http.Request) {
 			rows, err := listTaskLogsAfter(ctxReq, s.db, taskID, lastID, 500)
 			cancel()
 			if err != nil {
-				write(": retry\n\n")
-				flusher.Flush()
+				stream.comment("retry")
+				stream.flush()
 				continue
 			}
 			if len(rows) == 0 {
@@ -111,8 +100,8 @@ func (s *Service) RunEvents(w http.ResponseWriter, req *http.Request) {
 				if updated {
 					continue
 				}
-				write(": ping\n\n")
-				flusher.Flush()
+				stream.comment("ping")
+				stream.flush()
 				continue
 			}
 			entries := make([]TaskLogEntry, 0, len(rows))
@@ -122,14 +111,12 @@ func (s *Service) RunEvents(w http.ResponseWriter, req *http.Request) {
 					lastID = row.ID
 				}
 			}
-			payload, _ := json.Marshal(map[string]any{
+			payload := map[string]any{
 				"cursor":  lastID,
 				"entries": entries,
-			})
-			write("id: %d\n", lastID)
-			write("event: output\n")
-			write("data: %s\n\n", strings.TrimSpace(string(payload)))
-			flusher.Flush()
+			}
+			stream.eventJSON(lastID, skyforgecore.SSEEventOutput, payload)
+			stream.flush()
 		}
 	}
 }

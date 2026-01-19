@@ -113,19 +113,33 @@ func (s *Service) StatusSummary(ctx context.Context) (*StatusSummaryResponse, er
 				Status: "up",
 			})
 		}
-		if n, err := taskheartbeats.CountWorkerHeartbeats(ctx, s.db, 90*time.Second); err == nil && n > 0 {
-			resp.Checks = append(resp.Checks, StatusCheckResponse{
-				Name:   "task-workers",
-				Status: "up",
-				Detail: "active",
-			})
+		workerDetail := "unknown"
+		workerStatus := "down"
+		if s.cfg.TaskWorkerEnabled {
+			age, err := taskheartbeats.MostRecentWorkerHeartbeatAgeSeconds(ctx, s.db)
+			if err == nil {
+				workerDetail = fmt.Sprintf("heartbeat_age=%.0fs", age)
+				// With Encore cron expected to run every ~60s, treat staleness beyond 2 minutes as degraded.
+				switch {
+				case age <= 0:
+					workerStatus = "down"
+				case age <= 120:
+					workerStatus = "up"
+				default:
+					workerStatus = "down"
+				}
+			} else {
+				workerDetail = "heartbeat query failed"
+			}
 		} else {
-			resp.Checks = append(resp.Checks, StatusCheckResponse{
-				Name:   "task-workers",
-				Status: "down",
-				Detail: "no recent heartbeats",
-			})
+			workerDetail = "disabled"
+			workerStatus = "up"
 		}
+		resp.Checks = append(resp.Checks, StatusCheckResponse{
+			Name:   "task-workers",
+			Status: workerStatus,
+			Detail: workerDetail,
+		})
 		ctxQ, cancelQ := context.WithTimeout(ctx, 2*time.Second)
 		defer cancelQ()
 		if queued, running, oldestAge, err := taskQueueSummary(ctxQ, s.db); err == nil {

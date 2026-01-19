@@ -232,7 +232,6 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		AdminUsers:              adminUsers,
 		AdminUsername:           adminUsername,
 		AdminPassword:           adminPassword,
-		WorkspaceSyncSeconds:    0,
 		UI:                      uiCfg,
 		NotificationsEnabled:    notificationsEnabled,
 		NotificationsInterval:   notificationsInterval,

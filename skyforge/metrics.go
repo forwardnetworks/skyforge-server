@@ -46,13 +46,16 @@ var (
 	taskQueueLatencySecondsTotal = metrics.NewCounterGroup[taskTypeLabels, float64]("skyforge_task_queue_latency_seconds_total", metrics.CounterConfig{})
 	taskRunDurationSecondsTotal  = metrics.NewCounterGroup[taskTypeLabels, float64]("skyforge_task_run_duration_seconds_total", metrics.CounterConfig{})
 
-	taskQueuedCurrentTotal          = metrics.NewGauge[float64]("skyforge_tasks_queued_current_total", metrics.GaugeConfig{})
-	taskRunningCurrentTotal         = metrics.NewGauge[float64]("skyforge_tasks_running_current_total", metrics.GaugeConfig{})
-	taskQueuedOldestAgeSecondsTotal = metrics.NewGauge[float64]("skyforge_tasks_queued_oldest_age_seconds_total", metrics.GaugeConfig{})
+	taskQueuedCurrentTotal           = metrics.NewGauge[float64]("skyforge_tasks_queued_current_total", metrics.GaugeConfig{})
+	taskRunningCurrentTotal          = metrics.NewGauge[float64]("skyforge_tasks_running_current_total", metrics.GaugeConfig{})
+	taskQueuedOldestAgeSecondsTotal  = metrics.NewGauge[float64]("skyforge_tasks_queued_oldest_age_seconds_total", metrics.GaugeConfig{})
+	taskRunningOldestAgeSecondsTotal = metrics.NewGauge[float64]("skyforge_tasks_running_oldest_age_seconds_total", metrics.GaugeConfig{})
 
-	taskQueuedCurrent          = metrics.NewGaugeGroup[taskTypeLabels, float64]("skyforge_tasks_queued_current", metrics.GaugeConfig{})
-	taskQueuedOldestAgeSeconds = metrics.NewGaugeGroup[taskTypeLabels, float64]("skyforge_tasks_queued_oldest_age_seconds", metrics.GaugeConfig{})
-	taskRunningCurrent         = metrics.NewGaugeGroup[taskTypeLabels, float64]("skyforge_tasks_running_current", metrics.GaugeConfig{})
+	taskQueuedCurrent           = metrics.NewGaugeGroup[taskTypeLabels, float64]("skyforge_tasks_queued_current", metrics.GaugeConfig{})
+	taskQueuedOldestAgeSeconds  = metrics.NewGaugeGroup[taskTypeLabels, float64]("skyforge_tasks_queued_oldest_age_seconds", metrics.GaugeConfig{})
+	taskRunningCurrent          = metrics.NewGaugeGroup[taskTypeLabels, float64]("skyforge_tasks_running_current", metrics.GaugeConfig{})
+	taskRunningOldestAgeSeconds = metrics.NewGaugeGroup[taskTypeLabels, float64]("skyforge_tasks_running_oldest_age_seconds", metrics.GaugeConfig{})
 
-	taskWorkersAliveCurrent = metrics.NewGauge[float64]("skyforge_task_workers_alive_current", metrics.GaugeConfig{})
+	taskWorkersAliveCurrent        = metrics.NewGauge[float64]("skyforge_task_workers_alive_current", metrics.GaugeConfig{})
+	taskWorkersHeartbeatAgeSeconds = metrics.NewGauge[float64]("skyforge_task_workers_heartbeat_age_seconds", metrics.GaugeConfig{})
 )

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"encore.app/internal/taskheartbeats"
 	"encore.dev/rlog"
 )
 
@@ -42,6 +43,7 @@ func updateTaskQueueMetrics(ctx context.Context, cfg Config, db *sql.DB) error {
 	queuedTotal := float64(0)
 	runningTotal := float64(0)
 	oldestQueuedAge := float64(0)
+	oldestRunningAge := float64(0)
 
 	ctxReq, cancel = context.WithTimeout(ctx, 3*time.Second)
 	queuedRows, err := listTaskStatusCounts(ctxReq, db, "queued")
@@ -82,15 +84,32 @@ func updateTaskQueueMetrics(ctx context.Context, cfg Config, db *sql.DB) error {
 		}
 		labels := taskTypeLabels{TaskType: taskType}
 		taskRunningCurrent.With(labels).Set(float64(row.Count))
+		if row.OldestAgeSeconds > 0 {
+			taskRunningOldestAgeSeconds.With(labels).Set(row.OldestAgeSeconds)
+			if row.OldestAgeSeconds > oldestRunningAge {
+				oldestRunningAge = row.OldestAgeSeconds
+			}
+		} else {
+			taskRunningOldestAgeSeconds.With(labels).Set(0)
+		}
 		runningTotal += float64(row.Count)
 	}
 
 	taskQueuedCurrentTotal.Set(queuedTotal)
 	taskRunningCurrentTotal.Set(runningTotal)
 	taskQueuedOldestAgeSecondsTotal.Set(oldestQueuedAge)
+	taskRunningOldestAgeSecondsTotal.Set(oldestRunningAge)
 
 	workersAlive := float64(countTaskWorkerHeartbeats(cfg, db))
 	taskWorkersAliveCurrent.Set(workersAlive)
+	ctxReq, cancel = context.WithTimeout(ctx, 1*time.Second)
+	heartbeatAge, err := taskheartbeats.MostRecentWorkerHeartbeatAgeSeconds(ctxReq, db)
+	cancel()
+	if err != nil {
+		rlog.Error("task metrics: heartbeat query failed", "err", err)
+	} else {
+		taskWorkersHeartbeatAgeSeconds.Set(heartbeatAge)
+	}
 	if queuedTotal > 0 && workersAlive <= 0 {
 		rlog.Warn("queued tasks but no task workers observed", "queued", queuedTotal)
 	}

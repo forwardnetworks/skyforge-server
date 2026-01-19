@@ -230,6 +230,16 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		return err
 	}
 
+	// Ensure Arista cEOS nodes have SSH enabled by injecting `management ssh` into
+	// their startup-config (preferred over post-start CLI exec hacks).
+	if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.eos-ssh", func() error {
+		var err error
+		nodeMounts, err = ensureNetlabC9sEOSStartupSSH(ctx, ns, topologyName, clabYAML, nodeMounts, log)
+		return err
+	}); err != nil {
+		return err
+	}
+
 	topologyBytes, nodeMounts, err := prepareC9sTopologyForDeploy(spec.TaskID, topologyName, labName, clabYAML, nodeMounts, e, log)
 	if err != nil {
 		return err
@@ -256,6 +266,14 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	// inside the Linux pods. This mirrors netlab's "faster without Ansible" workflow.
 	if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.linux-scripts", func() error {
 		return runNetlabC9sLinuxScripts(ctx, ns, topologyName, topologyBytes, log)
+	}); err != nil {
+		return err
+	}
+
+	// Apply netlab-generated NOS configuration snippets (cfglets/modules) for supported
+	// network OS nodes using Kubernetes exec (Go-only; no Ansible).
+	if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.nos-postup", func() error {
+		return runNetlabC9sNOSPostUp(ctx, ns, topologyName, topologyBytes, nodeMounts, log)
 	}); err != nil {
 		return err
 	}
@@ -395,10 +413,6 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 	// Ensure minimal Linux containers (typically Alpine-based) have sshd running so
 	// SSH connectivity and Forward credential sync work out of the box.
 	linuxSSHExec := `sh -c 'pgrep sshd >/dev/null 2>&1 && exit 0 || true; if command -v sshd >/dev/null 2>&1; then :; elif command -v apk >/dev/null 2>&1; then apk add --no-cache openssh-server openssh-client >/dev/null 2>&1 || apk add --no-cache openssh-server >/dev/null 2>&1 || true; elif command -v apt-get >/dev/null 2>&1; then apt-get update -qq >/dev/null 2>&1 || true; DEBIAN_FRONTEND=noninteractive apt-get install -y -qq openssh-server >/dev/null 2>&1 || true; fi; mkdir -p /var/run/sshd >/dev/null 2>&1 || true; ssh-keygen -A >/dev/null 2>&1 || true; printf \"\\nPermitRootLogin yes\\nPasswordAuthentication yes\\n\" >> /etc/ssh/sshd_config 2>/dev/null || true; echo root:admin | chpasswd >/dev/null 2>&1 || true; ( /usr/sbin/sshd -e 2>/dev/null || sshd -e 2>/dev/null || true )'`
-	// Netlab expects Arista cEOS nodes to be reachable via SSH for Ansible readiness/config.
-	// In some environments (notably native clabernetes mode), SSH may be disabled by default.
-	// Inject a best-effort post-start exec to enable management SSH once the EOS CLI is ready.
-	ceosEnableSSHExec := `sh -c 'if ! command -v Cli >/dev/null 2>&1; then exit 0; fi; i=0; while [ $i -lt 120 ]; do Cli -p 15 -c \"show version\" >/dev/null 2>&1 && break; sleep 2; i=$((i+1)); done; Cli -p 15 -c \"enable\" -c \"configure terminal\" -c \"management ssh\" -c \"end\" -c \"write memory\" >/dev/null 2>&1 || true'`
 	if topology, ok := topo["topology"].(map[string]any); ok {
 		if nodes, ok := topology["nodes"].(map[string]any); ok {
 			for node, nodeAny := range nodes {
@@ -407,26 +421,6 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 					continue
 				}
 				kind := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["kind"])))
-				if kind == "ceos" || kind == "eos" {
-					existingAny, _ := cfg["exec"]
-					out := []any{}
-					if existingList, ok := existingAny.([]any); ok {
-						out = append(out, existingList...)
-					}
-					already := false
-					for _, item := range out {
-						if strings.Contains(strings.ToLower(fmt.Sprintf("%v", item)), "management ssh") {
-							already = true
-							break
-						}
-					}
-					if !already {
-						out = append(out, ceosEnableSSHExec)
-					}
-					cfg["exec"] = out
-					nodes[node] = cfg
-					continue
-				}
 				if kind != "linux" {
 					continue
 				}
@@ -577,4 +571,143 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 		return nil, nil, fmt.Errorf("failed to encode clab.yml: %w", err)
 	}
 	return topologyBytes, nodeMounts, nil
+}
+
+func ensureNetlabC9sEOSStartupSSH(ctx context.Context, ns, topologyName string, clabYAML []byte, nodeMounts map[string][]c9sFileFromConfigMap, log Logger) (map[string][]c9sFileFromConfigMap, error) {
+	if log == nil {
+		log = noopLogger{}
+	}
+	ns = strings.TrimSpace(ns)
+	topologyName = strings.TrimSpace(topologyName)
+	if ns == "" || topologyName == "" || len(clabYAML) == 0 || nodeMounts == nil {
+		return nodeMounts, nil
+	}
+
+	var topo map[string]any
+	if err := yaml.Unmarshal(clabYAML, &topo); err != nil {
+		return nil, fmt.Errorf("failed to parse clab.yml: %w", err)
+	}
+	topology, ok := topo["topology"].(map[string]any)
+	if !ok {
+		return nodeMounts, nil
+	}
+	nodes, ok := topology["nodes"].(map[string]any)
+	if !ok || len(nodes) == 0 {
+		return nodeMounts, nil
+	}
+
+	mountRoot := path.Join("/tmp/skyforge-c9s", topologyName)
+	overrideCM := sanitizeKubeNameFallback(fmt.Sprintf("c9s-%s-startup-overrides", topologyName), "c9s-startup-overrides")
+	overrideData := map[string]string{}
+	labels := map[string]string{
+		"skyforge-c9s-topology": topologyName,
+	}
+
+	changedAny := false
+	for node, nodeAny := range nodes {
+		nodeName := strings.TrimSpace(fmt.Sprintf("%v", node))
+		cfg, ok := nodeAny.(map[string]any)
+		if !ok || cfg == nil || nodeName == "" {
+			continue
+		}
+		kind := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["kind"])))
+		if kind != "ceos" && kind != "eos" {
+			continue
+		}
+		sc, _ := cfg["startup-config"].(string)
+		sc = strings.TrimSpace(sc)
+		if !strings.HasPrefix(sc, "config/") {
+			continue
+		}
+
+		startupPath := path.Join(mountRoot, sc)
+		mounts := nodeMounts[nodeName]
+		if len(mounts) == 0 {
+			continue
+		}
+
+		var originalCM, originalKey string
+		for _, m := range mounts {
+			if strings.TrimSpace(m.FilePath) == startupPath && strings.TrimSpace(m.ConfigMapName) != "" && strings.TrimSpace(m.ConfigMapPath) != "" {
+				originalCM = strings.TrimSpace(m.ConfigMapName)
+				originalKey = strings.TrimSpace(m.ConfigMapPath)
+				break
+			}
+		}
+		if originalCM == "" || originalKey == "" {
+			log.Infof("c9s: eos startup-config mount not found for %s (%s)", nodeName, sc)
+			continue
+		}
+
+		cmData, ok, err := kubeGetConfigMap(ctx, ns, originalCM)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			log.Infof("c9s: eos startup-config configmap missing: %s", originalCM)
+			continue
+		}
+		contents, ok := cmData[originalKey]
+		if !ok {
+			log.Infof("c9s: eos startup-config key missing: %s/%s", originalCM, originalKey)
+			continue
+		}
+
+		out, changed := injectEOSManagementSSH(contents)
+		if !changed {
+			continue
+		}
+
+		overrideKey := sanitizeArtifactKeySegment(fmt.Sprintf("%s-%s", nodeName, path.Base(sc)))
+		if overrideKey == "" || overrideKey == "unknown" {
+			overrideKey = sanitizeArtifactKeySegment(fmt.Sprintf("%s-startup", nodeName))
+		}
+		overrideData[overrideKey] = out
+
+		for i := range mounts {
+			if strings.TrimSpace(mounts[i].FilePath) == startupPath && strings.TrimSpace(mounts[i].ConfigMapName) == originalCM && strings.TrimSpace(mounts[i].ConfigMapPath) == originalKey {
+				mounts[i].ConfigMapName = overrideCM
+				mounts[i].ConfigMapPath = overrideKey
+				changedAny = true
+				break
+			}
+		}
+		nodeMounts[nodeName] = mounts
+	}
+
+	if len(overrideData) == 0 || !changedAny {
+		return nodeMounts, nil
+	}
+	if err := kubeUpsertConfigMap(ctx, ns, overrideCM, overrideData, labels); err != nil {
+		return nil, err
+	}
+	log.Infof("c9s: injected management ssh into eos startup-config (%d file(s))", len(overrideData))
+	return nodeMounts, nil
+}
+
+func injectEOSManagementSSH(cfg string) (out string, changed bool) {
+	cfg = strings.ReplaceAll(cfg, "\r\n", "\n")
+	lower := strings.ToLower(cfg)
+	if strings.Contains(lower, "management ssh") {
+		return cfg, false
+	}
+
+	lines := strings.Split(cfg, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.TrimSpace(strings.ToLower(lines[i])) == "end" {
+			outLines := make([]string, 0, len(lines)+1)
+			outLines = append(outLines, lines[:i]...)
+			outLines = append(outLines, "management ssh")
+			outLines = append(outLines, lines[i:]...)
+			out = strings.Join(outLines, "\n")
+			if !strings.HasSuffix(out, "\n") {
+				out += "\n"
+			}
+			return out, true
+		}
+	}
+	if !strings.HasSuffix(cfg, "\n") {
+		cfg += "\n"
+	}
+	return cfg + "management ssh\n", true
 }

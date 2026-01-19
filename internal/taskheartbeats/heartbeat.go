@@ -66,3 +66,10 @@ func UpsertWorkerHeartbeatForInstance(ctx context.Context, db *sql.DB, instance 
 func CountWorkerHeartbeats(ctx context.Context, db *sql.DB, since time.Duration) (int, error) {
 	return countRecentTaskWorkerHeartbeats(ctx, db, since)
 }
+
+// MostRecentWorkerHeartbeatAgeSeconds returns the age (in seconds) of the most
+// recent observed worker heartbeat. A large value indicates a stalled or absent
+// worker fleet.
+func MostRecentWorkerHeartbeatAgeSeconds(ctx context.Context, db *sql.DB) (float64, error) {
+	return mostRecentTaskWorkerHeartbeatAgeSeconds(ctx, db)
+}

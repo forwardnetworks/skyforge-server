@@ -2,10 +2,11 @@ package skyforge
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
+
+	"encore.app/internal/skyforgecore"
 )
 
 // StatusSummaryEvents streams the platform status summary as Server-Sent Events (SSE).
@@ -19,24 +20,15 @@ func (s *Service) StatusSummaryEvents(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache, no-transform")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-
-	flusher, ok := w.(http.Flusher)
-	if !ok {
+	stream, err := newSSEStream(w)
+	if err != nil {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
 
-	write := func(format string, args ...any) {
-		_, _ = fmt.Fprintf(w, format, args...)
-	}
-
 	ctx := req.Context()
-	write(": ok\n\n")
-	flusher.Flush()
+	stream.comment("ok")
+	stream.flush()
 
 	lastPayload := ""
 	lastEventID := int64(0)
@@ -53,21 +45,19 @@ func (s *Service) StatusSummaryEvents(w http.ResponseWriter, req *http.Request) 
 
 		resp, err := s.StatusSummary(req.Context())
 		if err != nil {
-			write(": retry\n\n")
-			flusher.Flush()
+			stream.comment("retry")
+			stream.flush()
 		} else {
 			payloadBytes, _ := json.Marshal(resp)
 			payload := strings.TrimSpace(string(payloadBytes))
 			if payload != "" && payload != lastPayload {
 				lastPayload = payload
 				lastEventID++
-				write("id: %d\n", lastEventID)
-				write("event: snapshot\n")
-				write("data: %s\n\n", payload)
-				flusher.Flush()
+				stream.event(lastEventID, skyforgecore.SSEEventSnapshot, []byte(payload))
+				stream.flush()
 			} else {
-				write(": ping\n\n")
-				flusher.Flush()
+				stream.comment("ping")
+				stream.flush()
 			}
 		}
 

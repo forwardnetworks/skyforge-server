@@ -35,23 +35,23 @@ func (e *Engine) DispatchTask(ctx context.Context, task *taskstore.TaskRecord, l
 	}
 	typ := strings.TrimSpace(task.TaskType)
 	switch {
-	case typ == "user-bootstrap":
+	case typ == skyforgecore.TaskTypeUserBootstrap:
 		return true, e.dispatchUserBootstrapTask(ctx, task, taskLogAdapter(log))
-	case typ == "workspace-bootstrap":
+	case typ == skyforgecore.TaskTypeWorkspaceBootstrap:
 		return true, e.dispatchWorkspaceBootstrapTask(ctx, task, taskLogAdapter(log))
-	case typ == "netlab-run":
+	case typ == skyforgecore.TaskTypeNetlabRun:
 		return true, e.dispatchNetlabTask(ctx, task, log)
-	case typ == "netlab-c9s-run":
+	case typ == skyforgecore.TaskTypeNetlabC9sRun:
 		return true, e.dispatchNetlabC9sTask(ctx, task, taskLogAdapter(log))
-	case typ == "containerlab-run":
+	case typ == skyforgecore.TaskTypeContainerlab:
 		return true, e.dispatchContainerlabTask(ctx, task, taskLogAdapter(log))
-	case typ == "clabernetes-run":
+	case typ == skyforgecore.TaskTypeClabernetes:
 		return true, e.dispatchClabernetesTask(ctx, task, taskLogAdapter(log))
-	case strings.HasPrefix(typ, "terraform-"):
+	case strings.HasPrefix(typ, skyforgecore.TaskTypeTerraformPref):
 		return true, e.dispatchTerraformTask(ctx, task, taskLogAdapter(log))
-	case typ == "forward-init":
+	case typ == skyforgecore.TaskTypeForwardInit:
 		return true, e.dispatchForwardInitTask(ctx, task, taskLogAdapter(log))
-	case typ == "forward-sync":
+	case typ == skyforgecore.TaskTypeForwardSync:
 		return true, e.dispatchForwardSyncTask(ctx, task, taskLogAdapter(log))
 	default:
 		return false, nil

@@ -20,7 +20,6 @@ type Config struct {
 	AdminUsers                []string
 	AdminUsername             string
 	AdminPassword             string
-	WorkspaceSyncSeconds      int
 	UI                        UIConfig
 	PublicURL                 string
 	NotificationsEnabled      bool
@@ -53,8 +52,8 @@ type Config struct {
 	ContainerlabJWTSecret     string
 	ContainerlabSkipTLSVerify bool
 	// NetlabC9sGeneratorMode controls how netlab-c9s artifacts are generated:
-	// - "remote": use the BYOS netlab API server (current default behavior)
-	// - "k8s": run a netlab generator Job in-cluster (planned; scaffolding only)
+	// - "remote": use a BYOS netlab API server
+	// - "k8s": run a netlab generator Job in-cluster
 	NetlabC9sGeneratorMode    string
 	NetlabGeneratorImage      string
 	NetlabGeneratorPullPolicy string

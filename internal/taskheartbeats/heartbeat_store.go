@@ -32,3 +32,14 @@ func countRecentTaskWorkerHeartbeats(ctx context.Context, db *sql.DB, since time
 	return n, nil
 }
 
+func mostRecentTaskWorkerHeartbeatAgeSeconds(ctx context.Context, db *sql.DB) (float64, error) {
+	if db == nil {
+		return 0, sql.ErrConnDone
+	}
+	var age float64
+	err := db.QueryRowContext(ctx, `SELECT COALESCE(EXTRACT(EPOCH FROM (NOW() - MAX(last_seen))), 0) FROM sf_taskworker_heartbeats`).Scan(&age)
+	if err != nil {
+		return 0, err
+	}
+	return age, nil
+}
