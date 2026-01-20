@@ -199,18 +199,26 @@ while [ $i -lt 180 ]; do
   i=$((i+1))
 done
 FastCli -p 15 -c "enable" -c "configure terminal" -c "management ssh" -c "end" -c "write memory" >/dev/null 2>&1 || true
-echo "ssh enabled"
+	echo "ssh enabled"
 `, nodeName)
 
 	ctxReq, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	stdout, stderr, err := kubeutil.ExecPodShell(ctxReq, kcfg, ns, podName, "nos", script)
-	if err != nil && strings.Contains(strings.ToLower(err.Error()), "container") {
-		stdout2, stderr2, err2 := kubeutil.ExecPodShell(ctxReq, kcfg, ns, podName, "", script)
+	// Native clabernetes uses a multi-container pod:
+	// - node container (named after the node, e.g. "l3")
+	// - clabernetes-launcher sidecar
+	// - clabernetes-setup init container
+	// Exec must target the node container.
+	stdout, stderr, err := kubeutil.ExecPodShell(ctxReq, kcfg, ns, podName, nodeName, script)
+	if err != nil {
+		stdout2, stderr2, err2 := kubeutil.ExecPodShell(ctxReq, kcfg, ns, podName, "nos", script)
 		if err2 == nil {
 			stdout, stderr, err = stdout2, stderr2, nil
 		} else {
-			err = err2
+			stdout3, stderr3, err3 := kubeutil.ExecPodShell(ctxReq, kcfg, ns, podName, "", script)
+			if err3 == nil {
+				stdout, stderr, err = stdout3, stderr3, nil
+			}
 		}
 	}
 	if strings.TrimSpace(stdout) != "" {
@@ -279,19 +287,21 @@ while IFS= read -r fp; do
 done <<'EOF_SKYFORGE_FILES'
 %s
 EOF_SKYFORGE_FILES
-exit 0
+	exit 0
 `, nodeName, fileList)
 
 	ctxReq, cancel := context.WithTimeout(ctx, 4*time.Minute)
 	defer cancel()
-	stdout, stderr, err := kubeutil.ExecPodShell(ctxReq, kcfg, ns, podName, "nos", script)
-	if err != nil && strings.Contains(strings.ToLower(err.Error()), "container") {
-		// Retry without explicit container (single-container pods).
-		stdout2, stderr2, err2 := kubeutil.ExecPodShell(ctxReq, kcfg, ns, podName, "", script)
+	stdout, stderr, err := kubeutil.ExecPodShell(ctxReq, kcfg, ns, podName, nodeName, script)
+	if err != nil {
+		stdout2, stderr2, err2 := kubeutil.ExecPodShell(ctxReq, kcfg, ns, podName, "nos", script)
 		if err2 == nil {
 			stdout, stderr, err = stdout2, stderr2, nil
 		} else {
-			err = err2
+			stdout3, stderr3, err3 := kubeutil.ExecPodShell(ctxReq, kcfg, ns, podName, "", script)
+			if err3 == nil {
+				stdout, stderr, err = stdout3, stderr3, nil
+			}
 		}
 	}
 	if strings.TrimSpace(stdout) != "" {
