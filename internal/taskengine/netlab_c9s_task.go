@@ -240,7 +240,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		return err
 	}
 
-	topologyBytes, nodeMounts, err := prepareC9sTopologyForDeploy(spec.TaskID, topologyName, labName, clabYAML, nodeMounts, e, log)
+	topologyBytes, nodeMounts, nodeNameMapping, err := prepareC9sTopologyForDeploy(spec.TaskID, topologyName, labName, clabYAML, nodeMounts, e, log)
 	if err != nil {
 		return err
 	}
@@ -280,7 +280,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 
 	// Capture a lightweight topology graph after deploy so the UI can render
 	// resolved management IPs without querying netlab output.
-	graph, err := e.captureC9sTopologyArtifact(ctx, spec, ns, topologyName, labName, topologyBytes, log)
+	graph, err := e.captureC9sTopologyArtifact(ctx, spec, ns, topologyName, labName, topologyBytes, nodeNameMapping, log)
 	if err != nil {
 		// Don't fail the run if topology capture fails; it is a best-effort UX enhancement.
 		if log != nil {
@@ -317,7 +317,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	return nil
 }
 
-func (e *Engine) captureC9sTopologyArtifact(ctx context.Context, spec netlabC9sRunSpec, ns, topologyName, labName string, topologyYAML []byte, log Logger) (*TopologyGraph, error) {
+func (e *Engine) captureC9sTopologyArtifact(ctx context.Context, spec netlabC9sRunSpec, ns, topologyName, labName string, topologyYAML []byte, nodeNameMapping map[string]string, log Logger) (*TopologyGraph, error) {
 	if e == nil || e.db == nil || spec.TaskID <= 0 || spec.WorkspaceCtx == nil || strings.TrimSpace(spec.WorkspaceCtx.workspace.ID) == "" {
 		return nil, fmt.Errorf("invalid task context")
 	}
@@ -351,6 +351,17 @@ func (e *Engine) captureC9sTopologyArtifact(ctx context.Context, spec netlabC9sR
 	if err != nil {
 		return nil, err
 	}
+	if len(nodeNameMapping) > 0 {
+		for i := range graph.Nodes {
+			id := strings.TrimSpace(graph.Nodes[i].ID)
+			if id == "" {
+				continue
+			}
+			if orig := strings.TrimSpace(nodeNameMapping[id]); orig != "" {
+				graph.Nodes[i].Label = orig
+			}
+		}
+	}
 	graph.GeneratedAt = time.Now().UTC().Format(time.RFC3339)
 
 	graphBytes, err := json.Marshal(graph)
@@ -381,23 +392,32 @@ func (e *Engine) captureC9sTopologyArtifact(ctx context.Context, spec netlabC9sR
 	return graph, nil
 }
 
-func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabYAML []byte, nodeMounts map[string][]c9sFileFromConfigMap, e *Engine, log Logger) ([]byte, map[string][]c9sFileFromConfigMap, error) {
+func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabYAML []byte, nodeMounts map[string][]c9sFileFromConfigMap, e *Engine, log Logger) ([]byte, map[string][]c9sFileFromConfigMap, map[string]string, error) {
 	if log == nil {
 		log = noopLogger{}
 	}
 	labName = strings.TrimSpace(labName)
 	topologyName = strings.TrimSpace(topologyName)
 	if len(clabYAML) == 0 {
-		return nil, nil, fmt.Errorf("clab.yml is empty")
+		return nil, nil, nil, fmt.Errorf("clab.yml is empty")
 	}
 
 	// Sanitize node names to DNS-1035 labels so clabernetes can derive K8s resource names.
 	sanitizedYAML, mapping, err := sanitizeContainerlabYAMLForClabernetes(string(clabYAML))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if sanitizedYAML != "" {
 		clabYAML = []byte(sanitizedYAML)
+	}
+	reverseMapping := map[string]string{}
+	for orig, sanitized := range mapping {
+		orig = strings.TrimSpace(orig)
+		sanitized = strings.TrimSpace(sanitized)
+		if orig == "" || sanitized == "" {
+			continue
+		}
+		reverseMapping[sanitized] = orig
 	}
 	if len(mapping) > 0 && len(nodeMounts) > 0 {
 		out := map[string][]c9sFileFromConfigMap{}
@@ -421,7 +441,7 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 
 	var topo map[string]any
 	if err := yaml.Unmarshal(clabYAML, &topo); err != nil {
-		return nil, nil, fmt.Errorf("failed to parse clab.yml: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to parse clab.yml: %w", err)
 	}
 	if topo == nil {
 		topo = map[string]any{}
@@ -537,9 +557,9 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 
 	topologyBytes, err := yaml.Marshal(topo)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to encode clab.yml: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to encode clab.yml: %w", err)
 	}
-	return topologyBytes, nodeMounts, nil
+	return topologyBytes, nodeMounts, reverseMapping, nil
 }
 
 func ensureNetlabC9sEOSStartupSSH(ctx context.Context, ns, topologyName string, clabYAML []byte, nodeMounts map[string][]c9sFileFromConfigMap, log Logger) (map[string][]c9sFileFromConfigMap, error) {
