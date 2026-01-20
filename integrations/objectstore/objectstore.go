@@ -112,6 +112,19 @@ func (c *Client) GetObject(ctx context.Context, bucket, key string) ([]byte, err
 	return data, nil
 }
 
+func (c *Client) RemoveObject(ctx context.Context, bucket, key string) error {
+	client, err := c.minioClient()
+	if err != nil {
+		return err
+	}
+	bucket = strings.TrimSpace(bucket)
+	key = strings.TrimSpace(key)
+	if bucket == "" || key == "" {
+		return fmt.Errorf("bucket and key are required")
+	}
+	return client.RemoveObject(ctx, bucket, key, minio.RemoveObjectOptions{})
+}
+
 func (c *Client) PutObject(ctx context.Context, bucket, key string, data []byte) error {
 	return c.PutObjectWithContentType(ctx, bucket, key, data, "application/json")
 }

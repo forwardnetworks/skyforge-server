@@ -73,8 +73,16 @@ func (s *Service) handleWorkspaceArtifactUpload(ctx context.Context, id string, 
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid contentBase64").Err()
 	}
 	objectName := artifactObjectName(pc.workspace.ID, key)
-	if err := storage.Write(ctx, &storage.WriteRequest{ObjectName: objectName, Data: payload}); err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to upload artifact").Err()
+
+	// Prefer MinIO path-style client when available (same reason as listing/downloading).
+	if c, err := objectStoreClientFor(s.cfg); err == nil && c != nil {
+		if err := c.PutObjectWithContentType(ctx, artifactsBucketName, objectName, payload, "application/octet-stream"); err != nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to upload artifact").Err()
+		}
+	} else {
+		if err := storage.Write(ctx, &storage.WriteRequest{ObjectName: objectName, Data: payload}); err != nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to upload artifact").Err()
+		}
 	}
 	artifactUploads.Add(1)
 	if s.db != nil {
