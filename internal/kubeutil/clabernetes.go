@@ -14,6 +14,10 @@ import (
 type ClabernetesTopology struct {
 	Status struct {
 		TopologyReady bool `json:"topologyReady"`
+		Conditions    []struct {
+			Type   string `json:"type"`
+			Status string `json:"status"`
+		} `json:"conditions"`
 	} `json:"status"`
 }
 
@@ -380,6 +384,16 @@ func GetClabernetesTopology(ctx context.Context, ns, name string) (*ClabernetesT
 	var topo ClabernetesTopology
 	if err := json.NewDecoder(resp.Body).Decode(&topo); err != nil {
 		return nil, status, err
+	}
+	// clabernetes newer versions report readiness via .status.conditions, while older
+	// versions used a flat boolean .status.topologyReady. Support both.
+	if !topo.Status.TopologyReady {
+		for _, cond := range topo.Status.Conditions {
+			if strings.EqualFold(strings.TrimSpace(cond.Type), "TopologyReady") && strings.EqualFold(strings.TrimSpace(cond.Status), "True") {
+				topo.Status.TopologyReady = true
+				break
+			}
+		}
 	}
 	return &topo, status, nil
 }
