@@ -108,7 +108,15 @@ func runNetlabC9sLinuxScripts(ctx context.Context, ns, topologyOwner string, top
 
 	sem := make(chan struct{}, 6)
 	var wg sync.WaitGroup
-	capacity := len(linuxNodes) * len(scripts)
+	// We buffer all results because we only drain the channel after all goroutines
+	// complete. Make sure the capacity accounts for every goroutine that writes a
+	// result, otherwise we'll deadlock on send.
+	//
+	// Per node:
+	// - 1x prep-interfaces
+	// - len(scripts) script runs
+	// - optional 1x ssh enable
+	capacity := len(linuxNodes) * (1 + len(scripts))
 	if enableSSH {
 		capacity += len(linuxNodes)
 	}
