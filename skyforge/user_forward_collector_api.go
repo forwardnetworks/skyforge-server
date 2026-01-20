@@ -161,6 +161,13 @@ FROM sf_user_forward_credentials WHERE username=$1`, username).Scan(
 		CollectorUsername: strings.TrimSpace(collectorUserValue),
 		AuthorizationKey:  strings.TrimSpace(authKeyValue),
 	}
+	if rec.CollectorUsername == "" && rec.AuthorizationKey != "" {
+		// Backward-compat / resiliency: some collectors only persist the auth key
+		// which encodes the collector username as "<username>:<token>".
+		if before, _, ok := strings.Cut(rec.AuthorizationKey, ":"); ok {
+			rec.CollectorUsername = strings.TrimSpace(before)
+		}
+	}
 	if updatedAt.Valid {
 		rec.UpdatedAt = updatedAt.Time
 	}
@@ -183,6 +190,11 @@ func putUserForwardCredentials(ctx context.Context, db *sql.DB, box *secretBox, 
 	forwardPass := strings.TrimSpace(rec.ForwardPassword)
 	if forwardUser == "" || forwardPass == "" {
 		return fmt.Errorf("username and password are required")
+	}
+	if strings.TrimSpace(rec.CollectorUsername) == "" && strings.TrimSpace(rec.AuthorizationKey) != "" {
+		if before, _, ok := strings.Cut(rec.AuthorizationKey, ":"); ok {
+			rec.CollectorUsername = strings.TrimSpace(before)
+		}
 	}
 	encBaseURL, err := encryptIfPlain(box, baseURL)
 	if err != nil {
