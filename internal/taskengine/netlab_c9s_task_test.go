@@ -79,3 +79,38 @@ func TestInjectEOSManagementSSH_NormalizesCRLF(t *testing.T) {
 		t.Fatalf("unexpected output:\n%q", out)
 	}
 }
+
+func TestInjectEOSDefaultSSHUser_SkipsWhenUserExists(t *testing.T) {
+	in := "username bob privilege 15 secret bob\nend\n"
+	out, changed := injectEOSDefaultSSHUser(in)
+	if changed {
+		t.Fatalf("expected unchanged")
+	}
+	if out != in {
+		t.Fatalf("expected output to equal input")
+	}
+}
+
+func TestInjectEOSDefaultSSHUser_InsertsBeforeEnd(t *testing.T) {
+	in := "hostname L1\n!\nend\n"
+	out, changed := injectEOSDefaultSSHUser(in)
+	if !changed {
+		t.Fatalf("expected changed")
+	}
+	want := "hostname L1\n!\nusername admin privilege 15 secret admin\nend\n"
+	if out != want {
+		t.Fatalf("unexpected output:\n%s", out)
+	}
+}
+
+func TestInjectEOSDefaultSSHUser_AppendsWhenNoEnd(t *testing.T) {
+	in := "hostname L1\n!\n"
+	out, changed := injectEOSDefaultSSHUser(in)
+	if !changed {
+		t.Fatalf("expected changed")
+	}
+	want := "hostname L1\n!\nusername admin privilege 15 secret admin\n"
+	if out != want {
+		t.Fatalf("unexpected output:\n%s", out)
+	}
+}

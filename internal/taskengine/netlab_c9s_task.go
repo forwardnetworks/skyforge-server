@@ -696,3 +696,33 @@ func injectEOSManagementSSH(cfg string) (out string, changed bool) {
 	}
 	return cfg + "management ssh\n", true
 }
+
+func injectEOSDefaultSSHUser(cfg string) (out string, changed bool) {
+	cfg = strings.ReplaceAll(cfg, "\r\n", "\n")
+	lower := strings.ToLower(cfg)
+	// If the user already defined at least one local user, don't override.
+	if strings.Contains(lower, "\nusername ") || strings.HasPrefix(strings.TrimSpace(lower), "username ") {
+		return cfg, false
+	}
+
+	const userLine = "username admin privilege 15 secret admin"
+	lines := strings.Split(cfg, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.TrimSpace(strings.ToLower(lines[i])) == "end" {
+			outLines := make([]string, 0, len(lines)+1)
+			outLines = append(outLines, lines[:i]...)
+			outLines = append(outLines, userLine)
+			outLines = append(outLines, lines[i:]...)
+			out = strings.Join(outLines, "\n")
+			if !strings.HasSuffix(out, "\n") {
+				out += "\n"
+			}
+			return out, true
+		}
+	}
+
+	if !strings.HasSuffix(cfg, "\n") {
+		cfg += "\n"
+	}
+	return cfg + userLine + "\n", true
+}

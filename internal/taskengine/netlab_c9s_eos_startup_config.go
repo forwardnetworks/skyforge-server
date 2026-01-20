@@ -126,6 +126,7 @@ func injectNetlabC9sEOSStartupConfig(ctx context.Context, ns, topologyName strin
 			combined += "end\n"
 		}
 		combined, _ = injectEOSManagementSSH(combined)
+		combined, _ = injectEOSDefaultSSHUser(combined)
 
 		key := sanitizeArtifactKeySegment(fmt.Sprintf("%s-startup.cfg", nodeName))
 		if key == "" || key == "unknown" {
