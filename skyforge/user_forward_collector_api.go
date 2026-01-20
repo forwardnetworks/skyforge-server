@@ -452,7 +452,7 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 	current, err := getUserForwardCredentials(ctx, s.db, box, user.Username)
 	if err != nil {
 		log.Printf("user forward get: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward collector settings").Err()
+		return nil, errs.B().Code(errs.Unavailable).Msg(fmt.Sprintf("failed to load Forward collector settings: %v", err)).Err()
 	}
 	if forwardPass == "" && current != nil {
 		forwardPass = current.ForwardPassword
@@ -471,9 +471,17 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 	if err != nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid Forward config").Err()
 	}
-	if _, err := forwardListCollectors(ctx, client); err != nil {
-		log.Printf("forward auth check failed (%s): %v", user.Username, err)
-		return nil, errs.B().Code(errs.Unauthenticated).Msg("Forward authentication failed").Err()
+	collectors, err := forwardListCollectors(ctx, client)
+	if err != nil {
+		// Treat 401/403 as auth errors, but keep other failures as transient to avoid
+		// confusing users when Forward is temporarily unreachable.
+		msg := strings.ToLower(err.Error())
+		if strings.Contains(msg, "401") || strings.Contains(msg, "403") || strings.Contains(msg, "unauthorized") || strings.Contains(msg, "forbidden") {
+			log.Printf("forward auth check failed (%s): %v", user.Username, err)
+			return nil, errs.B().Code(errs.Unauthenticated).Msg("Forward authentication failed").Err()
+		}
+		log.Printf("forward list collectors (auth check %s): %v", user.Username, err)
+		return nil, errs.B().Code(errs.Unavailable).Msg(fmt.Sprintf("failed to reach Forward: %v", err)).Err()
 	}
 
 	collectorID := ""
@@ -486,11 +494,6 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 	}
 	name := defaultCollectorNameForUser(user.Username)
 	if collectorID == "" || collectorUsername == "" || authKey == "" {
-		collectors, err := forwardListCollectors(ctx, client)
-		if err != nil {
-			log.Printf("forward list collectors (%s): %v", user.Username, err)
-			return nil, errs.B().Code(errs.Unavailable).Msg("failed to list Forward collectors").Err()
-		}
 		for _, existing := range collectors {
 			if strings.EqualFold(strings.TrimSpace(existing.Name), name) {
 				// Best-effort delete so create can succeed and returns a fresh auth key.
@@ -541,7 +544,7 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 		AuthorizationKey:  authKey,
 	}); err != nil {
 		log.Printf("user forward put: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to store Forward collector settings").Err()
+		return nil, errs.B().Code(errs.Unavailable).Msg(fmt.Sprintf("failed to store Forward collector settings: %v", err)).Err()
 	}
 
 	var runtime *collectorRuntimeStatus
@@ -755,10 +758,17 @@ func (s *Service) GetUserCollectorLogs(ctx context.Context, params *UserCollecto
 
 	ctxReq, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	logs, err := getCollectorPodLogs(ctxReq, st.Namespace, st.PodName, "collector", tail)
+	logs, err := getCollectorClientdLog(ctxReq, st.Namespace, st.PodName, tail)
 	if err != nil {
-		log.Printf("collector logs failed: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load collector logs").Err()
+		// Fall back to container stdout logs for clusters that disallow exec or images
+		// that don't write clientd logs into /scratch.
+		log.Printf("collector clientd logs failed: %v", err)
+		logs2, err2 := getCollectorPodLogs(ctxReq, st.Namespace, st.PodName, "collector", tail)
+		if err2 != nil {
+			log.Printf("collector pod logs failed: %v", err2)
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to load collector logs").Err()
+		}
+		logs = logs2
 	}
 	return &UserCollectorLogsResponse{PodName: st.PodName, Logs: logs}, nil
 }

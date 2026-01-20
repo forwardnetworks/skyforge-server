@@ -405,6 +405,12 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, f
 										"name":      "collector-data",
 										"mountPath": "/home/forward/.fwd/private",
 									},
+									// Forward collector docs/tools commonly reference /collector/private/customer_key.pb.
+									// Mount the same PVC there so upgrades and troubleshooting workflows work as expected.
+									map[string]any{
+										"name":      "collector-data",
+										"mountPath": "/collector/private",
+									},
 									map[string]any{
 										"name":      "collector-cfg",
 										"mountPath": "/collector/fwd.properties",
@@ -514,6 +520,10 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, f
 										map[string]any{
 											"name":      "collector-data",
 											"mountPath": "/home/forward/.fwd/private",
+										},
+										map[string]any{
+											"name":      "collector-data",
+											"mountPath": "/collector/private",
 										},
 										map[string]any{
 											"name":      "collector-cfg",
@@ -739,6 +749,49 @@ func getCollectorPodLogs(ctx context.Context, namespace, podName, containerName 
 	}
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 512<<10))
 	return string(data), nil
+}
+
+func getCollectorClientdLog(ctx context.Context, namespace, podName string, tailLines int) (string, error) {
+	namespace = strings.TrimSpace(namespace)
+	podName = strings.TrimSpace(podName)
+	if namespace == "" || podName == "" {
+		return "", fmt.Errorf("pod not specified")
+	}
+	if tailLines <= 0 {
+		tailLines = 200
+	}
+	if tailLines > 5000 {
+		tailLines = 5000
+	}
+
+	kcfg, err := kubeInClusterConfig()
+	if err != nil {
+		return "", err
+	}
+
+	script := fmt.Sprintf(`set -euo pipefail
+if [ -f /scratch/clientd.log ]; then
+  tail -n %d /scratch/clientd.log
+  exit 0
+fi
+if [ -f /scratch/clientd_fatal.log ]; then
+  tail -n %d /scratch/clientd_fatal.log
+  exit 0
+fi
+echo "no clientd log found in /scratch"`, tailLines, tailLines)
+
+	stdout, stderr, err := execPodShell(ctx, kcfg, namespace, podName, "collector", script)
+	if err != nil {
+		if strings.TrimSpace(stderr) != "" {
+			return "", fmt.Errorf("collector exec failed: %w: %s", err, strings.TrimSpace(stderr))
+		}
+		return "", fmt.Errorf("collector exec failed: %w", err)
+	}
+	out := stdout
+	if strings.TrimSpace(stderr) != "" {
+		out = strings.TrimRight(out, "\n") + "\n" + strings.TrimSpace(stderr) + "\n"
+	}
+	return out, nil
 }
 
 func checkGHCRTagDigest(ctx context.Context, image string) (digest string, status string) {
