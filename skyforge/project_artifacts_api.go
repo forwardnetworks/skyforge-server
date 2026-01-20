@@ -49,7 +49,7 @@ func (s *Service) ListWorkspaceArtifacts(ctx context.Context, id string, params 
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	items, err := listStorageArtifacts(ctx, pc.workspace.ID, prefix, limit)
+	items, err := listStorageArtifacts(ctx, s.cfg, pc.workspace.ID, prefix, limit)
 	if err != nil {
 		log.Printf("list artifacts: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to list artifacts").Err()
@@ -63,6 +63,6 @@ func (s *Service) ListWorkspaceArtifacts(ctx context.Context, id string, params 
 	}, nil
 }
 
-func listStorageArtifacts(ctx context.Context, workspaceID, prefix string, limit int) ([]storageObjectSummary, error) {
-	return listArtifactEntries(ctx, workspaceID, prefix, limit)
+func listStorageArtifacts(ctx context.Context, cfg Config, workspaceID, prefix string, limit int) ([]storageObjectSummary, error) {
+	return listArtifactEntries(ctx, cfg, workspaceID, prefix, limit)
 }

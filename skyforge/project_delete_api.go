@@ -110,7 +110,7 @@ func (s *Service) DeleteWorkspace(ctx context.Context, id string, params *Worksp
 			if err := deleteTerraformStatePrefix(ctx, s.cfg, "terraform-state", statePrefix); err != nil {
 				log.Printf("object storage delete state prefix %s: %v", statePrefix, err)
 			}
-			if err := deleteWorkspaceArtifacts(ctx, pc.workspace.ID); err != nil {
+			if err := deleteWorkspaceArtifacts(ctx, s.cfg, pc.workspace.ID); err != nil {
 				log.Printf("delete workspace artifacts %s: %v", pc.workspace.ID, err)
 			}
 		}

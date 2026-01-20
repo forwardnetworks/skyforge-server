@@ -24,6 +24,11 @@ type Client struct {
 	cfg Config
 }
 
+type ObjectSummary struct {
+	Key  string
+	Size int64
+}
+
 func New(cfg Config) (*Client, error) {
 	if strings.TrimSpace(cfg.AccessKey) == "" || strings.TrimSpace(cfg.SecretKey) == "" {
 		return nil, fmt.Errorf("object storage credentials are not configured")
@@ -63,6 +68,31 @@ func (c *Client) DeletePrefix(ctx context.Context, bucket, prefix string) error 
 		}
 	}
 	return nil
+}
+
+func (c *Client) ListObjects(ctx context.Context, bucket, prefix string, limit int) ([]ObjectSummary, error) {
+	client, err := c.minioClient()
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		limit = 200
+	}
+	opts := minio.ListObjectsOptions{Prefix: prefix, Recursive: true}
+	out := make([]ObjectSummary, 0, min(limit, 500))
+	for obj := range client.ListObjects(ctx, bucket, opts) {
+		if obj.Err != nil {
+			return nil, obj.Err
+		}
+		if strings.TrimSpace(obj.Key) == "" {
+			continue
+		}
+		out = append(out, ObjectSummary{Key: obj.Key, Size: obj.Size})
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
 }
 
 func (c *Client) GetObject(ctx context.Context, bucket, key string) ([]byte, error) {

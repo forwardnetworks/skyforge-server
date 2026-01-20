@@ -223,8 +223,13 @@ func forwardGetCollectorStatus(ctx context.Context, c *forwardClient, networkID 
 }
 
 func forwardSetCollector(ctx context.Context, c *forwardClient, networkID string, collectorUser string) error {
-	payload := map[string]string{"collectorUsername": strings.TrimSpace(collectorUser)}
-	resp, body, err := c.doJSON(ctx, http.MethodPost, "/api/networks/"+url.PathEscape(strings.TrimSpace(networkID))+"/collector", nil, payload)
+	// Forward expects:
+	//   PUT /api/networks/{networkId}/collector
+	//   {"username":"collector-xxxx"}
+	payload := map[string]any{
+		"username": strings.TrimSpace(collectorUser),
+	}
+	resp, body, err := c.doJSON(ctx, http.MethodPut, "/api/networks/"+url.PathEscape(strings.TrimSpace(networkID))+"/collector", nil, payload)
 	if err != nil {
 		return err
 	}
@@ -348,21 +353,61 @@ func sanitizeForwardName(value string) string {
 }
 
 func forwardCreateNetworkWithRetry(ctx context.Context, client *forwardClient, baseName string) (*forwardNetwork, error) {
-	name := strings.TrimSpace(baseName)
+	name := sanitizeForwardName(strings.TrimSpace(baseName))
 	if name == "" {
-		name = fmt.Sprintf("deployment-%s", time.Now().UTC().Format("20060102-1504"))
+		name = "deployment"
 	}
-	for attempt := range 3 {
-		network, err := forwardCreateNetwork(ctx, client, name)
+	if len(name) > 80 {
+		name = strings.TrimRight(name[:80], "-")
+	}
+
+	for attempt := 0; attempt < 4; attempt++ {
+		tryName := name
+		if attempt > 0 {
+			suffix := time.Now().UTC().Format("1504")
+			if attempt > 1 {
+				suffix = fmt.Sprintf("%s-%02d", suffix, attempt-1)
+			}
+			tryName = sanitizeForwardName(fmt.Sprintf("%s-%s", name, suffix))
+			if len(tryName) > 80 {
+				tryName = strings.TrimRight(tryName[:80], "-")
+			}
+		}
+
+		network, err := forwardCreateNetwork(ctx, client, tryName)
 		if err == nil {
 			return network, nil
 		}
-		if !strings.Contains(err.Error(), "already used") {
+		msg := strings.ToLower(err.Error())
+		if !strings.Contains(msg, "already used") && !strings.Contains(msg, "already exists") && !strings.Contains(msg, "duplicate") {
 			return nil, err
 		}
-		name = fmt.Sprintf("%s-%02d", baseName, attempt+1)
 	}
 	return nil, fmt.Errorf("forward network name collision after retries")
+}
+
+type forwardEndpoint struct {
+	Type     string `json:"type"`
+	Name     string `json:"name"`
+	Host     string `json:"host"`
+	Protocol string `json:"protocol"`
+}
+
+func forwardPutEndpointsBatch(ctx context.Context, c *forwardClient, networkID string, endpoints []forwardEndpoint) error {
+	if len(endpoints) == 0 {
+		return nil
+	}
+	query := url.Values{}
+	query.Set("action", "addBatch")
+	query.Set("type", "CLI")
+	resp, body, err := c.doJSON(ctx, http.MethodPost, "/api/networks/"+url.PathEscape(strings.TrimSpace(networkID))+"/endpoints", query, endpoints)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("forward put endpoints failed: %s", strings.TrimSpace(string(body)))
+	}
+	return nil
 }
 
 func isForwardJumpServerMissing(err error) bool {

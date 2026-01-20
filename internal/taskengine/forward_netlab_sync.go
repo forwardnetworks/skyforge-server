@@ -386,15 +386,17 @@ func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *work
 	networkID := getString(forwardNetworkIDKey)
 	changed := false
 	if networkID == "" {
-		name := fmt.Sprintf("%s-%s", dep.Name, time.Now().UTC().Format("20060102-1504"))
-		network, err := forwardCreateNetworkWithRetry(ctx, client, sanitizeForwardName(name))
+		// Prefer a stable, human-friendly name: "<deployment>-<user>".
+		// Only add a timestamp suffix on collision.
+		baseName := sanitizeForwardName(fmt.Sprintf("%s-%s", dep.Name, strings.TrimSpace(pc.claims.Username)))
+		network, err := forwardCreateNetworkWithRetry(ctx, client, baseName)
 		if err != nil {
 			return cfgAny, err
 		}
 		networkID = network.ID
 		cfgAny[forwardNetworkIDKey] = networkID
-		cfgAny[forwardNetworkNameKey] = name
-		credentialName = name
+		cfgAny[forwardNetworkNameKey] = strings.TrimSpace(network.Name)
+		credentialName = strings.TrimSpace(network.Name)
 		changed = true
 	}
 
@@ -583,11 +585,36 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 	}
 
 	devices := []forwardClassicDevice{}
+	endpoints := []forwardEndpoint{}
 	seen := map[string]bool{}
 	changed := false
 	for _, row := range parseNetlabStatusOutput(logText) {
 		name := strings.TrimSpace(row.Node)
 		deviceKey := strings.ToLower(strings.TrimSpace(row.Device))
+
+		mgmt := strings.TrimSpace(row.MgmtIPv4)
+		if mgmt == "" || mgmt == "—" {
+			continue
+		}
+		key := strings.ToLower(mgmt)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		if name == "" {
+			name = mgmt
+		}
+
+		// Linux nodes are onboarded as "endpoints" (not classic devices).
+		if deviceKey == "linux" {
+			endpoints = append(endpoints, forwardEndpoint{
+				Type:     "CLI",
+				Name:     name,
+				Host:     mgmt,
+				Protocol: "SSH",
+			})
+			continue
+		}
 
 		cred, ok := netlabCredentialForDevice(row.Device, row.Image)
 		cliCredentialID := ""
@@ -605,18 +632,6 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 			}
 		}
 
-		mgmt := strings.TrimSpace(row.MgmtIPv4)
-		if mgmt == "" || mgmt == "—" {
-			continue
-		}
-		key := strings.ToLower(mgmt)
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		if name == "" {
-			name = mgmt
-		}
 		forwardType := ""
 		if deviceKey != "" {
 			forwardType = forwardTypes[deviceKey]
@@ -636,6 +651,11 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 		})
 	}
 
+	if len(endpoints) > 0 {
+		if err := forwardPutEndpointsBatch(ctx, client, networkID, endpoints); err != nil {
+			return 0, err
+		}
+	}
 	if len(devices) == 0 {
 		return 0, nil
 	}

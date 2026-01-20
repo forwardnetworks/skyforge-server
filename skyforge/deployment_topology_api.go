@@ -82,7 +82,7 @@ func (s *Service) getDeploymentTopologyFromLatestTaskArtifact(ctx context.Contex
 		if key != "" {
 			ctxRead, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
-			if raw, err := readWorkspaceArtifact(ctxRead, pc.workspace.ID, key, 2<<20); err == nil && len(raw) > 0 {
+			if raw, err := readWorkspaceArtifact(ctxRead, s.cfg, pc.workspace.ID, key, 2<<20); err == nil && len(raw) > 0 {
 				if graph, err := parseTopologyGraph(raw); err == nil && graph != nil {
 					graph.ArtifactKey = key
 					return graph, nil
@@ -120,7 +120,7 @@ func (s *Service) getContainerlabDeploymentTopology(ctx context.Context, pc *wor
 		if key != "" {
 			ctxRead, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
-			if raw, err := readWorkspaceArtifact(ctxRead, pc.workspace.ID, key, 2<<20); err == nil && len(raw) > 0 {
+			if raw, err := readWorkspaceArtifact(ctxRead, s.cfg, pc.workspace.ID, key, 2<<20); err == nil && len(raw) > 0 {
 				if graph, err := parseTopologyGraph(raw); err == nil && graph != nil {
 					graph.ArtifactKey = key
 					return graph, nil
