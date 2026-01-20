@@ -94,7 +94,7 @@ func pickNetlabC9sEOSConfigSnippet(topologyName, nodeName string, mounts []c9sFi
 		return ""
 	}
 	mountRoot := path.Join("/tmp/skyforge-c9s", topologyName)
-	nodePrefix := path.Join(mountRoot, "node_files", nodeName) + "/"
+	nodeFilesRoot := path.Join(mountRoot, "node_files") + "/"
 
 	type candidate struct {
 		path  string
@@ -104,10 +104,25 @@ func pickNetlabC9sEOSConfigSnippet(topologyName, nodeName string, mounts []c9sFi
 
 	for _, m := range mounts {
 		filePath := strings.TrimSpace(m.FilePath)
-		if !strings.HasPrefix(filePath, nodePrefix) {
+		if !strings.HasPrefix(filePath, nodeFilesRoot) {
 			continue
 		}
-		rel := strings.TrimPrefix(filePath, nodePrefix)
+		relWithNode := strings.TrimPrefix(filePath, nodeFilesRoot)
+		relWithNode = strings.TrimPrefix(relWithNode, "/")
+		if relWithNode == "" || strings.HasPrefix(relWithNode, "..") {
+			continue
+		}
+		parts := strings.SplitN(relWithNode, "/", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		// Netlab may preserve node names as-is while clabernetes sanitizes them.
+		// Match node directory case-insensitively and accept either variant.
+		if !strings.EqualFold(strings.TrimSpace(parts[0]), nodeName) {
+			continue
+		}
+
+		rel := parts[1]
 		rel = strings.TrimPrefix(rel, "/")
 		rel = path.Clean(rel)
 		if rel == "." || rel == "" || strings.HasPrefix(rel, "..") {

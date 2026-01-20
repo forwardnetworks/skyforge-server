@@ -312,24 +312,56 @@ func forwardCreateJumpServer(ctx context.Context, c *forwardClient, networkID st
 }
 
 func forwardPutClassicDevices(ctx context.Context, c *forwardClient, networkID string, devices []forwardClassicDevice) error {
-	payload := map[string]any{"devices": devices}
-	resp, body, err := c.doJSON(ctx, http.MethodPut, "/api/networks/"+url.PathEscape(strings.TrimSpace(networkID))+"/classic-devices", nil, payload)
+	if len(devices) == 0 {
+		return nil
+	}
+
+	// Forward expects:
+	//   POST /api/networks/{networkId}/classic-devices?action=putBatch
+	// with a JSON array payload (not wrapped).
+	query := url.Values{}
+	query.Set("action", "putBatch")
+	resp, body, err := c.doJSON(ctx, http.MethodPost, "/api/networks/"+url.PathEscape(strings.TrimSpace(networkID))+"/classic-devices", query, devices)
 	if err != nil {
 		return err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("forward put classic devices failed: %s", strings.TrimSpace(string(body)))
+		// Backward-compat: older Forward versions may accept PUT with wrapped payload.
+		fallbackPayload := map[string]any{"devices": devices}
+		resp2, body2, err2 := c.doJSON(ctx, http.MethodPut, "/api/networks/"+url.PathEscape(strings.TrimSpace(networkID))+"/classic-devices", nil, fallbackPayload)
+		if err2 != nil {
+			return err
+		}
+		if resp2.StatusCode < 200 || resp2.StatusCode >= 300 {
+			if strings.TrimSpace(string(body)) != "" {
+				return fmt.Errorf("forward put classic devices failed: %s", strings.TrimSpace(string(body)))
+			}
+			return fmt.Errorf("forward put classic devices failed: %s", strings.TrimSpace(string(body2)))
+		}
 	}
 	return nil
 }
 
 func forwardStartCollection(ctx context.Context, c *forwardClient, networkID string) error {
-	resp, body, err := c.doJSON(ctx, http.MethodPost, "/api/networks/"+url.PathEscape(strings.TrimSpace(networkID))+"/collector/start", nil, nil)
+	// Prefer the public Forward API path.
+	resp, body, err := c.doJSON(ctx, http.MethodPost, "/api/networks/"+url.PathEscape(strings.TrimSpace(networkID))+"/startcollection", nil, nil)
 	if err != nil {
 		return err
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
+
+	// Backward-compat: try the legacy collector/start path.
+	resp2, body2, err2 := c.doJSON(ctx, http.MethodPost, "/api/networks/"+url.PathEscape(strings.TrimSpace(networkID))+"/collector/start", nil, nil)
+	if err2 != nil {
 		return fmt.Errorf("forward start collection failed: %s", strings.TrimSpace(string(body)))
+	}
+	if resp2.StatusCode < 200 || resp2.StatusCode >= 300 {
+		if strings.TrimSpace(string(body)) != "" {
+			return fmt.Errorf("forward start collection failed: %s", strings.TrimSpace(string(body)))
+		}
+		return fmt.Errorf("forward start collection failed: %s", strings.TrimSpace(string(body2)))
 	}
 	return nil
 }

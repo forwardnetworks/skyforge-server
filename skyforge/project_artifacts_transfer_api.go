@@ -128,16 +128,28 @@ func (s *Service) handleWorkspaceArtifactDownload(ctx context.Context, id string
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("key is required").Err()
 	}
 	objectName := artifactObjectName(pc.workspace.ID, key)
-	data, err := storage.Read(ctx, &storage.ReadRequest{ObjectName: objectName})
-	if err != nil {
-		return nil, errs.B().Code(errs.NotFound).Msg("artifact not found").Err()
+
+	// Prefer MinIO client (path-style) to avoid bucket subdomain DNS issues when
+	// using Encore's objects SDK in-cluster.
+	var payload []byte
+	if c, err := objectStoreClientFor(s.cfg); err == nil && c != nil {
+		payload, err = c.GetObject(ctx, artifactsBucketName, objectName)
+		if err != nil {
+			return nil, errs.B().Code(errs.NotFound).Msg("artifact not found").Err()
+		}
+	} else {
+		data, err := storage.Read(ctx, &storage.ReadRequest{ObjectName: objectName})
+		if err != nil {
+			return nil, errs.B().Code(errs.NotFound).Msg("artifact not found").Err()
+		}
+		payload = data.Data
 	}
 	artifactDownloads.Add(1)
 	return &WorkspaceArtifactDownloadResponse{
 		Status:   "ok",
 		Bucket:   storage.StorageBucketName,
 		Key:      key,
-		FileData: base64.StdEncoding.EncodeToString(data.Data),
+		FileData: base64.StdEncoding.EncodeToString(payload),
 	}, nil
 }
 
