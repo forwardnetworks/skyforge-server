@@ -124,7 +124,13 @@ func (s *Service) UpsertWorkspaceNetlabServer(ctx context.Context, id string, pa
 	}
 	name := strings.TrimSpace(payload.Name)
 	if name == "" {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("name is required").Err()
+		// UI no longer asks for a name; derive a stable label from the URL.
+		if u, err := url.Parse(apiURL); err == nil && u != nil {
+			name = strings.TrimSpace(u.Hostname())
+		}
+		if name == "" {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("name is required").Err()
+		}
 	}
 	rec := workspaceNetlabServer{
 		ID:          strings.TrimSpace(payload.ID),
@@ -238,7 +244,12 @@ func (s *Service) UpsertWorkspaceEveServer(ctx context.Context, id string, paylo
 	}
 	name := strings.TrimSpace(payload.Name)
 	if name == "" {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("name is required").Err()
+		if u, err := url.Parse(apiURL); err == nil && u != nil {
+			name = strings.TrimSpace(u.Hostname())
+		}
+		if name == "" {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("name is required").Err()
+		}
 	}
 	webURL := strings.TrimSpace(payload.WebURL)
 	if webURL != "" {
