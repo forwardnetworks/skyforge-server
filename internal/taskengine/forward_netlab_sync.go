@@ -585,6 +585,7 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 	}
 
 	devices := []forwardClassicDevice{}
+	endpoints := []forwardEndpoint{}
 	seen := map[string]bool{}
 	changed := false
 	for _, row := range parseNetlabStatusOutput(logText) {
@@ -604,8 +605,14 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 			name = mgmt
 		}
 
-		// Linux nodes are not uploaded to Forward for collection.
+		// Linux nodes are uploaded as endpoints (not classic devices).
 		if deviceKey == "linux" {
+			endpoints = append(endpoints, forwardEndpoint{
+				Type:     "CLI",
+				Name:     name,
+				Host:     mgmt,
+				Protocol: "SSH",
+			})
 			continue
 		}
 
@@ -644,6 +651,11 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 		})
 	}
 
+	if len(endpoints) > 0 {
+		if err := forwardPutEndpointsBatch(ctx, client, networkID, endpoints); err != nil {
+			return 0, err
+		}
+	}
 	if len(devices) == 0 {
 		return 0, nil
 	}
@@ -777,6 +789,7 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 	}
 
 	devices := []forwardClassicDevice{}
+	endpoints := []forwardEndpoint{}
 	seen := map[string]bool{}
 	for _, node := range graph.Nodes {
 		mgmt := strings.TrimSpace(node.MgmtIP)
@@ -790,9 +803,20 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 		seen[key] = true
 
 		deviceKey := forwardDeviceKeyFromKind(node.Kind)
-		// Linux nodes are modeled as endpoints (or ignored) and must not be uploaded as
-		// classic devices.
 		if deviceKey == "linux" {
+			name := strings.TrimSpace(node.Label)
+			if name == "" {
+				name = strings.TrimSpace(node.ID)
+			}
+			if name == "" {
+				name = mgmt
+			}
+			endpoints = append(endpoints, forwardEndpoint{
+				Type:     "CLI",
+				Name:     name,
+				Host:     mgmt,
+				Protocol: "SSH",
+			})
 			continue
 		}
 		cliCredentialID := credentialIDsByKind[deviceKey]
@@ -833,6 +857,11 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 			BgpPeerType:              "BOTH",
 			EnableSnmpCollection:     true,
 		})
+	}
+	if len(endpoints) > 0 {
+		if err := forwardPutEndpointsBatch(ctx, client, networkID, endpoints); err != nil {
+			return 0, err
+		}
 	}
 	if len(devices) == 0 {
 		return 0, nil
