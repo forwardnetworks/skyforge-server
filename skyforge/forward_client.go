@@ -47,6 +47,13 @@ type forwardCollector struct {
 	Connected       bool   `json:"connected,omitempty"`
 	LastConnectedAt int64  `json:"lastConnectedAt,omitempty"`
 	UpdatedAt       int64  `json:"updatedAt,omitempty"`
+	// Newer Forward payload fields (preferred over Status/Connected).
+	ConnectionStatus  string   `json:"connectionStatus,omitempty"`
+	Version           string   `json:"version,omitempty"`
+	UpdateStatus      string   `json:"updateStatus,omitempty"`
+	CollectorUpdating bool     `json:"collectorUpdating,omitempty"`
+	ExternalIP        string   `json:"externalIp,omitempty"`
+	InternalIPs       []string `json:"internalIps,omitempty"`
 }
 
 type forwardCollectorCreateResponse struct {

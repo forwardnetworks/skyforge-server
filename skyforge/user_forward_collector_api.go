@@ -29,15 +29,19 @@ type UserForwardCollectorResponse struct {
 }
 
 type ForwardCollectorInfo struct {
-	ID              string `json:"id,omitempty"`
-	Name            string `json:"name,omitempty"`
-	Username        string `json:"username,omitempty"`
-	Status          string `json:"status,omitempty"`
-	Connected       *bool  `json:"connected,omitempty"`
-	ConnectedAt     string `json:"connectedAt,omitempty"`
-	LastConnectedAt string `json:"lastConnectedAt,omitempty"`
-	LastSeenAt      string `json:"lastSeenAt,omitempty"`
-	UpdatedAt       string `json:"updatedAt,omitempty"`
+	ID              string   `json:"id,omitempty"`
+	Name            string   `json:"name,omitempty"`
+	Username        string   `json:"username,omitempty"`
+	Status          string   `json:"status,omitempty"`
+	Connected       *bool    `json:"connected,omitempty"`
+	ConnectedAt     string   `json:"connectedAt,omitempty"`
+	LastConnectedAt string   `json:"lastConnectedAt,omitempty"`
+	LastSeenAt      string   `json:"lastSeenAt,omitempty"`
+	UpdatedAt       string   `json:"updatedAt,omitempty"`
+	Version         string   `json:"version,omitempty"`
+	UpdateStatus    string   `json:"updateStatus,omitempty"`
+	ExternalIP      string   `json:"externalIp,omitempty"`
+	InternalIPs     []string `json:"internalIps,omitempty"`
 }
 
 type PutUserForwardCollectorRequest struct {
@@ -354,39 +358,42 @@ func (s *Service) GetUserForwardCollector(ctx context.Context) (*UserForwardColl
 				Password:      creds.ForwardPassword,
 			})
 			if err == nil {
-				if details, err := forwardGetCollector(ctx2, client, creds.CollectorID); err == nil {
-					info := &ForwardCollectorInfo{}
-					if v, ok := details["id"]; ok {
-						info.ID = fmt.Sprint(v)
-					}
-					if v, ok := details["name"]; ok {
-						info.Name = fmt.Sprint(v)
-					}
-					if v, ok := details["username"]; ok {
-						info.Username = fmt.Sprint(v)
-					}
-					if v, ok := details["status"]; ok {
-						info.Status = fmt.Sprint(v)
-					}
-					if v, ok := details["connected"]; ok {
-						if b, ok := v.(bool); ok {
-							info.Connected = &b
+				if collectors, err := forwardListCollectors(ctx2, client); err == nil {
+					var match *forwardCollector
+					for i := range collectors {
+						if strings.EqualFold(strings.TrimSpace(collectors[i].ID), strings.TrimSpace(creds.CollectorID)) {
+							match = &collectors[i]
+							break
 						}
 					}
-					if v, ok := details["connectedAt"]; ok {
-						info.ConnectedAt = fmt.Sprint(v)
-					}
-					if v, ok := details["lastConnectedAt"]; ok {
-						info.LastConnectedAt = fmt.Sprint(v)
-					}
-					if v, ok := details["lastSeenAt"]; ok {
-						info.LastSeenAt = fmt.Sprint(v)
-					}
-					if v, ok := details["updatedAt"]; ok {
-						info.UpdatedAt = fmt.Sprint(v)
-					}
-					if info.ID != "" || info.Name != "" || info.Username != "" || info.Status != "" || info.Connected != nil {
-						fwdCollector = info
+					if match != nil {
+						info := &ForwardCollectorInfo{
+							ID:           strings.TrimSpace(match.ID),
+							Name:         strings.TrimSpace(match.Name),
+							Username:     strings.TrimSpace(match.Username),
+							Version:      strings.TrimSpace(match.Version),
+							UpdateStatus: strings.TrimSpace(match.UpdateStatus),
+							ExternalIP:   strings.TrimSpace(match.ExternalIP),
+							InternalIPs:  match.InternalIPs,
+						}
+						// Prefer the newer `connectionStatus` field.
+						status := strings.TrimSpace(match.ConnectionStatus)
+						if status == "" {
+							status = strings.TrimSpace(match.Status)
+						}
+						if status != "" {
+							info.Status = status
+						}
+						if strings.EqualFold(status, "CONNECTED") {
+							yes := true
+							info.Connected = &yes
+						} else if status != "" {
+							no := false
+							info.Connected = &no
+						}
+						if info.ID != "" || info.Name != "" || info.Username != "" || info.Status != "" || info.Connected != nil {
+							fwdCollector = info
+						}
 					}
 				}
 			}
