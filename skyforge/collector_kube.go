@@ -360,7 +360,10 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, f
 								"args": []string{
 									// Ensure the PVC root is owned by the collector uid (1000) so the daemon
 									// can create/update /collector/private/customer_key.pb on first boot.
-									"set -e; mkdir -p /persist; touch /persist/customer_key.pb; chown -R 1000:1000 /persist; chmod 700 /persist; chmod 600 /persist/customer_key.pb;",
+									// IMPORTANT: Do not pre-create an empty customer_key.pb. The collector
+									// generates it and expects it to be non-empty; an empty file causes
+									// secret encryption failures ("Empty key").
+									"set -e; mkdir -p /persist; chown -R 1000:1000 /persist; chmod 700 /persist; if [ -f /persist/customer_key.pb ] && [ ! -s /persist/customer_key.pb ]; then rm -f /persist/customer_key.pb; fi;",
 								},
 								"volumeMounts": []any{
 									map[string]any{
@@ -476,7 +479,7 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, f
 										"runAsGroup": 0,
 									},
 									"args": []string{
-										"set -e; mkdir -p /persist; touch /persist/customer_key.pb; chown -R 1000:1000 /persist; chmod 700 /persist; chmod 600 /persist/customer_key.pb;",
+										"set -e; mkdir -p /persist; chown -R 1000:1000 /persist; chmod 700 /persist; if [ -f /persist/customer_key.pb ] && [ ! -s /persist/customer_key.pb ]; then rm -f /persist/customer_key.pb; fi;",
 									},
 									"volumeMounts": []any{
 										map[string]any{
