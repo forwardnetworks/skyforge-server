@@ -294,6 +294,26 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		}
 	}
 
+	// Store a bundle of generated artifacts in object storage for browsing and debugging.
+	// This is best-effort and should never fail the deployment run.
+	_ = taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.artifacts", func() error {
+		err := storeNetlabC9sArtifacts(ctx, e.cfg, netlabC9sArtifactsSpec{
+			TaskID:        spec.TaskID,
+			WorkspaceID:   strings.TrimSpace(spec.WorkspaceCtx.workspace.ID),
+			TopologyName:  topologyName,
+			LabName:       labName,
+			Namespace:     ns,
+			ClabYAMLRaw:   clabYAML,
+			TopologyYAML:  topologyBytes,
+			TopologyGraph: graph,
+			NodeMounts:    nodeMounts,
+		}, log)
+		if err != nil && log != nil {
+			log.Infof("netlab-c9s artifact upload failed: %v", err)
+		}
+		return nil
+	})
+
 	return nil
 }
 

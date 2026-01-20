@@ -64,14 +64,6 @@ func (s *Service) YaadeSSO(w http.ResponseWriter, r *http.Request) {
 
 	payload := yaadeLoginPayload{Username: adminUser, Password: adminPass}
 	body, _ := json.Marshal(payload)
-	loginURL := base + "/api-testing/api/login"
-	req, err := http.NewRequest(http.MethodPost, loginURL, bytes.NewBuffer(body))
-	if err != nil {
-		log.Printf("yaade sso: failed to build login request: %v", err)
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to reach api testing login"})
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
 
 	// Never proxy in-cluster service calls through environment proxies.
 	// Some clusters set HTTP(S)_PROXY for egress which can break service DNS.
@@ -79,23 +71,47 @@ func (s *Service) YaadeSSO(w http.ResponseWriter, r *http.Request) {
 		Proxy: func(*http.Request) (*url.URL, error) { return nil, nil },
 	}
 	client := &http.Client{Timeout: 8 * time.Second, Transport: transport}
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Printf("yaade sso: login failed url=%q err=%v", loginURL, err)
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to reach api testing login"})
-		return
+	loginPaths := []string{
+		"/api-testing/api/login",
+		"/api-testing/api/auth/login",
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		log.Printf("yaade sso: login rejected url=%q status=%d", loginURL, resp.StatusCode)
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "api testing login rejected"})
-		return
-	}
+	var cookies []*http.Cookie
+	var loginURL string
+	for _, p := range loginPaths {
+		loginURL = base + p
+		req, err := http.NewRequest(http.MethodPost, loginURL, bytes.NewBuffer(body))
+		if err != nil {
+			log.Printf("yaade sso: failed to build login request url=%q err=%v", loginURL, err)
+			continue
+		}
+		req.Header.Set("Content-Type", "application/json")
 
-	cookies := resp.Cookies()
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Printf("yaade sso: login failed url=%q err=%v", loginURL, err)
+			continue
+		}
+		_ = resp.Body.Close()
+
+		// Be tolerant of Yaade path changes between versions.
+		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
+			continue
+		}
+		if resp.StatusCode >= 400 {
+			log.Printf("yaade sso: login rejected url=%q status=%d", loginURL, resp.StatusCode)
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "api testing login rejected"})
+			return
+		}
+
+		cookies = resp.Cookies()
+		if len(cookies) == 0 {
+			log.Printf("yaade sso: missing session cookie from login url=%q", loginURL)
+			continue
+		}
+		break
+	}
 	if len(cookies) == 0 {
-		log.Printf("yaade sso: missing session cookie from login")
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "api testing login failed"})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to reach api testing login"})
 		return
 	}
 
