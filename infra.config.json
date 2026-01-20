@@ -36,8 +36,8 @@
       "secret_access_key": "minioadmin",
       "buckets": {
         "skyforge": {
-          "name": "skyforge",
-          "public_base_url": "http://minio:9000/skyforge"
+          "name": "skyforge-files",
+          "public_base_url": "http://minio:9000/skyforge-files"
         }
       }
     }

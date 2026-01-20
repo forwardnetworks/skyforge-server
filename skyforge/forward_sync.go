@@ -238,12 +238,51 @@ func (s *Service) forwardConfigForWorkspace(ctx context.Context, workspaceID str
 	return rec, nil
 }
 
+func (s *Service) forwardConfigForUser(ctx context.Context, username string) (*forwardCredentials, error) {
+	if s.db == nil {
+		return nil, fmt.Errorf("database unavailable")
+	}
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	rec, err := getUserForwardCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), username)
+	if err != nil || rec == nil {
+		return nil, err
+	}
+
+	if strings.TrimSpace(rec.BaseURL) == "" {
+		rec.BaseURL = defaultForwardBaseURL
+	}
+	if strings.TrimSpace(rec.ForwardUsername) == "" || strings.TrimSpace(rec.ForwardPassword) == "" {
+		return nil, nil
+	}
+
+	collectorUser := strings.TrimSpace(rec.CollectorUsername)
+	if collectorUser == "" && strings.TrimSpace(rec.AuthorizationKey) != "" {
+		if before, _, ok := strings.Cut(rec.AuthorizationKey, ":"); ok {
+			collectorUser = strings.TrimSpace(before)
+		}
+	}
+
+	return &forwardCredentials{
+		BaseURL:       rec.BaseURL,
+		SkipTLSVerify: rec.SkipTLSVerify,
+		Username:      rec.ForwardUsername,
+		Password:      rec.ForwardPassword,
+		CollectorUser: collectorUser,
+	}, nil
+}
+
 func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *workspaceContext, dep *WorkspaceDeployment) (map[string]any, error) {
 	cfgAny, _ := fromJSONMap(dep.Config)
 	if cfgAny == nil {
 		cfgAny = map[string]any{}
 	}
-	forwardCfg, err := s.forwardConfigForWorkspace(ctx, pc.workspace.ID)
+	forwardCfg, err := s.forwardConfigForUser(ctx, pc.claims.Username)
 	if err != nil || forwardCfg == nil {
 		return cfgAny, err
 	}
@@ -271,30 +310,36 @@ func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *wor
 	networkID := getString(forwardNetworkIDKey)
 	changed := false
 	if networkID == "" {
-		networkName := fmt.Sprintf("%s-%s", dep.Name, time.Now().UTC().Format("20060102-1504"))
-		network, err := forwardCreateNetworkWithRetry(ctx, client, networkName)
+		// Prefer a stable, human-readable Forward network name:
+		//   <deploymentName>-<username>
+		// with a timestamp fallback only when we hit a name collision.
+		baseName := fmt.Sprintf("%s-%s", dep.Name, strings.TrimSpace(pc.claims.Username))
+		network, err := forwardCreateNetworkWithRetry(ctx, client, baseName)
 		if err != nil {
 			return cfgAny, err
 		}
 		networkID = network.ID
 		cfgAny[forwardNetworkIDKey] = networkID
-		cfgAny[forwardNetworkNameKey] = networkName
-		credentialName = networkName
+		cfgAny[forwardNetworkNameKey] = strings.TrimSpace(network.Name)
+		credentialName = strings.TrimSpace(network.Name)
 		changed = true
 	}
 
-	collectorUser := strings.TrimSpace(forwardCfg.CollectorUser)
+	collectorUser := strings.TrimSpace(getString("forwardCollectorUsername"))
+	if collectorUser == "" {
+		collectorUser = strings.TrimSpace(forwardCfg.CollectorUser)
+	}
 	if collectorUser != "" {
 		status, err := forwardGetCollectorStatus(ctx, client, networkID)
 		if err != nil && strings.Contains(err.Error(), "not found") {
-			networkName := fmt.Sprintf("%s-%s", dep.Name, time.Now().UTC().Format("20060102-1504"))
-			network, createErr := forwardCreateNetworkWithRetry(ctx, client, networkName)
+			baseName := fmt.Sprintf("%s-%s", dep.Name, strings.TrimSpace(pc.claims.Username))
+			network, createErr := forwardCreateNetworkWithRetry(ctx, client, baseName)
 			if createErr != nil {
 				return cfgAny, createErr
 			}
 			networkID = network.ID
 			cfgAny[forwardNetworkIDKey] = networkID
-			cfgAny[forwardNetworkNameKey] = networkName
+			cfgAny[forwardNetworkNameKey] = strings.TrimSpace(network.Name)
 			changed = true
 			status, err = forwardGetCollectorStatus(ctx, client, networkID)
 		}
@@ -392,18 +437,40 @@ func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *wor
 
 func forwardCreateNetworkWithRetry(ctx context.Context, client *forwardClient, baseName string) (*forwardNetwork, error) {
 	name := strings.TrimSpace(baseName)
-	if name == "" {
-		name = fmt.Sprintf("deployment-%s", time.Now().UTC().Format("20060102-1504"))
+	name = strings.TrimSpace(strings.ReplaceAll(name, "@", "-"))
+	name = strings.TrimSpace(strings.ReplaceAll(name, " ", "-"))
+	for strings.Contains(name, "--") {
+		name = strings.ReplaceAll(name, "--", "-")
 	}
-	for attempt := range 3 {
-		network, err := forwardCreateNetwork(ctx, client, name)
+	name = strings.Trim(name, "-")
+	if name == "" {
+		name = "deployment"
+	}
+	if len(name) > 80 {
+		name = strings.TrimRight(name[:80], "-")
+	}
+
+	for attempt := 0; attempt < 4; attempt++ {
+		tryName := name
+		if attempt > 0 {
+			suffix := time.Now().UTC().Format("1504")
+			if attempt > 1 {
+				suffix = fmt.Sprintf("%s-%02d", suffix, attempt-1)
+			}
+			tryName = fmt.Sprintf("%s-%s", name, suffix)
+			if len(tryName) > 80 {
+				tryName = strings.TrimRight(tryName[:80], "-")
+			}
+		}
+		network, err := forwardCreateNetwork(ctx, client, tryName)
 		if err == nil {
 			return network, nil
 		}
-		if !strings.Contains(err.Error(), "already used") {
+		// Only retry on name collisions.
+		msg := strings.ToLower(err.Error())
+		if !strings.Contains(msg, "already used") && !strings.Contains(msg, "already exists") && !strings.Contains(msg, "duplicate") {
 			return nil, err
 		}
-		name = fmt.Sprintf("%s-%02d", baseName, attempt+1)
 	}
 	return nil, fmt.Errorf("forward network name collision after retries")
 }
@@ -437,7 +504,7 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *
 		return 0, err
 	}
 
-	forwardCfg, err := s.forwardConfigForWorkspace(ctx, pc.workspace.ID)
+	forwardCfg, err := s.forwardConfigForUser(ctx, pc.claims.Username)
 	if err != nil || forwardCfg == nil {
 		// Workspace isn't configured for Forward; treat as a best-effort no-op.
 		if s != nil && s.db != nil && taskID > 0 {
@@ -543,6 +610,10 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *
 	for _, row := range parseNetlabStatusOutput(logText) {
 		name := strings.TrimSpace(row.Node)
 		deviceKey := strings.ToLower(strings.TrimSpace(row.Device))
+		if deviceKey == "linux" {
+			// Do not onboard Linux nodes into Forward collection.
+			continue
+		}
 		cred, ok := netlabCredentialForDevice(row.Device, row.Image)
 		if !ok && defaultCliCredentialID == "" {
 			continue
@@ -698,7 +769,6 @@ func applyForwardOverrides(base *forwardCredentials, override *forwardCredential
 	}
 	return base
 }
-
 
 func (s *Service) updateDeploymentConfig(ctx context.Context, workspaceID, deploymentID string, cfgAny map[string]any) error {
 	if s.db == nil {
