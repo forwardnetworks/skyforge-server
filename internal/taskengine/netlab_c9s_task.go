@@ -410,57 +410,6 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 		topo["name"] = labName
 	}
 
-	// Ensure minimal Linux containers (typically Alpine-based) have sshd running so
-	// SSH connectivity and Forward credential sync work out of the box.
-	linuxSSHExec := `sh -c 'pgrep sshd >/dev/null 2>&1 && exit 0 || true; if command -v sshd >/dev/null 2>&1; then :; elif command -v apk >/dev/null 2>&1; then apk add --no-cache openssh-server openssh-client >/dev/null 2>&1 || apk add --no-cache openssh-server >/dev/null 2>&1 || true; elif command -v apt-get >/dev/null 2>&1; then apt-get update -qq >/dev/null 2>&1 || true; DEBIAN_FRONTEND=noninteractive apt-get install -y -qq openssh-server >/dev/null 2>&1 || true; fi; mkdir -p /var/run/sshd >/dev/null 2>&1 || true; ssh-keygen -A >/dev/null 2>&1 || true; printf \"\\nPermitRootLogin yes\\nPasswordAuthentication yes\\n\" >> /etc/ssh/sshd_config 2>/dev/null || true; echo root:admin | chpasswd >/dev/null 2>&1 || true; ( /usr/sbin/sshd -e 2>/dev/null || sshd -e 2>/dev/null || true )'`
-	if topology, ok := topo["topology"].(map[string]any); ok {
-		if nodes, ok := topology["nodes"].(map[string]any); ok {
-			for node, nodeAny := range nodes {
-				cfg, ok := nodeAny.(map[string]any)
-				if !ok || cfg == nil {
-					continue
-				}
-				kind := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["kind"])))
-				if kind != "linux" {
-					continue
-				}
-				image := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["image"])))
-				if image == "" || (!strings.Contains(image, "alpine") && !strings.HasPrefix(image, "python")) {
-					continue
-				}
-				existingAny, _ := cfg["exec"]
-				out := []any{}
-				if existingList, ok := existingAny.([]any); ok {
-					out = append(out, existingList...)
-				}
-				already := false
-				for _, item := range out {
-					if strings.Contains(fmt.Sprintf("%v", item), "openssh-server") {
-						already = true
-						break
-					}
-				}
-				if !already {
-					out = append(out, linuxSSHExec)
-				}
-				cfg["exec"] = out
-
-				// Ensure the container stays running. Some base images (like python) exit quickly if
-				// no command is provided, which causes clabernetes to repeatedly recreate pods.
-				if strings.TrimSpace(fmt.Sprintf("%v", cfg["cmd"])) == "" {
-					cfg["cmd"] = "sh -c 'sleep infinity'"
-				}
-				if strings.EqualFold(strings.TrimSpace(fmt.Sprintf("%v", cfg["restart-policy"])), "no") {
-					cfg["restart-policy"] = "always"
-				}
-
-				nodes[node] = cfg
-			}
-			topology["nodes"] = nodes
-		}
-		topo["topology"] = topology
-	}
-
 	// Rewrite bind sources to the mounted file paths (only for node_files paths).
 	mountRoot := path.Join("/tmp/skyforge-c9s", topologyName)
 	if topology, ok := topo["topology"].(map[string]any); ok {

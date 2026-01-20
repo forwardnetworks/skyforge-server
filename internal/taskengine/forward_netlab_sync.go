@@ -585,7 +585,6 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 	}
 
 	devices := []forwardClassicDevice{}
-	endpoints := []forwardEndpoint{}
 	seen := map[string]bool{}
 	changed := false
 	for _, row := range parseNetlabStatusOutput(logText) {
@@ -605,14 +604,8 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 			name = mgmt
 		}
 
-		// Linux nodes are onboarded as "endpoints" (not classic devices).
+		// Linux nodes are not uploaded to Forward for collection.
 		if deviceKey == "linux" {
-			endpoints = append(endpoints, forwardEndpoint{
-				Type:     "CLI",
-				Name:     name,
-				Host:     mgmt,
-				Protocol: "SSH",
-			})
 			continue
 		}
 
@@ -651,11 +644,6 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 		})
 	}
 
-	if len(endpoints) > 0 {
-		if err := forwardPutEndpointsBatch(ctx, client, networkID, endpoints); err != nil {
-			return 0, err
-		}
-	}
 	if len(devices) == 0 {
 		return 0, nil
 	}
@@ -802,6 +790,11 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 		seen[key] = true
 
 		deviceKey := forwardDeviceKeyFromKind(node.Kind)
+		// Linux nodes are modeled as endpoints (or ignored) and must not be uploaded as
+		// classic devices.
+		if deviceKey == "linux" {
+			continue
+		}
 		cliCredentialID := credentialIDsByKind[deviceKey]
 		if cliCredentialID == "" {
 			if u, p, ok := forwardDefaultCredentialForKind(deviceKey); ok {

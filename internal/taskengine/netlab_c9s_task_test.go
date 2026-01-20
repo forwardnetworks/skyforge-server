@@ -2,29 +2,34 @@ package taskengine
 
 import "testing"
 
-func TestPickNetlabC9sEOSConfigSnippet_PrefersConfig(t *testing.T) {
+func TestPickNetlabC9sEOSConfigSnippets_OrdersKnownModules(t *testing.T) {
 	topology := "t1"
 	node := "L1"
 	mountRoot := "/tmp/skyforge-c9s/" + topology + "/node_files/" + node + "/"
-	got := pickNetlabC9sEOSConfigSnippet(topology, node, []c9sFileFromConfigMap{
-		{FilePath: mountRoot + "L1.cfg", ConfigMapName: "cm", ConfigMapPath: "L1.cfg"},
-		{FilePath: mountRoot + "config", ConfigMapName: "cm", ConfigMapPath: "config"},
+	got := pickNetlabC9sEOSConfigSnippets(topology, node, []c9sFileFromConfigMap{
+		{FilePath: mountRoot + "bgp", ConfigMapName: "cm", ConfigMapPath: "bgp"},
+		{FilePath: mountRoot + "initial", ConfigMapName: "cm", ConfigMapPath: "initial"},
+		{FilePath: mountRoot + "normalize", ConfigMapName: "cm", ConfigMapPath: "normalize"},
 	})
-	if got != mountRoot+"config" {
-		t.Fatalf("unexpected: %q", got)
+	if len(got) != 3 {
+		t.Fatalf("expected 3 snippets, got %d", len(got))
+	}
+	if got[0] != mountRoot+"normalize" || got[1] != mountRoot+"initial" || got[2] != mountRoot+"bgp" {
+		t.Fatalf("unexpected order: %#v", got)
 	}
 }
 
-func TestPickNetlabC9sEOSConfigSnippet_SkipsNonCfgFiles(t *testing.T) {
+func TestPickNetlabC9sEOSConfigSnippets_SkipsNonSnippetFiles(t *testing.T) {
 	topology := "t1"
 	node := "L1"
 	mountRoot := "/tmp/skyforge-c9s/" + topology + "/node_files/" + node + "/"
-	got := pickNetlabC9sEOSConfigSnippet(topology, node, []c9sFileFromConfigMap{
+	got := pickNetlabC9sEOSConfigSnippets(topology, node, []c9sFileFromConfigMap{
 		{FilePath: mountRoot + "hosts.yml", ConfigMapName: "cm", ConfigMapPath: "hosts.yml"},
-		{FilePath: mountRoot + "README.md", ConfigMapName: "cm", ConfigMapPath: "README.md"},
+		{FilePath: mountRoot + "template.j2", ConfigMapName: "cm", ConfigMapPath: "template.j2"},
+		{FilePath: mountRoot + "config.yaml", ConfigMapName: "cm", ConfigMapPath: "config.yaml"},
 	})
-	if got != "" {
-		t.Fatalf("expected empty, got %q", got)
+	if len(got) != 0 {
+		t.Fatalf("expected empty, got %#v", got)
 	}
 }
 
