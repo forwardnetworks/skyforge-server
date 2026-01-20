@@ -358,7 +358,9 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, f
 									"runAsGroup": 0,
 								},
 								"args": []string{
-									"set -e; mkdir -p /persist; touch /persist/customer_key.pb; chown 1000:1000 /persist/customer_key.pb; chmod 700 /persist; chmod 600 /persist/customer_key.pb;",
+									// Ensure the PVC root is owned by the collector uid (1000) so the daemon
+									// can create/update /collector/private/customer_key.pb on first boot.
+									"set -e; mkdir -p /persist; touch /persist/customer_key.pb; chown -R 1000:1000 /persist; chmod 700 /persist; chmod 600 /persist/customer_key.pb;",
 								},
 								"volumeMounts": []any{
 									map[string]any{
@@ -474,7 +476,7 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, f
 										"runAsGroup": 0,
 									},
 									"args": []string{
-										"set -e; mkdir -p /persist; touch /persist/customer_key.pb; chown 1000:1000 /persist/customer_key.pb; chmod 700 /persist; chmod 600 /persist/customer_key.pb;",
+										"set -e; mkdir -p /persist; touch /persist/customer_key.pb; chown -R 1000:1000 /persist; chmod 700 /persist; chmod 600 /persist/customer_key.pb;",
 									},
 									"volumeMounts": []any{
 										map[string]any{
