@@ -116,6 +116,20 @@ Forward: {
 	SNMPCommunity: "public"
 }
 
+ForwardCollector: {
+	// Image is the container image used for the in-cluster Forward collector.
+	//
+	// Keep this empty by default so clusters that haven't published the collector
+	// image don't end up with broken ImagePullBackOff pods.
+	Image: ""
+	PullPolicy: "IfNotPresent"
+	ImagePullSecretName: ""
+	ImagePullSecretNamespace: ""
+	// HeapSizeGB sets COLLECTOR_HEAP_SIZE (in gigabytes) for the collector.
+	// When 0, the collector image default is used.
+	HeapSizeGB: 0
+}
+
 Kubernetes: {
 	// ImagePullSecretName is the name of a docker registry secret that allows
 	// pulling images (e.g. from GHCR). When set, Skyforge can mirror it into

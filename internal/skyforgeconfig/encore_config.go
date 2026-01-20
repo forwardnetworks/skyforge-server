@@ -89,6 +89,25 @@ type ForwardDefaultsConfig struct {
 	SNMPCommunity          string
 }
 
+type ForwardCollectorDefaultsConfig struct {
+	// Image is the container image used for the in-cluster Forward collector.
+	//
+	// When empty, Skyforge will not attempt to deploy a collector Pod and the UI
+	// will show the collector as "not configured".
+	Image string
+	// PullPolicy controls Kubernetes image pull behavior (e.g. Always, IfNotPresent).
+	PullPolicy string
+	// ImagePullSecretName is an optional registry secret name used to pull the image.
+	// When empty, Skyforge falls back to Kubernetes.ImagePullSecretName.
+	ImagePullSecretName string
+	// ImagePullSecretNamespace is the namespace where ImagePullSecretName lives.
+	// When empty, Skyforge falls back to Kubernetes.ImagePullSecretNamespace.
+	ImagePullSecretNamespace string
+	// HeapSizeGB sets COLLECTOR_HEAP_SIZE (in gigabytes) for the collector.
+	// When 0, the collector image default is used.
+	HeapSizeGB int
+}
+
 type EncoreConfig struct {
 	TaskWorkerEnabled    bool
 	DisableEncoreCache   bool
@@ -121,17 +140,18 @@ type EncoreConfig struct {
 	AwsSSORoleName     string
 	YaadeAdminUsername string
 
-	Netlab          NetlabDefaultsConfig
-	Integrations    IntegrationDefaultsConfig
-	UI              UIDefaultsConfig
-	OIDC            OIDCDefaultsConfig
-	LDAP            LDAPDefaultsConfig
-	DNS             DNSDefaultsConfig
-	Containerlab    ContainerlabDefaultsConfig
-	Workspaces      WorkspacesDefaultsConfig
-	ObjectStorage   ObjectStorageDefaultsConfig
-	Terraform       TerraformDefaultsConfig
-	Forward         ForwardDefaultsConfig
-	NetlabGenerator NetlabGeneratorDefaultsConfig
-	Kubernetes      KubernetesDefaultsConfig
+	Netlab           NetlabDefaultsConfig
+	Integrations     IntegrationDefaultsConfig
+	UI               UIDefaultsConfig
+	OIDC             OIDCDefaultsConfig
+	LDAP             LDAPDefaultsConfig
+	DNS              DNSDefaultsConfig
+	Containerlab     ContainerlabDefaultsConfig
+	Workspaces       WorkspacesDefaultsConfig
+	ObjectStorage    ObjectStorageDefaultsConfig
+	Terraform        TerraformDefaultsConfig
+	Forward          ForwardDefaultsConfig
+	ForwardCollector ForwardCollectorDefaultsConfig
+	NetlabGenerator  NetlabGeneratorDefaultsConfig
+	Kubernetes       KubernetesDefaultsConfig
 }

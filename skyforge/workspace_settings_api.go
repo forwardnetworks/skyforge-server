@@ -10,6 +10,7 @@ import (
 
 type WorkspaceSettingsRequest struct {
 	AllowExternalTemplateRepos bool                   `json:"allowExternalTemplateRepos,omitempty"`
+	AllowCustomEveServers      bool                   `json:"allowCustomEveServers,omitempty"`
 	AllowCustomNetlabServers   bool                   `json:"allowCustomNetlabServers,omitempty"`
 	ExternalTemplateRepos      []ExternalTemplateRepo `json:"externalTemplateRepos,omitempty"`
 }
@@ -42,18 +43,29 @@ func validateExternalTemplateRepos(repos []ExternalTemplateRepo) ([]ExternalTemp
 		if ref == "" {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("external template repo is required").Err()
 		}
-		if strings.Contains(ref, "://") {
-			return nil, errs.B().Code(errs.InvalidArgument).Msg("external template repo must be a gitea owner/repo").Err()
+		if strings.Contains(ref, " ") {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid external template repo").Err()
 		}
-		parts := strings.Split(ref, "/")
-		if len(parts) < 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
-			return nil, errs.B().Code(errs.InvalidArgument).Msg("external template repo must be of form owner/repo").Err()
-		}
-		if !isValidUsername(parts[0]) {
-			return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid external template repo owner").Err()
-		}
-		if !isSafeRelativePath(parts[1]) {
-			return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid external template repo name").Err()
+		// Support:
+		// - gitea-style owner/repo (default)
+		// - full git URL (https://..., ssh://..., git@host:repo.git)
+		if strings.Contains(ref, "://") || strings.HasPrefix(ref, "git@") {
+			// Basic URL sanity.
+			if strings.Contains(ref, "\n") || strings.Contains(ref, "\r") {
+				return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid external template repo").Err()
+			}
+		} else {
+			parts := strings.Split(ref, "/")
+			if len(parts) < 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+				return nil, errs.B().Code(errs.InvalidArgument).Msg("external template repo must be of form owner/repo or a git URL").Err()
+			}
+			if !isValidUsername(parts[0]) {
+				return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid external template repo owner").Err()
+			}
+			if !isSafeRelativePath(parts[1]) {
+				return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid external template repo name").Err()
+			}
+			ref = strings.TrimSpace(parts[0]) + "/" + strings.TrimSpace(parts[1])
 		}
 		branch := strings.TrimSpace(repo.DefaultBranch)
 		if strings.Contains(branch, " ") || strings.Contains(branch, "/..") {
@@ -62,7 +74,7 @@ func validateExternalTemplateRepos(repos []ExternalTemplateRepo) ([]ExternalTemp
 		out = append(out, ExternalTemplateRepo{
 			ID:            id,
 			Name:          name,
-			Repo:          strings.TrimSpace(parts[0]) + "/" + strings.TrimSpace(parts[1]),
+			Repo:          ref,
 			DefaultBranch: branch,
 		})
 	}
@@ -89,17 +101,16 @@ func (s *Service) UpdateWorkspaceSettings(ctx context.Context, id string, req *W
 		if workspaces[i].ID != pc.workspace.ID {
 			continue
 		}
-		workspaces[i].AllowExternalTemplateRepos = req.AllowExternalTemplateRepos
-		workspaces[i].AllowCustomNetlabServers = req.AllowCustomNetlabServers
-		if req.AllowExternalTemplateRepos {
-			validated, err := validateExternalTemplateRepos(req.ExternalTemplateRepos)
-			if err != nil {
-				return nil, err
-			}
-			workspaces[i].ExternalTemplateRepos = validated
-		} else {
-			workspaces[i].ExternalTemplateRepos = nil
+		// External template repos are enabled when at least one repo is configured.
+		validated, err := validateExternalTemplateRepos(req.ExternalTemplateRepos)
+		if err != nil {
+			return nil, err
 		}
+		workspaces[i].ExternalTemplateRepos = validated
+		workspaces[i].AllowExternalTemplateRepos = len(validated) > 0
+		// Keep legacy flags for back-compat (UI no longer uses them).
+		workspaces[i].AllowCustomEveServers = req.AllowCustomEveServers
+		workspaces[i].AllowCustomNetlabServers = req.AllowCustomNetlabServers
 		pc.workspace = workspaces[i]
 		updated = true
 		break

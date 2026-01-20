@@ -21,10 +21,23 @@ type UserForwardCollectorResponse struct {
 	CollectorUsername string                  `json:"collectorUsername,omitempty"`
 	AuthorizationKey  string                  `json:"authorizationKey,omitempty"`
 	Runtime           *collectorRuntimeStatus `json:"runtime,omitempty"`
+	ForwardCollector  *ForwardCollectorInfo   `json:"forwardCollector,omitempty"`
 	HasPassword       bool                    `json:"hasPassword"`
 	HasJumpKey        bool                    `json:"hasJumpPrivateKey"`
 	HasJumpCert       bool                    `json:"hasJumpCert"`
 	UpdatedAt         string                  `json:"updatedAt,omitempty"`
+}
+
+type ForwardCollectorInfo struct {
+	ID              string `json:"id,omitempty"`
+	Name            string `json:"name,omitempty"`
+	Username        string `json:"username,omitempty"`
+	Status          string `json:"status,omitempty"`
+	Connected       *bool  `json:"connected,omitempty"`
+	ConnectedAt     string `json:"connectedAt,omitempty"`
+	LastConnectedAt string `json:"lastConnectedAt,omitempty"`
+	LastSeenAt      string `json:"lastSeenAt,omitempty"`
+	UpdatedAt       string `json:"updatedAt,omitempty"`
 }
 
 type PutUserForwardCollectorRequest struct {
@@ -327,6 +340,58 @@ func (s *Service) GetUserForwardCollector(ctx context.Context) (*UserForwardColl
 			runtime = st
 		}
 	}
+	var fwdCollector *ForwardCollectorInfo
+	{
+		ctx2, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		box := newSecretBox(s.cfg.SessionSecret)
+		creds, err := getUserForwardCredentials(ctx2, s.db, box, user.Username)
+		if err == nil && creds != nil && strings.TrimSpace(creds.BaseURL) != "" && strings.TrimSpace(creds.ForwardUsername) != "" && strings.TrimSpace(creds.ForwardPassword) != "" && strings.TrimSpace(creds.CollectorID) != "" {
+			client, err := newForwardClient(forwardCredentials{
+				BaseURL:       creds.BaseURL,
+				SkipTLSVerify: creds.SkipTLSVerify,
+				Username:      creds.ForwardUsername,
+				Password:      creds.ForwardPassword,
+			})
+			if err == nil {
+				if details, err := forwardGetCollector(ctx2, client, creds.CollectorID); err == nil {
+					info := &ForwardCollectorInfo{}
+					if v, ok := details["id"]; ok {
+						info.ID = fmt.Sprint(v)
+					}
+					if v, ok := details["name"]; ok {
+						info.Name = fmt.Sprint(v)
+					}
+					if v, ok := details["username"]; ok {
+						info.Username = fmt.Sprint(v)
+					}
+					if v, ok := details["status"]; ok {
+						info.Status = fmt.Sprint(v)
+					}
+					if v, ok := details["connected"]; ok {
+						if b, ok := v.(bool); ok {
+							info.Connected = &b
+						}
+					}
+					if v, ok := details["connectedAt"]; ok {
+						info.ConnectedAt = fmt.Sprint(v)
+					}
+					if v, ok := details["lastConnectedAt"]; ok {
+						info.LastConnectedAt = fmt.Sprint(v)
+					}
+					if v, ok := details["lastSeenAt"]; ok {
+						info.LastSeenAt = fmt.Sprint(v)
+					}
+					if v, ok := details["updatedAt"]; ok {
+						info.UpdatedAt = fmt.Sprint(v)
+					}
+					if info.ID != "" || info.Name != "" || info.Username != "" || info.Status != "" || info.Connected != nil {
+						fwdCollector = info
+					}
+				}
+			}
+		}
+	}
 	return &UserForwardCollectorResponse{
 		Configured:        baseURL != "" && rec.ForwardUsername != "" && rec.ForwardPassword != "",
 		BaseURL:           baseURL,
@@ -336,6 +401,7 @@ func (s *Service) GetUserForwardCollector(ctx context.Context) (*UserForwardColl
 		CollectorUsername: rec.CollectorUsername,
 		AuthorizationKey:  rec.AuthorizationKey,
 		Runtime:           runtime,
+		ForwardCollector:  fwdCollector,
 		HasPassword:       rec.ForwardPassword != "",
 		HasJumpKey:        false,
 		HasJumpCert:       false,
@@ -415,12 +481,17 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 	if collectorID == "" || collectorUsername == "" || authKey == "" {
 		collectors, err := forwardListCollectors(ctx, client)
 		if err != nil {
+			log.Printf("forward list collectors (%s): %v", user.Username, err)
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to list Forward collectors").Err()
 		}
 		for _, existing := range collectors {
 			if strings.EqualFold(strings.TrimSpace(existing.Name), name) {
 				// Best-effort delete so create can succeed and returns a fresh auth key.
-				if err := forwardDeleteCollector(ctx, client, strings.TrimSpace(existing.Name)); err != nil {
+				delID := strings.TrimSpace(existing.ID)
+				if delID == "" {
+					delID = strings.TrimSpace(existing.Name)
+				}
+				if err := forwardDeleteCollector(ctx, client, delID); err != nil {
 					log.Printf("forward delete existing collector (%s): %v", existing.Name, err)
 				}
 				break
@@ -428,7 +499,25 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 		}
 		collector, err := forwardCreateCollector(ctx, client, name)
 		if err != nil {
-			return nil, errs.B().Code(errs.Unavailable).Msg("failed to create Forward collector").Err()
+			log.Printf("forward create collector (%s): %v", name, err)
+			// Handle common race/compat case: collector already exists but the list
+			// response didn't include it (or returned an unexpected shape).
+			if strings.Contains(strings.ToLower(err.Error()), "already exists") {
+				if err := forwardDeleteCollector(ctx, client, name); err != nil {
+					log.Printf("forward delete existing collector (fallback %s): %v", name, err)
+				}
+				if collector2, err2 := forwardCreateCollector(ctx, client, name); err2 == nil {
+					collector = collector2
+					err = nil
+				} else {
+					log.Printf("forward create collector retry (%s): %v", name, err2)
+					return nil, errs.B().Code(errs.Unavailable).Msg(fmt.Sprintf("failed to create Forward collector: %v", err2)).Err()
+				}
+			} else {
+				// Include the Forward error text so users can self-diagnose common failures
+				// (RBAC, licensing, etc.) without requiring server log access.
+				return nil, errs.B().Code(errs.Unavailable).Msg(fmt.Sprintf("failed to create Forward collector: %v", err)).Err()
+			}
 		}
 		collectorID = strings.TrimSpace(collector.ID)
 		collectorUsername = strings.TrimSpace(collector.Username)
@@ -452,7 +541,7 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 	{
 		ctx2, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
-		if st, err := ensureCollectorDeployed(ctx2, s.cfg, user.Username, authKey); err != nil {
+		if st, err := ensureCollectorDeployed(ctx2, s.cfg, user.Username, authKey, baseURL, skipTLSVerify); err != nil {
 			log.Printf("collector deploy failed: %v", err)
 		} else {
 			runtime = st
@@ -525,7 +614,20 @@ func (s *Service) ResetUserForwardCollector(ctx context.Context) (*UserForwardCo
 	}
 	collector, err := forwardCreateCollector(ctx, client, name)
 	if err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to create Forward collector").Err()
+		log.Printf("forward create collector (%s): %v", name, err)
+		if strings.Contains(strings.ToLower(err.Error()), "already exists") {
+			if err := forwardDeleteCollector(ctx, client, name); err != nil {
+				log.Printf("forward delete existing collector (reset fallback %s): %v", name, err)
+			}
+			collector2, err2 := forwardCreateCollector(ctx, client, name)
+			if err2 != nil {
+				log.Printf("forward create collector retry (%s): %v", name, err2)
+				return nil, errs.B().Code(errs.Unavailable).Msg(fmt.Sprintf("failed to create Forward collector: %v", err2)).Err()
+			}
+			collector = collector2
+		} else {
+			return nil, errs.B().Code(errs.Unavailable).Msg(fmt.Sprintf("failed to create Forward collector: %v", err)).Err()
+		}
 	}
 
 	current.CollectorID = strings.TrimSpace(collector.ID)
@@ -540,7 +642,7 @@ func (s *Service) ResetUserForwardCollector(ctx context.Context) (*UserForwardCo
 	{
 		ctx2, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
-		if st, err := ensureCollectorDeployed(ctx2, s.cfg, user.Username, current.AuthorizationKey); err != nil {
+		if st, err := ensureCollectorDeployed(ctx2, s.cfg, user.Username, current.AuthorizationKey, strings.TrimSpace(current.BaseURL), current.SkipTLSVerify); err != nil {
 			log.Printf("collector deploy failed: %v", err)
 		} else {
 			runtime = st

@@ -78,15 +78,56 @@ func (s *Service) runClabernetesDeploymentAction(
 		if !isSafeRelativePath(templatesDir) {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("templatesDir must be a safe repo-relative path").Err()
 		}
-		ref, err := resolveTemplateRepoForProject(s.cfg, pc, templateSource, templateRepo)
-		if err != nil {
-			return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
-		}
 		filePath := path.Join(templatesDir, template)
-		body, err := readGiteaFileBytes(s.cfg, ref.Owner, ref.Repo, filePath, ref.Branch)
-		if err != nil {
-			log.Printf("clabernetes template read: %v", err)
-			return nil, errs.B().Code(errs.Unavailable).Msg("failed to read clabernetes template").Err()
+		var body []byte
+		// External repos can be either a Gitea owner/repo or a full git URL.
+		if strings.ToLower(strings.TrimSpace(templateSource)) == "external" {
+			found := externalTemplateRepoByID(&pc.workspace, strings.TrimSpace(templateRepo))
+			if found == nil {
+				return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown external repo").Err()
+			}
+			repoRef := strings.TrimSpace(found.Repo)
+			branch := strings.TrimSpace(found.DefaultBranch)
+			if branch == "" {
+				branch = "main"
+			}
+			if isGitURL(repoRef) {
+				if s.db == nil || s.box == nil {
+					return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+				}
+				creds, err := ensureUserGitDeployKey(ctx, s.db, s.box, pc.claims.Username)
+				if err != nil {
+					return nil, errs.B().Code(errs.Internal).Msg("failed to load git credentials").Err()
+				}
+				got, err := readRepoFileBytes(ctx, creds, repoRef, branch, filePath)
+				if err != nil {
+					log.Printf("clabernetes external template read: %v", err)
+					return nil, errs.B().Code(errs.Unavailable).Msg("failed to read clabernetes template").Err()
+				}
+				body = got
+			} else {
+				ref, err := resolveTemplateRepoForProject(s.cfg, pc, templateSource, templateRepo)
+				if err != nil {
+					return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
+				}
+				got, err := readGiteaFileBytes(s.cfg, ref.Owner, ref.Repo, filePath, ref.Branch)
+				if err != nil {
+					log.Printf("clabernetes template read: %v", err)
+					return nil, errs.B().Code(errs.Unavailable).Msg("failed to read clabernetes template").Err()
+				}
+				body = got
+			}
+		} else {
+			ref, err := resolveTemplateRepoForProject(s.cfg, pc, templateSource, templateRepo)
+			if err != nil {
+				return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
+			}
+			got, err := readGiteaFileBytes(s.cfg, ref.Owner, ref.Repo, filePath, ref.Branch)
+			if err != nil {
+				log.Printf("clabernetes template read: %v", err)
+				return nil, errs.B().Code(errs.Unavailable).Msg("failed to read clabernetes template").Err()
+			}
+			body = got
 		}
 		var topo map[string]any
 		if err := yaml.Unmarshal(body, &topo); err != nil {

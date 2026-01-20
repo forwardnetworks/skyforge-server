@@ -140,10 +140,10 @@ func normalizeDeploymentName(name string) (string, error) {
 func normalizeDeploymentType(raw string) (string, error) {
 	t := strings.ToLower(strings.TrimSpace(raw))
 	switch t {
-	case "terraform", "netlab", "netlab-c9s", "containerlab", "clabernetes":
+	case "terraform", "netlab", "netlab-c9s", "containerlab", "clabernetes", "labpp":
 		return t, nil
 	default:
-		return "", errs.B().Code(errs.InvalidArgument).Msg("deployment type must be terraform, netlab, netlab-c9s, containerlab, or clabernetes").Err()
+		return "", errs.B().Code(errs.InvalidArgument).Msg("deployment type must be terraform, netlab, netlab-c9s, labpp, containerlab, or clabernetes").Err()
 	}
 }
 

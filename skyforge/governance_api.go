@@ -191,7 +191,17 @@ func (s *Service) GetGovernanceSummary(ctx context.Context) (*GovernanceSummary,
 	}
 	summary, err := loadGovernanceSummary(ctx, s.db)
 	if err != nil {
-		return nil, errs.B().Code(errs.Internal).Msg("failed to load governance summary").Err()
+		rlog.Warn("governance summary load failed", "error", err)
+		// Governance is optional; return an empty snapshot instead of hard-failing the UI.
+		return &GovernanceSummary{
+			ResourceCount:     0,
+			ActiveResources:   0,
+			WorkspacesTracked: 0,
+			CostLast30Days:    0,
+			CostCurrency:      "USD",
+			LastCostPeriodEnd: "",
+			ProviderBreakdown: nil,
+		}, nil
 	}
 	return summary, nil
 }
@@ -211,7 +221,8 @@ func (s *Service) ListGovernanceResources(ctx context.Context, params *Governanc
 	}
 	resources, err := listGovernanceResources(ctx, s.db, params)
 	if err != nil {
-		return nil, errs.B().Code(errs.Internal).Msg("failed to load resources").Err()
+		rlog.Warn("governance resources load failed", "error", err)
+		return &GovernanceResourcesResponse{Resources: []GovernanceResource{}}, nil
 	}
 	return &GovernanceResourcesResponse{Resources: resources}, nil
 }
@@ -231,7 +242,8 @@ func (s *Service) ListGovernanceCosts(ctx context.Context, params *GovernanceCos
 	}
 	costs, err := listGovernanceCosts(ctx, s.db, params)
 	if err != nil {
-		return nil, errs.B().Code(errs.Internal).Msg("failed to load costs").Err()
+		rlog.Warn("governance costs load failed", "error", err)
+		return &GovernanceCostResponse{Costs: []GovernanceCostSnapshot{}}, nil
 	}
 	return &GovernanceCostResponse{Costs: costs}, nil
 }
@@ -251,7 +263,8 @@ func (s *Service) ListGovernanceUsage(ctx context.Context, params *GovernanceUsa
 	}
 	usage, err := listGovernanceUsage(ctx, s.db, params)
 	if err != nil {
-		return nil, errs.B().Code(errs.Internal).Msg("failed to load usage").Err()
+		rlog.Warn("governance usage load failed", "error", err)
+		return &GovernanceUsageResponse{Usage: []GovernanceUsageSnapshot{}}, nil
 	}
 	return &GovernanceUsageResponse{Usage: usage}, nil
 }

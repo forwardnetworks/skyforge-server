@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"time"
 
 	"encore.dev/beta/errs"
 )
@@ -73,11 +74,21 @@ func (s *Service) GetWorkspaceContainerlabTemplates(ctx context.Context, id stri
 		if req == nil || strings.TrimSpace(req.Repo) == "" {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("external repo id is required").Err()
 		}
-		ref, err := resolveTemplateRepoForProject(s.cfg, pc, "external", strings.TrimSpace(req.Repo))
-		if err != nil {
-			return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
+		found := externalTemplateRepoByID(&pc.workspace, strings.TrimSpace(req.Repo))
+		if found == nil {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown external repo").Err()
 		}
-		owner, repo, branch = ref.Owner, ref.Repo, ref.Branch
+		repoRef := strings.TrimSpace(found.Repo)
+		if isGitURL(repoRef) {
+			owner, repo = "url", repoRef
+			branch = strings.TrimSpace(found.DefaultBranch)
+		} else {
+			ref, err := resolveTemplateRepoForProject(s.cfg, pc, "external", strings.TrimSpace(req.Repo))
+			if err != nil {
+				return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
+			}
+			owner, repo, branch = ref.Owner, ref.Repo, ref.Branch
+		}
 	case "custom":
 		if req == nil || strings.TrimSpace(req.Repo) == "" {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("custom repo is required").Err()
@@ -101,8 +112,10 @@ func (s *Service) GetWorkspaceContainerlabTemplates(ctx context.Context, id stri
 
 	if branch == "" {
 		branch = "main"
-		if b, err := getGiteaRepoDefaultBranch(s.cfg, owner, repo); err == nil && strings.TrimSpace(b) != "" {
-			branch = strings.TrimSpace(b)
+		if owner != "url" {
+			if b, err := getGiteaRepoDefaultBranch(s.cfg, owner, repo); err == nil && strings.TrimSpace(b) != "" {
+				branch = strings.TrimSpace(b)
+			}
 		}
 	}
 
@@ -116,32 +129,70 @@ func (s *Service) GetWorkspaceContainerlabTemplates(ctx context.Context, id stri
 		}
 	}
 
-	entries, err := listGiteaDirectory(s.cfg, owner, repo, dir, branch)
-	if err != nil {
-		log.Printf("containerlab templates list: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to query templates").Err()
-	}
-	templates := make([]string, 0, len(entries))
-	for _, e := range entries {
-		if e.Type != "file" {
-			continue
+	var templates []string
+	if owner == "url" {
+		if s.db == nil || s.box == nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 		}
-		name := strings.TrimSpace(e.Name)
-		if name == "" || strings.HasPrefix(name, ".") {
-			continue
+		creds, err := ensureUserGitDeployKey(ctx, s.db, s.box, pc.claims.Username)
+		if err != nil {
+			return nil, errs.B().Code(errs.Internal).Msg("failed to load git credentials").Err()
 		}
-		if !strings.HasSuffix(name, ".yml") && !strings.HasSuffix(name, ".yaml") {
-			continue
+		headSHA := ""
+		if cached, err := loadTemplateIndex(ctx, s.db, "containerlab-url", owner, repo, branch, dir); err == nil && cached != nil {
+			headSHA = cached.HeadSHA
+			// Serve cached templates for a short period to reduce clone churn.
+			if time.Since(cached.UpdatedAt) < 10*time.Minute {
+				templates = cached.Templates
+			}
 		}
-		templates = append(templates, name)
+		if templates == nil {
+			head, listed, err := listRepoYAMLTemplates(ctx, creds, repo, branch, dir)
+			if err != nil {
+				log.Printf("containerlab external templates list: %v", err)
+				return nil, errs.B().Code(errs.Unavailable).Msg("failed to query templates").Err()
+			}
+			headSHA = head
+			templates = listed
+			if err := upsertTemplateIndex(ctx, s.db, "containerlab-url", owner, repo, branch, dir, headSHA, templates); err != nil {
+				log.Printf("template index upsert: %v", err)
+			} else {
+				_ = notifyDashboardUpdatePG(ctx, s.db)
+			}
+		}
+	} else {
+		entries, err := listGiteaDirectory(s.cfg, owner, repo, dir, branch)
+		if err != nil {
+			log.Printf("containerlab templates list: %v", err)
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to query templates").Err()
+		}
+		templates = make([]string, 0, len(entries))
+		for _, e := range entries {
+			if e.Type != "file" {
+				continue
+			}
+			name := strings.TrimSpace(e.Name)
+			if name == "" || strings.HasPrefix(name, ".") {
+				continue
+			}
+			if !strings.HasSuffix(name, ".yml") && !strings.HasSuffix(name, ".yaml") {
+				continue
+			}
+			templates = append(templates, name)
+		}
 	}
 	sort.Strings(templates)
 	_ = ctx
 	return &WorkspaceContainerlabTemplatesResponse{
 		WorkspaceID: pc.workspace.ID,
-		Repo:        fmt.Sprintf("%s/%s", owner, repo),
-		Branch:      branch,
-		Dir:         dir,
-		Templates:   templates,
+		Repo: func() string {
+			if owner == "url" {
+				return repo
+			}
+			return fmt.Sprintf("%s/%s", owner, repo)
+		}(),
+		Branch:    branch,
+		Dir:       dir,
+		Templates: templates,
 	}, nil
 }

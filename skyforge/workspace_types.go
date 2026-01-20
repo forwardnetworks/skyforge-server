@@ -23,8 +23,8 @@ type SkyforgeWorkspace struct {
 	Blueprint                  string    `json:"blueprint,omitempty"`
 	DefaultBranch              string    `json:"defaultBranch,omitempty"`
 	AllowExternalTemplateRepos bool      `json:"allowExternalTemplateRepos,omitempty"`
-	// Deprecated: EVE is no longer a supported provider; retained for DB/back-compat.
-	AllowCustomEveServers    bool                   `json:"-"`
+	// LabPP requires an EVE-NG endpoint. This flag enables configuring a per-workspace EVE server.
+	AllowCustomEveServers    bool                   `json:"allowCustomEveServers,omitempty"`
 	AllowCustomNetlabServers bool                   `json:"allowCustomNetlabServers,omitempty"`
 	ExternalTemplateRepos    []ExternalTemplateRepo `json:"externalTemplateRepos,omitempty"`
 	TerraformStateKey        string                 `json:"terraformStateKey,omitempty"`
@@ -41,11 +41,10 @@ type SkyforgeWorkspace struct {
 	AWSRegion                 string `json:"awsRegion,omitempty"`
 	AWSAuthMethod             string `json:"awsAuthMethod,omitempty"`
 	ArtifactsBucket           string `json:"artifactsBucket,omitempty"`
-	// Deprecated: EVE is no longer a supported provider; retained for DB/back-compat.
-	EveServer    string `json:"-"`
-	NetlabServer string `json:"netlabServer,omitempty"`
-	GiteaOwner   string `json:"giteaOwner"`
-	GiteaRepo    string `json:"giteaRepo"`
+	EveServer                 string `json:"eveServer,omitempty"`
+	NetlabServer              string `json:"netlabServer,omitempty"`
+	GiteaOwner                string `json:"giteaOwner"`
+	GiteaRepo                 string `json:"giteaRepo"`
 }
 
 type ExternalTemplateRepo struct {

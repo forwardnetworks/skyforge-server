@@ -54,21 +54,28 @@ type Config struct {
 	// NetlabC9sGeneratorMode controls how netlab-c9s artifacts are generated:
 	// - "remote": use a BYOS netlab API server
 	// - "k8s": run a netlab generator Job in-cluster
-	NetlabC9sGeneratorMode    string
-	NetlabGeneratorImage      string
-	NetlabGeneratorPullPolicy string
-	PKICACert                 string
-	PKICAKey                  string
-	PKIDefaultDays            int
-	SSHCAKey                  string
-	SSHCADefaultDays          int
-	DNSURL                    string
-	DNSAdminUsername          string
-	DNSUserZoneSuffix         string
-	TaskWorkerEnabled         bool
-	ImagePullSecretName       string
-	ImagePullSecretNamespace  string
-	Forward                   ForwardConfig
+	NetlabC9sGeneratorMode                   string
+	NetlabGeneratorImage                     string
+	NetlabGeneratorPullPolicy                string
+	PKICACert                                string
+	PKICAKey                                 string
+	PKIDefaultDays                           int
+	SSHCAKey                                 string
+	SSHCADefaultDays                         int
+	DNSURL                                   string
+	DNSAdminUsername                         string
+	DNSUserZoneSuffix                        string
+	TaskWorkerEnabled                        bool
+	ImagePullSecretName                      string
+	ImagePullSecretNamespace                 string
+	ForwardCollectorImage                    string
+	ForwardCollectorPullPolicy               string
+	ForwardCollectorImagePullSecretName      string
+	ForwardCollectorImagePullSecretNamespace string
+	// ForwardCollectorHeapSizeGB sets COLLECTOR_HEAP_SIZE for the in-cluster
+	// collector container. When 0, the image default is used.
+	ForwardCollectorHeapSizeGB int
+	Forward                    ForwardConfig
 }
 
 type ForwardConfig struct {

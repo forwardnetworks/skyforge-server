@@ -666,39 +666,93 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 		if !isSafeRelativePath(templatesDir) {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("templatesDir must be a safe repo-relative path").Err()
 		}
-		ref, err := resolveTemplateRepoForProject(s.cfg, pc, req.TemplateSource, req.TemplateRepo)
-		if err != nil {
-			return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
-		}
 		filePath := path.Join(templatesDir, template)
 
 		// Prefer topologySourceUrl (clab-api-server supports git/raw URLs) to avoid sending full topology content.
 		// For private workspace repos, the BYOS host might not be able to fetch the raw URL, so we keep a
 		// fallback mode that uploads topology content directly.
-		shouldUseSource := strings.ToLower(strings.TrimSpace(req.TemplateSource)) != "workspace" || pc.workspace.IsPublic
-		if shouldUseSource {
-			topologySourceURL = giteaRawFileURL(s.cfg, ref.Owner, ref.Repo, ref.Branch, filePath)
+		templateSource := strings.ToLower(strings.TrimSpace(req.TemplateSource))
+		if templateSource == "" {
+			templateSource = "workspace"
+		}
+
+		// External repos can be either a Gitea owner/repo or a full git URL.
+		if templateSource == "external" {
+			found := externalTemplateRepoByID(&pc.workspace, strings.TrimSpace(req.TemplateRepo))
+			if found == nil {
+				return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown external repo").Err()
+			}
+			repoRef := strings.TrimSpace(found.Repo)
+			branch := strings.TrimSpace(found.DefaultBranch)
+			if branch == "" {
+				branch = "main"
+			}
+			if isGitURL(repoRef) {
+				if s.db == nil || s.box == nil {
+					return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+				}
+				creds, err := ensureUserGitDeployKey(ctx, s.db, s.box, pc.claims.Username)
+				if err != nil {
+					return nil, errs.B().Code(errs.Internal).Msg("failed to load git credentials").Err()
+				}
+				body, err := readRepoFileBytes(ctx, creds, repoRef, branch, filePath)
+				if err != nil {
+					log.Printf("containerlab external template read: %v", err)
+					return nil, errs.B().Code(errs.Unavailable).Msg("failed to read containerlab template").Err()
+				}
+				var topo map[string]any
+				if err := yaml.Unmarshal(body, &topo); err != nil {
+					log.Printf("containerlab template parse: %v", err)
+					return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid containerlab topology").Err()
+				}
+				if topo == nil {
+					topo = map[string]any{}
+				}
+				topo["name"] = labName
+				topologyBytes, err := json.Marshal(topo)
+				if err != nil {
+					log.Printf("containerlab template encode: %v", err)
+					return nil, errs.B().Code(errs.Internal).Msg("failed to encode topology").Err()
+				}
+				topologyJSON = string(topologyBytes)
+			} else {
+				ref, err := resolveTemplateRepoForProject(s.cfg, pc, req.TemplateSource, req.TemplateRepo)
+				if err != nil {
+					return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
+				}
+				topologySourceURL = giteaRawFileURL(s.cfg, ref.Owner, ref.Repo, ref.Branch, filePath)
+			}
 		} else {
-			body, err := readGiteaFileBytes(s.cfg, ref.Owner, ref.Repo, filePath, ref.Branch)
+			ref, err := resolveTemplateRepoForProject(s.cfg, pc, req.TemplateSource, req.TemplateRepo)
 			if err != nil {
-				log.Printf("containerlab template read: %v", err)
-				return nil, errs.B().Code(errs.Unavailable).Msg("failed to read containerlab template").Err()
+				return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 			}
-			var topo map[string]any
-			if err := yaml.Unmarshal(body, &topo); err != nil {
-				log.Printf("containerlab template parse: %v", err)
-				return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid containerlab topology").Err()
+
+			shouldUseSource := templateSource != "workspace" || pc.workspace.IsPublic
+			if shouldUseSource {
+				topologySourceURL = giteaRawFileURL(s.cfg, ref.Owner, ref.Repo, ref.Branch, filePath)
+			} else {
+				body, err := readGiteaFileBytes(s.cfg, ref.Owner, ref.Repo, filePath, ref.Branch)
+				if err != nil {
+					log.Printf("containerlab template read: %v", err)
+					return nil, errs.B().Code(errs.Unavailable).Msg("failed to read containerlab template").Err()
+				}
+				var topo map[string]any
+				if err := yaml.Unmarshal(body, &topo); err != nil {
+					log.Printf("containerlab template parse: %v", err)
+					return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid containerlab topology").Err()
+				}
+				if topo == nil {
+					topo = map[string]any{}
+				}
+				topo["name"] = labName
+				topologyBytes, err := json.Marshal(topo)
+				if err != nil {
+					log.Printf("containerlab template encode: %v", err)
+					return nil, errs.B().Code(errs.Internal).Msg("failed to encode topology").Err()
+				}
+				topologyJSON = string(topologyBytes)
 			}
-			if topo == nil {
-				topo = map[string]any{}
-			}
-			topo["name"] = labName
-			topologyBytes, err := json.Marshal(topo)
-			if err != nil {
-				log.Printf("containerlab template encode: %v", err)
-				return nil, errs.B().Code(errs.Internal).Msg("failed to encode topology").Err()
-			}
-			topologyJSON = string(topologyBytes)
 		}
 	}
 

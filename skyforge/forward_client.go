@@ -40,9 +40,13 @@ type forwardJumpServer struct {
 }
 
 type forwardCollector struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Username string `json:"username"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Username        string `json:"username"`
+	Status          string `json:"status,omitempty"`
+	Connected       bool   `json:"connected,omitempty"`
+	LastConnectedAt int64  `json:"lastConnectedAt,omitempty"`
+	UpdatedAt       int64  `json:"updatedAt,omitempty"`
 }
 
 type forwardCollectorCreateResponse struct {
@@ -190,12 +194,36 @@ func forwardListCollectors(ctx context.Context, c *forwardClient) ([]forwardColl
 			}
 		}
 	case map[string]any:
-		if raw, ok := v["collectors"]; ok {
-			buf, _ := json.Marshal(raw)
-			_ = json.Unmarshal(buf, &collectors)
+		for _, key := range []string{"collectors", "items", "data"} {
+			if raw, ok := v[key]; ok {
+				buf, _ := json.Marshal(raw)
+				_ = json.Unmarshal(buf, &collectors)
+				if len(collectors) > 0 {
+					break
+				}
+			}
 		}
 	}
 	return collectors, nil
+}
+
+func forwardGetCollector(ctx context.Context, c *forwardClient, collectorIDOrName string) (map[string]any, error) {
+	collectorIDOrName = strings.TrimSpace(collectorIDOrName)
+	if collectorIDOrName == "" {
+		return nil, fmt.Errorf("collector id is required")
+	}
+	resp, body, err := c.doJSON(ctx, http.MethodGet, "/api/collectors/"+url.PathEscape(collectorIDOrName), nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("forward get collector failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var out map[string]any
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func forwardCreateCollector(ctx context.Context, c *forwardClient, name string) (*forwardCollectorCreateResponse, error) {

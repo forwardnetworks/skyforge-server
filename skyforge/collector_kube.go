@@ -9,14 +9,11 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"encore.dev/rlog"
-)
-
-const (
-	defaultCollectorImage = "ghcr.io/forwardnetworks/skyforge-forward-collector:latest"
 )
 
 type collectorRuntimeStatus struct {
@@ -25,6 +22,10 @@ type collectorRuntimeStatus struct {
 	PodName         string `json:"podName,omitempty"`
 	PodPhase        string `json:"podPhase,omitempty"`
 	Ready           bool   `json:"ready"`
+	RestartCount    int32  `json:"restartCount,omitempty"`
+	LastExitCode    int32  `json:"lastExitCode,omitempty"`
+	LastReason      string `json:"lastReason,omitempty"`
+	LastFinishedAt  string `json:"lastFinishedAt,omitempty"`
 	StartTime       string `json:"startTime,omitempty"`
 	Image           string `json:"image,omitempty"`
 	ImageID         string `json:"imageId,omitempty"`
@@ -55,9 +56,28 @@ func collectorResourceNameForUser(username string) string {
 	return "skyforge-collector-" + base
 }
 
-func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token string) (*collectorRuntimeStatus, error) {
+func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, forwardBaseURL string, skipTLSVerify bool) (*collectorRuntimeStatus, error) {
+	collectorImage := strings.TrimSpace(cfg.ForwardCollectorImage)
+	if collectorImage == "" {
+		// Explicitly do not deploy anything if the collector image isn't configured.
+		// This avoids a broken UX when the cluster cannot pull the image.
+		return &collectorRuntimeStatus{
+			Namespace:       kubeNamespace(),
+			DeploymentName:  collectorResourceNameForUser(username),
+			UpdateStatus:    "not_configured",
+			LogsCommandHint: fmt.Sprintf("kubectl -n %s logs deploy/%s -f", kubeNamespace(), collectorResourceNameForUser(username)),
+		}, nil
+	}
+	collectorPullPolicy := strings.TrimSpace(cfg.ForwardCollectorPullPolicy)
+	if collectorPullPolicy == "" {
+		collectorPullPolicy = "IfNotPresent"
+	}
+	collectorHeapSizeGB := cfg.ForwardCollectorHeapSizeGB
+
 	ns := kubeNamespace()
 	name := collectorResourceNameForUser(username)
+	dataPVCName := name + "-data"
+	configName := name + "-cfg"
 	labels := map[string]string{
 		"app.kubernetes.io/name":      "skyforge",
 		"app.kubernetes.io/component": "collector",
@@ -127,12 +147,169 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token st
 		}
 	}
 
-	// 2) Deployment
+	// 1b) ConfigMap with fwd.properties (overrides the baked-in fwd-appserver URL in the
+	// Forward Enterprise collector image).
+	{
+		baseURL := strings.TrimSpace(forwardBaseURL)
+		if baseURL == "" {
+			baseURL = "https://fwd.app"
+		}
+		fwdProps := renderCollectorFwdProperties(baseURL, skipTLSVerify, token)
+		payload := map[string]any{
+			"apiVersion": "v1",
+			"kind":       "ConfigMap",
+			"metadata": map[string]any{
+				"name":      configName,
+				"namespace": ns,
+				"labels":    labels,
+			},
+			"data": map[string]string{
+				"fwd.properties": fwdProps,
+			},
+		}
+		body, _ := json.Marshal(payload)
+
+		createURL := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/configmaps", url.PathEscape(ns))
+		createReq, err := kubeRequest(ctx, http.MethodPost, createURL, bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		createReq.Header.Set("Content-Type", "application/json")
+		resp, err := client.Do(createReq)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
+			data, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<10))
+			return nil, fmt.Errorf("kube configmap create failed: %s: %s", resp.Status, strings.TrimSpace(string(data)))
+		}
+		if resp.StatusCode == http.StatusConflict {
+			patchBody, _ := json.Marshal(map[string]any{
+				"metadata": map[string]any{"labels": labels},
+				"data": map[string]string{
+					"fwd.properties": fwdProps,
+				},
+			})
+			patchURL := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/configmaps/%s", url.PathEscape(ns), url.PathEscape(configName))
+			patchReq, err := kubeRequest(ctx, http.MethodPatch, patchURL, bytes.NewReader(patchBody))
+			if err != nil {
+				return nil, err
+			}
+			patchReq.Header.Set("Content-Type", "application/strategic-merge-patch+json")
+			patchResp, err := client.Do(patchReq)
+			if err != nil {
+				return nil, err
+			}
+			defer patchResp.Body.Close()
+			if patchResp.StatusCode < 200 || patchResp.StatusCode >= 300 {
+				data, _ := io.ReadAll(io.LimitReader(patchResp.Body, 32<<10))
+				return nil, fmt.Errorf("kube configmap patch failed: %s: %s", patchResp.Status, strings.TrimSpace(string(data)))
+			}
+		}
+	}
+
+	// 2) Persistent data volume (stores customer_key.pb so collector restarts/upgrades
+	// do not require re-entering secrets).
+	{
+		payload := map[string]any{
+			"apiVersion": "v1",
+			"kind":       "PersistentVolumeClaim",
+			"metadata": map[string]any{
+				"name":      dataPVCName,
+				"namespace": ns,
+				"labels":    labels,
+			},
+			"spec": map[string]any{
+				"accessModes": []string{"ReadWriteOnce"},
+				"resources": map[string]any{
+					"requests": map[string]string{
+						// Small, but enough for certs/keys and local state.
+						"storage": "1Gi",
+					},
+				},
+			},
+		}
+		body, _ := json.Marshal(payload)
+
+		createURL := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/persistentvolumeclaims", url.PathEscape(ns))
+		createReq, err := kubeRequest(ctx, http.MethodPost, createURL, bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		createReq.Header.Set("Content-Type", "application/json")
+		resp, err := client.Do(createReq)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
+			data, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<10))
+			return nil, fmt.Errorf("kube pvc create failed: %s: %s", resp.Status, strings.TrimSpace(string(data)))
+		}
+		if resp.StatusCode == http.StatusConflict {
+			patchBody, _ := json.Marshal(map[string]any{
+				"metadata": map[string]any{"labels": labels},
+			})
+			patchURL := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/persistentvolumeclaims/%s", url.PathEscape(ns), url.PathEscape(dataPVCName))
+			patchReq, err := kubeRequest(ctx, http.MethodPatch, patchURL, bytes.NewReader(patchBody))
+			if err != nil {
+				return nil, err
+			}
+			patchReq.Header.Set("Content-Type", "application/strategic-merge-patch+json")
+			patchResp, err := client.Do(patchReq)
+			if err != nil {
+				return nil, err
+			}
+			defer patchResp.Body.Close()
+			if patchResp.StatusCode < 200 || patchResp.StatusCode >= 300 {
+				data, _ := io.ReadAll(io.LimitReader(patchResp.Body, 32<<10))
+				return nil, fmt.Errorf("kube pvc patch failed: %s: %s", patchResp.Status, strings.TrimSpace(string(data)))
+			}
+		}
+	}
+
+	collectorEnv := []any{
+		map[string]any{
+			"name": "TOKEN",
+			"valueFrom": map[string]any{
+				"secretKeyRef": map[string]any{
+					"name": name,
+					"key":  "TOKEN",
+				},
+			},
+		},
+		// Required by /collector/collector.sh in the Forward Enterprise collector image.
+		map[string]any{
+			"name":  "LOGS_DIR",
+			"value": "/scratch",
+		},
+		map[string]any{
+			"name":  "LOGBACK_FILENAME",
+			"value": "logback-client-daemon.xml",
+		},
+	}
+	if collectorHeapSizeGB > 0 {
+		collectorEnv = append(collectorEnv, map[string]any{
+			"name":  "COLLECTOR_HEAP_SIZE",
+			"value": strconv.Itoa(collectorHeapSizeGB),
+		})
+	}
+
+	// 3) Deployment
 	{
 		var imagePullSecrets []any
 		// imagePullSecrets must exist in the same namespace as the Pod.
-		if strings.TrimSpace(cfg.ImagePullSecretName) != "" && strings.TrimSpace(cfg.ImagePullSecretNamespace) == strings.TrimSpace(ns) {
-			imagePullSecrets = []any{map[string]any{"name": strings.TrimSpace(cfg.ImagePullSecretName)}}
+		pullSecretName := strings.TrimSpace(cfg.ForwardCollectorImagePullSecretName)
+		pullSecretNamespace := strings.TrimSpace(cfg.ForwardCollectorImagePullSecretNamespace)
+		if pullSecretName == "" {
+			pullSecretName = strings.TrimSpace(cfg.ImagePullSecretName)
+		}
+		if pullSecretNamespace == "" {
+			pullSecretNamespace = strings.TrimSpace(cfg.ImagePullSecretNamespace)
+		}
+		if pullSecretName != "" && strings.TrimSpace(pullSecretNamespace) == strings.TrimSpace(ns) {
+			imagePullSecrets = []any{map[string]any{"name": pullSecretName}}
 		}
 		payload := map[string]any{
 			"apiVersion": "apps/v1",
@@ -144,6 +321,11 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token st
 			},
 			"spec": map[string]any{
 				"replicas": 1,
+				// The collector mounts a ReadWriteOnce PVC. Use Recreate to avoid
+				// multi-attach issues during rolling updates.
+				"strategy": map[string]any{
+					"type": "Recreate",
+				},
 				"selector": map[string]any{
 					"matchLabels": map[string]string{
 						"app.kubernetes.io/name":      "skyforge",
@@ -166,22 +348,70 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token st
 					"spec": map[string]any{
 						"serviceAccountName": "default",
 						"imagePullSecrets":   imagePullSecrets,
+						"initContainers": []any{
+							map[string]any{
+								"name":    "init-persist-key",
+								"image":   "busybox:1.36",
+								"command": []string{"sh", "-c"},
+								"securityContext": map[string]any{
+									"runAsUser":  0,
+									"runAsGroup": 0,
+								},
+								"args": []string{
+									"set -e; mkdir -p /persist; touch /persist/customer_key.pb; chown 1000:1000 /persist/customer_key.pb; chmod 700 /persist; chmod 600 /persist/customer_key.pb;",
+								},
+								"volumeMounts": []any{
+									map[string]any{
+										"name":      "collector-data",
+										"mountPath": "/persist",
+									},
+								},
+							},
+						},
+						"volumes": []any{
+							map[string]any{
+								"name":     "scratch",
+								"emptyDir": map[string]any{},
+							},
+							map[string]any{
+								"name": "collector-cfg",
+								"configMap": map[string]any{
+									"name": configName,
+								},
+							},
+							map[string]any{
+								"name": "collector-data",
+								"persistentVolumeClaim": map[string]any{
+									"claimName": dataPVCName,
+								},
+							},
+						},
+						"securityContext": map[string]any{
+							"runAsUser":  1000,
+							"runAsGroup": 1000,
+							"fsGroup":    1000,
+						},
 						"containers": []any{
 							map[string]any{
 								"name":            "collector",
-								"image":           defaultCollectorImage,
-								"imagePullPolicy": "Always",
-								"env": []any{
+								"image":           collectorImage,
+								"imagePullPolicy": collectorPullPolicy,
+								"volumeMounts": []any{
 									map[string]any{
-										"name": "TOKEN",
-										"valueFrom": map[string]any{
-											"secretKeyRef": map[string]any{
-												"name": name,
-												"key":  "TOKEN",
-											},
-										},
+										"name":      "scratch",
+										"mountPath": "/scratch",
+									},
+									map[string]any{
+										"name":      "collector-data",
+										"mountPath": "/home/forward/.fwd/private",
+									},
+									map[string]any{
+										"name":      "collector-cfg",
+										"mountPath": "/collector/fwd.properties",
+										"subPath":   "fwd.properties",
 									},
 								},
+								"env": collectorEnv,
 							},
 						},
 					},
@@ -216,6 +446,9 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token st
 				"metadata": map[string]any{"labels": labels},
 				"spec": map[string]any{
 					"replicas": 1,
+					"strategy": map[string]any{
+						"type": "Recreate",
+					},
 					"template": map[string]any{
 						"metadata": map[string]any{
 							"annotations": map[string]string{
@@ -225,22 +458,70 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token st
 						"spec": map[string]any{
 							"serviceAccountName": "default",
 							"imagePullSecrets":   patchImagePullSecrets,
+							"initContainers": []any{
+								map[string]any{
+									"name":    "init-persist-key",
+									"image":   "busybox:1.36",
+									"command": []string{"sh", "-c"},
+									"securityContext": map[string]any{
+										"runAsUser":  0,
+										"runAsGroup": 0,
+									},
+									"args": []string{
+										"set -e; mkdir -p /persist; touch /persist/customer_key.pb; chown 1000:1000 /persist/customer_key.pb; chmod 700 /persist; chmod 600 /persist/customer_key.pb;",
+									},
+									"volumeMounts": []any{
+										map[string]any{
+											"name":      "collector-data",
+											"mountPath": "/persist",
+										},
+									},
+								},
+							},
+							"volumes": []any{
+								map[string]any{
+									"name":     "scratch",
+									"emptyDir": map[string]any{},
+								},
+								map[string]any{
+									"name": "collector-cfg",
+									"configMap": map[string]any{
+										"name": configName,
+									},
+								},
+								map[string]any{
+									"name": "collector-data",
+									"persistentVolumeClaim": map[string]any{
+										"claimName": dataPVCName,
+									},
+								},
+							},
+							"securityContext": map[string]any{
+								"runAsUser":  1000,
+								"runAsGroup": 1000,
+								"fsGroup":    1000,
+							},
 							"containers": []any{
 								map[string]any{
 									"name":            "collector",
-									"image":           defaultCollectorImage,
-									"imagePullPolicy": "Always",
-									"env": []any{
+									"image":           collectorImage,
+									"imagePullPolicy": collectorPullPolicy,
+									"volumeMounts": []any{
 										map[string]any{
-											"name": "TOKEN",
-											"valueFrom": map[string]any{
-												"secretKeyRef": map[string]any{
-													"name": name,
-													"key":  "TOKEN",
-												},
-											},
+											"name":      "scratch",
+											"mountPath": "/scratch",
+										},
+										map[string]any{
+											"name":      "collector-data",
+											"mountPath": "/home/forward/.fwd/private",
+										},
+										map[string]any{
+											"name":      "collector-cfg",
+											"mountPath": "/collector/fwd.properties",
+											"subPath":   "fwd.properties",
 										},
 									},
+									"env": collectorEnv,
 								},
 							},
 						},
@@ -275,6 +556,42 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token st
 		}, nil
 	}
 	return st, nil
+}
+
+func renderCollectorFwdProperties(baseURL string, skipTLSVerify bool, authorizationKey string) string {
+	urlStr := strings.TrimSpace(baseURL)
+	if urlStr == "" {
+		urlStr = "https://fwd.app"
+	}
+	if !strings.Contains(urlStr, "://") {
+		urlStr = "https://" + urlStr
+	}
+	username := ""
+	password := ""
+	if ak := strings.TrimSpace(authorizationKey); ak != "" {
+		parts := strings.SplitN(ak, ":", 2)
+		if len(parts) == 2 {
+			username = strings.TrimSpace(parts[0])
+			password = strings.TrimSpace(parts[1])
+		}
+	}
+	verifySSL := "true"
+	if skipTLSVerify {
+		verifySSL = "false"
+	}
+	// Minimal config needed by the collector to reach the Forward server.
+	// The Forward collector image expects username/password in fwd.properties. For
+	// fwd.app we use the authorization key returned from POST /api/collectors:
+	//   <collector-username>:<secret>
+	return strings.TrimSpace(fmt.Sprintf(`
+# Managed by Skyforge.
+url = %s
+username = %s
+password = %s
+verify_ssl_cert = %s
+disable_auto_update = true
+version = 1.7
+`, urlStr, username, password, verifySSL)) + "\n"
 }
 
 func getCollectorRuntimeStatus(ctx context.Context, username string) (*collectorRuntimeStatus, error) {
@@ -313,6 +630,21 @@ func getCollectorRuntimeStatus(ctx context.Context, username string) (*collector
 					Ready   bool   `json:"ready"`
 					Image   string `json:"image"`
 					ImageID string `json:"imageID"`
+					Restart int32  `json:"restartCount"`
+					State   struct {
+						Terminated *struct {
+							ExitCode   int32  `json:"exitCode"`
+							Reason     string `json:"reason"`
+							FinishedAt string `json:"finishedAt"`
+						} `json:"terminated,omitempty"`
+					} `json:"state,omitempty"`
+					LastState struct {
+						Terminated *struct {
+							ExitCode   int32  `json:"exitCode"`
+							Reason     string `json:"reason"`
+							FinishedAt string `json:"finishedAt"`
+						} `json:"terminated,omitempty"`
+					} `json:"lastState,omitempty"`
 				} `json:"containerStatuses"`
 			} `json:"status"`
 		} `json:"items"`
@@ -340,6 +672,16 @@ func getCollectorRuntimeStatus(ctx context.Context, username string) (*collector
 		if cs.Name == "collector" {
 			out.Image = strings.TrimSpace(cs.Image)
 			out.ImageID = strings.TrimSpace(cs.ImageID)
+			out.RestartCount = cs.Restart
+			if cs.State.Terminated != nil {
+				out.LastExitCode = cs.State.Terminated.ExitCode
+				out.LastReason = strings.TrimSpace(cs.State.Terminated.Reason)
+				out.LastFinishedAt = strings.TrimSpace(cs.State.Terminated.FinishedAt)
+			} else if cs.LastState.Terminated != nil {
+				out.LastExitCode = cs.LastState.Terminated.ExitCode
+				out.LastReason = strings.TrimSpace(cs.LastState.Terminated.Reason)
+				out.LastFinishedAt = strings.TrimSpace(cs.LastState.Terminated.FinishedAt)
+			}
 		}
 	}
 	out.Ready = ready
@@ -443,6 +785,8 @@ func checkGHCRTagDigest(ctx context.Context, image string) (digest string, statu
 func deleteCollectorResources(ctx context.Context, username string) error {
 	ns := kubeNamespace()
 	name := collectorResourceNameForUser(username)
+	dataPVCName := name + "-data"
+	configName := name + "-cfg"
 	client, err := kubeHTTPClient()
 	if err != nil {
 		return err
@@ -463,6 +807,43 @@ func deleteCollectorResources(ctx context.Context, username string) error {
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusNotFound && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
 			return fmt.Errorf("kube delete deployment failed: %s", resp.Status)
+		}
+	}
+
+	// PVC (best-effort). Keep it around if deletion fails, to avoid breaking the
+	// Clear action just because storage is temporarily unavailable.
+	{
+		u := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/persistentvolumeclaims/%s?propagationPolicy=Background",
+			url.PathEscape(ns), url.PathEscape(dataPVCName))
+		req, err := kubeRequest(ctx, http.MethodDelete, u, nil)
+		if err != nil {
+			return err
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
+			rlog.Debug("kube delete pvc failed", "status", resp.Status, "pvc", dataPVCName)
+		}
+	}
+
+	// ConfigMap (best-effort).
+	{
+		u := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/configmaps/%s?propagationPolicy=Background",
+			url.PathEscape(ns), url.PathEscape(configName))
+		req, err := kubeRequest(ctx, http.MethodDelete, u, nil)
+		if err != nil {
+			return err
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
+			rlog.Debug("kube delete configmap failed", "status", resp.Status, "configmap", configName)
 		}
 	}
 

@@ -113,6 +113,14 @@ Forward: {
 	SNMPCommunity: "public"
 }
 
+ForwardCollector: {
+	Image: ""
+	PullPolicy: "IfNotPresent"
+	ImagePullSecretName: ""
+	ImagePullSecretNamespace: ""
+	HeapSizeGB: 0
+}
+
 Kubernetes: {
 	ImagePullSecretName: "ghcr-pull"
 	ImagePullSecretNamespace: "skyforge"

@@ -125,6 +125,21 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		imagePullSecretNamespace = "skyforge"
 	}
 
+	forwardCollectorImage := strings.TrimSpace(enc.ForwardCollector.Image)
+	forwardCollectorPullPolicy := strings.TrimSpace(enc.ForwardCollector.PullPolicy)
+	if forwardCollectorPullPolicy == "" {
+		forwardCollectorPullPolicy = "IfNotPresent"
+	}
+	forwardCollectorPullSecretName := strings.TrimSpace(enc.ForwardCollector.ImagePullSecretName)
+	forwardCollectorPullSecretNamespace := strings.TrimSpace(enc.ForwardCollector.ImagePullSecretNamespace)
+	if forwardCollectorPullSecretName == "" {
+		forwardCollectorPullSecretName = imagePullSecretName
+	}
+	if forwardCollectorPullSecretNamespace == "" {
+		forwardCollectorPullSecretNamespace = imagePullSecretNamespace
+	}
+	forwardCollectorHeapSizeGB := enc.ForwardCollector.HeapSizeGB
+
 	netlabC9sGeneratorMode := strings.ToLower(strings.TrimSpace(enc.NetlabGenerator.C9sGeneratorMode))
 	if netlabC9sGeneratorMode == "" {
 		// Default to in-cluster generation for netlab-c9s so it works out of the box without
@@ -287,14 +302,19 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 			}
 			return 30
 		}(),
-		DNSURL:                    dnsURL,
-		DNSAdminUsername:          dnsAdminUsername,
-		DNSUserZoneSuffix:         dnsUserZoneSuffix,
-		TaskWorkerEnabled:         taskWorkerEnabled,
-		ImagePullSecretName:       imagePullSecretName,
-		ImagePullSecretNamespace:  imagePullSecretNamespace,
-		NetlabC9sGeneratorMode:    netlabC9sGeneratorMode,
-		NetlabGeneratorImage:      netlabGeneratorImage,
-		NetlabGeneratorPullPolicy: netlabGeneratorPullPolicy,
+		DNSURL:                                   dnsURL,
+		DNSAdminUsername:                         dnsAdminUsername,
+		DNSUserZoneSuffix:                        dnsUserZoneSuffix,
+		TaskWorkerEnabled:                        taskWorkerEnabled,
+		ImagePullSecretName:                      imagePullSecretName,
+		ImagePullSecretNamespace:                 imagePullSecretNamespace,
+		ForwardCollectorImage:                    forwardCollectorImage,
+		ForwardCollectorPullPolicy:               forwardCollectorPullPolicy,
+		ForwardCollectorImagePullSecretName:      forwardCollectorPullSecretName,
+		ForwardCollectorImagePullSecretNamespace: forwardCollectorPullSecretNamespace,
+		ForwardCollectorHeapSizeGB:               forwardCollectorHeapSizeGB,
+		NetlabC9sGeneratorMode:                   netlabC9sGeneratorMode,
+		NetlabGeneratorImage:                     netlabGeneratorImage,
+		NetlabGeneratorPullPolicy:                netlabGeneratorPullPolicy,
 	}
 }
