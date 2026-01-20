@@ -19,7 +19,7 @@ type netlabC9sLinuxScriptResult struct {
 	Err    error
 }
 
-func runNetlabC9sLinuxScripts(ctx context.Context, ns, topologyOwner string, topologyYAML []byte, log Logger) error {
+func runNetlabC9sLinuxScripts(ctx context.Context, ns, topologyOwner string, topologyYAML []byte, nodeMounts map[string][]c9sFileFromConfigMap, enableSSH bool, log Logger) error {
 	if log == nil {
 		log = noopLogger{}
 	}
@@ -78,20 +78,26 @@ func runNetlabC9sLinuxScripts(ctx context.Context, ns, topologyOwner string, top
 		return err
 	}
 
-	mountRoot := "/tmp/skyforge-c9s/" + topologyOwner
 	scripts := []string{"initial", "routing"}
 
 	sem := make(chan struct{}, 6)
 	var wg sync.WaitGroup
-	results := make(chan netlabC9sLinuxScriptResult, len(linuxNodes)*len(scripts))
+	capacity := len(linuxNodes) * len(scripts)
+	if enableSSH {
+		capacity += len(linuxNodes)
+	}
+	results := make(chan netlabC9sLinuxScriptResult, capacity)
 
 	for _, node := range linuxNodes {
 		node := strings.TrimSpace(node)
 		podName := strings.TrimSpace(podByNode[node])
+		if podName == "" {
+			podName = strings.TrimSpace(podByNode[strings.ToLower(node)])
+		}
+		container := strings.ToLower(strings.TrimSpace(node))
 		if node == "" || podName == "" {
 			continue
 		}
-		container := node // clabernetes uses topologyNode as the main container name
 
 		for _, script := range scripts {
 			script := script
@@ -101,14 +107,75 @@ func runNetlabC9sLinuxScripts(ctx context.Context, ns, topologyOwner string, top
 				sem <- struct{}{}
 				defer func() { <-sem }()
 
-				scriptPath := fmt.Sprintf("%s/node_files/%s/%s", mountRoot, node, script)
-				cmd := fmt.Sprintf("set -e; if [ -f %q ]; then chmod +x %q 2>/dev/null || true; sh %q; fi", scriptPath, scriptPath, scriptPath)
+				// Run from the netlab-generated configmap, not from a mounted file:
+				// clabernetes mounts filesFromConfigMap into the launcher sidecar, not into the linux node container.
+				cmName := ""
+				if nodeMounts != nil {
+					if mounts, ok := nodeMounts[container]; ok {
+						for _, m := range mounts {
+							if strings.TrimSpace(m.ConfigMapName) != "" {
+								cmName = strings.TrimSpace(m.ConfigMapName)
+								break
+							}
+						}
+					}
+				}
+				if cmName == "" {
+					results <- netlabC9sLinuxScriptResult{Node: node, Script: script}
+					return
+				}
+				data, ok, err := kubeGetConfigMap(ctx, ns, cmName)
+				if err != nil || !ok {
+					if err == nil && !ok {
+						err = fmt.Errorf("configmap not found: %s", cmName)
+					}
+					results <- netlabC9sLinuxScriptResult{Node: node, Script: script, Err: err}
+					return
+				}
+				body := strings.TrimSpace(data[script])
+				if body == "" {
+					results <- netlabC9sLinuxScriptResult{Node: node, Script: script}
+					return
+				}
+				cmd := fmt.Sprintf("set -e\ncat > /tmp/skyforge-netlab-%s.sh <<'EOF_SKYFORGE'\n%s\nEOF_SKYFORGE\nchmod +x /tmp/skyforge-netlab-%s.sh 2>/dev/null || true\nsh /tmp/skyforge-netlab-%s.sh\n", script, body, script, script)
 				ctxExec, cancel := context.WithTimeout(ctx, 45*time.Second)
 				defer cancel()
 				stdout, stderr, err := kubeutil.ExecPodShell(ctxExec, kcfg, ns, podName, container, cmd)
 				results <- netlabC9sLinuxScriptResult{
 					Node:   node,
 					Script: script,
+					Stdout: strings.TrimSpace(stdout),
+					Stderr: strings.TrimSpace(stderr),
+					Err:    err,
+				}
+			}()
+		}
+
+		if enableSSH {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+
+				cmd := `set -e
+if command -v apk >/dev/null 2>&1; then
+  apk add --no-cache openssh-server >/dev/null 2>&1 || true
+fi
+mkdir -p /var/run/sshd
+ssh-keygen -A >/dev/null 2>&1 || true
+if [ -f /etc/ssh/sshd_config ]; then
+  grep -q '^PermitRootLogin' /etc/ssh/sshd_config 2>/dev/null || echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config
+  grep -q '^PasswordAuthentication' /etc/ssh/sshd_config 2>/dev/null || echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config
+fi
+/usr/sbin/sshd -D -e >/dev/null 2>&1 &`
+
+				ctxExec, cancel := context.WithTimeout(ctx, 45*time.Second)
+				defer cancel()
+				stdout, stderr, err := kubeutil.ExecPodShell(ctxExec, kcfg, ns, podName, container, cmd)
+				results <- netlabC9sLinuxScriptResult{
+					Node:   node,
+					Script: "ssh",
 					Stdout: strings.TrimSpace(stdout),
 					Stderr: strings.TrimSpace(stderr),
 					Err:    err,

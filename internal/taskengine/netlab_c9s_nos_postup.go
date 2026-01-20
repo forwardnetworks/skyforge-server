@@ -192,13 +192,14 @@ func ensureNetlabC9sEOSSSH(ctx context.Context, kcfg *rest.Config, ns, podName, 
 	script := fmt.Sprintf(`set -eu
 NODE=%q
 command -v FastCli >/dev/null 2>&1 || { echo "FastCli not found; skipping"; exit 0; }
+command -v timeout >/dev/null 2>&1 || { echo "timeout not found; skipping"; exit 0; }
 i=0
 while [ $i -lt 180 ]; do
-  FastCli -p 15 -c "show version" >/dev/null 2>&1 && break
+  timeout -k 2s 5s FastCli -p 15 -c "show version" >/dev/null 2>&1 && break
   sleep 1
   i=$((i+1))
 done
-FastCli -p 15 -c "enable" -c "configure terminal" -c "management ssh" -c "end" -c "write memory" >/dev/null 2>&1 || true
+timeout -k 2s 10s FastCli -p 15 -c "enable" -c "configure terminal" -c "management ssh" -c "end" -c "write memory" >/dev/null 2>&1 || true
 	echo "ssh enabled"
 `, nodeName)
 
@@ -211,13 +212,18 @@ FastCli -p 15 -c "enable" -c "configure terminal" -c "management ssh" -c "end" -
 	// Exec must target the node container.
 	stdout, stderr, err := kubeutil.ExecPodShell(ctxReq, kcfg, ns, podName, nodeName, script)
 	if err != nil {
-		stdout2, stderr2, err2 := kubeutil.ExecPodShell(ctxReq, kcfg, ns, podName, "nos", script)
+		stdout2, stderr2, err2 := kubeutil.ExecPodShell(ctxReq, kcfg, ns, podName, strings.ToLower(nodeName), script)
 		if err2 == nil {
 			stdout, stderr, err = stdout2, stderr2, nil
 		} else {
-			stdout3, stderr3, err3 := kubeutil.ExecPodShell(ctxReq, kcfg, ns, podName, "", script)
+			stdout3, stderr3, err3 := kubeutil.ExecPodShell(ctxReq, kcfg, ns, podName, "nos", script)
 			if err3 == nil {
 				stdout, stderr, err = stdout3, stderr3, nil
+			} else {
+				stdout4, stderr4, err4 := kubeutil.ExecPodShell(ctxReq, kcfg, ns, podName, "", script)
+				if err4 == nil {
+					stdout, stderr, err = stdout4, stderr4, nil
+				}
 			}
 		}
 	}
@@ -256,27 +262,28 @@ func applyNetlabC9sEOSConfigSnippets(ctx context.Context, kcfg *rest.Config, ns,
 	script := fmt.Sprintf(`set -eu
 NODE=%q
 command -v FastCli >/dev/null 2>&1 || { echo "FastCli not found; skipping"; exit 0; }
+command -v timeout >/dev/null 2>&1 || { echo "timeout not found; skipping"; exit 0; }
 try_file() {
   f="$1"
   [ -f "$f" ] || return 1
   # Wait for EOS readiness.
   i=0
   while [ $i -lt 180 ]; do
-    FastCli -p 15 -c "show version" >/dev/null 2>&1 && break
+    timeout -k 2s 5s FastCli -p 15 -c "show version" >/dev/null 2>&1 && break
     sleep 1
     i=$((i+1))
   done
   # Ensure SSH is enabled.
-  FastCli -p 15 -c "enable" -c "configure terminal" -c "management ssh" -c "end" -c "write memory" >/dev/null 2>&1 || true
+  timeout -k 2s 10s FastCli -p 15 -c "enable" -c "configure terminal" -c "management ssh" -c "end" -c "write memory" >/dev/null 2>&1 || true
   # Apply lines (best-effort). Skip comments and "end".
   while IFS= read -r line; do
     line="${line%%$'\r'}"
     case "$line" in
       ""|"!"*|"#"*|"end") continue ;;
     esac
-    FastCli -p 15 -c "enable" -c "configure terminal" -c "$line" >/dev/null 2>&1 || true
+    timeout -k 2s 10s FastCli -p 15 -c "enable" -c "configure terminal" -c "$line" >/dev/null 2>&1 || true
   done < "$f"
-  FastCli -p 15 -c "write memory" >/dev/null 2>&1 || true
+  timeout -k 2s 10s FastCli -p 15 -c "write memory" >/dev/null 2>&1 || true
   echo "applied config snippet: $f"
   return 0
 }
@@ -294,13 +301,18 @@ EOF_SKYFORGE_FILES
 	defer cancel()
 	stdout, stderr, err := kubeutil.ExecPodShell(ctxReq, kcfg, ns, podName, nodeName, script)
 	if err != nil {
-		stdout2, stderr2, err2 := kubeutil.ExecPodShell(ctxReq, kcfg, ns, podName, "nos", script)
+		stdout2, stderr2, err2 := kubeutil.ExecPodShell(ctxReq, kcfg, ns, podName, strings.ToLower(nodeName), script)
 		if err2 == nil {
 			stdout, stderr, err = stdout2, stderr2, nil
 		} else {
-			stdout3, stderr3, err3 := kubeutil.ExecPodShell(ctxReq, kcfg, ns, podName, "", script)
+			stdout3, stderr3, err3 := kubeutil.ExecPodShell(ctxReq, kcfg, ns, podName, "nos", script)
 			if err3 == nil {
 				stdout, stderr, err = stdout3, stderr3, nil
+			} else {
+				stdout4, stderr4, err4 := kubeutil.ExecPodShell(ctxReq, kcfg, ns, podName, "", script)
+				if err4 == nil {
+					stdout, stderr, err = stdout4, stderr4, nil
+				}
 			}
 		}
 	}

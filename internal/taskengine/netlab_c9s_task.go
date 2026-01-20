@@ -230,18 +230,19 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		return err
 	}
 
-	// Ensure Arista cEOS nodes have SSH enabled by injecting `management ssh` into
-	// their startup-config (preferred over post-start CLI exec hacks).
-	if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.eos-ssh", func() error {
-		var err error
-		nodeMounts, err = ensureNetlabC9sEOSStartupSSH(ctx, ns, topologyName, clabYAML, nodeMounts, log)
-		return err
-	}); err != nil {
+	topologyBytes, nodeMounts, nodeNameMapping, err := prepareC9sTopologyForDeploy(spec.TaskID, topologyName, labName, clabYAML, nodeMounts, e, log)
+	if err != nil {
 		return err
 	}
 
-	topologyBytes, nodeMounts, nodeNameMapping, err := prepareC9sTopologyForDeploy(spec.TaskID, topologyName, labName, clabYAML, nodeMounts, e, log)
-	if err != nil {
+	// Prefer startup-config injection for EOS/cEOS (instead of post-start exec hacks).
+	// This keeps netlab as the source-of-truth but lets Skyforge adapt the generated output
+	// for clabernetes-native execution (files are mounted into the launcher, not the NOS container).
+	if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.eos-startup-config", func() error {
+		var err error
+		topologyBytes, nodeMounts, err = injectNetlabC9sEOSStartupConfig(ctx, ns, topologyName, topologyBytes, nodeMounts, log)
+		return err
+	}); err != nil {
 		return err
 	}
 
@@ -265,15 +266,10 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	// Run netlab-generated Linux configuration scripts (initial + routing) directly
 	// inside the Linux pods. This mirrors netlab's "faster without Ansible" workflow.
 	if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.linux-scripts", func() error {
-		return runNetlabC9sLinuxScripts(ctx, ns, topologyName, topologyBytes, log)
-	}); err != nil {
-		return err
-	}
-
-	// Apply netlab-generated NOS configuration snippets (cfglets/modules) for supported
-	// network OS nodes using Kubernetes exec (Go-only; no Ansible).
-	if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.nos-postup", func() error {
-		return runNetlabC9sNOSPostUp(ctx, ns, topologyName, topologyBytes, nodeMounts, log)
+		// Enable SSH on linux hosts by default so they can be used as Forward CLI endpoints.
+		// Can be disabled per-run via env.
+		enableLinuxSSH := envBool(spec.Environment, "SKYFORGE_NETLAB_C9S_LINUX_ENABLE_SSH", true)
+		return runNetlabC9sLinuxScripts(ctx, ns, topologyName, topologyBytes, nodeMounts, enableLinuxSSH, log)
 	}); err != nil {
 		return err
 	}
