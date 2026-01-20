@@ -19,6 +19,32 @@ type netlabC9sLinuxScriptResult struct {
 	Err    error
 }
 
+func prepareNetlabC9sLinuxInterfaces(ctx context.Context, ns, podName, container string) (stdout, stderr string, err error) {
+	cmd := `set -e
+if ! command -v ip >/dev/null 2>&1; then
+  echo "ip command not found; skipping interface prep"
+  exit 0
+fi
+
+# Multus typically attaches secondary interfaces as net1, net2, ...
+# Netlab-generated scripts expect eth1, eth2, ...
+for i in $(seq 1 32); do
+  if ip link show dev "eth${i}" >/dev/null 2>&1; then
+    continue
+  fi
+  if ip link show dev "net${i}" >/dev/null 2>&1; then
+    ip link set dev "net${i}" down >/dev/null 2>&1 || true
+    ip link set dev "net${i}" name "eth${i}" >/dev/null 2>&1 || true
+  fi
+done
+`
+	kcfg, err := kubeutil.InClusterConfig()
+	if err != nil {
+		return "", "", err
+	}
+	return kubeutil.ExecPodShell(ctx, kcfg, ns, podName, container, cmd)
+}
+
 func runNetlabC9sLinuxScripts(ctx context.Context, ns, topologyOwner string, topologyYAML []byte, nodeMounts map[string][]c9sFileFromConfigMap, enableSSH bool, log Logger) error {
 	if log == nil {
 		log = noopLogger{}
@@ -98,6 +124,25 @@ func runNetlabC9sLinuxScripts(ctx context.Context, ns, topologyOwner string, top
 		if node == "" || podName == "" {
 			continue
 		}
+
+		// Prepare interface names for netlab scripts (best-effort).
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			ctxExec, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			stdout, stderr, err := prepareNetlabC9sLinuxInterfaces(ctxExec, ns, podName, container)
+			results <- netlabC9sLinuxScriptResult{
+				Node:   node,
+				Script: "prep-interfaces",
+				Stdout: strings.TrimSpace(stdout),
+				Stderr: strings.TrimSpace(stderr),
+				Err:    err,
+			}
+		}()
 
 		for _, script := range scripts {
 			script := script
@@ -187,13 +232,10 @@ fi
 	wg.Wait()
 	close(results)
 
-	var firstErr error
+	// Linux hosts are nice-to-have. We log failures but do not fail the overall run.
 	for res := range results {
 		if res.Err != nil {
 			log.Errorf("netlab linux script failed node=%s script=%s err=%v stderr=%s", res.Node, res.Script, res.Err, res.Stderr)
-			if firstErr == nil {
-				firstErr = fmt.Errorf("linux script failed for %s (%s): %w", res.Node, res.Script, res.Err)
-			}
 			continue
 		}
 		if res.Stdout != "" {
@@ -205,5 +247,5 @@ fi
 			log.Infof("netlab linux script node=%s script=%s stderr: %s", res.Node, res.Script, res.Stderr)
 		}
 	}
-	return firstErr
+	return nil
 }
