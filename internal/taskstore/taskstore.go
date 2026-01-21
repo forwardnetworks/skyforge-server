@@ -345,7 +345,9 @@ func AppendTaskLog(ctx context.Context, db *sql.DB, taskID int, stream string, o
 	}
 	_, err := db.ExecContext(ctx, `INSERT INTO sf_task_logs (task_id, stream, output) VALUES ($1,$2,$3)`, taskID, stream, output)
 	if err == nil {
-		publishTaskUpdate(ctx, db, taskID)
+		// Only notify the task stream (logs), not the dashboard.
+		// Dashboard doesn't show logs and shouldn't reload on every log line.
+		_ = tasknotify.NotifyTaskUpdate(ctx, db, taskID)
 	}
 	return err
 }

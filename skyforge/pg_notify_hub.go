@@ -54,7 +54,7 @@ func ensurePGNotifyHub(db *sql.DB) *pgNotifyHub {
 }
 
 func (h *pgNotifyHub) subscribe(ctx context.Context) <-chan pgNotification {
-	ch := make(chan pgNotification, 32)
+	ch := make(chan pgNotification, 256)
 	h.mu.Lock()
 	h.subs[ch] = struct{}{}
 	h.mu.Unlock()

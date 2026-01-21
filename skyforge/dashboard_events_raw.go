@@ -305,39 +305,56 @@ func (s *Service) DashboardEvents(w http.ResponseWriter, req *http.Request) {
 	stream.comment("ok")
 	stream.flush()
 
+	// Subscribe to updates *before* loading data to avoid race conditions.
+	// We want to trigger a reload on 'dashboard' events.
+	hub := ensurePGNotifyHub(s.db)
+	updates := hub.subscribe(ctx)
+
 	lastPayload := ""
 	id := int64(0)
 
+	// Initial load
+	reload := true
+
 	for {
-		snap, err := loadDashboardSnapshot(ctx, s, claims)
-		if err != nil {
-			stream.comment("retry")
-			stream.flush()
-		} else {
-			payloadBytes, _ := json.Marshal(snap)
-			payload := strings.TrimSpace(string(payloadBytes))
-			if payload == "" {
+		if reload {
+			snap, err := loadDashboardSnapshot(ctx, s, claims)
+			if err != nil {
 				stream.comment("retry")
 				stream.flush()
-			} else if payload != lastPayload {
-				lastPayload = payload
-				id++
-				stream.event(id, skyforgecore.SSEEventSnapshot, []byte(payload))
-				stream.flush()
 			} else {
-				stream.comment("ping")
-				stream.flush()
+				payloadBytes, _ := json.Marshal(snap)
+				payload := strings.TrimSpace(string(payloadBytes))
+				if payload == "" {
+					stream.comment("retry")
+					stream.flush()
+				} else if payload != lastPayload {
+					lastPayload = payload
+					id++
+					stream.event(id, skyforgecore.SSEEventSnapshot, []byte(payload))
+					stream.flush()
+				}
 			}
+			reload = false
 		}
 
-		// Block until a dashboard update arrives (or periodically send keep-alives).
-		waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		updated := waitForDashboardUpdateSignal(waitCtx, s.db)
-		cancel()
-		if updated {
-			continue
+		// Wait for update or keep-alive
+		select {
+		case <-ctx.Done():
+			return
+		case n, ok := <-updates:
+			if !ok {
+				return
+			}
+			// Filter for relevant channels.
+			// We reload on dashboard signals, task signals (status changes), and deployment events.
+			switch n.Channel {
+			case pgNotifyDashboardChannel, pgNotifyTasksChannel, pgNotifyDeploymentEventsChan:
+				reload = true
+			}
+		case <-time.After(30 * time.Second):
+			stream.comment("ping")
+			stream.flush()
 		}
-		stream.comment("ping")
-		stream.flush()
 	}
 }
