@@ -232,12 +232,13 @@ NODE=%q
 command -v FastCli >/dev/null 2>&1 || { echo "FastCli not found; skipping"; exit 0; }
 command -v timeout >/dev/null 2>&1 || { echo "timeout not found; skipping"; exit 0; }
 i=0
-while [ $i -lt 180 ]; do
+	while [ $i -lt 180 ]; do
   timeout -k 2s 5s FastCli -p 15 -c "show version" >/dev/null 2>&1 && break
   sleep 1
   i=$((i+1))
 done
-	timeout -k 2s 10s FastCli -p 15 -c "enable" -c "configure terminal" -c "management ssh" -c "end" -c "write memory" >/dev/null 2>&1 || true
+# Ensure SSH service is enabled.
+timeout -k 2s 15s FastCli -p 15 -c "enable" -c "configure terminal" -c "management ssh" -c "no shutdown" -c "end" -c "write memory" >/dev/null 2>&1 || true
 	echo "ssh enabled"
 `, nodeName)
 
@@ -319,8 +320,8 @@ try_file() {
     sleep 1
     i=$((i+1))
   done
-  # Ensure SSH is enabled.
-  timeout -k 2s 10s FastCli -p 15 -c "enable" -c "configure terminal" -c "management ssh" -c "end" -c "write memory" >/dev/null 2>&1 || true
+  # Ensure SSH service is enabled.
+  timeout -k 2s 15s FastCli -p 15 -c "enable" -c "configure terminal" -c "management ssh" -c "no shutdown" -c "end" -c "write memory" >/dev/null 2>&1 || true
   # Apply lines (best-effort). Skip comments and "end".
   while IFS= read -r line; do
     line="${line%%$'\r'}"
