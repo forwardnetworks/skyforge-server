@@ -2,6 +2,7 @@ package taskengine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"sort"
@@ -236,11 +237,12 @@ while [ $i -lt 180 ]; do
   sleep 1
   i=$((i+1))
 done
-timeout -k 2s 10s FastCli -p 15 -c "enable" -c "configure terminal" -c "management ssh" -c "end" -c "write memory" >/dev/null 2>&1 || true
+	timeout -k 2s 10s FastCli -p 15 -c "enable" -c "configure terminal" -c "management ssh" -c "end" -c "write memory" >/dev/null 2>&1 || true
 	echo "ssh enabled"
 `, nodeName)
 
-	ctxReq, cancel := context.WithTimeout(ctx, 60*time.Second)
+	// Best-effort; EOS can take a while to become CLI-ready.
+	ctxReq, cancel := context.WithTimeout(ctx, 4*time.Minute)
 	defer cancel()
 	// Native clabernetes uses a multi-container pod:
 	// - node container (named after the node, e.g. "l3")
@@ -269,6 +271,13 @@ timeout -k 2s 10s FastCli -p 15 -c "enable" -c "configure terminal" -c "manageme
 	}
 	if strings.TrimSpace(stderr) != "" {
 		log.Infof("c9s: eos ssh %s stderr:\n%s", nodeName, strings.TrimSpace(stderr))
+	}
+	// Best-effort: if we timed out waiting for the CLI, don't fail the whole post-up.
+	// We'll still have the startup-config injection and/or the next run.
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "context deadline exceeded") {
+			return nil
+		}
 	}
 	return err
 }
