@@ -80,14 +80,15 @@ func TestInjectEOSManagementSSH_NormalizesCRLF(t *testing.T) {
 	}
 }
 
-func TestInjectEOSDefaultSSHUser_SkipsWhenUserExists(t *testing.T) {
+func TestInjectEOSDefaultSSHUser_InsertsMissingAuthLinesEvenWithUser(t *testing.T) {
 	in := "username bob privilege 15 secret bob\nend\n"
 	out, changed := injectEOSDefaultSSHUser(in)
-	if changed {
-		t.Fatalf("expected unchanged")
+	if !changed {
+		t.Fatalf("expected changed")
 	}
-	if out != in {
-		t.Fatalf("expected output to equal input")
+	want := "username bob privilege 15 secret bob\nenable secret admin\naaa authentication login default local\naaa authorization exec default local\nend\n"
+	if out != want {
+		t.Fatalf("unexpected output:\n%s", out)
 	}
 }
 
@@ -97,7 +98,7 @@ func TestInjectEOSDefaultSSHUser_InsertsBeforeEnd(t *testing.T) {
 	if !changed {
 		t.Fatalf("expected changed")
 	}
-	want := "hostname L1\n!\nusername admin privilege 15 secret admin\nend\n"
+	want := "hostname L1\n!\nusername admin privilege 15 secret admin\nenable secret admin\naaa authentication login default local\naaa authorization exec default local\nend\n"
 	if out != want {
 		t.Fatalf("unexpected output:\n%s", out)
 	}
@@ -109,7 +110,7 @@ func TestInjectEOSDefaultSSHUser_AppendsWhenNoEnd(t *testing.T) {
 	if !changed {
 		t.Fatalf("expected changed")
 	}
-	want := "hostname L1\n!\nusername admin privilege 15 secret admin\n"
+	want := "hostname L1\n!\nusername admin privilege 15 secret admin\nenable secret admin\naaa authentication login default local\naaa authorization exec default local\n"
 	if out != want {
 		t.Fatalf("unexpected output:\n%s", out)
 	}

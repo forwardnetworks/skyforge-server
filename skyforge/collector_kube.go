@@ -363,12 +363,16 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, f
 									// IMPORTANT: Do not pre-create an empty customer_key.pb. The collector
 									// generates it and expects it to be non-empty; an empty file causes
 									// secret encryption failures ("Empty key").
-									"set -e; mkdir -p /persist; chown -R 1000:1000 /persist; chmod 700 /persist; if [ -f /persist/customer_key.pb ] && [ ! -s /persist/customer_key.pb ]; then rm -f /persist/customer_key.pb; fi;",
+									"set -e; mkdir -p /persist; chown -R 1000:1000 /persist; chmod 700 /persist; if [ -f /persist/customer_key.pb ] && [ ! -s /persist/customer_key.pb ]; then rm -f /persist/customer_key.pb; fi; mkdir -p /generated; chown -R 1000:1000 /generated;",
 								},
 								"volumeMounts": []any{
 									map[string]any{
 										"name":      "collector-data",
 										"mountPath": "/persist",
+									},
+									map[string]any{
+										"name":      "collector-generated",
+										"mountPath": "/generated",
 									},
 								},
 							},
@@ -376,6 +380,10 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, f
 						"volumes": []any{
 							map[string]any{
 								"name":     "scratch",
+								"emptyDir": map[string]any{},
+							},
+							map[string]any{
+								"name":     "collector-generated",
 								"emptyDir": map[string]any{},
 							},
 							map[string]any{
@@ -405,6 +413,10 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, f
 									map[string]any{
 										"name":      "scratch",
 										"mountPath": "/scratch",
+									},
+									map[string]any{
+										"name":      "collector-generated",
+										"mountPath": "/collector/generated",
 									},
 									map[string]any{
 										"name":      "collector-data",
@@ -479,12 +491,16 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, f
 										"runAsGroup": 0,
 									},
 									"args": []string{
-										"set -e; mkdir -p /persist; chown -R 1000:1000 /persist; chmod 700 /persist; if [ -f /persist/customer_key.pb ] && [ ! -s /persist/customer_key.pb ]; then rm -f /persist/customer_key.pb; fi;",
+										"set -e; mkdir -p /persist; chown -R 1000:1000 /persist; chmod 700 /persist; if [ -f /persist/customer_key.pb ] && [ ! -s /persist/customer_key.pb ]; then rm -f /persist/customer_key.pb; fi; mkdir -p /generated; chown -R 1000:1000 /generated;",
 									},
 									"volumeMounts": []any{
 										map[string]any{
 											"name":      "collector-data",
 											"mountPath": "/persist",
+										},
+										map[string]any{
+											"name":      "collector-generated",
+											"mountPath": "/generated",
 										},
 									},
 								},
@@ -492,6 +508,10 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, f
 							"volumes": []any{
 								map[string]any{
 									"name":     "scratch",
+									"emptyDir": map[string]any{},
+								},
+								map[string]any{
+									"name":     "collector-generated",
 									"emptyDir": map[string]any{},
 								},
 								map[string]any{
@@ -521,6 +541,10 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, f
 										map[string]any{
 											"name":      "scratch",
 											"mountPath": "/scratch",
+										},
+										map[string]any{
+											"name":      "collector-generated",
+											"mountPath": "/collector/generated",
 										},
 										map[string]any{
 											"name":      "collector-data",
@@ -774,7 +798,8 @@ func getCollectorClientdLog(ctx context.Context, namespace, podName string, tail
 		return "", err
 	}
 
-	script := fmt.Sprintf(`set -euo pipefail
+	// NOTE: execPodShell uses `sh -lc`, so don't rely on bashisms like `pipefail`.
+	script := fmt.Sprintf(`set -eu
 if [ -f /scratch/clientd.log ]; then
   tail -n %d /scratch/clientd.log
   exit 0

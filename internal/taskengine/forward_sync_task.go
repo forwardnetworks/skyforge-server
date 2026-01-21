@@ -116,7 +116,9 @@ func (e *Engine) runForwardSyncTask(ctx context.Context, pc *workspaceContext, d
 		return fmt.Errorf("empty topology artifact")
 	}
 
-	n, err := e.syncForwardTopologyGraphDevices(ctx, taskID, pc, dep, &graph)
+	n, err := e.syncForwardTopologyGraphDevices(ctx, taskID, pc, dep, &graph, forwardSyncOptions{
+		StartCollection: true,
+	})
 	if err != nil {
 		return err
 	}

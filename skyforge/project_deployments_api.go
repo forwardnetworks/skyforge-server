@@ -705,18 +705,15 @@ func (s *Service) DeleteWorkspaceDeployment(ctx context.Context, id, deploymentI
 		if raw, ok := cfgAny[forwardNetworkIDKey]; ok {
 			networkID := strings.TrimSpace(fmt.Sprintf("%v", raw))
 			if networkID != "" {
-				forwardCfg, err := s.forwardConfigForWorkspace(ctx, pc.workspace.ID)
-				if err != nil {
-					return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward config").Err()
-				}
-				if forwardCfg != nil {
-					client, err := newForwardClient(*forwardCfg)
-					if err != nil {
-						return nil, errs.B().Code(errs.Unavailable).Msg("failed to init Forward client").Err()
-					}
-					if err := forwardDeleteNetwork(ctx, client, networkID); err != nil {
-						return nil, errs.B().Code(errs.Unavailable).Msg("failed to delete Forward network").Err()
-					}
+				// Forward config is user-scoped (Collector sidebar), not workspace-scoped.
+				forwardCfg, err := s.forwardConfigForUser(ctx, pc.claims.Username)
+				if err != nil || forwardCfg == nil {
+					// Best-effort: do not block deployment deletion on Forward cleanup.
+					log.Printf("deployments delete forward cleanup skipped: %v", err)
+				} else if client, err := newForwardClient(*forwardCfg); err != nil {
+					log.Printf("deployments delete forward cleanup skipped: %v", err)
+				} else if err := forwardDeleteNetwork(ctx, client, networkID); err != nil {
+					log.Printf("deployments delete forward cleanup skipped: %v", err)
 				}
 			}
 		}

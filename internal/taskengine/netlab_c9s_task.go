@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"path"
 	"strings"
 	"time"
@@ -284,14 +285,49 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		}
 	} else if graph != nil {
 		if dep, err := e.loadDeployment(ctx, spec.WorkspaceCtx.workspace.ID, strings.TrimSpace(spec.DeploymentID)); err == nil && dep != nil {
-			if _, err := e.syncForwardTopologyGraphDevices(ctx, spec.TaskID, spec.WorkspaceCtx, dep, graph); err != nil && log != nil {
+			// Import classic devices into Forward as soon as we have management IPs so Forward
+			// can start its own reachability checks early. Do not start collection yet; it
+			// should begin only after post-up config has been applied.
+			if _, err := e.syncForwardTopologyGraphDevices(ctx, spec.TaskID, spec.WorkspaceCtx, dep, graph, forwardSyncOptions{
+				StartCollection: false,
+			}); err != nil && log != nil {
 				log.Infof("forward sync skipped: %v", err)
 			}
+
+			// Apply post-up config for supported NOS kinds (cfglets, SSH enable, etc).
+			// This must happen before Forward collection starts.
+			if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.nos-postup", func() error {
+				return runNetlabC9sNOSPostUp(ctx, ns, topologyName, topologyBytes, nodeMounts, log)
+			}); err != nil && log != nil {
+				// Best-effort: lab is still usable even if cfglets fail.
+				log.Infof("c9s post-up config failed (ignored): %v", err)
+			}
+
+			// Wait for SSH readiness before starting Forward collection.
+			// Some NOSs (notably cEOS) take additional time after the topology reports "ready"
+			// before SSH is actually reachable.
+			if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "forward.ready", func() error {
+				timeoutSeconds := envInt(spec.Environment, "SKYFORGE_FORWARD_SYNC_WAIT_SECONDS", 180)
+				if timeoutSeconds <= 0 {
+					return nil
+				}
+				return waitForForwardSSHReady(ctx, spec.TaskID, e, graph, time.Duration(timeoutSeconds)*time.Second, log)
+			}); err != nil {
+				if log != nil {
+					log.Infof("forward sync skipped: %v", err)
+				}
+				goto artifacts
+			}
+
+			_ = taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "forward.collection.start", func() error {
+				return e.startForwardCollectionForDeployment(ctx, spec.TaskID, spec.WorkspaceCtx, dep)
+			})
 		}
 	}
 
 	// Store a bundle of generated artifacts in object storage for browsing and debugging.
 	// This is best-effort and should never fail the deployment run.
+artifacts:
 	_ = taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.artifacts", func() error {
 		err := storeNetlabC9sArtifacts(ctx, e.cfg, netlabC9sArtifactsSpec{
 			TaskID:        spec.TaskID,
@@ -310,6 +346,79 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		return nil
 	})
 
+	return nil
+}
+
+func envInt(env map[string]string, key string, def int) int {
+	raw := strings.TrimSpace(envString(env, key))
+	if raw == "" {
+		return def
+	}
+	var n int
+	_, err := fmt.Sscanf(raw, "%d", &n)
+	if err != nil {
+		return def
+	}
+	return n
+}
+
+func waitForForwardSSHReady(ctx context.Context, taskID int, e *Engine, graph *TopologyGraph, timeout time.Duration, log Logger) error {
+	if graph == nil {
+		return nil
+	}
+	if timeout <= 0 {
+		return nil
+	}
+
+	// Only gate on NOS nodes we intend to sync into Forward. Linux hosts are handled
+	// separately (as endpoints) and should not block network creation.
+	targets := make([]TopologyNode, 0, len(graph.Nodes))
+	for _, n := range graph.Nodes {
+		kind := strings.ToLower(strings.TrimSpace(n.Kind))
+		if kind == "" {
+			// If kind is missing, assume it is a NOS node.
+			kind = "unknown"
+		}
+		if kind == "linux" {
+			continue
+		}
+		if strings.TrimSpace(n.MgmtIP) == "" {
+			continue
+		}
+		targets = append(targets, n)
+	}
+	if len(targets) == 0 {
+		return nil
+	}
+
+	deadline := time.Now().Add(timeout)
+	for _, node := range targets {
+		node := node
+		for {
+			if time.Now().After(deadline) {
+				return fmt.Errorf("forward sync wait timed out waiting for ssh on %s (%s)", strings.TrimSpace(node.Label), strings.TrimSpace(node.MgmtIP))
+			}
+			if taskID > 0 && e != nil {
+				canceled, _ := e.taskCanceled(ctx, taskID)
+				if canceled {
+					return fmt.Errorf("forward sync wait canceled")
+				}
+			}
+
+			ctxDial, cancel := context.WithTimeout(ctx, 2*time.Second)
+			conn, err := (&net.Dialer{}).DialContext(ctxDial, "tcp", net.JoinHostPort(strings.TrimSpace(node.MgmtIP), "22"))
+			cancel()
+			if err == nil && conn != nil {
+				_ = conn.Close()
+				break
+			}
+			time.Sleep(2 * time.Second)
+		}
+	}
+
+	if log != nil {
+		log.Infof("forward ssh readiness ok: nodes=%d", len(targets))
+	}
 	return nil
 }
 
@@ -700,18 +809,40 @@ func injectEOSManagementSSH(cfg string) (out string, changed bool) {
 func injectEOSDefaultSSHUser(cfg string) (out string, changed bool) {
 	cfg = strings.ReplaceAll(cfg, "\r\n", "\n")
 	lower := strings.ToLower(cfg)
-	// If the user already defined at least one local user, don't override.
-	if strings.Contains(lower, "\nusername ") || strings.HasPrefix(strings.TrimSpace(lower), "username ") {
+	needUser := !(strings.Contains(lower, "\nusername ") || strings.HasPrefix(strings.TrimSpace(lower), "username "))
+	needEnableSecret := !strings.Contains(lower, "\nenable secret")
+	needAAALogin := !strings.Contains(lower, "\naaa authentication login")
+	needAAAExec := !strings.Contains(lower, "\naaa authorization exec")
+
+	if !needUser && !needEnableSecret && !needAAALogin && !needAAAExec {
 		return cfg, false
 	}
 
-	const userLine = "username admin privilege 15 secret admin"
+	linesToInsert := make([]string, 0, 4)
+	// Default, predictable access for in-cluster labs. If a template supplies any of
+	// these, we leave it alone.
+	if needUser {
+		linesToInsert = append(linesToInsert, "username admin privilege 15 secret admin")
+	}
+	if needEnableSecret {
+		linesToInsert = append(linesToInsert, "enable secret admin")
+	}
+	if needAAALogin {
+		linesToInsert = append(linesToInsert, "aaa authentication login default local")
+	}
+	if needAAAExec {
+		linesToInsert = append(linesToInsert, "aaa authorization exec default local")
+	}
+	if len(linesToInsert) == 0 {
+		return cfg, false
+	}
+
 	lines := strings.Split(cfg, "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
 		if strings.TrimSpace(strings.ToLower(lines[i])) == "end" {
-			outLines := make([]string, 0, len(lines)+1)
+			outLines := make([]string, 0, len(lines)+len(linesToInsert))
 			outLines = append(outLines, lines[:i]...)
-			outLines = append(outLines, userLine)
+			outLines = append(outLines, linesToInsert...)
 			outLines = append(outLines, lines[i:]...)
 			out = strings.Join(outLines, "\n")
 			if !strings.HasSuffix(out, "\n") {
@@ -724,5 +855,5 @@ func injectEOSDefaultSSHUser(cfg string) (out string, changed bool) {
 	if !strings.HasSuffix(cfg, "\n") {
 		cfg += "\n"
 	}
-	return cfg + userLine + "\n", true
+	return cfg + strings.Join(linesToInsert, "\n") + "\n", true
 }

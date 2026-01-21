@@ -6,6 +6,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"encore.app/internal/kubeutil"
@@ -56,7 +57,12 @@ func runNetlabC9sNOSPostUp(ctx context.Context, ns, topologyName string, topolog
 		return err
 	}
 
-	// Apply post-up config for supported NOS kinds (start with EOS/cEOS).
+	type workItem struct {
+		nodeName string
+		kind     string
+		podName  string
+	}
+	work := make([]workItem, 0)
 	for node, nodeAny := range nodes {
 		nodeName := strings.TrimSpace(fmt.Sprintf("%v", node))
 		cfg, ok := nodeAny.(map[string]any)
@@ -72,21 +78,52 @@ func runNetlabC9sNOSPostUp(ctx context.Context, ns, topologyName string, topolog
 			log.Infof("c9s: post-up eos config skipped (pod not found): %s", nodeName)
 			continue
 		}
-		configFiles := pickNetlabC9sEOSConfigSnippets(topologyName, nodeName, nodeMounts[nodeName])
-		if len(configFiles) == 0 {
-			log.Infof("c9s: post-up eos config skipped (no config snippet found): %s", nodeName)
-			// Still try to enable SSH so Forward can connect even if we have no cfglets.
-			if err := ensureNetlabC9sEOSSSH(ctx, kcfg, ns, podName, nodeName, log); err != nil {
-				log.Infof("c9s: eos ssh enable failed for %s: %v", nodeName, err)
-			}
-			continue
-		}
-
-		if err := applyNetlabC9sEOSConfigSnippets(ctx, kcfg, ns, podName, nodeName, configFiles, log); err != nil {
-			// Best-effort: do not fail the run if a single node fails to apply cfglets.
-			log.Infof("c9s: post-up eos config failed for %s: %v", nodeName, err)
-		}
+		work = append(work, workItem{nodeName: nodeName, kind: kind, podName: podName})
 	}
+
+	if len(work) == 0 {
+		return nil
+	}
+
+	log.Infof("c9s: post-up config starting: nodes=%d", len(work))
+
+	sem := make(chan struct{}, 6)
+	var wg sync.WaitGroup
+	var firstErr error
+	var firstErrMu sync.Mutex
+
+	for _, item := range work {
+		item := item
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			start := time.Now()
+			configFiles := pickNetlabC9sEOSConfigSnippets(topologyName, item.nodeName, nodeMounts[item.nodeName])
+			if len(configFiles) == 0 {
+				log.Infof("c9s: post-up eos config skipped (no config snippet found): %s", item.nodeName)
+			} else {
+				if err := applyNetlabC9sEOSConfigSnippets(ctx, kcfg, ns, item.podName, item.nodeName, configFiles, log); err != nil {
+					log.Infof("c9s: post-up eos config failed for %s: %v", item.nodeName, err)
+					firstErrMu.Lock()
+					if firstErr == nil {
+						firstErr = err
+					}
+					firstErrMu.Unlock()
+				} else {
+					log.Infof("c9s: post-up eos config ok: node=%s files=%d elapsed=%s", item.nodeName, len(configFiles), time.Since(start).Truncate(100*time.Millisecond))
+				}
+			}
+
+			// Ensure SSH is enabled (best-effort) so Forward can connect.
+			if err := ensureNetlabC9sEOSSSH(ctx, kcfg, ns, item.podName, item.nodeName, log); err != nil {
+				log.Infof("c9s: eos ssh enable failed for %s: %v", item.nodeName, err)
+			}
+		}()
+	}
+	wg.Wait()
 
 	return nil
 }

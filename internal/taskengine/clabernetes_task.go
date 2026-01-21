@@ -154,11 +154,12 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		}
 		connectivity := strings.ToLower(envString(spec.Environment, "SKYFORGE_CLABERNETES_CONNECTIVITY"))
 		if connectivity == "" {
-			// Default to Multus connectivity; VXLAN is treated as legacy.
-			connectivity = "multus"
+			// Default to VXLAN to support cross-node L2 adjacency.
+			// (Multus bridge mode is node-local and cannot provide cross-node L2.)
+			connectivity = "vxlan"
 		}
-		if connectivity == "vxlan" {
-			log.Infof("Clabernetes connectivity=vxlan requested (legacy); prefer multus")
+		if connectivity == "multus" {
+			return fmt.Errorf("clabernetes connectivity=multus is not supported")
 		}
 		nativeMode := envBool(spec.Environment, "SKYFORGE_CLABERNETES_NATIVE_MODE", true)
 		hostNetwork := envBool(spec.Environment, "SKYFORGE_CLABERNETES_HOST_NETWORK", false)

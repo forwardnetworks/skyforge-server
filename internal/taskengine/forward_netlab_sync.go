@@ -442,7 +442,10 @@ func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *work
 	if jumpUser == "" {
 		jumpUser = strings.TrimSpace(pc.claims.Username)
 	}
-	if jumpServerID == "" && jumpHost != "" && jumpKey != "" && jumpUser != "" {
+	// Only attach a jump server for BYOS-style deployments. In-cluster deployments
+	// (netlab-c9s/clabernetes) should be reached directly by the in-cluster collector.
+	allowJump := dep != nil && strings.ToLower(strings.TrimSpace(dep.Type)) != "netlab-c9s" && strings.ToLower(strings.TrimSpace(dep.Type)) != "clabernetes"
+	if allowJump && jumpServerID == "" && jumpHost != "" && jumpKey != "" && jumpUser != "" {
 		jump, err := forwardCreateJumpServer(ctx, client, networkID, jumpHost, jumpUser, jumpKey, jumpCert)
 		if err != nil {
 			log.Printf("forward jump server skipped: %v", err)
@@ -459,6 +462,41 @@ func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *work
 		}
 	}
 	return cfgAny, nil
+}
+
+func (e *Engine) startForwardCollectionForDeployment(ctx context.Context, taskID int, pc *workspaceContext, dep *WorkspaceDeployment) error {
+	if e == nil || pc == nil || dep == nil {
+		return nil
+	}
+	cfgAny, err := e.ensureForwardNetworkForDeployment(ctx, pc, dep)
+	if err != nil || cfgAny == nil {
+		return err
+	}
+	rawID, ok := cfgAny[forwardNetworkIDKey]
+	if !ok || rawID == nil {
+		return nil
+	}
+	networkID := strings.TrimSpace(fmt.Sprintf("%v", rawID))
+	if networkID == "" {
+		return nil
+	}
+	forwardCfg, err := e.forwardConfigForUser(ctx, pc.claims.Username)
+	if err != nil || forwardCfg == nil {
+		return err
+	}
+	client, err := newForwardClient(*forwardCfg)
+	if err != nil {
+		return err
+	}
+	if err := forwardStartCollection(ctx, client, networkID); err != nil {
+		return err
+	}
+	if taskID > 0 {
+		_ = taskstore.AppendTaskEvent(context.Background(), e.db, taskID, "forward.collection.started", map[string]any{
+			"networkId": networkID,
+		})
+	}
+	return nil
 }
 
 func sanitizeCredentialComponent(raw string) string {
@@ -533,6 +571,13 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 		credentialBase = strings.TrimSpace(getString(forwardNetworkNameKey))
 	}
 	jumpServerID := getString(forwardJumpServerIDKey)
+	// Never use a jump server for in-cluster deployments.
+	if dep != nil {
+		t := strings.ToLower(strings.TrimSpace(dep.Type))
+		if t == "netlab-c9s" || t == "clabernetes" {
+			jumpServerID = ""
+		}
+	}
 	snmpCredentialID := getString(forwardSnmpCredentialIDKey)
 	forwardTypes := e.forwardDeviceTypes(ctx)
 
@@ -640,7 +685,6 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 			Name:                     name,
 			Type:                     forwardType,
 			Host:                     mgmt,
-			Port:                     22,
 			CliCredentialID:          cliCredentialID,
 			SnmpCredentialID:         snmpCredentialID,
 			JumpServerID:             jumpServerID,
@@ -719,7 +763,11 @@ func forwardDefaultCredentialForKind(kind string) (username, password string, ok
 	}
 }
 
-func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int, pc *workspaceContext, dep *WorkspaceDeployment, graph *TopologyGraph) (int, error) {
+type forwardSyncOptions struct {
+	StartCollection bool
+}
+
+func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int, pc *workspaceContext, dep *WorkspaceDeployment, graph *TopologyGraph, opts forwardSyncOptions) (int, error) {
 	if e == nil || pc == nil || dep == nil || graph == nil {
 		return 0, nil
 	}
@@ -758,6 +806,13 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 
 	forwardTypes := e.forwardDeviceTypes(ctx)
 	jumpServerID := getString(forwardJumpServerIDKey)
+	// Never use a jump server for in-cluster deployments.
+	if dep != nil {
+		t := strings.ToLower(strings.TrimSpace(dep.Type))
+		if t == "netlab-c9s" || t == "clabernetes" {
+			jumpServerID = ""
+		}
+	}
 	snmpCredentialID := getString(forwardSnmpCredentialIDKey)
 
 	credentialIDsByKind := map[string]string{}
@@ -848,7 +903,6 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 			Name:                     name,
 			Type:                     forwardType,
 			Host:                     mgmt,
-			Port:                     22,
 			CliCredentialID:          cliCredentialID,
 			SnmpCredentialID:         snmpCredentialID,
 			JumpServerID:             jumpServerID,
@@ -869,7 +923,9 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 	if err := forwardPutClassicDevices(ctx, client, networkID, devices); err != nil {
 		return 0, err
 	}
-	_ = forwardStartCollection(ctx, client, networkID)
+	if opts.StartCollection {
+		_ = forwardStartCollection(ctx, client, networkID)
+	}
 	if changed {
 		cfgAny[forwardCliCredentialMap] = credentialIDsByKind
 		if err := e.updateDeploymentConfig(ctx, pc.workspace.ID, dep.ID, cfgAny); err != nil {
