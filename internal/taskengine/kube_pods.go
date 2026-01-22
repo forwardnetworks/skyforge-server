@@ -22,6 +22,9 @@ type kubePod struct {
 		Annotations     map[string]string    `json:"annotations"`
 		OwnerReferences []kubeOwnerReference `json:"ownerReferences"`
 	} `json:"metadata"`
+	Spec struct {
+		NodeName string `json:"nodeName"`
+	} `json:"spec"`
 	Status struct {
 		PodIP string `json:"podIP"`
 		Phase string `json:"phase"`

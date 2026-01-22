@@ -5,6 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
 	"path"
 	"sort"
 	"strings"
@@ -77,6 +81,7 @@ func runNetlabC9sNOSPostUp(ctx context.Context, ns, topologyName string, topolog
 		podName  string
 		podIP    string
 		gateway  string
+		k8sNode  string
 	}
 	work := make([]workItem, 0)
 	for node, nodeAny := range nodes {
@@ -94,12 +99,14 @@ func runNetlabC9sNOSPostUp(ctx context.Context, ns, topologyName string, topolog
 			log.Infof("c9s: post-up eos config skipped (pod not found): %s", nodeName)
 			continue
 		}
+		k8sNode := strings.TrimSpace(podsNodeNameForTopologyNode(pods, topologyName, nodeName))
 		work = append(work, workItem{
 			nodeName: nodeName,
 			kind:     kind,
 			podName:  strings.TrimSpace(pinfo.podName),
 			podIP:    strings.TrimSpace(pinfo.podIP),
 			gateway:  strings.TrimSpace(pinfo.gateway),
+			k8sNode:  k8sNode,
 		})
 	}
 
@@ -108,6 +115,10 @@ func runNetlabC9sNOSPostUp(ctx context.Context, ns, topologyName string, topolog
 	}
 
 	log.Infof("c9s: post-up config starting: nodes=%d", len(work))
+
+	// Cache per-Kubernetes-node gateway discovery.
+	nodeGateway := map[string]string{}
+	nodeGatewayMu := sync.Mutex{}
 
 	sem := make(chan struct{}, 6)
 	var wg sync.WaitGroup
@@ -147,7 +158,21 @@ func runNetlabC9sNOSPostUp(ctx context.Context, ns, topologyName string, topolog
 			// Restore the Kubernetes/Cilium pod network on eth0 after cEOS has booted.
 			// cEOS frequently wipes the pod IP and default route, which prevents the in-cluster
 			// collector from reaching the device over SSH.
-			if err := ensureNetlabC9sPodEth0(ctx, kcfg, ns, item.podName, item.podIP, item.gateway, log); err != nil {
+			gw := item.gateway
+			if gw == "" && item.k8sNode != "" {
+				nodeGatewayMu.Lock()
+				gw = strings.TrimSpace(nodeGateway[item.k8sNode])
+				nodeGatewayMu.Unlock()
+				if gw == "" {
+					if discovered, ok := discoverNodeGateway(ctx, kcfg, ns, item.k8sNode, topologyName, pods); ok {
+						gw = discovered
+						nodeGatewayMu.Lock()
+						nodeGateway[item.k8sNode] = gw
+						nodeGatewayMu.Unlock()
+					}
+				}
+			}
+			if err := ensureNetlabC9sPodEth0(ctx, kcfg, ns, item.podName, item.podIP, gw, log); err != nil {
 				log.Infof("c9s: eos eth0 restore failed for %s: %v", item.nodeName, err)
 			}
 		}()
@@ -155,6 +180,147 @@ func runNetlabC9sNOSPostUp(ctx context.Context, ns, topologyName string, topolog
 	wg.Wait()
 
 	return nil
+}
+
+func podsNodeNameForTopologyNode(pods []kubePod, topologyName, topologyNode string) string {
+	topologyName = strings.TrimSpace(topologyName)
+	topologyNode = strings.TrimSpace(topologyNode)
+	if topologyName == "" || topologyNode == "" || len(pods) == 0 {
+		return ""
+	}
+	for _, p := range pods {
+		if strings.TrimSpace(p.Metadata.Labels["clabernetes/topologyOwner"]) != topologyName {
+			continue
+		}
+		if strings.TrimSpace(p.Metadata.Labels["clabernetes/topologyNode"]) != topologyNode {
+			continue
+		}
+		return strings.TrimSpace(p.Spec.NodeName)
+	}
+	return ""
+}
+
+func discoverNodeGateway(ctx context.Context, kcfg *rest.Config, ns, k8sNode, topologyName string, pods []kubePod) (string, bool) {
+	ns = strings.TrimSpace(ns)
+	k8sNode = strings.TrimSpace(k8sNode)
+	topologyName = strings.TrimSpace(topologyName)
+	if ns == "" || k8sNode == "" || topologyName == "" {
+		return "", false
+	}
+
+	// Prefer the CiliumInternalIP for the node. This is the "router" / default gateway
+	// for /32 pod addressing on that node.
+	//
+	// We need this fallback for topologies that don't include Linux nodes (for example
+	// simple 2-node EOS OSPF labs). In those cases, cEOS may wipe the pod default route
+	// in every pod, which makes it impossible to discover the gateway by exec'ing into
+	// another pod on the node.
+	if gw, ok := kubeGetCiliumInternalIP(ctx, k8sNode); ok {
+		return gw, true
+	}
+
+	// Prefer Linux host nodes if present; those reliably retain the pod default route.
+	candidates := make([]string, 0, 4)
+	for _, p := range pods {
+		if strings.TrimSpace(p.Spec.NodeName) != k8sNode {
+			continue
+		}
+		if strings.TrimSpace(p.Metadata.Labels["clabernetes/topologyOwner"]) != topologyName {
+			continue
+		}
+		topoNode := strings.TrimSpace(p.Metadata.Labels["clabernetes/topologyNode"])
+		if topoNode == "" {
+			continue
+		}
+		if strings.HasPrefix(strings.ToLower(topoNode), "h") {
+			candidates = append(candidates, strings.TrimSpace(p.Metadata.Name))
+		}
+	}
+	// Fall back to any pod from this topology on the node.
+	if len(candidates) == 0 {
+		for _, p := range pods {
+			if strings.TrimSpace(p.Spec.NodeName) != k8sNode {
+				continue
+			}
+			if strings.TrimSpace(p.Metadata.Labels["clabernetes/topologyOwner"]) != topologyName {
+				continue
+			}
+			if name := strings.TrimSpace(p.Metadata.Name); name != "" {
+				candidates = append(candidates, name)
+			}
+		}
+	}
+	if len(candidates) == 0 {
+		return "", false
+	}
+
+	script := `set -eu
+gw="$(ip route show default 2>/dev/null | awk '/default/{print $3; exit}')"
+echo "${gw:-}"`
+
+	ctxReq, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	for _, podName := range candidates {
+		if podName == "" {
+			continue
+		}
+		stdout, _, err := kubeutil.ExecPodShell(ctxReq, kcfg, ns, podName, "clabernetes-launcher", script)
+		if err != nil {
+			continue
+		}
+		gw := strings.TrimSpace(stdout)
+		if ip := net.ParseIP(gw); ip != nil && ip.To4() != nil {
+			return gw, true
+		}
+	}
+	return "", false
+}
+
+type ciliumNode struct {
+	Spec struct {
+		Addresses []struct {
+			Type string `json:"type"`
+			IP   string `json:"ip"`
+		} `json:"addresses"`
+	} `json:"spec"`
+}
+
+func kubeGetCiliumInternalIP(ctx context.Context, nodeName string) (string, bool) {
+	nodeName = strings.TrimSpace(nodeName)
+	if nodeName == "" {
+		return "", false
+	}
+	client, err := kubeHTTPClient()
+	if err != nil {
+		return "", false
+	}
+	getURL := fmt.Sprintf("https://kubernetes.default.svc/apis/cilium.io/v2/ciliumnodes/%s", url.PathEscape(nodeName))
+	req, err := kubeRequest(ctx, http.MethodGet, getURL, nil)
+	if err != nil {
+		return "", false
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", false
+	}
+	var cn ciliumNode
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&cn); err != nil {
+		return "", false
+	}
+	for _, a := range cn.Spec.Addresses {
+		if strings.TrimSpace(a.Type) != "CiliumInternalIP" {
+			continue
+		}
+		gw := strings.TrimSpace(a.IP)
+		if ip := net.ParseIP(gw); ip != nil && ip.To4() != nil {
+			return gw, true
+		}
+	}
+	return "", false
 }
 
 type cniNetworkStatus struct {
@@ -212,7 +378,7 @@ fi
 
 # Cilium uses /32 addressing and a link-scoped route to the gateway.
 ip route replace "$GW" dev "$dev" scope link
-ip route replace default via "$GW" dev "$dev"
+ip route replace default via "$GW" dev "$dev" onlink
 `, podIP, gateway)
 
 	ctxReq, cancel := context.WithTimeout(ctx, 30*time.Second)
