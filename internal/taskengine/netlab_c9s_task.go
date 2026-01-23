@@ -284,45 +284,57 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 			log.Infof("c9s topology capture failed: %v", err)
 		}
 	} else if graph != nil {
-		if dep, err := e.loadDeployment(ctx, spec.WorkspaceCtx.workspace.ID, strings.TrimSpace(spec.DeploymentID)); err == nil && dep != nil {
-			// Import classic devices into Forward as soon as we have management IPs so Forward
-			// can start its own reachability checks early. Do not start collection yet; it
-			// should begin only after post-up config has been applied.
-			if _, err := e.syncForwardTopologyGraphDevices(ctx, spec.TaskID, spec.WorkspaceCtx, dep, graph, forwardSyncOptions{
-				StartCollection: false,
-			}); err != nil && log != nil {
+		// Apply post-up config for supported NOS kinds (cfglets, SSH enable, etc).
+		// This must happen before Forward collection starts.
+		if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.nos-postup", func() error {
+			return runNetlabC9sNOSPostUp(ctx, ns, topologyName, topologyBytes, nodeMounts, log)
+		}); err != nil && log != nil {
+			// Best-effort: lab is still usable even if cfglets fail.
+			log.Infof("c9s post-up config failed (ignored): %v", err)
+		}
+
+		dep, depErr := e.loadDeployment(ctx, spec.WorkspaceCtx.workspace.ID, strings.TrimSpace(spec.DeploymentID))
+		if depErr != nil {
+			if log != nil {
+				log.Infof("forward sync skipped: failed to load deployment: %v", depErr)
+			}
+			goto artifacts
+		}
+		if dep == nil {
+			if log != nil {
+				log.Infof("forward sync skipped: deployment not found")
+			}
+			goto artifacts
+		}
+
+		// Import classic devices into Forward as soon as we have management IPs so Forward
+		// can start its own reachability checks early. Do not start collection yet; it
+		// should begin only after post-up config has been applied.
+		if _, err := e.syncForwardTopologyGraphDevices(ctx, spec.TaskID, spec.WorkspaceCtx, dep, graph, forwardSyncOptions{
+			StartCollection: false,
+		}); err != nil && log != nil {
+			log.Infof("forward sync skipped: %v", err)
+		}
+
+		// Wait for SSH readiness before starting Forward collection.
+		// Some NOSs (notably cEOS) take additional time after the topology reports "ready"
+		// before SSH is actually reachable.
+		if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "forward.ready", func() error {
+			timeoutSeconds := envInt(spec.Environment, "SKYFORGE_FORWARD_SYNC_WAIT_SECONDS", 180)
+			if timeoutSeconds <= 0 {
+				return nil
+			}
+			return waitForForwardSSHReady(ctx, spec.TaskID, e, graph, time.Duration(timeoutSeconds)*time.Second, log)
+		}); err != nil {
+			if log != nil {
 				log.Infof("forward sync skipped: %v", err)
 			}
-
-			// Apply post-up config for supported NOS kinds (cfglets, SSH enable, etc).
-			// This must happen before Forward collection starts.
-			if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.nos-postup", func() error {
-				return runNetlabC9sNOSPostUp(ctx, ns, topologyName, topologyBytes, nodeMounts, log)
-			}); err != nil && log != nil {
-				// Best-effort: lab is still usable even if cfglets fail.
-				log.Infof("c9s post-up config failed (ignored): %v", err)
-			}
-
-			// Wait for SSH readiness before starting Forward collection.
-			// Some NOSs (notably cEOS) take additional time after the topology reports "ready"
-			// before SSH is actually reachable.
-			if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "forward.ready", func() error {
-				timeoutSeconds := envInt(spec.Environment, "SKYFORGE_FORWARD_SYNC_WAIT_SECONDS", 180)
-				if timeoutSeconds <= 0 {
-					return nil
-				}
-				return waitForForwardSSHReady(ctx, spec.TaskID, e, graph, time.Duration(timeoutSeconds)*time.Second, log)
-			}); err != nil {
-				if log != nil {
-					log.Infof("forward sync skipped: %v", err)
-				}
-				goto artifacts
-			}
-
-			_ = taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "forward.collection.start", func() error {
-				return e.startForwardCollectionForDeployment(ctx, spec.TaskID, spec.WorkspaceCtx, dep)
-			})
+			goto artifacts
 		}
+
+		_ = taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "forward.collection.start", func() error {
+			return e.startForwardCollectionForDeployment(ctx, spec.TaskID, spec.WorkspaceCtx, dep)
+		})
 	}
 
 	// Store a bundle of generated artifacts in object storage for browsing and debugging.
@@ -372,6 +384,13 @@ func waitForForwardSSHReady(ctx context.Context, taskID int, e *Engine, graph *T
 
 	// Only gate on NOS nodes we intend to sync into Forward. Linux hosts are handled
 	// separately (as endpoints) and should not block network creation.
+	//
+	// Note: vrnetlab-based nodes use a dedicated Multus mgmt network (vrnetlab-mgmt)
+	// whose IP range is not routable from Skyforge worker pods by default. In that
+	// case, a "local tcp dial" SSH readiness check will always time out even though
+	// the in-cluster Forward collector can reach the nodes (it is Multus-attached).
+	// We therefore skip the preflight SSH readiness gate for vrnetlab-based kinds and
+	// let Forward perform its own reachability/collection retries.
 	targets := make([]TopologyNode, 0, len(graph.Nodes))
 	for _, n := range graph.Nodes {
 		kind := strings.ToLower(strings.TrimSpace(n.Kind))
@@ -380,6 +399,10 @@ func waitForForwardSSHReady(ctx context.Context, taskID int, e *Engine, graph *T
 			kind = "unknown"
 		}
 		if kind == "linux" {
+			continue
+		}
+		switch kind {
+		case "cisco_iol", "vios", "viosl2", "vr-n9kv", "asav", "vmx", "sros", "csr":
 			continue
 		}
 		if strings.TrimSpace(n.MgmtIP) == "" {
@@ -439,11 +462,13 @@ func (e *Engine) captureC9sTopologyArtifact(ctx context.Context, spec netlabC9sR
 		return nil, err
 	}
 	podInfo := map[string]TopologyNode{}
+	podNetworkStatus := map[string]string{}
 	for _, pod := range pods {
 		node := strings.TrimSpace(pod.Metadata.Labels["clabernetes/topologyNode"])
 		if node == "" {
 			continue
 		}
+		podNetworkStatus[node] = strings.TrimSpace(pod.Metadata.Annotations["k8s.v1.cni.cncf.io/network-status"])
 		podInfo[node] = TopologyNode{
 			ID:     node,
 			Label:  node,
@@ -455,6 +480,17 @@ func (e *Engine) captureC9sTopologyArtifact(ctx context.Context, spec netlabC9sR
 	graph, err := containerlabYAMLBytesToTopologyGraph(topologyYAML, podInfo)
 	if err != nil {
 		return nil, err
+	}
+	// For vrnetlab-based nodes, prefer the dedicated Multus management IP (if present).
+	for i := range graph.Nodes {
+		kind := strings.ToLower(strings.TrimSpace(graph.Nodes[i].Kind))
+		switch kind {
+		case "cisco_iol", "vios", "viosl2", "vr-n9kv", "asav", "vmx", "sros", "csr":
+			raw := podNetworkStatus[strings.TrimSpace(graph.Nodes[i].ID)]
+			if ip, ok := parseCNIStatusIPForNetwork(raw, "vrnetlab-mgmt"); ok {
+				graph.Nodes[i].MgmtIP = ip
+			}
+		}
 	}
 	if len(nodeNameMapping) > 0 {
 		for i := range graph.Nodes {

@@ -75,7 +75,10 @@ type Config struct {
 	// ForwardCollectorHeapSizeGB sets COLLECTOR_HEAP_SIZE for the in-cluster
 	// collector container. When 0, the image default is used.
 	ForwardCollectorHeapSizeGB int
-	Forward                    ForwardConfig
+	// ForwardCollectorMultusNetworks is an optional list of Multus network attachments
+	// added to the in-cluster Forward collector Pod.
+	ForwardCollectorMultusNetworks []string
+	Forward                        ForwardConfig
 }
 
 type ForwardConfig struct {

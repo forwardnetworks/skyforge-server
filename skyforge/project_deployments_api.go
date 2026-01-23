@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"encore.app/internal/taskqueue"
+	"encore.app/internal/taskstore"
 	"encore.dev/beta/errs"
 	"github.com/google/uuid"
 )
@@ -668,6 +669,21 @@ func (s *Service) DeleteWorkspaceDeployment(ctx context.Context, id, deploymentI
 	if err != nil {
 		return nil, err
 	}
+
+	// Guardrail: do not allow deleting a deployment while it still has queued/running tasks.
+	// Otherwise background workers can observe a missing deployment row mid-run and skip
+	// post-deploy behavior (Forward sync, cleanup, etc).
+	{
+		ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		var n int
+		_ = s.db.QueryRowContext(ctxReq, `SELECT count(*) FROM sf_tasks
+WHERE workspace_id=$1 AND deployment_id=$2 AND status IN ('queued','running')`, pc.workspace.ID, existing.ID).Scan(&n)
+		if n > 0 {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("deployment has an active run; cancel/stop it before deleting").Err()
+		}
+	}
+
 	if existing.Type == "netlab" {
 		cfgAny, _ := fromJSONMap(existing.Config)
 		if cfgAny == nil {
@@ -2058,24 +2074,7 @@ WHERE workspace_id=$5 AND id=$6`, cfgBytes, nullIfZeroInt(taskWorkspaceID), null
 }
 
 func (s *Service) updateDeploymentStatus(ctx context.Context, workspaceID, deploymentID string, status string, finishedAt *time.Time) error {
-	if s == nil || s.db == nil {
-		return errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
-	}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	if finishedAt != nil {
-		_, err := s.db.ExecContext(ctx, `UPDATE sf_deployments SET
-  last_status=$1,
-  last_finished_at=$2,
-  updated_at=now()
-WHERE workspace_id=$3 AND id=$4`, status, *finishedAt, workspaceID, deploymentID)
-		return err
-	}
-	_, err := s.db.ExecContext(ctx, `UPDATE sf_deployments SET
-  last_status=$1,
-  updated_at=now()
-WHERE workspace_id=$2 AND id=$3`, status, workspaceID, deploymentID)
-	return err
+	return taskstore.UpdateDeploymentStatus(ctx, s.db, workspaceID, deploymentID, status, finishedAt)
 }
 
 func (s *Service) getLatestDeploymentByType(ctx context.Context, workspaceID, depType string) (*WorkspaceDeployment, error) {

@@ -106,6 +106,12 @@ type ForwardCollectorDefaultsConfig struct {
 	// HeapSizeGB sets COLLECTOR_HEAP_SIZE (in gigabytes) for the collector.
 	// When 0, the collector image default is used.
 	HeapSizeGB int
+	// MultusNetworks is an optional list of Multus network attachments to add to
+	// the collector Pod (for example: ["kube-system/vrnetlab-mgmt"]).
+	//
+	// When set, Skyforge adds these via the standard Multus pod annotation
+	// `k8s.v1.cni.cncf.io/networks`.
+	MultusNetworks []string
 }
 
 type EncoreConfig struct {
@@ -147,6 +153,19 @@ type EncoreConfig struct {
 	LDAP             LDAPDefaultsConfig
 	DNS              DNSDefaultsConfig
 	Containerlab     ContainerlabDefaultsConfig
+	Workspaces       WorkspacesDefaultsConfig
+	ObjectStorage    ObjectStorageDefaultsConfig
+	Terraform        TerraformDefaultsConfig
+	Forward          ForwardDefaultsConfig
+	ForwardCollector ForwardCollectorDefaultsConfig
+	NetlabGenerator  NetlabGeneratorDefaultsConfig
+	Kubernetes       KubernetesDefaultsConfig
+}
+
+type WorkerConfig struct {
+	TaskWorkerEnabled bool
+
+	Netlab           NetlabDefaultsConfig
 	Workspaces       WorkspacesDefaultsConfig
 	ObjectStorage    ObjectStorageDefaultsConfig
 	Terraform        TerraformDefaultsConfig

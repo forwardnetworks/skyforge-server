@@ -155,7 +155,12 @@ func (e *Engine) runContainerlabTask(ctx context.Context, spec containerlabRunSp
 			if err != nil {
 				log.Infof("Containerlab topology capture skipped: %v", err)
 			} else if graph != nil && spec.WorkspaceCtx != nil && strings.TrimSpace(spec.DeploymentID) != "" {
-				if dep, err := e.loadDeployment(ctx, spec.WorkspaceID, strings.TrimSpace(spec.DeploymentID)); err == nil && dep != nil {
+				dep, depErr := e.loadDeployment(ctx, spec.WorkspaceID, strings.TrimSpace(spec.DeploymentID))
+				if depErr != nil {
+					log.Infof("Forward sync skipped: failed to load deployment: %v", depErr)
+				} else if dep == nil {
+					log.Infof("Forward sync skipped: deployment not found")
+				} else {
 					_, _ = e.syncForwardTopologyGraphDevices(ctx, spec.TaskID, spec.WorkspaceCtx, dep, graph, forwardSyncOptions{
 						StartCollection: true,
 					})

@@ -139,6 +139,12 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		forwardCollectorPullSecretNamespace = imagePullSecretNamespace
 	}
 	forwardCollectorHeapSizeGB := enc.ForwardCollector.HeapSizeGB
+	forwardCollectorMultusNetworks := make([]string, 0, len(enc.ForwardCollector.MultusNetworks))
+	for _, n := range enc.ForwardCollector.MultusNetworks {
+		if s := strings.TrimSpace(n); s != "" {
+			forwardCollectorMultusNetworks = append(forwardCollectorMultusNetworks, s)
+		}
+	}
 
 	netlabC9sGeneratorMode := strings.ToLower(strings.TrimSpace(enc.NetlabGenerator.C9sGeneratorMode))
 	if netlabC9sGeneratorMode == "" {
@@ -313,8 +319,113 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		ForwardCollectorImagePullSecretName:      forwardCollectorPullSecretName,
 		ForwardCollectorImagePullSecretNamespace: forwardCollectorPullSecretNamespace,
 		ForwardCollectorHeapSizeGB:               forwardCollectorHeapSizeGB,
+		ForwardCollectorMultusNetworks:           forwardCollectorMultusNetworks,
 		NetlabC9sGeneratorMode:                   netlabC9sGeneratorMode,
 		NetlabGeneratorImage:                     netlabGeneratorImage,
 		NetlabGeneratorPullPolicy:                netlabGeneratorPullPolicy,
+	}
+}
+
+// LoadWorkerConfig loads a subset of configuration required for the worker service.
+func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.Config {
+	netlabCfg := skyforgecore.NetlabConfig{
+		SSHHost:    strings.TrimSpace(enc.Netlab.SSHHost),
+		SSHUser:    strings.TrimSpace(enc.Netlab.SSHUser),
+		SSHKeyFile: strings.TrimSpace(enc.Netlab.SSHKeyFile),
+		StateRoot:  strings.TrimSpace(enc.Netlab.StateRoot),
+	}
+
+	workspacesCfg := skyforgecore.WorkspacesConfig{
+		DataDir:                strings.TrimSpace(enc.Workspaces.DataDir),
+		GiteaAPIURL:            strings.TrimRight(strings.TrimSpace(enc.Workspaces.GiteaAPIURL), "/"),
+		GiteaUsername:          strings.TrimSpace(enc.Workspaces.GiteaUsername),
+		GiteaPassword:          strings.TrimSpace(sec.GiteaPassword),
+		GiteaRepoPrivate:       enc.Workspaces.GiteaRepoPrivate,
+		DeleteMode:             strings.TrimSpace(enc.Workspaces.DeleteMode),
+		ObjectStorageEndpoint:  strings.TrimRight(strings.TrimSpace(enc.ObjectStorage.Endpoint), "/"),
+		ObjectStorageUseSSL:    enc.ObjectStorage.UseSSL,
+		ObjectStorageAccessKey: strings.TrimSpace(sec.ObjectStorageAccessKey),
+		ObjectStorageSecretKey: strings.TrimSpace(sec.ObjectStorageSecretKey),
+	}
+	if strings.TrimSpace(workspacesCfg.DataDir) == "" {
+		workspacesCfg.DataDir = "/var/lib/skyforge"
+	}
+	if strings.TrimSpace(workspacesCfg.GiteaUsername) == "" {
+		workspacesCfg.GiteaUsername = "skyforge"
+	}
+	if strings.TrimSpace(workspacesCfg.DeleteMode) == "" {
+		workspacesCfg.DeleteMode = "live"
+	}
+	if strings.TrimSpace(workspacesCfg.ObjectStorageEndpoint) == "" {
+		workspacesCfg.ObjectStorageEndpoint = "minio:9000"
+	}
+
+	terraformBinaryPath := strings.TrimSpace(enc.Terraform.BinaryPath)
+	terraformVersion := strings.TrimSpace(enc.Terraform.Version)
+	terraformURL := strings.TrimSpace(enc.Terraform.URL)
+
+	imagePullSecretName := strings.TrimSpace(enc.Kubernetes.ImagePullSecretName)
+	imagePullSecretNamespace := strings.TrimSpace(enc.Kubernetes.ImagePullSecretNamespace)
+	if imagePullSecretName == "" {
+		imagePullSecretName = "ghcr-pull"
+	}
+	if imagePullSecretNamespace == "" {
+		imagePullSecretNamespace = "skyforge"
+	}
+
+	forwardCollectorImage := strings.TrimSpace(enc.ForwardCollector.Image)
+	forwardCollectorPullPolicy := strings.TrimSpace(enc.ForwardCollector.PullPolicy)
+	if forwardCollectorPullPolicy == "" {
+		forwardCollectorPullPolicy = "IfNotPresent"
+	}
+	forwardCollectorPullSecretName := strings.TrimSpace(enc.ForwardCollector.ImagePullSecretName)
+	forwardCollectorPullSecretNamespace := strings.TrimSpace(enc.ForwardCollector.ImagePullSecretNamespace)
+	if forwardCollectorPullSecretName == "" {
+		forwardCollectorPullSecretName = imagePullSecretName
+	}
+	if forwardCollectorPullSecretNamespace == "" {
+		forwardCollectorPullSecretNamespace = imagePullSecretNamespace
+	}
+	forwardCollectorHeapSizeGB := enc.ForwardCollector.HeapSizeGB
+	forwardCollectorMultusNetworks := make([]string, 0, len(enc.ForwardCollector.MultusNetworks))
+	for _, n := range enc.ForwardCollector.MultusNetworks {
+		if s := strings.TrimSpace(n); s != "" {
+			forwardCollectorMultusNetworks = append(forwardCollectorMultusNetworks, s)
+		}
+	}
+
+	netlabC9sGeneratorMode := strings.ToLower(strings.TrimSpace(enc.NetlabGenerator.C9sGeneratorMode))
+	if netlabC9sGeneratorMode == "" {
+		netlabC9sGeneratorMode = "k8s"
+	}
+	netlabGeneratorImage := strings.TrimSpace(enc.NetlabGenerator.GeneratorImage)
+	netlabGeneratorPullPolicy := strings.TrimSpace(enc.NetlabGenerator.PullPolicy)
+
+	// Note: Worker does not need session secrets, OIDC, LDAP, DNS, UI, or admin users.
+	return skyforgecore.Config{
+		TaskWorkerEnabled:                        enc.TaskWorkerEnabled,
+		Netlab:                                   netlabCfg,
+		Workspaces:                               workspacesCfg,
+		TerraformBinaryPath:                      terraformBinaryPath,
+		TerraformVersion:                         terraformVersion,
+		TerraformURL:                             terraformURL,
+		ImagePullSecretName:                      imagePullSecretName,
+		ImagePullSecretNamespace:                 imagePullSecretNamespace,
+		ForwardCollectorImage:                    forwardCollectorImage,
+		ForwardCollectorPullPolicy:               forwardCollectorPullPolicy,
+		ForwardCollectorImagePullSecretName:      forwardCollectorPullSecretName,
+		ForwardCollectorImagePullSecretNamespace: forwardCollectorPullSecretNamespace,
+		ForwardCollectorHeapSizeGB:               forwardCollectorHeapSizeGB,
+		ForwardCollectorMultusNetworks:           forwardCollectorMultusNetworks,
+		NetlabC9sGeneratorMode:                   netlabC9sGeneratorMode,
+		NetlabGeneratorImage:                     netlabGeneratorImage,
+		NetlabGeneratorPullPolicy:                netlabGeneratorPullPolicy,
+		Forward: skyforgecore.ForwardConfig{
+			SNMPPlaceholderEnabled: enc.Forward.SNMPPlaceholderEnabled,
+			SNMPCommunity:          strings.TrimSpace(enc.Forward.SNMPCommunity),
+		},
+		PKICACert: strings.TrimSpace(sec.PKICACert),
+		PKICAKey:  strings.TrimSpace(sec.PKICAKey),
+		SSHCAKey:  strings.TrimSpace(sec.SSHCAKey),
 	}
 }

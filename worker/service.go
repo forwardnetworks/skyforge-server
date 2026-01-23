@@ -14,6 +14,7 @@ import (
 	"encore.app/internal/taskexec"
 	"encore.app/internal/taskqueue"
 	"encore.app/internal/taskstore"
+	"encore.dev/config"
 	"encore.dev/pubsub"
 	"encore.dev/rlog"
 )
@@ -26,10 +27,13 @@ var (
 	workerCoreCfgOnce sync.Once
 )
 
+// workerEncoreCfg provides access to the Encore-managed config defaults (subset for worker).
+var workerEncoreCfg = config.Load[skyforgeconfig.WorkerConfig]()
+
 func getWorkerCoreCfg() skyforgecore.Config {
 	workerCoreCfgOnce.Do(func() {
 		sec := getSecrets()
-		workerCoreCfg = skyforgeconfig.LoadConfig(workerEncoreCfg, sec)
+		workerCoreCfg = skyforgeconfig.LoadWorkerConfig(workerEncoreCfg, sec)
 	})
 	return workerCoreCfg
 }
@@ -71,6 +75,9 @@ func (s *Service) handleTaskEnqueued(ctx context.Context, msg *taskqueue.TaskEnq
 				Error:  errMsg,
 			})
 			return err
+		},
+		UpdateDeploymentStatus: func(ctx context.Context, workspaceID string, deploymentID string, status string, finishedAt time.Time) error {
+			return taskstore.UpdateDeploymentStatus(ctx, stdlib, workspaceID, deploymentID, status, &finishedAt)
 		},
 		EnqueueNextDeploymentTask: func(ctx context.Context, nextTaskID int, workspaceID string, deploymentID string) {
 			key := strings.TrimSpace(workspaceID)

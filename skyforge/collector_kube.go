@@ -37,6 +37,150 @@ type collectorRuntimeStatus struct {
 
 var ghcrImageRe = regexp.MustCompile(`^ghcr\.io/([^/]+)/([^:]+):(.+)$`)
 
+// multusNetworksAnnotation renders the JSON expected by the Multus
+// `k8s.v1.cni.cncf.io/networks` annotation.
+//
+// Skyforge config allows entries like:
+//   - "vrnetlab-mgmt"              (same-namespace NAD)
+//   - "kube-system/vrnetlab-mgmt"  (cross-namespace NAD)
+//
+// For cross-namespace NADs we must emit the separate "namespace" field; putting
+// "kube-system/vrnetlab-mgmt" into "name" causes Multus to look for an NAD with
+// that literal name in the Pod namespace.
+func multusNetworksAnnotation(networks []string) string {
+	var nets []map[string]string
+	for _, n := range networks {
+		s := strings.TrimSpace(n)
+		if s == "" {
+			continue
+		}
+		if parts := strings.SplitN(s, "/", 2); len(parts) == 2 && strings.TrimSpace(parts[0]) != "" && strings.TrimSpace(parts[1]) != "" {
+			nets = append(nets, map[string]string{
+				"name":      strings.TrimSpace(parts[1]),
+				"namespace": strings.TrimSpace(parts[0]),
+			})
+		} else {
+			nets = append(nets, map[string]string{"name": s})
+		}
+	}
+	if len(nets) == 0 {
+		return ""
+	}
+	raw, _ := json.Marshal(nets)
+	return string(raw)
+}
+
+// reconcileCollectorMultusNetworks ensures any existing collector Deployments have the Multus
+// network attachments configured in the current Skyforge config.
+//
+// This is intentionally best-effort and does not require knowing per-user Forward tokens.
+// The collector Deployment already references its Secret/PVC; we only need to update pod
+// template annotations.
+func reconcileCollectorMultusNetworks(ctx context.Context, cfg Config) (int, error) {
+	if len(cfg.ForwardCollectorMultusNetworks) == 0 {
+		return 0, nil
+	}
+
+	desired := multusNetworksAnnotation(cfg.ForwardCollectorMultusNetworks)
+	if desired == "" {
+		return 0, nil
+	}
+
+	ns := kubeNamespace()
+	client, err := kubeHTTPClient()
+	if err != nil {
+		return 0, err
+	}
+	listURL := fmt.Sprintf("https://kubernetes.default.svc/apis/apps/v1/namespaces/%s/deployments?labelSelector=%s",
+		url.PathEscape(ns),
+		url.QueryEscape("app.kubernetes.io/component=collector"),
+	)
+	req, err := kubeRequest(ctx, http.MethodGet, listURL, nil)
+	if err != nil {
+		return 0, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode/100 != 2 {
+		return 0, fmt.Errorf("kube list collectors failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return 0, err
+	}
+	items, _ := decoded["items"].([]any)
+	if len(items) == 0 {
+		return 0, nil
+	}
+
+	updated := 0
+	for _, item := range items {
+		m, _ := item.(map[string]any)
+		if m == nil {
+			continue
+		}
+		meta, _ := m["metadata"].(map[string]any)
+		name, _ := meta["name"].(string)
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+
+		spec, _ := m["spec"].(map[string]any)
+		template, _ := spec["template"].(map[string]any)
+		tmeta, _ := template["metadata"].(map[string]any)
+		ann, _ := tmeta["annotations"].(map[string]any)
+		var cur string
+		if ann != nil {
+			if v, ok := ann["k8s.v1.cni.cncf.io/networks"].(string); ok {
+				cur = strings.TrimSpace(v)
+			}
+		}
+		if cur == desired {
+			continue
+		}
+
+		patchObj := map[string]any{
+			"spec": map[string]any{
+				"template": map[string]any{
+					"metadata": map[string]any{
+						"annotations": map[string]any{
+							"k8s.v1.cni.cncf.io/networks": desired,
+						},
+					},
+				},
+			},
+		}
+		patchBody, _ := json.Marshal(patchObj)
+		patchURL := fmt.Sprintf("https://kubernetes.default.svc/apis/apps/v1/namespaces/%s/deployments/%s",
+			url.PathEscape(ns),
+			url.PathEscape(name),
+		)
+		patchReq, err := kubeRequest(ctx, http.MethodPatch, patchURL, bytes.NewReader(patchBody))
+		if err != nil {
+			return updated, err
+		}
+		patchReq.Header.Set("Content-Type", "application/merge-patch+json")
+		patchResp, err := client.Do(patchReq)
+		if err != nil {
+			return updated, err
+		}
+		patchOut, _ := io.ReadAll(patchResp.Body)
+		patchResp.Body.Close()
+		if patchResp.StatusCode/100 != 2 {
+			return updated, fmt.Errorf("kube patch collector %s failed (%d): %s", name, patchResp.StatusCode, strings.TrimSpace(string(patchOut)))
+		}
+		updated++
+	}
+
+	return updated, nil
+}
+
 func collectorResourceNameForUser(username string) string {
 	// Kubernetes DNS label (<=63). Keep it deterministic and human-readable.
 	base := strings.TrimSpace(strings.ToLower(username))
@@ -441,6 +585,17 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, f
 				},
 			},
 		}
+
+		// Optional: attach Multus networks to the collector Pod.
+		//
+		// This is used to ensure the in-cluster Forward collector can reach lab nodes
+		// over an underlay mgmt network (for example: kube-system/vrnetlab-mgmt).
+		if len(cfg.ForwardCollectorMultusNetworks) > 0 {
+			if v := multusNetworksAnnotation(cfg.ForwardCollectorMultusNetworks); v != "" {
+				payload["spec"].(map[string]any)["template"].(map[string]any)["metadata"].(map[string]any)["annotations"].(map[string]string)["k8s.v1.cni.cncf.io/networks"] = v
+			}
+		}
+
 		body, _ := json.Marshal(payload)
 		createURL := fmt.Sprintf("https://kubernetes.default.svc/apis/apps/v1/namespaces/%s/deployments", url.PathEscape(ns))
 		createReq, err := kubeRequest(ctx, http.MethodPost, createURL, bytes.NewReader(body))
@@ -465,7 +620,7 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, f
 				// Ensure we clear any previous value if config changed.
 				patchImagePullSecrets = []any{}
 			}
-			patchBody, _ := json.Marshal(map[string]any{
+			patchObj := map[string]any{
 				"metadata": map[string]any{"labels": labels},
 				"spec": map[string]any{
 					"replicas": 1,
@@ -566,7 +721,13 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, f
 						},
 					},
 				},
-			})
+			}
+			if len(cfg.ForwardCollectorMultusNetworks) > 0 {
+				if v := multusNetworksAnnotation(cfg.ForwardCollectorMultusNetworks); v != "" {
+					patchObj["spec"].(map[string]any)["template"].(map[string]any)["metadata"].(map[string]any)["annotations"].(map[string]string)["k8s.v1.cni.cncf.io/networks"] = v
+				}
+			}
+			patchBody, _ := json.Marshal(patchObj)
 			patchURL := fmt.Sprintf("https://kubernetes.default.svc/apis/apps/v1/namespaces/%s/deployments/%s", url.PathEscape(ns), url.PathEscape(name))
 			patchReq, err := kubeRequest(ctx, http.MethodPatch, patchURL, bytes.NewReader(patchBody))
 			if err != nil {

@@ -69,6 +69,10 @@ type forwardClassicDevice struct {
 	EnableSnmpCollection     bool   `json:"enableSnmpCollection"`
 }
 
+type forwardConnectivityBulkStartRequest struct {
+	Devices []string `json:"devices"`
+}
+
 func normalizeForwardBaseURL(raw string) (string, error) {
 	value := strings.TrimSpace(raw)
 	if value == "" {
@@ -82,6 +86,21 @@ func normalizeForwardBaseURL(raw string) (string, error) {
 		return "", fmt.Errorf("invalid forward base url")
 	}
 	return strings.TrimRight(u.String(), "/"), nil
+}
+
+func forwardBulkStartConnectivityTests(ctx context.Context, c *forwardClient, networkID string, devices []string) error {
+	if len(devices) == 0 {
+		return nil
+	}
+	payload := forwardConnectivityBulkStartRequest{Devices: devices}
+	resp, body, err := c.doJSON(ctx, http.MethodPost, "/api/networks/"+url.PathEscape(strings.TrimSpace(networkID))+"/connectivityTests/bulkStart", nil, payload)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("forward connectivity bulkStart failed: %s", strings.TrimSpace(string(body)))
+	}
+	return nil
 }
 
 func newForwardClient(cfg forwardCredentials) (*forwardClient, error) {

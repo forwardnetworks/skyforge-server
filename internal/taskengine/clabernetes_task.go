@@ -175,12 +175,17 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		}
 
 		disableNativeForCeos := envBool(spec.Environment, "SKYFORGE_CLABERNETES_DISABLE_NATIVE_FOR_CEOS", false)
-		// vrnetlab-style NOS containers (IOL/VIOS/NXOSv/etc) generally expect to "own" the primary
-		// network interface (eth0) and may flush/reconfigure it. In Kubernetes native-mode, eth0
-		// is the pod network interface, so this breaks reachability (including in-cluster forward
-		// collector access). For now, run these kinds in non-native (launcher/DIND) mode unless
-		// explicitly overridden.
-		disableNativeForVrnetlab := envBool(spec.Environment, "SKYFORGE_CLABERNETES_DISABLE_NATIVE_FOR_VRNETLAB", true)
+		// vrnetlab-style NOS containers (IOL/VIOS/NXOSv/etc) often assume they can "own" the
+		// primary network interface (eth0) and may flush/reconfigure it.
+		//
+		// Historically this forced us into non-native (launcher/DIND) mode by default because
+		// eth0 is the Kubernetes pod network interface, and losing it breaks reachability.
+		//
+		// With Skyforge's dedicated Multus management network (kube-system/vrnetlab-mgmt),
+		// vrnetlab nodes can take over a secondary interface instead of eth0, so native mode
+		// is enabled by default. Set SKYFORGE_CLABERNETES_DISABLE_NATIVE_FOR_VRNETLAB=true to
+		// force DIND for these nodes if needed.
+		disableNativeForVrnetlab := envBool(spec.Environment, "SKYFORGE_CLABERNETES_DISABLE_NATIVE_FOR_VRNETLAB", false)
 		// Ensure clabernetes launcher pods can pull private images (launcher/NOS) by wiring the
 		// namespace pull secret into the topology service account via spec.imagePull.pullSecrets.
 		secretName := strings.TrimSpace(e.cfg.ImagePullSecretName)
@@ -432,11 +437,13 @@ func (e *Engine) captureClabernetesTopologyArtifact(ctx context.Context, spec cl
 		return err
 	}
 	podInfo := map[string]TopologyNode{}
+	podNetworkStatus := map[string]string{}
 	for _, pod := range pods {
 		node := strings.TrimSpace(pod.Metadata.Labels["clabernetes/topologyNode"])
 		if node == "" {
 			continue
 		}
+		podNetworkStatus[node] = strings.TrimSpace(pod.Metadata.Annotations["k8s.v1.cni.cncf.io/network-status"])
 		podInfo[node] = TopologyNode{
 			ID:     node,
 			Label:  node,
@@ -448,6 +455,16 @@ func (e *Engine) captureClabernetesTopologyArtifact(ctx context.Context, spec cl
 	graph, err := containerlabYAMLBytesToTopologyGraph([]byte(spec.TopologyYAML), podInfo)
 	if err != nil {
 		return err
+	}
+	for i := range graph.Nodes {
+		kind := strings.ToLower(strings.TrimSpace(graph.Nodes[i].Kind))
+		switch kind {
+		case "cisco_iol", "vios", "viosl2", "vr-n9kv", "asav", "vmx", "sros", "csr":
+			raw := podNetworkStatus[strings.TrimSpace(graph.Nodes[i].ID)]
+			if ip, ok := parseCNIStatusIPForNetwork(raw, "vrnetlab-mgmt"); ok {
+				graph.Nodes[i].MgmtIP = ip
+			}
+		}
 	}
 	graph.GeneratedAt = time.Now().UTC().Format(time.RFC3339)
 

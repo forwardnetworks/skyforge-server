@@ -737,49 +737,50 @@ FROM sf_workspace_forward_credentials WHERE workspace_id=$1`, workspaceID).Scan(
 		}
 		return nil, err
 	}
+
 	baseURLValue, err := box.decrypt(baseURL.String)
 	if err != nil {
-		return nil, err
+		return nil, nil
 	}
 	usernameValue, err := box.decrypt(username.String)
 	if err != nil {
-		return nil, err
+		return nil, nil
 	}
 	passwordValue, err := box.decrypt(password.String)
 	if err != nil {
-		return nil, err
+		return nil, nil
 	}
 	collectorIDValue, err := box.decrypt(collectorID.String)
 	if err != nil {
-		return nil, err
+		return nil, nil
 	}
 	collectorUserValue, err := box.decrypt(collectorUser.String)
 	if err != nil {
-		return nil, err
+		return nil, nil
 	}
 	deviceUserValue, err := box.decrypt(deviceUser.String)
 	if err != nil {
-		return nil, err
+		return nil, nil
 	}
 	devicePassValue, err := box.decrypt(devicePass.String)
 	if err != nil {
-		return nil, err
+		return nil, nil
 	}
 	jumpHostValue, err := box.decrypt(jumpHost.String)
 	if err != nil {
-		return nil, err
+		return nil, nil
 	}
 	jumpUserValue, err := box.decrypt(jumpUser.String)
 	if err != nil {
-		return nil, err
+		return nil, nil
 	}
 	jumpKeyValue, err := box.decrypt(jumpKey.String)
 	if err != nil {
-		return nil, err
+		return nil, nil
 	}
 	jumpCertValue, err := box.decrypt(jumpCert.String)
 	if err != nil {
-		return nil, err
+		return nil, nil
 	}
 	rec := &forwardCredentials{
 		BaseURL:        strings.TrimSpace(baseURLValue),

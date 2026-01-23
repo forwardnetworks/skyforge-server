@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"encore.app/internal/taskqueue"
 	"encore.dev/pubsub"
@@ -33,12 +32,7 @@ func (s *Service) handleTaskStatus(ctx context.Context, msg *taskqueue.TaskStatu
 
 	_ = s.notifyTaskEvent(ctx, task, status, errMsg)
 
-	if task.DeploymentID.Valid {
-		t := time.Now().UTC()
-		_ = s.updateDeploymentStatus(ctx, task.WorkspaceID, strings.TrimSpace(task.DeploymentID.String), status, &t)
-		_ = notifyDashboardUpdatePG(ctx, s.db)
-	}
-	// Always nudge task streams.
-	_ = notifyTaskUpdatePG(ctx, s.db, task.ID)
+	// Note: worker updates sf_deployments status directly now.
+	// Note: notifyTaskUpdatePG and notifyDashboardUpdatePG are handled via AppendTaskEvent.
 	return nil
 }

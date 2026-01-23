@@ -418,4 +418,9 @@ WHERE id=$1`, taskID)
 	return &rec, nil
 }
 
-var errDBUnavailable = errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+// NOTE: Avoid using `errs.B()` at package init time. It panics when the package
+// is loaded outside the Encore runtime (for example during `go test ./...`).
+//
+// This error is used for internal guardrails only (db=nil), not for user-facing
+// API error reporting.
+var errDBUnavailable = errors.New("database unavailable")

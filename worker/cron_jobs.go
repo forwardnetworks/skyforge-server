@@ -9,18 +9,14 @@ import (
 	"time"
 
 	"encore.app/internal/db"
-	"encore.app/internal/skyforgeconfig"
 	"encore.app/internal/skyforgedb"
 	"encore.app/internal/taskheartbeats"
 	"encore.app/internal/taskqueue"
 	"encore.app/internal/taskreconcile"
 	"encore.app/internal/taskstore"
-	"encore.dev/config"
 	"encore.dev/cron"
 	"encore.dev/rlog"
 )
-
-var workerEncoreCfg = config.Load[skyforgeconfig.EncoreConfig]()
 
 var (
 	workerDBOnce sync.Once

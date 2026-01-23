@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +25,64 @@ import (
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
 )
+
+func terminalWSAcceptOptions(publicURL string, req *http.Request) *websocket.AcceptOptions {
+	if req == nil {
+		return nil
+	}
+
+	normalizeHost := func(h string) string {
+		h = strings.TrimSpace(h)
+		h = strings.TrimPrefix(h, "http://")
+		h = strings.TrimPrefix(h, "https://")
+		if i := strings.IndexByte(h, '/'); i >= 0 {
+			h = h[:i]
+		}
+		if host, _, err := net.SplitHostPort(h); err == nil {
+			return strings.TrimSpace(host)
+		}
+		// Best-effort strip :port for common host:port cases.
+		if strings.Count(h, ":") == 1 {
+			return strings.TrimSpace(strings.SplitN(h, ":", 2)[0])
+		}
+		return strings.TrimSpace(h)
+	}
+
+	allowed := map[string]struct{}{}
+	add := func(h string) {
+		h = normalizeHost(h)
+		if h == "" {
+			return
+		}
+		allowed[strings.ToLower(h)] = struct{}{}
+	}
+
+	// If we're behind a reverse proxy that doesn't preserve Host to the backend (passHostHeader=false),
+	// nhooyr/websocket's default origin check can reject legitimate same-site browser connections.
+	//
+	// Browsers cannot set X-Forwarded-Host for WebSocket requests; it's set by the proxy, so it is safe
+	// to use it to authorize the external origin host.
+	for _, part := range strings.Split(req.Header.Get("X-Forwarded-Host"), ",") {
+		add(part)
+	}
+
+	if publicURL != "" {
+		if u, err := url.Parse(publicURL); err == nil {
+			add(u.Host)
+		}
+	}
+
+	if len(allowed) == 0 {
+		return nil
+	}
+
+	patterns := make([]string, 0, len(allowed))
+	for h := range allowed {
+		patterns = append(patterns, h)
+	}
+	sort.Strings(patterns)
+	return &websocket.AcceptOptions{OriginPatterns: patterns}
+}
 
 type terminalClientMsg struct {
 	Type string `json:"type"`
@@ -202,7 +262,7 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Upgrade to websocket.
-	conn, err := websocket.Accept(w, req, nil)
+	conn, err := websocket.Accept(w, req, terminalWSAcceptOptions(s.cfg.PublicURL, req))
 	if err != nil {
 		return
 	}
