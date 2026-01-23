@@ -293,17 +293,17 @@ FROM sf_user_forward_credentials WHERE username=$1`, username).Scan(
 	}
 	baseURLValue, err := dec(baseURL)
 	if err != nil {
-		// If decryption fails, treat credentials as not configured.
-		// This can happen after a session secret rotation or accidental empty secret.
-		return nil, nil
+		// If decryption fails, credentials exist but are unusable (likely due to session secret rotation).
+		// Surface this so tasks fail loudly instead of silently skipping Forward integration.
+		return nil, fmt.Errorf("forward credentials could not be decrypted; re-save Forward settings")
 	}
 	usernameValue, err := dec(fwdUser)
 	if err != nil {
-		return nil, nil
+		return nil, fmt.Errorf("forward credentials could not be decrypted; re-save Forward settings")
 	}
 	passwordValue, err := dec(fwdPass)
 	if err != nil {
-		return nil, nil
+		return nil, fmt.Errorf("forward credentials could not be decrypted; re-save Forward settings")
 	}
 	collectorUserValue, _ := dec(collectorUser)
 	deviceUserValue, _ := dec(deviceUser)
