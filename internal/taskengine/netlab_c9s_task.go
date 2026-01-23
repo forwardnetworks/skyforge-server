@@ -481,17 +481,6 @@ func (e *Engine) captureC9sTopologyArtifact(ctx context.Context, spec netlabC9sR
 	if err != nil {
 		return nil, err
 	}
-	// For vrnetlab-based nodes, prefer the dedicated Multus management IP (if present).
-	for i := range graph.Nodes {
-		kind := strings.ToLower(strings.TrimSpace(graph.Nodes[i].Kind))
-		switch kind {
-		case "cisco_iol", "vios", "viosl2", "vr-n9kv", "asav", "vmx", "sros", "csr":
-			raw := podNetworkStatus[strings.TrimSpace(graph.Nodes[i].ID)]
-			if ip, ok := parseCNIStatusIPForNetwork(raw, "vrnetlab-mgmt"); ok {
-				graph.Nodes[i].MgmtIP = ip
-			}
-		}
-	}
 	if len(nodeNameMapping) > 0 {
 		for i := range graph.Nodes {
 			id := strings.TrimSpace(graph.Nodes[i].ID)

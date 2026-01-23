@@ -456,16 +456,6 @@ func (e *Engine) captureClabernetesTopologyArtifact(ctx context.Context, spec cl
 	if err != nil {
 		return err
 	}
-	for i := range graph.Nodes {
-		kind := strings.ToLower(strings.TrimSpace(graph.Nodes[i].Kind))
-		switch kind {
-		case "cisco_iol", "vios", "viosl2", "vr-n9kv", "asav", "vmx", "sros", "csr":
-			raw := podNetworkStatus[strings.TrimSpace(graph.Nodes[i].ID)]
-			if ip, ok := parseCNIStatusIPForNetwork(raw, "vrnetlab-mgmt"); ok {
-				graph.Nodes[i].MgmtIP = ip
-			}
-		}
-	}
 	graph.GeneratedAt = time.Now().UTC().Format(time.RFC3339)
 
 	graphBytes, err := json.Marshal(graph)
