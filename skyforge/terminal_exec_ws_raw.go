@@ -48,14 +48,51 @@ func terminalWSAcceptOptions(publicURL string, req *http.Request) *websocket.Acc
 		return strings.TrimSpace(h)
 	}
 
+	// Base domain allowlist:
+	// - Prefer PublicURL (if set) as the canonical external hostname.
+	// - Fall back to request Host.
+	// Keep this reasonably tight to reduce WS CSRF exposure, but wide enough to
+	// handle reverse proxies that don't preserve the Host header.
+	baseDomainForHost := func(h string) string {
+		h = strings.ToLower(normalizeHost(h))
+		switch {
+		case strings.HasSuffix(h, ".local.forwardnetworks.com") || h == "local.forwardnetworks.com":
+			return "local.forwardnetworks.com"
+		case strings.HasSuffix(h, ".forwardnetworks.com") || h == "forwardnetworks.com":
+			return "forwardnetworks.com"
+		default:
+			return ""
+		}
+	}
+
+	baseDomain := ""
+	if publicURL != "" {
+		if u, err := url.Parse(publicURL); err == nil {
+			baseDomain = baseDomainForHost(u.Host)
+		}
+	}
+	if baseDomain == "" {
+		baseDomain = baseDomainForHost(req.Host)
+	}
+
 	allowed := map[string]struct{}{}
 	add := func(h string) {
 		h = normalizeHost(h)
 		if h == "" {
 			return
 		}
+		// If we have a base domain, restrict hosts to that domain (or localhost for dev).
+		if baseDomain != "" {
+			lh := strings.ToLower(h)
+			if lh != "localhost" && lh != "127.0.0.1" && lh != baseDomain && !strings.HasSuffix(lh, "."+baseDomain) {
+				return
+			}
+		}
 		allowed[strings.ToLower(h)] = struct{}{}
 	}
+
+	// Always include the request Host as a fallback.
+	add(req.Host)
 
 	// If we're behind a reverse proxy that doesn't preserve Host to the backend (passHostHeader=false),
 	// nhooyr/websocket's default origin check can reject legitimate same-site browser connections.
@@ -70,6 +107,20 @@ func terminalWSAcceptOptions(publicURL string, req *http.Request) *websocket.Acc
 		if u, err := url.Parse(publicURL); err == nil {
 			add(u.Host)
 		}
+	}
+
+	// Origin is sent by the browser for WebSocket requests. If it falls under the
+	// expected base domain, include it as well.
+	if origin := strings.TrimSpace(req.Header.Get("Origin")); origin != "" {
+		if u, err := url.Parse(origin); err == nil {
+			add(u.Host)
+		}
+	}
+
+	// Add wildcard patterns for the base domain to handle node-specific hostnames.
+	if baseDomain != "" {
+		allowed[strings.ToLower(baseDomain)] = struct{}{}
+		allowed["*."+strings.ToLower(baseDomain)] = struct{}{}
 	}
 
 	if len(allowed) == 0 {

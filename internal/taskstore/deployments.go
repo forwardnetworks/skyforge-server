@@ -13,14 +13,23 @@ func UpdateDeploymentStatus(ctx context.Context, db *sql.DB, workspaceID, deploy
 	}
 	workspaceID = strings.TrimSpace(workspaceID)
 	deploymentID = strings.TrimSpace(deploymentID)
+	status = strings.TrimSpace(status)
 	if workspaceID == "" || deploymentID == "" {
+		return nil
+	}
+	if status == "" {
 		return nil
 	}
 	var finished sql.NullTime
 	if finishedAt != nil && !finishedAt.IsZero() {
-		finished = sql.NullTime{Time: *finishedAt, Valid: true}
+		finished = sql.NullTime{Time: finishedAt.UTC(), Valid: true}
 	}
-	_, err := db.ExecContext(ctx, `UPDATE sf_deployments SET status=$1, last_run_at=$2 WHERE id=$3 AND workspace_id=$4`,
+	// Keep this in sync with sf_deployments schema. The UI reads last_status/last_finished_at.
+	_, err := db.ExecContext(ctx, `UPDATE sf_deployments SET
+  last_status=$1,
+  last_finished_at=$2,
+  updated_at=now()
+WHERE id=$3 AND workspace_id=$4`,
 		status, finished, deploymentID, workspaceID)
 	return err
 }

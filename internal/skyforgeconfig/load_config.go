@@ -401,9 +401,12 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 	netlabGeneratorImage := strings.TrimSpace(enc.NetlabGenerator.GeneratorImage)
 	netlabGeneratorPullPolicy := strings.TrimSpace(enc.NetlabGenerator.PullPolicy)
 
-	// Note: Worker does not need session secrets, OIDC, LDAP, DNS, UI, or admin users.
+	// Note: Worker does not need OIDC, LDAP, DNS, UI, or admin users.
+	// However it *does* need SessionSecret to decrypt any encrypted credentials
+	// stored in Postgres (Forward creds, cloud creds, etc.).
 	return skyforgecore.Config{
 		TaskWorkerEnabled:                        enc.TaskWorkerEnabled,
+		SessionSecret:                            sec.SessionSecret,
 		Netlab:                                   netlabCfg,
 		Workspaces:                               workspacesCfg,
 		TerraformBinaryPath:                      terraformBinaryPath,
