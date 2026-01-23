@@ -11,11 +11,26 @@ import (
 )
 
 type Box struct {
-	key [32]byte
+	// keys are tried in-order for decryption. Encrypt always uses keys[0].
+	keys [][32]byte
 }
 
 func New(secret string) *Box {
-	return &Box{key: sha256.Sum256([]byte(secret))}
+	keys := make([][32]byte, 0, 2)
+	keys = append(keys, sha256.Sum256([]byte(secret)))
+
+	// Backward-compat / recovery path:
+	// If SKYFORGE_SESSION_SECRET was accidentally deployed as an empty string, some
+	// values may have been encrypted using sha256(""). Allow decrypting those values
+	// so the system can recover without permanently breaking stored credentials.
+	//
+	// NOTE: This does not weaken encryption of *new* values since Encrypt always
+	// uses keys[0].
+	if strings.TrimSpace(secret) != "" {
+		keys = append(keys, sha256.Sum256([]byte("")))
+	}
+
+	return &Box{keys: keys}
 }
 
 func (sb *Box) Encrypt(plaintext string) (string, error) {
@@ -26,7 +41,10 @@ func (sb *Box) Encrypt(plaintext string) (string, error) {
 	if plaintext == "" {
 		return "", nil
 	}
-	block, err := aes.NewCipher(sb.key[:])
+	if len(sb.keys) == 0 {
+		return "", fmt.Errorf("secret box unavailable")
+	}
+	block, err := aes.NewCipher(sb.keys[0][:])
 	if err != nil {
 		return "", err
 	}
@@ -58,23 +76,32 @@ func (sb *Box) Decrypt(value string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	block, err := aes.NewCipher(sb.key[:])
-	if err != nil {
-		return "", err
+	var lastErr error
+	for _, key := range sb.keys {
+		block, err := aes.NewCipher(key[:])
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		gcm, err := cipher.NewGCM(block)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if len(raw) < gcm.NonceSize() {
+			return "", fmt.Errorf("invalid encrypted secret")
+		}
+		nonce := raw[:gcm.NonceSize()]
+		ciphertext := raw[gcm.NonceSize():]
+		plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		return string(plaintext), nil
 	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
+	if lastErr != nil {
+		return "", lastErr
 	}
-	if len(raw) < gcm.NonceSize() {
-		return "", fmt.Errorf("invalid encrypted secret")
-	}
-	nonce := raw[:gcm.NonceSize()]
-	ciphertext := raw[gcm.NonceSize():]
-	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		return "", err
-	}
-	return string(plaintext), nil
+	return "", fmt.Errorf("secret box unavailable")
 }
-
