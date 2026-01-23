@@ -49,6 +49,8 @@ func (e *Engine) forwardDeviceTypes(ctx context.Context) map[string]string {
 	out := map[string]string{
 		"linux": "linux_os_ssh",
 		"eos":   "arista_eos_ssh",
+		// vrnetlab Cisco IOL is IOS-XE from Forward's perspective.
+		"ios_xe": "cisco_ios_xe_ssh",
 	}
 	if e == nil || e.db == nil {
 		return out
@@ -291,15 +293,17 @@ FROM sf_user_forward_credentials WHERE username=$1`, username).Scan(
 	}
 	baseURLValue, err := dec(baseURL)
 	if err != nil {
-		return nil, err
+		// If decryption fails, treat credentials as not configured.
+		// This can happen after a session secret rotation or accidental empty secret.
+		return nil, nil
 	}
 	usernameValue, err := dec(fwdUser)
 	if err != nil {
-		return nil, err
+		return nil, nil
 	}
 	passwordValue, err := dec(fwdPass)
 	if err != nil {
-		return nil, err
+		return nil, nil
 	}
 	collectorUserValue, _ := dec(collectorUser)
 	deviceUserValue, _ := dec(deviceUser)
@@ -747,6 +751,8 @@ func forwardDeviceKeyFromKind(kind string) string {
 		return "eos"
 	case "linux", "alpine":
 		return "linux"
+	case "cisco_iol", "iol", "ios-xe", "ios_xe":
+		return "ios_xe"
 	default:
 		return kind
 	}
@@ -758,6 +764,8 @@ func forwardDefaultCredentialForKind(kind string) (username, password string, ok
 		return "admin", "admin", true
 	case "linux":
 		return "root", "admin", true
+	case "ios_xe":
+		return "admin", "admin", true
 	default:
 		return "", "", false
 	}
@@ -845,6 +853,7 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 
 	devices := []forwardClassicDevice{}
 	endpoints := []forwardEndpoint{}
+	connectivityNames := []string{}
 	seen := map[string]bool{}
 	for _, node := range graph.Nodes {
 		mgmt := strings.TrimSpace(node.MgmtIP)
@@ -911,6 +920,7 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 			BgpPeerType:              "BOTH",
 			EnableSnmpCollection:     true,
 		})
+		connectivityNames = append(connectivityNames, name)
 	}
 	if len(endpoints) > 0 {
 		if err := forwardPutEndpointsBatch(ctx, client, networkID, endpoints); err != nil {
@@ -922,6 +932,18 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 	}
 	if err := forwardPutClassicDevices(ctx, client, networkID, devices); err != nil {
 		return 0, err
+	}
+	// Start connectivity tests as soon as devices are imported, so the UI shows reachability
+	// quickly even before collection is started. Best-effort (don't fail the run).
+	if len(connectivityNames) > 0 {
+		if err := forwardBulkStartConnectivityTests(ctx, client, networkID, connectivityNames); err != nil {
+			log.Printf("forward connectivity tests skipped: %v", err)
+		} else if taskID > 0 && e != nil && e.db != nil {
+			_ = taskstore.AppendTaskEvent(context.Background(), e.db, taskID, "forward.connectivity.bulkstart", map[string]any{
+				"networkId": networkID,
+				"devices":   len(connectivityNames),
+			})
+		}
 	}
 	if opts.StartCollection {
 		_ = forwardStartCollection(ctx, client, networkID)
