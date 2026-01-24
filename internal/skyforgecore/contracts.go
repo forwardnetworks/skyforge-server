@@ -17,6 +17,7 @@ const (
 
 	TaskTypeNetlabRun     = "netlab-run"
 	TaskTypeNetlabC9sRun  = "netlab-c9s-run"
+	TaskTypeNetlabValidate = "netlab-validate"
 	TaskTypeContainerlab  = "containerlab-run"
 	TaskTypeClabernetes   = "clabernetes-run"
 	TaskTypeForwardInit   = "forward-init"

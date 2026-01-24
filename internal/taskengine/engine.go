@@ -43,6 +43,8 @@ func (e *Engine) DispatchTask(ctx context.Context, task *taskstore.TaskRecord, l
 		return true, e.dispatchNetlabTask(ctx, task, log)
 	case typ == skyforgecore.TaskTypeNetlabC9sRun:
 		return true, e.dispatchNetlabC9sTask(ctx, task, taskLogAdapter(log))
+	case typ == skyforgecore.TaskTypeNetlabValidate:
+		return true, e.dispatchNetlabValidateTask(ctx, task, taskLogAdapter(log))
 	case typ == skyforgecore.TaskTypeContainerlab:
 		return true, e.dispatchContainerlabTask(ctx, task, taskLogAdapter(log))
 	case typ == skyforgecore.TaskTypeClabernetes:

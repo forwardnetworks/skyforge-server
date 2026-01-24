@@ -32,6 +32,14 @@ type WorkspaceNetlabTemplatesRequest struct {
 	Repo   string `query:"repo" encore:"optional"`   // owner/repo or URL (custom only)
 }
 
+type WorkspaceNetlabValidateRequest struct {
+	Source      string  `json:"source,omitempty"` // workspace|blueprints|external|custom
+	Repo        string  `json:"repo,omitempty"`   // owner/repo or URL (custom only)
+	Dir         string  `json:"dir,omitempty"`    // repo-relative dir
+	Template    string  `json:"template"`         // repo-relative file within Dir (may include subdirs)
+	Environment JSONMap `json:"environment,omitempty"`
+}
+
 // GetWorkspaceNetlabTemplates lists Netlab templates for a workspace.
 //
 //encore:api auth method=GET path=/api/workspaces/:id/netlab/templates
@@ -204,6 +212,81 @@ func (s *Service) GetWorkspaceNetlabTemplates(ctx context.Context, id string, re
 		HeadSHA:     headSHA,
 		Cached:      false,
 		UpdatedAt:   time.Now().UTC().Format(time.RFC3339),
+	}, nil
+}
+
+// ValidateWorkspaceNetlabTemplate runs `netlab create` against a selected template bundle without deploying it.
+// This catches missing images, invalid attributes, and missing required plugins/templates.
+//
+//encore:api auth method=POST path=/api/workspaces/:id/netlab/validate
+func (s *Service) ValidateWorkspaceNetlabTemplate(ctx context.Context, id string, req *WorkspaceNetlabValidateRequest) (*WorkspaceRunResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	pc, err := s.workspaceContextForUser(user, id)
+	if err != nil {
+		return nil, err
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	if req == nil || strings.TrimSpace(req.Template) == "" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("template is required").Err()
+	}
+
+	source := "workspace"
+	if v := strings.ToLower(strings.TrimSpace(req.Source)); v != "" {
+		source = v
+	}
+	templateRepo := strings.TrimSpace(req.Repo)
+	dir := strings.Trim(strings.TrimSpace(req.Dir), "/")
+	if dir == "" {
+		dir = "blueprints/netlab"
+		if source == "blueprints" || source == "blueprint" || source == "external" {
+			dir = "netlab"
+		}
+	}
+	template := strings.TrimPrefix(strings.TrimSpace(req.Template), "/")
+
+	envAny, _ := fromJSONMap(req.Environment)
+	env := parseEnvMap(envAny)
+
+	meta, err := toJSONMap(map[string]any{
+		"source":      source,
+		"repo":        templateRepo,
+		"dir":         dir,
+		"template":    template,
+		"environment": env,
+		"dedupeKey":   fmt.Sprintf("netlab-validate:%s:%s:%s:%s", pc.workspace.ID, source, dir, template),
+		"spec": map[string]any{
+			"templateSource": source,
+			"templateRepo":   templateRepo,
+			"templatesDir":   dir,
+			"template":       template,
+			"environment":    env,
+		},
+	})
+	if err != nil {
+		log.Printf("netlab validate meta encode: %v", err)
+		return nil, errs.B().Code(errs.Internal).Msg("failed to encode metadata").Err()
+	}
+
+	task, err := createTask(ctx, s.db, pc.workspace.ID, nil, "netlab-validate", "Skyforge netlab validate", pc.claims.Username, meta)
+	if err != nil {
+		return nil, err
+	}
+	s.queueTask(task)
+
+	taskJSON, err := toJSONMap(taskToRunInfo(*task))
+	if err != nil {
+		log.Printf("netlab validate task encode: %v", err)
+		return nil, errs.B().Code(errs.Internal).Msg("failed to encode run").Err()
+	}
+	return &WorkspaceRunResponse{
+		WorkspaceID: pc.workspace.ID,
+		Task:        taskJSON,
+		User:        pc.claims.Username,
 	}, nil
 }
 

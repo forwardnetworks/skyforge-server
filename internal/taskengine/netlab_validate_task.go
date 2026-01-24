@@ -1,0 +1,217 @@
+package taskengine
+
+import (
+	"context"
+	"encoding/base64"
+	"fmt"
+	"strings"
+	"time"
+
+	"encore.app/internal/taskdispatch"
+	"encore.app/internal/taskstore"
+)
+
+type netlabValidateTaskSpec struct {
+	TemplateSource string            `json:"templateSource,omitempty"`
+	TemplateRepo   string            `json:"templateRepo,omitempty"`
+	TemplatesDir   string            `json:"templatesDir,omitempty"`
+	Template       string            `json:"template,omitempty"`
+	Environment    map[string]string `json:"environment,omitempty"`
+}
+
+type netlabValidateRunSpec struct {
+	TaskID         int
+	WorkspaceCtx   *workspaceContext
+	Username       string
+	TemplateSource string
+	TemplateRepo   string
+	TemplatesDir   string
+	Template       string
+	Environment    map[string]string
+}
+
+func (e *Engine) dispatchNetlabValidateTask(ctx context.Context, task *taskstore.TaskRecord, log Logger) error {
+	if task == nil {
+		return nil
+	}
+	var specIn netlabValidateTaskSpec
+	if err := decodeTaskSpec(task, &specIn); err != nil {
+		return err
+	}
+	ws, err := e.loadWorkspaceByKey(ctx, task.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	username := strings.TrimSpace(task.CreatedBy)
+	if username == "" {
+		username = ws.primaryOwner()
+	}
+	pc := &workspaceContext{
+		workspace: *ws,
+		claims: SessionClaims{
+			Username: username,
+		},
+	}
+	if strings.TrimSpace(specIn.TemplateSource) == "" {
+		specIn.TemplateSource = "blueprints"
+	}
+	runSpec := netlabValidateRunSpec{
+		TaskID:         task.ID,
+		WorkspaceCtx:   pc,
+		Username:       username,
+		TemplateSource: strings.TrimSpace(specIn.TemplateSource),
+		TemplateRepo:   strings.TrimSpace(specIn.TemplateRepo),
+		TemplatesDir:   strings.TrimSpace(specIn.TemplatesDir),
+		Template:       strings.TrimSpace(specIn.Template),
+		Environment:    specIn.Environment,
+	}
+	return taskdispatch.WithTaskStep(ctx, e.db, task.ID, "netlab.validate", func() error {
+		return e.runNetlabValidateTask(ctx, runSpec, log)
+	})
+}
+
+func (e *Engine) runNetlabValidateTask(ctx context.Context, spec netlabValidateRunSpec, log Logger) error {
+	if log == nil {
+		log = noopLogger{}
+	}
+	if e == nil || e.db == nil {
+		return fmt.Errorf("database unavailable")
+	}
+	if spec.TaskID > 0 {
+		canceled, _ := e.taskCanceled(ctx, spec.TaskID)
+		if canceled {
+			return fmt.Errorf("validation canceled")
+		}
+	}
+	if spec.WorkspaceCtx == nil {
+		return fmt.Errorf("workspace context unavailable")
+	}
+	if strings.TrimSpace(spec.Template) == "" {
+		return fmt.Errorf("netlab template is required")
+	}
+
+	image := strings.TrimSpace(e.cfg.NetlabGeneratorImage)
+	if image == "" {
+		return fmt.Errorf("netlab generator image is not configured (set ENCORE_CFG_SKYFORGE.NetlabGenerator.GeneratorImage)")
+	}
+	pullPolicy := strings.TrimSpace(e.cfg.NetlabGeneratorPullPolicy)
+	if pullPolicy == "" {
+		pullPolicy = "IfNotPresent"
+	}
+
+	ns := clabernetesWorkspaceNamespace(spec.WorkspaceCtx.workspace.Slug)
+	if err := kubeEnsureNamespace(ctx, ns); err != nil {
+		return err
+	}
+	if err := kubeEnsureNamespaceImagePullSecret(ctx, ns, strings.TrimSpace(e.cfg.ImagePullSecretName), strings.TrimSpace(e.cfg.ImagePullSecretNamespace)); err != nil {
+		return err
+	}
+
+	bundleB64, err := e.buildNetlabTopologyBundleB64(ctx, spec.WorkspaceCtx, spec.TemplateSource, spec.TemplateRepo, spec.TemplatesDir, spec.Template)
+	if err != nil {
+		return err
+	}
+	bundleB64 = strings.TrimSpace(bundleB64)
+	if bundleB64 == "" {
+		return fmt.Errorf("netlab topology bundle is empty")
+	}
+	// Kubernetes object size limit is ~1MiB; base64 expands.
+	if len(bundleB64) > 900_000 {
+		return fmt.Errorf("netlab topology bundle too large for in-cluster validation (%d bytes base64)", len(bundleB64))
+	}
+	if _, err := base64.StdEncoding.DecodeString(bundleB64); err != nil {
+		return fmt.Errorf("invalid netlab topology bundle encoding: %w", err)
+	}
+
+	labels := map[string]string{
+		"skyforge-task-id": fmt.Sprintf("%d", spec.TaskID),
+		"skyforge-action":  "netlab-validate",
+	}
+
+	bundleCM := sanitizeKubeNameFallback(fmt.Sprintf("netlab-validate-%d-bundle", time.Now().Unix()%10_000), "netlab-validate-bundle")
+	if err := kubeUpsertConfigMap(ctx, ns, bundleCM, map[string]string{
+		"bundle.b64": bundleB64,
+	}, labels); err != nil {
+		return err
+	}
+	defer func() { _, _ = kubeDeleteConfigMap(context.Background(), ns, bundleCM) }()
+
+	jobName := sanitizeKubeNameFallback(fmt.Sprintf("netlab-validate-%d", time.Now().Unix()%10_000), "netlab-validate")
+	payload := map[string]any{
+		"apiVersion": "batch/v1",
+		"kind":       "Job",
+		"metadata": map[string]any{
+			"name":      jobName,
+			"namespace": ns,
+			"labels": map[string]any{
+				"app":              "skyforge-netlab-validate",
+				"skyforge-task-id": fmt.Sprintf("%d", spec.TaskID),
+			},
+		},
+		"spec": map[string]any{
+			"backoffLimit":            0,
+			"ttlSecondsAfterFinished": 3600,
+			"template": map[string]any{
+				"metadata": map[string]any{
+					"labels": map[string]any{
+						"app": "skyforge-netlab-validate",
+					},
+				},
+				"spec": map[string]any{
+					"restartPolicy": "Never",
+					"containers": []map[string]any{
+						{
+							"name":            "validator",
+							"image":           image,
+							"imagePullPolicy": pullPolicy,
+							"env": kubeEnvList(map[string]string{
+								"SKYFORGE_VALIDATE_ONLY":          "1",
+								"SKYFORGE_NETLAB_BUNDLE_PATH":     "/input/bundle.b64",
+								"SKYFORGE_NETLAB_TOPOLOGY_PATH":   "topology.yml",
+								"SKYFORGE_NETLAB_DEVICE_OVERRIDE": strings.TrimSpace(spec.Environment["NETLAB_DEVICE"]),
+							}),
+							"volumeMounts": []map[string]any{
+								{"name": "input", "mountPath": "/input", "readOnly": true},
+								{"name": "work", "mountPath": "/work"},
+							},
+						},
+					},
+					"volumes": []map[string]any{
+						{
+							"name": "input",
+							"configMap": map[string]any{
+								"name": bundleCM,
+							},
+						},
+						{
+							"name": "work",
+							"emptyDir": map[string]any{
+								"sizeLimit": "2Gi",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if err := kubeCreateJob(ctx, ns, payload); err != nil {
+		return err
+	}
+	defer func() { _ = kubeDeleteJob(context.Background(), ns, jobName) }()
+
+	log.Infof("Netlab validate job created: %s", jobName)
+	if err := kubeWaitJob(ctx, ns, jobName, log, func() bool {
+		if spec.TaskID <= 0 || e == nil {
+			return false
+		}
+		canceled, _ := e.taskCanceled(ctx, spec.TaskID)
+		return canceled
+	}); err != nil {
+		return err
+	}
+
+	log.Infof("Netlab template validated successfully")
+	return nil
+}
+
