@@ -281,12 +281,36 @@ func forwardCreateCliCredentialNamed(ctx context.Context, c *forwardClient, netw
 	return &out, nil
 }
 
-func forwardCreateSnmpCredential(ctx context.Context, c *forwardClient, networkID string, name string, community string) (*forwardSnmpCredential, error) {
+func forwardCreateSnmpCredential(ctx context.Context, c *forwardClient, networkID string, community string) (*forwardSnmpCredential, error) {
 	payload := map[string]any{
-		"name":      strings.TrimSpace(name),
-		"community": strings.TrimSpace(community),
+		"name":            strings.TrimSpace(community),
+		"autoAssociate":   true,
+		"version":         "V2C",
+		"communityString": strings.TrimSpace(community),
 	}
-	resp, body, err := c.doJSON(ctx, http.MethodPost, "/api/networks/"+url.PathEscape(strings.TrimSpace(networkID))+"/snmp-credentials", nil, payload)
+
+	// Forward has used multiple endpoint spellings over time. Our environment uses:
+	//   POST /api/networks/{id}/snmpCredentials
+	// Keep a fallback to the legacy path to avoid regressions if the API differs.
+	paths := []string{
+		"/api/networks/" + url.PathEscape(strings.TrimSpace(networkID)) + "/snmpCredentials",
+		"/api/networks/" + url.PathEscape(strings.TrimSpace(networkID)) + "/snmp-credentials",
+	}
+
+	var (
+		resp *http.Response
+		body []byte
+		err  error
+	)
+	for _, p := range paths {
+		resp, body, err = c.doJSON(ctx, http.MethodPost, p, nil, payload)
+		if err != nil {
+			continue
+		}
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			break
+		}
+	}
 	if err != nil {
 		return nil, err
 	}

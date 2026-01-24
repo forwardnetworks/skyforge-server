@@ -389,8 +389,6 @@ func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *work
 		return strings.TrimSpace(fmt.Sprintf("%v", raw))
 	}
 
-	networkName := getString(forwardNetworkNameKey)
-	credentialName := networkName
 	networkID := getString(forwardNetworkIDKey)
 	changed := false
 	if networkID == "" {
@@ -404,7 +402,6 @@ func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *work
 		networkID = network.ID
 		cfgAny[forwardNetworkIDKey] = networkID
 		cfgAny[forwardNetworkNameKey] = strings.TrimSpace(network.Name)
-		credentialName = strings.TrimSpace(network.Name)
 		changed = true
 	}
 
@@ -428,7 +425,7 @@ func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *work
 	if snmpCredentialID == "" && e.cfg.Forward.SNMPPlaceholderEnabled {
 		community := strings.TrimSpace(e.cfg.Forward.SNMPCommunity)
 		if community != "" {
-			cred, err := forwardCreateSnmpCredential(ctx, client, networkID, credentialName, community)
+			cred, err := forwardCreateSnmpCredential(ctx, client, networkID, community)
 			if err != nil {
 				log.Printf("forward snmp credential skipped: %v", err)
 			} else {
