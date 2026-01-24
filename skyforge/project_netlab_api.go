@@ -297,6 +297,26 @@ type giteaTreeResponse struct {
 	} `json:"tree"`
 }
 
+func isNetlabTemplatePathExcluded(rel string) bool {
+	// Exclude Netlab inventory/output folders that sometimes contain nested topology.yml files
+	// but are not actually user-selectable templates.
+	//
+	// These commonly appear when a folder is synced from a runner workspace rather than a
+	// clean example template checkout.
+	rel = strings.TrimPrefix(strings.TrimSpace(rel), "/")
+	if rel == "" {
+		return true
+	}
+	parts := strings.Split(rel, "/")
+	for _, p := range parts {
+		switch p {
+		case "host_vars", "group_vars", "node_files", "check.config", "files":
+			return true
+		}
+	}
+	return false
+}
+
 func listNetlabTemplatesViaGitTree(cfg Config, owner, repo, headSHA, dir string, maxResults int) ([]string, error) {
 	owner = strings.TrimSpace(owner)
 	repo = strings.TrimSpace(repo)
@@ -346,6 +366,9 @@ func listNetlabTemplatesViaGitTree(cfg Config, owner, repo, headSHA, dir string,
 		if rel == "" {
 			continue
 		}
+		if isNetlabTemplatePathExcluded(rel) {
+			continue
+		}
 		results = append(results, rel)
 		if maxResults > 0 && len(results) >= maxResults {
 			return nil, fmt.Errorf("too many templates")
@@ -368,12 +391,18 @@ func listNetlabTemplatesRecursive(cfg Config, owner, repo, branch, repoPath, rel
 		if name == "" || strings.HasPrefix(name, ".") {
 			continue
 		}
+		if name == "host_vars" || name == "group_vars" || name == "node_files" || name == "check.config" || name == "files" {
+			continue
+		}
 		entryPath := strings.TrimPrefix(strings.TrimSpace(entry.Path), "/")
 		rel := path.Join(relBase, name)
 		switch entry.Type {
 		case "file":
 			if nested {
 				if name == "topology.yml" || name == "topology.yaml" {
+					if isNetlabTemplatePathExcluded(rel) {
+						continue
+					}
 					results = append(results, rel)
 					if maxResults > 0 && len(results) >= maxResults {
 						return nil, fmt.Errorf("too many templates")
@@ -382,6 +411,9 @@ func listNetlabTemplatesRecursive(cfg Config, owner, repo, branch, repoPath, rel
 				continue
 			}
 			if strings.HasSuffix(name, ".yml") || strings.HasSuffix(name, ".yaml") {
+				if isNetlabTemplatePathExcluded(rel) {
+					continue
+				}
 				results = append(results, rel)
 				if maxResults > 0 && len(results) >= maxResults {
 					return nil, fmt.Errorf("too many templates")
