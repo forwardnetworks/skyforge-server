@@ -3,6 +3,7 @@ package taskengine
 import (
 	"context"
 	"fmt"
+	"path"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -65,15 +66,26 @@ func injectNetlabC9sIOSXEServerVRF(
 		}
 
 		// netlab generator mounts vrnetlab config as node_files/<node>/config.txt (bound into /vrnetlab/config.txt).
+		// In our mount model:
+		//   - ConfigMapName: manifest node CM name
+		//   - ConfigMapPath: CM key (often not equal to "config.txt")
+		//   - FilePath:      mounted file path; ends with "/config.txt"
+		//
+		// Therefore we must detect the config by FilePath basename, not by ConfigMapPath.
+		var cfgMountIdx int = -1
 		var originalCM, originalKey string
-		for _, m := range mounts {
-			if strings.EqualFold(strings.TrimSpace(m.ConfigMapPath), "config.txt") && strings.TrimSpace(m.ConfigMapName) != "" {
+		for i, m := range mounts {
+			if strings.TrimSpace(m.ConfigMapName) == "" {
+				continue
+			}
+			if strings.EqualFold(path.Base(strings.TrimSpace(m.FilePath)), "config.txt") {
+				cfgMountIdx = i
 				originalCM = strings.TrimSpace(m.ConfigMapName)
 				originalKey = strings.TrimSpace(m.ConfigMapPath)
 				break
 			}
 		}
-		if originalCM == "" || originalKey == "" {
+		if cfgMountIdx < 0 || originalCM == "" || originalKey == "" {
 			continue
 		}
 
@@ -100,14 +112,10 @@ func injectNetlabC9sIOSXEServerVRF(
 		}
 		overrideData[overrideKey] = out
 
-		for i := range mounts {
-			if strings.TrimSpace(mounts[i].ConfigMapName) == originalCM && strings.EqualFold(strings.TrimSpace(mounts[i].ConfigMapPath), "config.txt") {
-				mounts[i].ConfigMapName = overrideCM
-				mounts[i].ConfigMapPath = overrideKey
-				changedAny = true
-				break
-			}
-		}
+		// Update the mount that corresponds to config.txt.
+		mounts[cfgMountIdx].ConfigMapName = overrideCM
+		mounts[cfgMountIdx].ConfigMapPath = overrideKey
+		changedAny = true
 		nodeMounts[nodeName] = mounts
 	}
 
