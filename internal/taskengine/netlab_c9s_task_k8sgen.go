@@ -188,6 +188,9 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 								"SKYFORGE_C9S_TOPOLOGY_NAME":    topologyName,
 								"SKYFORGE_C9S_LAB_NAME":         strings.TrimSpace(spec.LabName),
 								"SKYFORGE_C9S_MANIFEST_CM":      manifestCM,
+								// Optional per-deployment override to set defaults.device when the
+								// template doesn't specify it (e.g. force iol instead of eos).
+								"SKYFORGE_NETLAB_DEVICE_OVERRIDE": strings.TrimSpace(spec.Environment["NETLAB_DEVICE"]),
 							}),
 							"volumeMounts": []map[string]any{
 								{"name": "input", "mountPath": "/input", "readOnly": true},

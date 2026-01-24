@@ -665,11 +665,25 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 
 		// Linux nodes are uploaded as endpoints (not classic devices).
 		if deviceKey == "linux" {
+			credID := credentialIDsByDevice["linux"]
+			if credID == "" {
+				if user, pass, ok0 := forwardDefaultCredentialForKind("linux"); ok0 {
+					created, err := forwardCreateCliCredentialNamed(ctx, client, networkID, credentialNameForDevice("linux"), user, pass)
+					if err == nil && created != nil && strings.TrimSpace(created.ID) != "" {
+						credID = strings.TrimSpace(created.ID)
+						credentialIDsByDevice["linux"] = credID
+						changed = true
+					}
+				}
+			}
+			collect := true
 			endpoints = append(endpoints, forwardEndpoint{
-				Type:     "CLI",
-				Name:     name,
-				Host:     mgmt,
-				Protocol: "SSH",
+				Type:         "CLI",
+				Name:         name,
+				Host:         mgmt,
+				Protocol:     "SSH",
+				CredentialID: credID,
+				Collect:      &collect,
 			})
 			continue
 		}

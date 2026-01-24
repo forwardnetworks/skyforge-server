@@ -438,10 +438,12 @@ func forwardCreateNetworkWithRetry(ctx context.Context, client *forwardClient, b
 }
 
 type forwardEndpoint struct {
-	Type     string `json:"type"`
-	Name     string `json:"name"`
-	Host     string `json:"host"`
-	Protocol string `json:"protocol"`
+	Type         string `json:"type"`
+	Name         string `json:"name"`
+	Host         string `json:"host"`
+	Protocol     string `json:"protocol"`
+	CredentialID string `json:"credentialId,omitempty"`
+	Collect      *bool  `json:"collect,omitempty"`
 }
 
 func forwardPutEndpointsBatch(ctx context.Context, c *forwardClient, networkID string, endpoints []forwardEndpoint) error {
