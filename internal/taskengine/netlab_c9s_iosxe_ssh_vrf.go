@@ -9,9 +9,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// injectNetlabC9sIOSXEServerVRF patches vrnetlab IOS/IOS-XE config.txt files to ensure
-// the SSH server listens in the management VRF when the management interface is placed
-// in that VRF (common for vrnetlab Cisco IOL/IOS-XE images).
+// injectNetlabC9sIOSXEServerVRF patches vrnetlab IOS/IOS-XE netlab "initial" config
+// snippets to ensure the SSH server listens in the management VRF when the management
+// interface is placed in that VRF (common for vrnetlab Cisco IOL/IOS-XE images).
 //
 // This is a config injection (not link plumbing): it does not touch interface wiring
 // or any clabernetes connectivity.
@@ -65,20 +65,16 @@ func injectNetlabC9sIOSXEServerVRF(
 			continue
 		}
 
-		// netlab generator mounts vrnetlab config as node_files/<node>/config.txt (bound into /vrnetlab/config.txt).
-		// In our mount model:
-		//   - ConfigMapName: manifest node CM name
-		//   - ConfigMapPath: CM key (often not equal to "config.txt")
-		//   - FilePath:      mounted file path; ends with "/config.txt"
-		//
-		// Therefore we must detect the config by FilePath basename, not by ConfigMapPath.
+		// netlab generator exposes per-node config snippets as node_files/<node>/<rel>.
+		// For vrnetlab IOS/IOS-XE we need to tweak the "initial" snippet, which is later
+		// merged into /vrnetlab/config.txt by the launcher/init sequence.
 		var cfgMountIdx int = -1
 		var originalCM, originalKey string
 		for i, m := range mounts {
 			if strings.TrimSpace(m.ConfigMapName) == "" {
 				continue
 			}
-			if strings.EqualFold(path.Base(strings.TrimSpace(m.FilePath)), "config.txt") {
+			if strings.EqualFold(path.Base(strings.TrimSpace(m.FilePath)), "initial") {
 				cfgMountIdx = i
 				originalCM = strings.TrimSpace(m.ConfigMapName)
 				originalKey = strings.TrimSpace(m.ConfigMapPath)
@@ -125,7 +121,7 @@ func injectNetlabC9sIOSXEServerVRF(
 	if err := kubeUpsertConfigMap(ctx, ns, overrideCM, overrideData, labels); err != nil {
 		return nil, nil, err
 	}
-	log.Infof("c9s: injected iosxe ssh server vrf into vrnetlab config.txt (%d file(s))", len(overrideData))
+	log.Infof("c9s: injected iosxe ssh server vrf into netlab initial config (%d file(s))", len(overrideData))
 	return clabYAML, nodeMounts, nil
 }
 
