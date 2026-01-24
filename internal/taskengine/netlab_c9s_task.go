@@ -312,8 +312,12 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		// should begin only after post-up config has been applied.
 		if _, err := e.syncForwardTopologyGraphDevices(ctx, spec.TaskID, spec.WorkspaceCtx, dep, graph, forwardSyncOptions{
 			StartCollection: false,
-		}); err != nil && log != nil {
-			log.Infof("forward sync skipped: %v", err)
+		}); err != nil {
+			if log != nil {
+				log.Infof("forward sync skipped: %v", err)
+			}
+		} else if log != nil {
+			log.Infof("forward sync: devices uploaded (collection deferred)")
 		}
 
 		// Wait for SSH readiness before starting Forward collection.
@@ -331,9 +335,21 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 			}
 			goto artifacts
 		}
+		if log != nil {
+			log.Infof("forward sync: ssh ready; starting collection")
+		}
 
 		_ = taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "forward.collection.start", func() error {
-			return e.startForwardCollectionForDeployment(ctx, spec.TaskID, spec.WorkspaceCtx, dep)
+			if err := e.startForwardCollectionForDeployment(ctx, spec.TaskID, spec.WorkspaceCtx, dep); err != nil {
+				if log != nil {
+					log.Infof("forward sync skipped: %v", err)
+				}
+				return err
+			}
+			if log != nil {
+				log.Infof("forward sync: collection started")
+			}
+			return nil
 		})
 	}
 

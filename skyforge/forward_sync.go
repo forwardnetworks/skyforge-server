@@ -52,6 +52,12 @@ func (s *Service) forwardDeviceTypes(ctx context.Context) map[string]string {
 	out := map[string]string{
 		"linux": "linux_os_ssh",
 		"eos":   "arista_eos_ssh",
+		// Netlab device keys for Cisco IOL/IOS images. Do not rely on auto-detection.
+		"iol":    "cisco_ios_ssh",
+		"ios":    "cisco_ios_ssh",
+		"ios_xe": "cisco_ios_ssh",
+		"ios-xe": "cisco_ios_ssh",
+		"iosxe":  "cisco_ios_ssh",
 	}
 	if s == nil || s.db == nil {
 		return out
@@ -610,6 +616,10 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *
 	for _, row := range parseNetlabStatusOutput(logText) {
 		name := strings.TrimSpace(row.Node)
 		deviceKey := strings.ToLower(strings.TrimSpace(row.Device))
+		switch deviceKey {
+		case "cisco_iol", "iol", "ios_xe", "ios-xe", "iosxe":
+			deviceKey = "ios"
+		}
 		if deviceKey == "linux" {
 			// Do not onboard Linux nodes into Forward collection.
 			continue
@@ -662,6 +672,13 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *
 		forwardType := ""
 		if deviceKey != "" {
 			forwardType = forwardTypes[deviceKey]
+		}
+		// Netlab sometimes reports Cisco IOL images under different keys; always force IOS SSH.
+		if forwardType == "" {
+			imageLower := strings.ToLower(strings.TrimSpace(row.Image))
+			if deviceKey == "ios" || strings.Contains(imageLower, "cisco_iol") {
+				forwardType = "cisco_ios_ssh"
+			}
 		}
 		devices = append(devices, forwardClassicDevice{
 			Name:                     name,

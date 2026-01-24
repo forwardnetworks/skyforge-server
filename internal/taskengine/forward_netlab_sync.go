@@ -49,8 +49,12 @@ func (e *Engine) forwardDeviceTypes(ctx context.Context) map[string]string {
 	out := map[string]string{
 		"linux": "linux_os_ssh",
 		"eos":   "arista_eos_ssh",
-		// vrnetlab Cisco IOL is IOS-XE from Forward's perspective.
-		"ios_xe": "cisco_ios_xe_ssh",
+		// Cisco IOL/IOS (vrnetlab) devices should be treated as classic IOS SSH.
+		// Do not rely on Forward auto-detection here.
+		"ios": "cisco_ios_ssh",
+		// Some netlab outputs use IOS-XE-ish labels even when the device is IOL.
+		"ios_xe": "cisco_ios_ssh",
+		"ios-xe": "cisco_ios_ssh",
 	}
 	if e == nil || e.db == nil {
 		return out
@@ -639,7 +643,12 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 	changed := false
 	for _, row := range parseNetlabStatusOutput(logText) {
 		name := strings.TrimSpace(row.Node)
-		deviceKey := strings.ToLower(strings.TrimSpace(row.Device))
+		rawDeviceKey := strings.ToLower(strings.TrimSpace(row.Device))
+		deviceKey := rawDeviceKey
+		switch deviceKey {
+		case "cisco_iol", "iol", "ios_xe", "ios-xe", "iosxe":
+			deviceKey = "ios"
+		}
 
 		mgmt := strings.TrimSpace(row.MgmtIPv4)
 		if mgmt == "" || mgmt == "—" {
@@ -667,7 +676,10 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 
 		cred, ok := netlabCredentialForDevice(row.Device, row.Image)
 		cliCredentialID := ""
-		if deviceKey != "" {
+		if rawDeviceKey != "" {
+			cliCredentialID = credentialIDsByDevice[rawDeviceKey]
+		}
+		if cliCredentialID == "" && deviceKey != "" {
 			cliCredentialID = credentialIDsByDevice[deviceKey]
 		}
 		if cliCredentialID == "" && ok && strings.TrimSpace(cred.Username) != "" && strings.TrimSpace(cred.Password) != "" {
@@ -684,6 +696,12 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 		forwardType := ""
 		if deviceKey != "" {
 			forwardType = forwardTypes[deviceKey]
+		}
+		if forwardType == "" {
+			imageLower := strings.ToLower(strings.TrimSpace(row.Image))
+			if deviceKey == "ios" || strings.Contains(imageLower, "cisco_iol") {
+				forwardType = "cisco_ios_ssh"
+			}
 		}
 		devices = append(devices, forwardClassicDevice{
 			Name:                     name,
@@ -751,8 +769,8 @@ func forwardDeviceKeyFromKind(kind string) string {
 		return "eos"
 	case "linux", "alpine":
 		return "linux"
-	case "cisco_iol", "iol", "ios-xe", "ios_xe":
-		return "ios_xe"
+	case "cisco_iol", "iol", "ios-xe", "ios_xe", "ios":
+		return "ios"
 	default:
 		return kind
 	}
@@ -764,7 +782,7 @@ func forwardDefaultCredentialForKind(kind string) (username, password string, ok
 		return "admin", "admin", true
 	case "linux":
 		return "root", "admin", true
-	case "ios_xe":
+	case "ios":
 		return "admin", "admin", true
 	default:
 		return "", "", false

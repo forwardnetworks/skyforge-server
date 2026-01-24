@@ -6,9 +6,12 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 )
+
+var ErrDecryptFailed = errors.New("decrypt failed; re-save credentials")
 
 type Box struct {
 	// keys are tried in-order for decryption. Encrypt always uses keys[0].
@@ -101,7 +104,10 @@ func (sb *Box) Decrypt(value string) (string, error) {
 		return string(plaintext), nil
 	}
 	if lastErr != nil {
-		return "", lastErr
+		// Most commonly this happens when the cluster secret changed after values were
+		// stored. Surface a stable, user-actionable error instead of the underlying
+		// crypto error string.
+		return "", ErrDecryptFailed
 	}
 	return "", fmt.Errorf("secret box unavailable")
 }
