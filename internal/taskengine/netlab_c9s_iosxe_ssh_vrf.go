@@ -48,13 +48,12 @@ func injectNetlabC9sIOSXEServerVRF(
 		"cisco_viosl2": true,
 	}
 
-	overrideCM := sanitizeKubeNameFallback(fmt.Sprintf("c9s-%s-iosxe-overrides", topologyName), "c9s-iosxe-overrides")
-	overrideData := map[string]string{}
 	labels := map[string]string{
 		"skyforge-c9s-topology": topologyName,
 	}
 
 	changedAny := false
+	changedFiles := 0
 
 	for nodeName, kind := range nodesByKind {
 		if !iosKinds[strings.ToLower(strings.TrimSpace(kind))] {
@@ -102,26 +101,30 @@ func injectNetlabC9sIOSXEServerVRF(
 			continue
 		}
 
-		overrideKey := sanitizeArtifactKeySegment(fmt.Sprintf("%s-%s", nodeName, originalKey))
-		if overrideKey == "" || overrideKey == "unknown" {
-			overrideKey = sanitizeArtifactKeySegment(fmt.Sprintf("%s-config", nodeName))
+		// Create a per-node override ConfigMap with the SAME key name ("initial") so clabernetes'
+		// native-mode Cisco IOL helper can still mount /netlab/initial.cfg by matching ConfigMapPath == "initial".
+		//
+		// Using per-node ConfigMaps avoids key collisions while preserving the expected key name.
+		overrideCM := sanitizeKubeNameFallback(fmt.Sprintf("c9s-%s-%s-iosxe-initial", topologyName, nodeName), "c9s-iosxe-initial")
+		overrideData := map[string]string{
+			"initial": out,
 		}
-		overrideData[overrideKey] = out
+		if err := kubeUpsertConfigMap(ctx, ns, overrideCM, overrideData, labels); err != nil {
+			return nil, nil, err
+		}
 
 		// Update the mount that corresponds to config.txt.
 		mounts[cfgMountIdx].ConfigMapName = overrideCM
-		mounts[cfgMountIdx].ConfigMapPath = overrideKey
+		mounts[cfgMountIdx].ConfigMapPath = "initial"
 		changedAny = true
+		changedFiles++
 		nodeMounts[nodeName] = mounts
 	}
 
-	if len(overrideData) == 0 || !changedAny {
+	if !changedAny {
 		return clabYAML, nodeMounts, nil
 	}
-	if err := kubeUpsertConfigMap(ctx, ns, overrideCM, overrideData, labels); err != nil {
-		return nil, nil, err
-	}
-	log.Infof("c9s: injected iosxe ssh server vrf into netlab initial config (%d file(s))", len(overrideData))
+	log.Infof("c9s: injected iosxe ssh server vrf into netlab initial config (%d file(s))", changedFiles)
 	return clabYAML, nodeMounts, nil
 }
 
