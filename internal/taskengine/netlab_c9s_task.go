@@ -247,6 +247,17 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		return err
 	}
 
+	// Ensure SSH is reachable on IOS/IOS-XE nodes that use a dedicated management VRF.
+	// Without this, SSH can be "enabled" but not listening in the mgmt VRF, causing
+	// Forward connectivity tests to hang on TCP connect.
+	if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.iosxe-ssh-vrf", func() error {
+		var err error
+		topologyBytes, nodeMounts, err = injectNetlabC9sIOSXEServerVRF(ctx, ns, topologyName, topologyBytes, nodeMounts, log)
+		return err
+	}); err != nil {
+		return err
+	}
+
 	clabSpec := clabernetesRunSpec{
 		TaskID:             spec.TaskID,
 		WorkspaceID:        strings.TrimSpace(spec.WorkspaceCtx.workspace.ID),
