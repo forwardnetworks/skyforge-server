@@ -90,6 +90,14 @@ func (e *Engine) runNetlabValidateTask(ctx context.Context, spec netlabValidateR
 		return fmt.Errorf("netlab template is required")
 	}
 
+	log.Infof(
+		"Netlab validate request: source=%s repo=%s templatesDir=%s template=%s",
+		strings.TrimSpace(spec.TemplateSource),
+		strings.TrimSpace(spec.TemplateRepo),
+		strings.TrimSpace(spec.TemplatesDir),
+		strings.TrimSpace(spec.Template),
+	)
+
 	image := strings.TrimSpace(e.cfg.NetlabGeneratorImage)
 	if image == "" {
 		return fmt.Errorf("netlab generator image is not configured (set ENCORE_CFG_SKYFORGE.NetlabGenerator.GeneratorImage)")
@@ -214,4 +222,3 @@ func (e *Engine) runNetlabValidateTask(ctx context.Context, spec netlabValidateR
 	log.Infof("Netlab template validated successfully")
 	return nil
 }
-
