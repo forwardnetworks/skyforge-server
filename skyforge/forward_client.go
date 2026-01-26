@@ -81,6 +81,21 @@ type forwardClassicDevice struct {
 	EnableSnmpCollection     bool   `json:"enableSnmpCollection"`
 }
 
+type forwardEndpoint struct {
+	Type         string `json:"type"`
+	Name         string `json:"name"`
+	Host         string `json:"host"`
+	Port         int    `json:"port,omitempty"`
+	Protocol     string `json:"protocol"`
+	CredentialID string `json:"credentialId,omitempty"`
+	ProfileID    string `json:"profileId,omitempty"`
+	JumpServerID string `json:"jumpServerId,omitempty"`
+	FullCollect  bool   `json:"fullCollectionLog,omitempty"`
+	LargeRTT     bool   `json:"largeRtt,omitempty"`
+	Collect      bool   `json:"collect,omitempty"`
+	Note         string `json:"note,omitempty"`
+}
+
 func normalizeForwardBaseURL(raw string) (string, error) {
 	value := strings.TrimSpace(raw)
 	if value == "" {
@@ -176,6 +191,76 @@ func forwardCreateNetwork(ctx context.Context, c *forwardClient, name string) (*
 		return nil, fmt.Errorf("forward create network returned empty id")
 	}
 	return &network, nil
+}
+
+type forwardEndpointProfile struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+func forwardEnsureEndpointProfile(ctx context.Context, c *forwardClient, name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", fmt.Errorf("endpoint profile name is required")
+	}
+	query := url.Values{}
+	query.Set("type", "CLI")
+	resp, body, err := c.doJSON(ctx, http.MethodGet, "/api/endpoint-profiles", query, nil)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		var profiles []forwardEndpointProfile
+		if err := json.Unmarshal(body, &profiles); err == nil {
+			for _, profile := range profiles {
+				if strings.EqualFold(profile.Name, name) && strings.TrimSpace(profile.ID) != "" {
+					return strings.TrimSpace(profile.ID), nil
+				}
+			}
+		}
+	}
+	payload := map[string]any{
+		"name":           name,
+		"type":           "CLI",
+		"customCommands": []string{},
+		"commandSets":    []string{"UNIX"},
+	}
+	resp, body, err = c.doJSON(ctx, http.MethodPost, "/api/endpoint-profiles", query, payload)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("forward create endpoint profile failed: %s", strings.TrimSpace(string(body)))
+	}
+	var profile forwardEndpointProfile
+	if err := json.Unmarshal(body, &profile); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(profile.ID) == "" {
+		return "", fmt.Errorf("forward endpoint profile returned empty id")
+	}
+	return strings.TrimSpace(profile.ID), nil
+}
+
+func forwardPutEndpoints(ctx context.Context, c *forwardClient, networkID string, endpoints []forwardEndpoint) error {
+	if strings.TrimSpace(networkID) == "" {
+		return fmt.Errorf("forward network id is required")
+	}
+	if len(endpoints) == 0 {
+		return nil
+	}
+	query := url.Values{}
+	query.Set("action", "addBatch")
+	query.Set("type", "CLI")
+	path := fmt.Sprintf("/api/networks/%s/endpoints", url.PathEscape(strings.TrimSpace(networkID)))
+	resp, body, err := c.doJSON(ctx, http.MethodPost, path, query, endpoints)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("forward put endpoints failed: %s", strings.TrimSpace(string(body)))
+	}
+	return nil
 }
 
 func forwardListCollectors(ctx context.Context, c *forwardClient) ([]forwardCollector, error) {

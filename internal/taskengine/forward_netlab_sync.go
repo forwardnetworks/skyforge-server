@@ -721,8 +721,12 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 		if deviceKey == "linux" {
 			if linuxProfileID == "" {
 				profileID, err := forwardEnsureEndpointProfile(ctx, client, "Linux", []string{"UNIX"})
-				if err == nil {
-					linuxProfileID = strings.TrimSpace(profileID)
+				if err != nil {
+					return 0, fmt.Errorf("forward ensure linux endpoint profile failed: %w", err)
+				}
+				linuxProfileID = strings.TrimSpace(profileID)
+				if linuxProfileID == "" {
+					return 0, fmt.Errorf("forward ensure linux endpoint profile returned empty id")
 				}
 			}
 			credID := credentialIDsByDevice["linux"]

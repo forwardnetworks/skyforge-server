@@ -255,8 +255,22 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		TopologyName:       topologyName,
 		LabName:            labName,
 		TopologyYAML:       string(topologyBytes),
-		Environment:        spec.Environment,
+		Environment:        map[string]string{},
 		FilesFromConfigMap: nodeMounts,
+	}
+	// Copy environment to avoid mutating the task spec and allow us to add internal hints.
+	for k, v := range spec.Environment {
+		if strings.TrimSpace(k) == "" {
+			continue
+		}
+		clabSpec.Environment[k] = v
+	}
+	// Prefer co-locating the lab pods with the user's in-cluster collector. This reduces
+	// cross-node pod routing dependencies and improves latency for connectivity checks.
+	if spec.WorkspaceCtx != nil {
+		if nodeName, err := kubeCollectorNodeForUser(ctx, spec.WorkspaceCtx.claims.Username); err == nil && strings.TrimSpace(nodeName) != "" {
+			clabSpec.Environment["SKYFORGE_CLABERNETES_NODE_SELECTOR_HOSTNAME"] = strings.TrimSpace(nodeName)
+		}
 	}
 	if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "c9s.deploy", func() error {
 		return e.runClabernetesTask(ctx, clabSpec, log)

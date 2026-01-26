@@ -248,6 +248,16 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 			payload["spec"].(map[string]any)["connectivity"] = connectivity
 		}
 
+		// Optional: pin topology pods to a specific Kubernetes node (e.g. to co-locate with
+		// the user's Forward collector). clabernetes exposes this as a "scheduling" block.
+		if node := envString(spec.Environment, "SKYFORGE_CLABERNETES_NODE_SELECTOR_HOSTNAME"); node != "" {
+			payload["spec"].(map[string]any)["scheduling"] = map[string]any{
+				"nodeSelector": map[string]any{
+					"kubernetes.io/hostname": node,
+				},
+			}
+		}
+
 		if disableExpose {
 			payload["spec"].(map[string]any)["expose"] = map[string]any{
 				"disableExpose": true,
