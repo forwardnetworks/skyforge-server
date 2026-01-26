@@ -265,17 +265,47 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		}
 		clabSpec.Environment[k] = v
 	}
-	// Prefer co-locating the lab pods with the user's in-cluster collector. This reduces
-	// cross-node pod routing dependencies and improves latency for connectivity checks.
-	if spec.WorkspaceCtx != nil {
-		if nodeName, err := kubeCollectorNodeForUser(ctx, spec.WorkspaceCtx.claims.Username); err == nil && strings.TrimSpace(nodeName) != "" {
-			clabSpec.Environment["SKYFORGE_CLABERNETES_NODE_SELECTOR_HOSTNAME"] = strings.TrimSpace(nodeName)
+
+	preferColocate := envBool(spec.Environment, "SKYFORGE_C9S_PREFER_COLOCATE_WITH_COLLECTOR", true)
+	preferredNode := ""
+	if preferColocate && spec.WorkspaceCtx != nil {
+		if nodeName, err := kubeCollectorNodeForUser(ctx, spec.WorkspaceCtx.claims.Username); err == nil {
+			preferredNode = strings.TrimSpace(nodeName)
 		}
 	}
-	if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "c9s.deploy", func() error {
-		return e.runClabernetesTask(ctx, clabSpec, log)
-	}); err != nil {
-		return err
+
+	deployOnce := func() error {
+		return taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "c9s.deploy", func() error {
+			return e.runClabernetesTask(ctx, clabSpec, log)
+		})
+	}
+
+	if preferredNode != "" {
+		// Fast-path: try to deploy on the collector node for performance.
+		// If it doesn't schedule quickly (resource pressure), fall back to the default scheduler
+		// behavior so we can spread labs across the cluster.
+		clabSpec.Environment["SKYFORGE_CLABERNETES_NODE_SELECTOR_HOSTNAME"] = preferredNode
+		clabSpec.Environment["SKYFORGE_CLABERNETES_DEPLOY_TIMEOUT"] = "60s"
+		err := deployOnce()
+		if err == nil {
+			// Clear the timeout override after a successful deploy so it doesn't affect later steps.
+			delete(clabSpec.Environment, "SKYFORGE_CLABERNETES_DEPLOY_TIMEOUT")
+		} else if strings.Contains(strings.ToLower(err.Error()), "deploy timed out") {
+			if log != nil {
+				log.Infof("c9s deploy on preferred node timed out; retrying without node pinning")
+			}
+			delete(clabSpec.Environment, "SKYFORGE_CLABERNETES_NODE_SELECTOR_HOSTNAME")
+			delete(clabSpec.Environment, "SKYFORGE_CLABERNETES_DEPLOY_TIMEOUT")
+			if retryErr := deployOnce(); retryErr != nil {
+				return retryErr
+			}
+		} else {
+			return err
+		}
+	} else {
+		if err := deployOnce(); err != nil {
+			return err
+		}
 	}
 
 	// Run netlab-generated Linux configuration scripts (initial + routing) directly

@@ -43,6 +43,21 @@ func envString(env map[string]string, key string) string {
 	return strings.TrimSpace(raw)
 }
 
+func envDuration(env map[string]string, key string, def time.Duration) time.Duration {
+	raw := envString(env, key)
+	if raw == "" {
+		return def
+	}
+	if secs, err := strconv.Atoi(raw); err == nil && secs > 0 {
+		return time.Duration(secs) * time.Second
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		return def
+	}
+	return d
+}
+
 type c9sFileFromConfigMap struct {
 	ConfigMapName string `json:"configMapName,omitempty"`
 	ConfigMapPath string `json:"configMapPath,omitempty"`
@@ -341,6 +356,10 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		}
 
 		started := time.Now()
+		deployTimeout := envDuration(spec.Environment, "SKYFORGE_CLABERNETES_DEPLOY_TIMEOUT", 15*time.Minute)
+		if deployTimeout < 30*time.Second {
+			deployTimeout = 30 * time.Second
+		}
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 		for {
@@ -369,7 +388,7 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 					}
 					return nil
 				}
-				if time.Since(started) >= 15*time.Minute {
+				if time.Since(started) >= deployTimeout {
 					return fmt.Errorf("clabernetes deploy timed out after %s", time.Since(started).Truncate(time.Second))
 				}
 				log.Infof("Waiting for topology to become ready (elapsed %s)", time.Since(started).Truncate(time.Second))
