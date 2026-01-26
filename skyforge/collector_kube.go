@@ -553,6 +553,13 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, f
 								"name":            "collector",
 								"image":           collectorImage,
 								"imagePullPolicy": collectorPullPolicy,
+								// The Forward collector runs connectivity checks that rely on ICMP (ping).
+								// Grant NET_RAW so ping works without requiring privileged mode.
+								"securityContext": map[string]any{
+									"capabilities": map[string]any{
+										"add": []string{"NET_RAW"},
+									},
+								},
 								"volumeMounts": []any{
 									map[string]any{
 										"name":      "scratch",
@@ -692,6 +699,11 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, f
 									"name":            "collector",
 									"image":           collectorImage,
 									"imagePullPolicy": collectorPullPolicy,
+									"securityContext": map[string]any{
+										"capabilities": map[string]any{
+											"add": []string{"NET_RAW"},
+										},
+									},
 									"volumeMounts": []any{
 										map[string]any{
 											"name":      "scratch",

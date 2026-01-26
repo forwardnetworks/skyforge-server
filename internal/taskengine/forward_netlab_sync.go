@@ -952,6 +952,7 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 	endpoints := []forwardEndpoint{}
 	connectivityNames := []string{}
 	seen := map[string]bool{}
+	linuxEndpointProfileID := ""
 	for _, node := range graph.Nodes {
 		mgmt := strings.TrimSpace(node.MgmtIP)
 		if mgmt == "" || mgmt == "—" {
@@ -965,6 +966,16 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 
 		deviceKey := forwardDeviceKeyFromKind(node.Kind)
 		if deviceKey == "linux" {
+			if linuxEndpointProfileID == "" {
+				profileID, err := forwardEnsureEndpointProfile(ctx, client, "Linux", []string{"UNIX"})
+				if err != nil {
+					return 0, fmt.Errorf("forward ensure linux endpoint profile failed: %w", err)
+				}
+				linuxEndpointProfileID = strings.TrimSpace(profileID)
+				if linuxEndpointProfileID == "" {
+					return 0, fmt.Errorf("forward ensure linux endpoint profile returned empty id")
+				}
+			}
 			cliCredentialID := credentialIDsByKind[deviceKey]
 			if cliCredentialID == "" {
 				if u, p, ok := forwardDefaultCredentialForKind(deviceKey); ok {
@@ -990,6 +1001,7 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 				Protocol: "SSH",
 				// Forward endpoint API uses "credentialId" (not "cliCredentialId").
 				CredentialID: cliCredentialID,
+				ProfileID:    linuxEndpointProfileID,
 				Collect: func() *bool {
 					v := true
 					return &v
