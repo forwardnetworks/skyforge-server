@@ -217,6 +217,14 @@ if command -v apk >/dev/null 2>&1; then
 fi
 mkdir -p /var/run/sshd
 ssh-keygen -A >/dev/null 2>&1 || true
+# Set a predictable password so Forward can use a default CLI credential.
+# Netlab linux containers are typically minimal (alpine), so use best-effort methods.
+if command -v chpasswd >/dev/null 2>&1; then
+  echo "root:admin" | chpasswd >/dev/null 2>&1 || true
+fi
+if command -v passwd >/dev/null 2>&1; then
+  ( echo admin; echo admin ) | passwd root >/dev/null 2>&1 || true
+fi
 if [ -f /etc/ssh/sshd_config ]; then
   grep -q '^PermitRootLogin' /etc/ssh/sshd_config 2>/dev/null || echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config
   grep -q '^PasswordAuthentication' /etc/ssh/sshd_config 2>/dev/null || echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config

@@ -284,15 +284,6 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 			log.Infof("c9s topology capture failed: %v", err)
 		}
 	} else if graph != nil {
-		// Apply post-up config for supported NOS kinds (cfglets, SSH enable, etc).
-		// This must happen before Forward collection starts.
-		if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.nos-postup", func() error {
-			return runNetlabC9sNOSPostUp(ctx, ns, topologyName, topologyBytes, nodeMounts, log)
-		}); err != nil && log != nil {
-			// Best-effort: lab is still usable even if cfglets fail.
-			log.Infof("c9s post-up config failed (ignored): %v", err)
-		}
-
 		dep, depErr := e.loadDeployment(ctx, spec.WorkspaceCtx.workspace.ID, strings.TrimSpace(spec.DeploymentID))
 		if depErr != nil {
 			if log != nil {
@@ -307,9 +298,9 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 			goto artifacts
 		}
 
-		// Import classic devices into Forward as soon as we have management IPs so Forward
-		// can start its own reachability checks early. Do not start collection yet; it
-		// should begin only after post-up config has been applied.
+		// 1) Import devices/endpoints into Forward as soon as management IPs are available.
+		// We intentionally do this before applying post-up config so Forward can start its
+		// own reachability checks early.
 		if _, err := e.syncForwardTopologyGraphDevices(ctx, spec.TaskID, spec.WorkspaceCtx, dep, graph, forwardSyncOptions{
 			StartCollection: false,
 		}); err != nil {
@@ -320,7 +311,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 			log.Infof("forward sync: devices uploaded (collection deferred)")
 		}
 
-		// Wait for SSH readiness before starting Forward collection.
+		// 2) Wait for SSH readiness as early as possible (before config push/collection).
 		// Some NOSs (notably cEOS) take additional time after the topology reports "ready"
 		// before SSH is actually reachable.
 		if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "forward.ready", func() error {
@@ -339,6 +330,31 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 			log.Infof("forward sync: ssh ready; starting collection")
 		}
 
+		// 3) Start a connectivity test as soon as SSH is reachable. This provides earlier
+		// feedback in Forward UI even before we begin collection.
+		_ = taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "forward.connectivity.start", func() error {
+			if err := e.startForwardConnectivityTestsForDeployment(ctx, spec.TaskID, spec.WorkspaceCtx, dep, graph); err != nil {
+				if log != nil {
+					log.Infof("forward sync skipped: %v", err)
+				}
+				return err
+			}
+			if log != nil {
+				log.Infof("forward sync: connectivity test started")
+			}
+			return nil
+		})
+
+		// 4) Apply post-up config for supported NOS kinds (cfglets, SSH enable, etc).
+		// This must happen before Forward collection starts.
+		if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.nos-postup", func() error {
+			return runNetlabC9sNOSPostUp(ctx, ns, topologyName, topologyBytes, nodeMounts, log)
+		}); err != nil && log != nil {
+			// Best-effort: lab is still usable even if cfglets fail.
+			log.Infof("c9s post-up config failed (ignored): %v", err)
+		}
+
+		// 5) Start collection after post-up config has been applied.
 		_ = taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "forward.collection.start", func() error {
 			if err := e.startForwardCollectionForDeployment(ctx, spec.TaskID, spec.WorkspaceCtx, dep); err != nil {
 				if log != nil {

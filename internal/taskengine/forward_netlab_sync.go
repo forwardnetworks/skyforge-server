@@ -504,6 +504,62 @@ func (e *Engine) startForwardCollectionForDeployment(ctx context.Context, taskID
 	return nil
 }
 
+func (e *Engine) startForwardConnectivityTestsForDeployment(ctx context.Context, taskID int, pc *workspaceContext, dep *WorkspaceDeployment, graph *TopologyGraph) error {
+	if e == nil || pc == nil || dep == nil || graph == nil {
+		return nil
+	}
+	cfgAny, err := e.ensureForwardNetworkForDeployment(ctx, pc, dep)
+	if err != nil || cfgAny == nil {
+		return err
+	}
+	rawID, ok := cfgAny[forwardNetworkIDKey]
+	if !ok || rawID == nil {
+		return nil
+	}
+	networkID := strings.TrimSpace(fmt.Sprintf("%v", rawID))
+	if networkID == "" {
+		return nil
+	}
+
+	// Only start connectivity tests for non-linux nodes we synced as classic devices.
+	names := make([]string, 0, len(graph.Nodes))
+	for _, node := range graph.Nodes {
+		if strings.EqualFold(strings.TrimSpace(node.Kind), "linux") {
+			continue
+		}
+		name := strings.TrimSpace(node.Label)
+		if name == "" {
+			name = strings.TrimSpace(node.ID)
+		}
+		if name == "" {
+			continue
+		}
+		names = append(names, name)
+	}
+	if len(names) == 0 {
+		return nil
+	}
+
+	forwardCfg, err := e.forwardConfigForUser(ctx, pc.claims.Username)
+	if err != nil || forwardCfg == nil {
+		return err
+	}
+	client, err := newForwardClient(*forwardCfg)
+	if err != nil {
+		return err
+	}
+	if err := forwardBulkStartConnectivityTests(ctx, client, networkID, names); err != nil {
+		return err
+	}
+	if taskID > 0 {
+		_ = taskstore.AppendTaskEvent(context.Background(), e.db, taskID, "forward.connectivity.started", map[string]any{
+			"networkId":   networkID,
+			"deviceCount": len(names),
+		})
+	}
+	return nil
+}
+
 func sanitizeCredentialComponent(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -897,6 +953,17 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 
 		deviceKey := forwardDeviceKeyFromKind(node.Kind)
 		if deviceKey == "linux" {
+			cliCredentialID := credentialIDsByKind[deviceKey]
+			if cliCredentialID == "" {
+				if u, p, ok := forwardDefaultCredentialForKind(deviceKey); ok {
+					created, err := forwardCreateCliCredentialNamed(ctx, client, networkID, credentialNameForKind(deviceKey), u, p)
+					if err == nil && created != nil {
+						cliCredentialID = created.ID
+						credentialIDsByKind[deviceKey] = cliCredentialID
+						changed = true
+					}
+				}
+			}
 			name := strings.TrimSpace(node.Label)
 			if name == "" {
 				name = strings.TrimSpace(node.ID)
@@ -909,6 +976,12 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 				Name:     name,
 				Host:     mgmt,
 				Protocol: "SSH",
+				// Forward endpoint API uses "credentialId" (not "cliCredentialId").
+				CredentialID: cliCredentialID,
+				Collect: func() *bool {
+					v := true
+					return &v
+				}(),
 			})
 			continue
 		}
