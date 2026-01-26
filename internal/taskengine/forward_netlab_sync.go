@@ -694,6 +694,7 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 	endpoints := []forwardEndpoint{}
 	seen := map[string]bool{}
 	changed := false
+	linuxProfileID := ""
 	for _, row := range parseNetlabStatusOutput(logText) {
 		name := strings.TrimSpace(row.Node)
 		rawDeviceKey := strings.ToLower(strings.TrimSpace(row.Device))
@@ -718,6 +719,12 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 
 		// Linux nodes are uploaded as endpoints (not classic devices).
 		if deviceKey == "linux" {
+			if linuxProfileID == "" {
+				profileID, err := forwardEnsureEndpointProfile(ctx, client, "Linux", []string{"UNIX"})
+				if err == nil {
+					linuxProfileID = strings.TrimSpace(profileID)
+				}
+			}
 			credID := credentialIDsByDevice["linux"]
 			if credID == "" {
 				if user, pass, ok0 := forwardDefaultCredentialForKind("linux"); ok0 {
@@ -736,6 +743,7 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 				Host:         mgmt,
 				Protocol:     "SSH",
 				CredentialID: credID,
+				ProfileID:    linuxProfileID,
 				Collect:      &collect,
 			})
 			continue

@@ -314,6 +314,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		// 2) Wait for SSH readiness as early as possible (before config push/collection).
 		// Some NOSs (notably cEOS) take additional time after the topology reports "ready"
 		// before SSH is actually reachable.
+		sshReady := false
 		if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "forward.ready", func() error {
 			timeoutSeconds := envInt(spec.Environment, "SKYFORGE_FORWARD_SYNC_WAIT_SECONDS", 180)
 			if timeoutSeconds <= 0 {
@@ -326,24 +327,27 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 			}
 			goto artifacts
 		}
+		sshReady = true
 		if log != nil {
 			log.Infof("forward sync: ssh ready; starting collection")
 		}
 
 		// 3) Start a connectivity test as soon as SSH is reachable. This provides earlier
 		// feedback in Forward UI even before we begin collection.
-		_ = taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "forward.connectivity.start", func() error {
-			if err := e.startForwardConnectivityTestsForDeployment(ctx, spec.TaskID, spec.WorkspaceCtx, dep, graph); err != nil {
-				if log != nil {
-					log.Infof("forward sync skipped: %v", err)
+		if sshReady {
+			_ = taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "forward.connectivity.start", func() error {
+				if err := e.startForwardConnectivityTestsForDeployment(ctx, spec.TaskID, spec.WorkspaceCtx, dep, graph); err != nil {
+					if log != nil {
+						log.Infof("forward sync skipped: %v", err)
+					}
+					return err
 				}
-				return err
-			}
-			if log != nil {
-				log.Infof("forward sync: connectivity test started")
-			}
-			return nil
-		})
+				if log != nil {
+					log.Infof("forward sync: connectivity test started")
+				}
+				return nil
+			})
+		}
 
 		// 4) Apply post-up config for supported NOS kinds (cfglets, SSH enable, etc).
 		// This must happen before Forward collection starts.

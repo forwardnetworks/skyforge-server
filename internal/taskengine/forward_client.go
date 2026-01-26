@@ -467,7 +467,23 @@ type forwardEndpoint struct {
 	Host         string `json:"host"`
 	Protocol     string `json:"protocol"`
 	CredentialID string `json:"credentialId,omitempty"`
+	ProfileID    string `json:"profileId,omitempty"`
 	Collect      *bool  `json:"collect,omitempty"`
+}
+
+type forwardEndpointProfile struct {
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Type         string   `json:"type"`
+	CommandSets  []string `json:"commandSets"`
+	CustomCommands []string `json:"customCommands"`
+}
+
+type forwardEndpointProfileRequest struct {
+	Name           string   `json:"name"`
+	Type           string   `json:"type"`
+	CustomCommands []string `json:"customCommands"`
+	CommandSets    []string `json:"commandSets"`
 }
 
 func forwardPutEndpointsBatch(ctx context.Context, c *forwardClient, networkID string, endpoints []forwardEndpoint) error {
@@ -485,6 +501,71 @@ func forwardPutEndpointsBatch(ctx context.Context, c *forwardClient, networkID s
 		return fmt.Errorf("forward put endpoints failed: %s", strings.TrimSpace(string(body)))
 	}
 	return nil
+}
+
+func forwardListEndpointProfiles(ctx context.Context, c *forwardClient, profileType string) ([]forwardEndpointProfile, error) {
+	query := url.Values{}
+	if strings.TrimSpace(profileType) != "" {
+		query.Set("type", strings.TrimSpace(profileType))
+	}
+	resp, body, err := c.doJSON(ctx, http.MethodGet, "/api/endpoint-profiles", query, nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("forward list endpoint profiles failed: %s", strings.TrimSpace(string(body)))
+	}
+	var profiles []forwardEndpointProfile
+	if err := json.Unmarshal(body, &profiles); err != nil {
+		return nil, err
+	}
+	return profiles, nil
+}
+
+func forwardCreateEndpointProfile(ctx context.Context, c *forwardClient, req forwardEndpointProfileRequest) (*forwardEndpointProfile, error) {
+	query := url.Values{}
+	query.Set("type", req.Type)
+	resp, body, err := c.doJSON(ctx, http.MethodPost, "/api/endpoint-profiles", query, req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("forward create endpoint profile failed: %s", strings.TrimSpace(string(body)))
+	}
+	var profile forwardEndpointProfile
+	if err := json.Unmarshal(body, &profile); err != nil {
+		return nil, err
+	}
+	return &profile, nil
+}
+
+func forwardEnsureEndpointProfile(ctx context.Context, c *forwardClient, name string, commandSets []string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", nil
+	}
+	profiles, err := forwardListEndpointProfiles(ctx, c, "CLI")
+	if err != nil {
+		return "", err
+	}
+	for _, profile := range profiles {
+		if strings.EqualFold(strings.TrimSpace(profile.Name), name) && strings.TrimSpace(profile.ID) != "" {
+			return strings.TrimSpace(profile.ID), nil
+		}
+	}
+	created, err := forwardCreateEndpointProfile(ctx, c, forwardEndpointProfileRequest{
+		Name:           name,
+		Type:           "CLI",
+		CustomCommands: []string{},
+		CommandSets:    commandSets,
+	})
+	if err != nil {
+		return "", err
+	}
+	if created == nil {
+		return "", nil
+	}
+	return strings.TrimSpace(created.ID), nil
 }
 
 func isForwardJumpServerMissing(err error) bool {
