@@ -191,14 +191,11 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 
 		disableNativeForCeos := envBool(spec.Environment, "SKYFORGE_CLABERNETES_DISABLE_NATIVE_FOR_CEOS", false)
 		// vrnetlab-style NOS containers (IOL/VIOS/NXOSv/etc) often assume they can "own" the
-		// primary network interface (eth0) and may flush/reconfigure it.
+		// primary network interface (eth0).
 		//
-		// Historically this forced us into non-native (launcher/DIND) mode by default because
-		// eth0 is the Kubernetes pod network interface, and losing it breaks reachability.
-		//
-		// With Skyforge's dedicated Multus management network (kube-system/vrnetlab-mgmt),
-		// vrnetlab nodes can take over a secondary interface instead of eth0, so native mode
-		// is enabled by default. Set SKYFORGE_CLABERNETES_DISABLE_NATIVE_FOR_VRNETLAB=true to
+		// In Skyforge's clabernetes-native path, we rely on the clabernetes manager to make
+		// these nodes reachable without requiring Multus (for example, by ensuring IOS owns
+		// the pod IP for IOL). Set SKYFORGE_CLABERNETES_DISABLE_NATIVE_FOR_VRNETLAB=true to
 		// force DIND for these nodes if needed.
 		disableNativeForVrnetlab := envBool(spec.Environment, "SKYFORGE_CLABERNETES_DISABLE_NATIVE_FOR_VRNETLAB", false)
 		// Ensure clabernetes launcher pods can pull private images (launcher/NOS) by wiring the
@@ -496,13 +493,11 @@ func (e *Engine) captureClabernetesTopologyArtifact(ctx context.Context, spec cl
 		return err
 	}
 	podInfo := map[string]TopologyNode{}
-	podNetworkStatus := map[string]string{}
 	for _, pod := range pods {
 		node := strings.TrimSpace(pod.Metadata.Labels["clabernetes/topologyNode"])
 		if node == "" {
 			continue
 		}
-		podNetworkStatus[node] = strings.TrimSpace(pod.Metadata.Annotations["k8s.v1.cni.cncf.io/network-status"])
 		podInfo[node] = TopologyNode{
 			ID:     node,
 			Label:  node,

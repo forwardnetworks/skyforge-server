@@ -43,7 +43,6 @@ ForwardCollector: {
 	ImagePullSecretName: ""
 	ImagePullSecretNamespace: ""
 	HeapSizeGB: 0
-	MultusNetworks: *[] | [...string]
 }
 
 Kubernetes: {

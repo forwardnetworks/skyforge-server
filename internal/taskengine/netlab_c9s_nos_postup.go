@@ -52,7 +52,6 @@ func runNetlabC9sNOSPostUp(ctx context.Context, ns, topologyName string, topolog
 	type podNetInfo struct {
 		podName string
 		podIP   string
-		gateway string
 	}
 	nodePod := map[string]podNetInfo{}
 	for _, pod := range pods {
@@ -63,9 +62,6 @@ func runNetlabC9sNOSPostUp(ctx context.Context, ns, topologyName string, topolog
 		info := podNetInfo{
 			podName: strings.TrimSpace(pod.Metadata.Name),
 			podIP:   strings.TrimSpace(pod.Status.PodIP),
-		}
-		if gw, ok := parseCNIStatusGateway(strings.TrimSpace(pod.Metadata.Annotations["k8s.v1.cni.cncf.io/network-status"])); ok {
-			info.gateway = gw
 		}
 		nodePod[node] = info
 	}
@@ -80,7 +76,6 @@ func runNetlabC9sNOSPostUp(ctx context.Context, ns, topologyName string, topolog
 		kind     string
 		podName  string
 		podIP    string
-		gateway  string
 		k8sNode  string
 	}
 	work := make([]workItem, 0)
@@ -105,7 +100,6 @@ func runNetlabC9sNOSPostUp(ctx context.Context, ns, topologyName string, topolog
 			kind:     kind,
 			podName:  strings.TrimSpace(pinfo.podName),
 			podIP:    strings.TrimSpace(pinfo.podIP),
-			gateway:  strings.TrimSpace(pinfo.gateway),
 			k8sNode:  k8sNode,
 		})
 	}
@@ -158,8 +152,8 @@ func runNetlabC9sNOSPostUp(ctx context.Context, ns, topologyName string, topolog
 			// Restore the Kubernetes/Cilium pod network on eth0 after cEOS has booted.
 			// cEOS frequently wipes the pod IP and default route, which prevents the in-cluster
 			// collector from reaching the device over SSH.
-			gw := item.gateway
-			if gw == "" && item.k8sNode != "" {
+			gw := ""
+			if item.k8sNode != "" {
 				nodeGatewayMu.Lock()
 				gw = strings.TrimSpace(nodeGateway[item.k8sNode])
 				nodeGatewayMu.Unlock()
@@ -317,38 +311,6 @@ func kubeGetCiliumInternalIP(ctx context.Context, nodeName string) (string, bool
 		}
 		gw := strings.TrimSpace(a.IP)
 		if ip := net.ParseIP(gw); ip != nil && ip.To4() != nil {
-			return gw, true
-		}
-	}
-	return "", false
-}
-
-type cniNetworkStatus struct {
-	Name      string   `json:"name"`
-	Interface string   `json:"interface"`
-	IPs       []string `json:"ips"`
-	Gateway   []string `json:"gateway"`
-	Default   bool     `json:"default"`
-}
-
-func parseCNIStatusGateway(raw string) (string, bool) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "", false
-	}
-	var entries []cniNetworkStatus
-	if err := json.Unmarshal([]byte(raw), &entries); err != nil {
-		return "", false
-	}
-	for _, e := range entries {
-		if strings.TrimSpace(e.Interface) != "eth0" && !e.Default {
-			continue
-		}
-		if len(e.Gateway) == 0 {
-			continue
-		}
-		gw := strings.TrimSpace(e.Gateway[0])
-		if gw != "" {
 			return gw, true
 		}
 	}

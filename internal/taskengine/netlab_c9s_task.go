@@ -467,13 +467,6 @@ func waitForForwardSSHReady(ctx context.Context, taskID int, e *Engine, graph *T
 
 	// Only gate on NOS nodes we intend to sync into Forward. Linux hosts are handled
 	// separately (as endpoints) and should not block network creation.
-	//
-	// Note: vrnetlab-based nodes use a dedicated Multus mgmt network (vrnetlab-mgmt)
-	// whose IP range is not routable from Skyforge worker pods by default. In that
-	// case, a "local tcp dial" SSH readiness check will always time out even though
-	// the in-cluster Forward collector can reach the nodes (it is Multus-attached).
-	// We therefore skip the preflight SSH readiness gate for vrnetlab-based kinds and
-	// let Forward perform its own reachability/collection retries.
 	targets := make([]TopologyNode, 0, len(graph.Nodes))
 	for _, n := range graph.Nodes {
 		kind := strings.ToLower(strings.TrimSpace(n.Kind))
@@ -482,10 +475,6 @@ func waitForForwardSSHReady(ctx context.Context, taskID int, e *Engine, graph *T
 			kind = "unknown"
 		}
 		if kind == "linux" {
-			continue
-		}
-		switch kind {
-		case "cisco_iol", "vios", "viosl2", "vr-n9kv", "asav", "vmx", "sros", "csr":
 			continue
 		}
 		if strings.TrimSpace(n.MgmtIP) == "" {
@@ -538,54 +527,6 @@ func (e *Engine) captureC9sTopologyArtifact(ctx context.Context, spec netlabC9sR
 		return nil, fmt.Errorf("namespace and topology name are required")
 	}
 
-	// Build a node->kind map so we can pick the correct management IP (podIP vs.
-	// vrnetlab mgmt IP). vrnetlab nodes often remove the IP from the secondary
-	// interface (net1) because the *VM* owns that IP, so we must sync Forward using
-	// that VM mgmt IP (reachable via the vrnetlab-mgmt L2 segment), not the pod IP.
-	nodeKind := map[string]string{}
-	{
-		var topo map[string]any
-		if err := yaml.Unmarshal(topologyYAML, &topo); err == nil {
-			if t, ok := topo["topology"].(map[string]any); ok {
-				if nodesAny, ok := t["nodes"].(map[string]any); ok {
-					for node, cfgAny := range nodesAny {
-						nodeName := strings.TrimSpace(fmt.Sprintf("%v", node))
-						cfg, ok := cfgAny.(map[string]any)
-						if !ok || cfg == nil || nodeName == "" {
-							continue
-						}
-						kind := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["kind"])))
-						if kind == "" {
-							continue
-						}
-						nodeKind[nodeName] = kind
-					}
-				}
-			}
-		}
-	}
-	isVrnetlabKind := func(k string) bool {
-		k = strings.ToLower(strings.TrimSpace(k))
-		switch k {
-		case "cisco_iol", "iol",
-			"cisco_vios", "vios",
-			"cisco_viosl2", "viosl2",
-			"vr-n9kv", "nxos", "nxosv",
-			"cisco_asav", "asav", "asa",
-			"vr-vmx", "vmx",
-			"vr-sros", "sros",
-			"vr-csr", "csr",
-			"vr-fortios", "fortios",
-			"vr-ftosv", "ftosv",
-			"juniper_vjunos-router", "vjunos-router",
-			"juniper_vjunos-switch", "vjunos-switch",
-			"juniper_vjunosevolved", "vjunosevolved":
-			return true
-		default:
-			return false
-		}
-	}
-
 	pods, err := kubeListPods(ctx, ns, map[string]string{
 		"clabernetes/topologyOwner": topologyName,
 	})
@@ -593,19 +534,12 @@ func (e *Engine) captureC9sTopologyArtifact(ctx context.Context, spec netlabC9sR
 		return nil, err
 	}
 	podInfo := map[string]TopologyNode{}
-	podNetworkStatus := map[string]string{}
 	for _, pod := range pods {
 		node := strings.TrimSpace(pod.Metadata.Labels["clabernetes/topologyNode"])
 		if node == "" {
 			continue
 		}
-		podNetworkStatus[node] = strings.TrimSpace(pod.Metadata.Annotations["k8s.v1.cni.cncf.io/network-status"])
 		mgmtIP := strings.TrimSpace(pod.Status.PodIP)
-		if isVrnetlabKind(nodeKind[node]) {
-			if ip, ok := parseCNIStatusIPForNetwork(podNetworkStatus[node], "vrnetlab-mgmt"); ok {
-				mgmtIP = strings.TrimSpace(ip)
-			}
-		}
 		podInfo[node] = TopologyNode{
 			ID:     node,
 			Label:  node,

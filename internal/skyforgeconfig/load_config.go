@@ -139,12 +139,6 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		forwardCollectorPullSecretNamespace = imagePullSecretNamespace
 	}
 	forwardCollectorHeapSizeGB := enc.ForwardCollector.HeapSizeGB
-	forwardCollectorMultusNetworks := make([]string, 0, len(enc.ForwardCollector.MultusNetworks))
-	for _, n := range enc.ForwardCollector.MultusNetworks {
-		if s := strings.TrimSpace(n); s != "" {
-			forwardCollectorMultusNetworks = append(forwardCollectorMultusNetworks, s)
-		}
-	}
 
 	netlabC9sGeneratorMode := strings.ToLower(strings.TrimSpace(enc.NetlabGenerator.C9sGeneratorMode))
 	if netlabC9sGeneratorMode == "" {
@@ -319,7 +313,6 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		ForwardCollectorImagePullSecretName:      forwardCollectorPullSecretName,
 		ForwardCollectorImagePullSecretNamespace: forwardCollectorPullSecretNamespace,
 		ForwardCollectorHeapSizeGB:               forwardCollectorHeapSizeGB,
-		ForwardCollectorMultusNetworks:           forwardCollectorMultusNetworks,
 		NetlabC9sGeneratorMode:                   netlabC9sGeneratorMode,
 		NetlabGeneratorImage:                     netlabGeneratorImage,
 		NetlabGeneratorPullPolicy:                netlabGeneratorPullPolicy,
@@ -387,12 +380,6 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		forwardCollectorPullSecretNamespace = imagePullSecretNamespace
 	}
 	forwardCollectorHeapSizeGB := enc.ForwardCollector.HeapSizeGB
-	forwardCollectorMultusNetworks := make([]string, 0, len(enc.ForwardCollector.MultusNetworks))
-	for _, n := range enc.ForwardCollector.MultusNetworks {
-		if s := strings.TrimSpace(n); s != "" {
-			forwardCollectorMultusNetworks = append(forwardCollectorMultusNetworks, s)
-		}
-	}
 
 	netlabC9sGeneratorMode := strings.ToLower(strings.TrimSpace(enc.NetlabGenerator.C9sGeneratorMode))
 	if netlabC9sGeneratorMode == "" {
@@ -419,7 +406,6 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		ForwardCollectorImagePullSecretName:      forwardCollectorPullSecretName,
 		ForwardCollectorImagePullSecretNamespace: forwardCollectorPullSecretNamespace,
 		ForwardCollectorHeapSizeGB:               forwardCollectorHeapSizeGB,
-		ForwardCollectorMultusNetworks:           forwardCollectorMultusNetworks,
 		NetlabC9sGeneratorMode:                   netlabC9sGeneratorMode,
 		NetlabGeneratorImage:                     netlabGeneratorImage,
 		NetlabGeneratorPullPolicy:                netlabGeneratorPullPolicy,

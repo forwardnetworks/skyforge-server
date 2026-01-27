@@ -128,7 +128,6 @@ ForwardCollector: {
 	// HeapSizeGB sets COLLECTOR_HEAP_SIZE (in gigabytes) for the collector.
 	// When 0, the collector image default is used.
 	HeapSizeGB: 0
-	MultusNetworks: *[] | [...string]
 }
 
 Kubernetes: {
