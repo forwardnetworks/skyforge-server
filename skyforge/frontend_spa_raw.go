@@ -98,6 +98,32 @@ func (s *Service) FrontendAssets(w http.ResponseWriter, req *http.Request) {
 	s.serveFrontendSPA(w, req)
 }
 
+// FrontendFavicon serves the SPA favicon (and compatibility icon paths).
+//
+//encore:api public raw method=GET path=/favicon.svg
+func (s *Service) FrontendFavicon(w http.ResponseWriter, req *http.Request) {
+	s.serveFrontendSPA(w, req)
+}
+
+//encore:api public raw method=GET path=/favicon.ico
+func (s *Service) FrontendFaviconICO(w http.ResponseWriter, req *http.Request) {
+	s.serveFrontendSPA(w, req)
+}
+
+// FrontendRobots serves robots.txt.
+//
+//encore:api public raw method=GET path=/robots.txt
+func (s *Service) FrontendRobots(w http.ResponseWriter, req *http.Request) {
+	s.serveFrontendSPA(w, req)
+}
+
+// FrontendManifest serves the PWA manifest.
+//
+//encore:api public raw method=GET path=/manifest.webmanifest
+func (s *Service) FrontendManifest(w http.ResponseWriter, req *http.Request) {
+	s.serveFrontendSPA(w, req)
+}
+
 // FrontendIndex serves the SPA entrypoint.
 //
 //encore:api public raw method=GET path=/index.html

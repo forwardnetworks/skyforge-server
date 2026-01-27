@@ -356,42 +356,34 @@ func authUserToProfile(user *AuthUser) *UserProfile {
 	}
 }
 
-type traefikSessionPayload struct {
+type nginxSessionPayload struct {
 	Status string `json:"status,omitempty"`
 }
 
-// SessionTraefik is a Skyforge SSO gate compatible endpoint.
+// SessionNginx is a Skyforge SSO gate compatible endpoint.
 //
-//encore:api public raw method=GET path=/api/session/traefik
-func (s *Service) SessionTraefik(w http.ResponseWriter, req *http.Request) {
+//encore:api public raw method=GET path=/api/session/nginx
+func (s *Service) SessionNginx(w http.ResponseWriter, req *http.Request) {
 	claims := claimsFromCookie(s.sessionManager, req.Header.Get("Cookie"))
 	if claims == nil {
-		location := buildTraefikRedirect(req.Header)
-		if location != "" {
-			w.Header().Set("Location", location)
-		}
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusFound)
-		_ = json.NewEncoder(w).Encode(&traefikSessionPayload{Status: "redirect"})
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(&nginxSessionPayload{Status: "unauthenticated"})
 		return
 	}
 	addSessionHeaders(w.Header(), claims)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(&traefikSessionPayload{Status: "ok"})
+	_ = json.NewEncoder(w).Encode(&nginxSessionPayload{Status: "ok"})
 }
 
-// SessionTraefikHead is a Skyforge SSO gate compatible endpoint (HEAD).
+// SessionNginxHead is a Skyforge SSO gate compatible endpoint (HEAD).
 //
-//encore:api public raw method=HEAD path=/api/session/traefik
-func (s *Service) SessionTraefikHead(w http.ResponseWriter, req *http.Request) {
+//encore:api public raw method=HEAD path=/api/session/nginx
+func (s *Service) SessionNginxHead(w http.ResponseWriter, req *http.Request) {
 	claims := claimsFromCookie(s.sessionManager, req.Header.Get("Cookie"))
 	if claims == nil {
-		location := buildTraefikRedirect(req.Header)
-		if location != "" {
-			w.Header().Set("Location", location)
-		}
-		w.WriteHeader(http.StatusFound)
+		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 	addSessionHeaders(w.Header(), claims)
@@ -516,28 +508,6 @@ func authFailureToError(authErr *AuthFailure) error {
 
 func currentHeaders() http.Header {
 	return encore.CurrentRequest().Headers
-}
-
-func buildTraefikRedirect(headers http.Header) string {
-	host := strings.TrimSpace(headers.Get("X-Forwarded-Host"))
-	if host == "" {
-		host = strings.TrimSpace(headers.Get("Host"))
-	}
-	if host == "" {
-		return "/"
-	}
-	scheme := strings.TrimSpace(headers.Get("X-Forwarded-Proto"))
-	if scheme == "" {
-		scheme = "https"
-	}
-	next := strings.TrimSpace(headers.Get("X-Forwarded-Uri"))
-	if next == "" {
-		next = "/"
-	}
-	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.Contains(next, "://") {
-		next = "/"
-	}
-	return scheme + "://" + host + "/api/skyforge/api/oidc/login?next=" + url.QueryEscape(next)
 }
 
 func auditDetailsFromEncore(req *encore.Request) string {

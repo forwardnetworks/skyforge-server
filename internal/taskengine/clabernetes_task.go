@@ -263,12 +263,42 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 			payload["spec"].(map[string]any)["connectivity"] = connectivity
 		}
 
-		// Optional: pin topology pods to a specific Kubernetes node (e.g. to co-locate with
-		// the user's Forward collector). clabernetes exposes this as a "scheduling" block.
+		// Optional: pin topology pods to a specific Kubernetes node (hard requirement).
+		// clabernetes exposes this as a "scheduling" block.
 		if node := envString(spec.Environment, "SKYFORGE_CLABERNETES_NODE_SELECTOR_HOSTNAME"); node != "" {
 			payload["spec"].(map[string]any)["scheduling"] = map[string]any{
 				"nodeSelector": map[string]any{
 					"kubernetes.io/hostname": node,
+				},
+			}
+		}
+
+		// Optional: prefer (but do not require) scheduling topology pods onto a specific node.
+		// This is useful to co-locate workloads with a per-user sidecar/collector when possible,
+		// while still allowing normal cluster spreading.
+		if node := envString(spec.Environment, "SKYFORGE_CLABERNETES_PREFERRED_NODE_HOSTNAME"); node != "" {
+			specMap := payload["spec"].(map[string]any)
+			scheduling, ok := specMap["scheduling"].(map[string]any)
+			if !ok || scheduling == nil {
+				scheduling = map[string]any{}
+				specMap["scheduling"] = scheduling
+			}
+			scheduling["affinity"] = map[string]any{
+				"nodeAffinity": map[string]any{
+					"preferredDuringSchedulingIgnoredDuringExecution": []any{
+						map[string]any{
+							"weight": 100,
+							"preference": map[string]any{
+								"matchExpressions": []any{
+									map[string]any{
+										"key":      "kubernetes.io/hostname",
+										"operator": "In",
+										"values":   []any{node},
+									},
+								},
+							},
+						},
+					},
 				},
 			}
 		}

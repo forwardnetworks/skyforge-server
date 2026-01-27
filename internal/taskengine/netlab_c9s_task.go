@@ -281,31 +281,14 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	}
 
 	if preferredNode != "" {
-		// Fast-path: try to deploy on the collector node for performance.
-		// If it doesn't schedule quickly (resource pressure), fall back to the default scheduler
-		// behavior so we can spread labs across the cluster.
-		clabSpec.Environment["SKYFORGE_CLABERNETES_NODE_SELECTOR_HOSTNAME"] = preferredNode
-		clabSpec.Environment["SKYFORGE_CLABERNETES_DEPLOY_TIMEOUT"] = "60s"
-		err := deployOnce()
-		if err == nil {
-			// Clear the timeout override after a successful deploy so it doesn't affect later steps.
-			delete(clabSpec.Environment, "SKYFORGE_CLABERNETES_DEPLOY_TIMEOUT")
-		} else if strings.Contains(strings.ToLower(err.Error()), "deploy timed out") {
-			if log != nil {
-				log.Infof("c9s deploy on preferred node timed out; retrying without node pinning")
-			}
-			delete(clabSpec.Environment, "SKYFORGE_CLABERNETES_NODE_SELECTOR_HOSTNAME")
-			delete(clabSpec.Environment, "SKYFORGE_CLABERNETES_DEPLOY_TIMEOUT")
-			if retryErr := deployOnce(); retryErr != nil {
-				return retryErr
-			}
-		} else {
-			return err
-		}
-	} else {
-		if err := deployOnce(); err != nil {
-			return err
-		}
+		// Prefer (but do not require) scheduling onto the same node as the user's collector.
+		// This improves performance (local traffic, fewer cross-node hops) while still allowing
+		// the scheduler to spread labs across the cluster if the preferred node is full.
+		clabSpec.Environment["SKYFORGE_CLABERNETES_PREFERRED_NODE_HOSTNAME"] = preferredNode
+	}
+
+	if err := deployOnce(); err != nil {
+		return err
 	}
 
 	// Run netlab-generated Linux configuration scripts (initial + routing) directly

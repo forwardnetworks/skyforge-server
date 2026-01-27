@@ -18,6 +18,7 @@ const (
 	forwardCliCredentialMap    = "forwardCliCredentialIdsByDevice"
 	forwardSnmpCredentialIDKey = "forwardSnmpCredentialId"
 	forwardJumpServerIDKey     = "forwardJumpServerId"
+	forwardEndpointProfileID   = "forwardEndpointProfileId"
 )
 
 const (
@@ -572,6 +573,9 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *
 			}
 		}
 	}
+	endpointProfileID := getString(forwardEndpointProfileID)
+	linuxEndpoints := []forwardEndpoint{}
+	seenLinux := false
 
 	sanitizeCredentialComponent := func(value string) string {
 		value = strings.ToLower(strings.TrimSpace(value))
@@ -617,12 +621,13 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *
 		name := strings.TrimSpace(row.Node)
 		deviceKey := strings.ToLower(strings.TrimSpace(row.Device))
 		switch deviceKey {
+		case "host":
+			deviceKey = "linux"
 		case "cisco_iol", "iol", "ios_xe", "ios-xe", "iosxe":
 			deviceKey = "ios"
 		}
 		if deviceKey == "linux" {
-			// Do not onboard Linux nodes into Forward collection.
-			continue
+			seenLinux = true
 		}
 		cred, ok := netlabCredentialForDevice(row.Device, row.Image)
 		if !ok && defaultCliCredentialID == "" {
@@ -669,6 +674,24 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *
 		if name == "" {
 			name = mgmt
 		}
+		if deviceKey == "linux" {
+			endpoint := forwardEndpoint{
+				Type:          "CLI",
+				Name:          name,
+				Host:          mgmt,
+				Protocol:      "SSH",
+				CredentialID:  cliCredentialID,
+				ProfileID:     endpointProfileID,
+				JumpServerID:  jumpServerID,
+				Collect:       true,
+				LargeRTT:      false,
+				FullCollect:   false,
+				Note:          "",
+				Port:          22,
+			}
+			linuxEndpoints = append(linuxEndpoints, endpoint)
+			continue
+		}
 		forwardType := ""
 		if deviceKey != "" {
 			forwardType = forwardTypes[deviceKey]
@@ -704,6 +727,32 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *
 			})
 		}
 		return 0, nil
+	}
+	if seenLinux {
+		if endpointProfileID == "" {
+			profileID, err := forwardEnsureEndpointProfile(ctx, client, "Linux")
+			if err != nil {
+				return 0, err
+			}
+			endpointProfileID = profileID
+			cfgAny[forwardEndpointProfileID] = endpointProfileID
+			changed = true
+		}
+		for i := range linuxEndpoints {
+			linuxEndpoints[i].ProfileID = endpointProfileID
+		}
+		if len(linuxEndpoints) > 0 {
+			if err := forwardPutEndpoints(ctx, client, networkID, linuxEndpoints); err != nil {
+				if s != nil && s.db != nil && taskID > 0 {
+					_ = appendTaskEvent(context.Background(), s.db, taskID, "forward.endpoints.upload.failed", map[string]any{
+						"source":    "netlab",
+						"networkId": networkID,
+						"error":     strings.TrimSpace(err.Error()),
+					})
+				}
+				return 0, err
+			}
+		}
 	}
 	if err := forwardPutClassicDevices(ctx, client, networkID, devices); err != nil {
 		if isForwardJumpServerMissing(err) && jumpServerID != "" {

@@ -5228,9 +5228,9 @@
         }
       }
     },
-    "/api/session/traefik": {
+    "/api/session/nginx": {
       "get": {
-        "operationId": "GET:skyforge.SessionTraefik",
+        "operationId": "GET:skyforge.SessionNginx",
         "responses": {
           "200": {
             "description": "Success response"
@@ -5239,10 +5239,10 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "SessionTraefik is a Skyforge SSO gate compatible endpoint.\n"
+        "summary": "SessionNginx is a Skyforge SSO gate compatible endpoint.\n"
       },
       "head": {
-        "operationId": "HEAD:skyforge.SessionTraefikHead",
+        "operationId": "HEAD:skyforge.SessionNginxHead",
         "responses": {
           "200": {
             "description": "Success response"
@@ -5251,7 +5251,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "SessionTraefikHead is a Skyforge SSO gate compatible endpoint (HEAD).\n"
+        "summary": "SessionNginxHead is a Skyforge SSO gate compatible endpoint (HEAD).\n"
       }
     },
     "/api/skyforge/api/oidc/callback": {
