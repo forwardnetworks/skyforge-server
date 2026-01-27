@@ -32,6 +32,7 @@ type netlabC9sTaskSpec struct {
 	LabName         string            `json:"labName,omitempty"`
 	TopologyName    string            `json:"topologyName,omitempty"`
 	Environment     map[string]string `json:"environment,omitempty"`
+	SetOverrides    []string          `json:"setOverrides,omitempty"`
 }
 
 type netlabC9sRunSpec struct {
@@ -40,6 +41,7 @@ type netlabC9sRunSpec struct {
 	WorkspaceSlug   string
 	Username        string
 	Environment     map[string]string
+	SetOverrides    []string
 	Action          string
 	Deployment      string
 	DeploymentID    string
@@ -117,6 +119,7 @@ func (e *Engine) dispatchNetlabC9sTask(ctx context.Context, task *taskstore.Task
 		WorkspaceSlug:   strings.TrimSpace(pc.workspace.Slug),
 		Username:        username,
 		Environment:     specIn.Environment,
+		SetOverrides:    specIn.SetOverrides,
 		Action:          strings.TrimSpace(specIn.Action),
 		Deployment:      strings.TrimSpace(specIn.Deployment),
 		DeploymentID:    strings.TrimSpace(specIn.DeploymentID),

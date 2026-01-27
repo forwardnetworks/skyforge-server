@@ -38,4 +38,5 @@ type netlabC9sTaskSpec struct {
 	LabName         string            `json:"labName,omitempty"`
 	TopologyName    string            `json:"topologyName,omitempty"`
 	Environment     map[string]string `json:"environment,omitempty"`
+	SetOverrides    []string          `json:"setOverrides,omitempty"`
 }

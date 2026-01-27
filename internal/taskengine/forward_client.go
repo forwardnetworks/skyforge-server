@@ -527,6 +527,7 @@ func forwardListEndpointProfiles(ctx context.Context, c *forwardClient, profileT
 	// Forward deployments can return different shapes for list endpoints.
 	// Support:
 	//   - raw array: [...]
+	//   - single object: {"id":"CLI-2",...}
 	//   - wrapped: {"items":[...]}, {"profiles":[...]}, {"data":[...]}, {"results":[...]}
 	var payload any
 	if err := json.Unmarshal(body, &payload); err != nil {
@@ -544,10 +545,35 @@ func forwardListEndpointProfiles(ctx context.Context, c *forwardClient, profileT
 			}
 		}
 	case map[string]any:
+		// Sometimes the API returns a single profile object instead of an array.
+		if _, ok := v["id"]; ok {
+			buf, _ := json.Marshal(v)
+			var item forwardEndpointProfile
+			if err := json.Unmarshal(buf, &item); err == nil && strings.TrimSpace(item.ID) != "" {
+				return []forwardEndpointProfile{item}, nil
+			}
+		}
 		for _, key := range []string{"items", "profiles", "endpointProfiles", "data", "results"} {
 			if raw, ok := v[key]; ok {
-				buf, _ := json.Marshal(raw)
-				_ = json.Unmarshal(buf, &profiles)
+				switch inner := raw.(type) {
+				case []any:
+					for _, row := range inner {
+						buf, _ := json.Marshal(row)
+						var item forwardEndpointProfile
+						if err := json.Unmarshal(buf, &item); err == nil {
+							profiles = append(profiles, item)
+						}
+					}
+				case map[string]any:
+					buf, _ := json.Marshal(inner)
+					var item forwardEndpointProfile
+					if err := json.Unmarshal(buf, &item); err == nil && strings.TrimSpace(item.ID) != "" {
+						profiles = append(profiles, item)
+					}
+				default:
+					buf, _ := json.Marshal(raw)
+					_ = json.Unmarshal(buf, &profiles)
+				}
 				break
 			}
 		}

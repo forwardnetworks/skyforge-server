@@ -38,6 +38,9 @@ type WorkspaceNetlabValidateRequest struct {
 	Dir         string  `json:"dir,omitempty"`    // repo-relative dir
 	Template    string  `json:"template"`         // repo-relative file within Dir (may include subdirs)
 	Environment JSONMap `json:"environment,omitempty"`
+	// SetOverrides are netlab CLI `--set` overrides (highest precedence) applied during validation.
+	// They are only used by the in-cluster netlab generator (netlab-c9s), not BYOS netlab.
+	SetOverrides []string `json:"setOverrides,omitempty"`
 }
 
 // GetWorkspaceNetlabTemplates lists Netlab templates for a workspace.
@@ -251,6 +254,12 @@ func (s *Service) ValidateWorkspaceNetlabTemplate(ctx context.Context, id string
 
 	envAny, _ := fromJSONMap(req.Environment)
 	env := parseEnvMap(envAny)
+	setOverrides := []string{}
+	for _, raw := range req.SetOverrides {
+		if v := strings.TrimSpace(raw); v != "" {
+			setOverrides = append(setOverrides, v)
+		}
+	}
 
 	meta, err := toJSONMap(map[string]any{
 		"source":      source,
@@ -258,13 +267,23 @@ func (s *Service) ValidateWorkspaceNetlabTemplate(ctx context.Context, id string
 		"dir":         dir,
 		"template":    template,
 		"environment": env,
-		"dedupeKey":   fmt.Sprintf("netlab-validate:%s:%s:%s:%s", pc.workspace.ID, source, dir, template),
+		"setOverrides": setOverrides,
+		"dedupeKey": fmt.Sprintf(
+			"netlab-validate:%s:%s:%s:%s:%s:%s",
+			pc.workspace.ID,
+			source,
+			dir,
+			template,
+			strings.TrimSpace(env["NETLAB_DEVICE"]),
+			strings.Join(setOverrides, ","),
+		),
 		"spec": map[string]any{
 			"templateSource": source,
 			"templateRepo":   templateRepo,
 			"templatesDir":   dir,
 			"template":       template,
 			"environment":    env,
+			"setOverrides":   setOverrides,
 		},
 	})
 	if err != nil {

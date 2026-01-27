@@ -181,17 +181,28 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 							"name":            "generator",
 							"image":           image,
 							"imagePullPolicy": pullPolicy,
-							"env": kubeEnvList(map[string]string{
+							"env": func() []map[string]any {
+								genEnv := map[string]string{
 								"SKYFORGE_NETLAB_BUNDLE_PATH":   "/input/bundle.b64",
 								"SKYFORGE_NETLAB_TOPOLOGY_PATH": strings.TrimSpace(topologyPath),
 								"SKYFORGE_C9S_NAMESPACE":        ns,
 								"SKYFORGE_C9S_TOPOLOGY_NAME":    topologyName,
 								"SKYFORGE_C9S_LAB_NAME":         strings.TrimSpace(spec.LabName),
 								"SKYFORGE_C9S_MANIFEST_CM":      manifestCM,
-								// Optional per-deployment override to set defaults.device when the
-								// template doesn't specify it (e.g. force iol instead of eos).
-								"SKYFORGE_NETLAB_DEVICE_OVERRIDE": strings.TrimSpace(spec.Environment["NETLAB_DEVICE"]),
-							}),
+								"SKYFORGE_NETLAB_SET_OVERRIDES":   strings.Join(spec.SetOverrides, "\n"),
+								}
+								for k, v := range spec.Environment {
+									kk := strings.TrimSpace(k)
+									if kk == "" {
+										continue
+									}
+									up := strings.ToUpper(kk)
+									if strings.HasPrefix(up, "NETLAB_") || strings.HasPrefix(kk, "netlab_") {
+										genEnv[kk] = v
+									}
+								}
+								return kubeEnvList(genEnv)
+							}(),
 							"volumeMounts": []map[string]any{
 								{"name": "input", "mountPath": "/input", "readOnly": true},
 								{"name": "work", "mountPath": "/work"},

@@ -3,6 +3,7 @@ package taskengine
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -49,6 +50,7 @@ func runNetlabC9sLinuxScripts(ctx context.Context, ns, topologyOwner string, top
 	if log == nil {
 		log = noopLogger{}
 	}
+	enableNoise := envBoolValue(os.Getenv("SKYFORGE_NETLAB_C9S_LINUX_NOISE"), true)
 	ns = strings.TrimSpace(ns)
 	topologyOwner = strings.TrimSpace(topologyOwner)
 	if ns == "" || topologyOwner == "" {
@@ -118,6 +120,9 @@ func runNetlabC9sLinuxScripts(ctx context.Context, ns, topologyOwner string, top
 	// - optional 1x ssh enable
 	capacity := len(linuxNodes) * (1 + len(scripts))
 	if enableSSH {
+		capacity += len(linuxNodes)
+	}
+	if enableNoise {
 		capacity += len(linuxNodes)
 	}
 	results := make(chan netlabC9sLinuxScriptResult, capacity)
@@ -243,6 +248,59 @@ fi
 				}
 			}()
 		}
+
+		if enableNoise {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+
+				// Generate a trickle of L2/L3 activity so "quiet" hosts still show state.
+				// - Send a gratuitous ARP on each eth1+ IPv4 address (L2)
+				// - Ping the default gateway if present (L3)
+				//
+				// Best-effort: if arping/ping isn't available, the loop becomes a no-op.
+				cmd := `set -e
+if [ -f /tmp/skyforge-noise.pid ] && kill -0 "$(cat /tmp/skyforge-noise.pid 2>/dev/null)" 2>/dev/null; then
+  echo "noise already running"
+  exit 0
+fi
+
+nohup sh -c '
+while true; do
+  if command -v ip >/dev/null 2>&1; then
+    for ifname in $(ip -o link show | awk -F\": \" \"{print \\$2}\" | grep -E \"^eth[1-9][0-9]*$\" || true); do
+      ip4=$(ip -4 -o addr show dev \"$ifname\" 2>/dev/null | awk \"{print \\$4}\" | head -n1)
+      ip4=${ip4%%/*}
+      if [ -n \"$ip4\" ] && command -v arping >/dev/null 2>&1; then
+        arping -U -c 1 -I \"$ifname\" \"$ip4\" >/dev/null 2>&1 || true
+      fi
+    done
+    gw=$(ip route show default 2>/dev/null | awk \"{print \\$3}\" | head -n1)
+    if [ -n \"$gw\" ] && command -v ping >/dev/null 2>&1; then
+      ping -c 1 -W 1 \"$gw\" >/dev/null 2>&1 || true
+    fi
+  fi
+  sleep 30
+done
+' >/dev/null 2>&1 &
+echo $! > /tmp/skyforge-noise.pid
+echo "noise started"
+`
+
+				ctxExec, cancel := context.WithTimeout(ctx, 20*time.Second)
+				defer cancel()
+				stdout, stderr, err := kubeutil.ExecPodShell(ctxExec, kcfg, ns, podName, container, cmd)
+				results <- netlabC9sLinuxScriptResult{
+					Node:   node,
+					Script: "noise",
+					Stdout: strings.TrimSpace(stdout),
+					Stderr: strings.TrimSpace(stderr),
+					Err:    err,
+				}
+			}()
+		}
 	}
 
 	wg.Wait()
@@ -264,4 +322,17 @@ fi
 		}
 	}
 	return nil
+}
+
+func envBoolValue(raw string, def bool) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "":
+		return def
+	case "1", "true", "t", "yes", "y", "on":
+		return true
+	case "0", "false", "f", "no", "n", "off":
+		return false
+	default:
+		return def
+	}
 }

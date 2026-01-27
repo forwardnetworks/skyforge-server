@@ -38,6 +38,7 @@ func (s *Service) runNetlabC9sDeploymentAction(
 	template string,
 	labName string,
 	k8sNamespace string,
+	setOverrides []string,
 ) (*WorkspaceRunResponse, error) {
 	if pc == nil || dep == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("deployment context unavailable").Err()
@@ -124,6 +125,12 @@ func (s *Service) runNetlabC9sDeploymentAction(
 
 	envAny, _ := fromJSONMap(envJSON)
 	envMap := parseEnvMap(envAny)
+	filteredOverrides := []string{}
+	for _, raw := range setOverrides {
+		if v := strings.TrimSpace(raw); v != "" {
+			filteredOverrides = append(filteredOverrides, v)
+		}
+	}
 	message := strings.TrimSpace(fmt.Sprintf("Skyforge netlab c9s run (%s)", pc.claims.Username))
 	{
 		auditCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
@@ -168,6 +175,7 @@ func (s *Service) runNetlabC9sDeploymentAction(
 			LabName:         labName,
 			TopologyName:    topologyName,
 			Environment:     envMap,
+			SetOverrides:    filteredOverrides,
 		},
 	})
 	if err != nil {

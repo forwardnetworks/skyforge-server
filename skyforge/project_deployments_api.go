@@ -924,6 +924,7 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 		template, _ := cfgAny["template"].(string)
 		labName, _ := cfgAny["labName"].(string)
 		k8sNamespace, _ := cfgAny["k8sNamespace"].(string)
+		setOverridesAny := cfgAny["netlabSetOverrides"]
 
 		netlabServer = strings.TrimSpace(netlabServer)
 		if strings.TrimSpace(template) == "" && op != "destroy" && op != "stop" {
@@ -950,6 +951,31 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 			c9sAction = "destroy"
 		}
 
+		setOverrides := []string{}
+		switch vv := setOverridesAny.(type) {
+		case []any:
+			for _, it := range vv {
+				s := strings.TrimSpace(fmt.Sprintf("%v", it))
+				if s != "" {
+					setOverrides = append(setOverrides, s)
+				}
+			}
+		case []string:
+			for _, it := range vv {
+				s := strings.TrimSpace(it)
+				if s != "" {
+					setOverrides = append(setOverrides, s)
+				}
+			}
+		case string:
+			for _, ln := range strings.Split(vv, "\n") {
+				s := strings.TrimSpace(ln)
+				if s != "" {
+					setOverrides = append(setOverrides, s)
+				}
+			}
+		}
+
 		run, err = s.runNetlabC9sDeploymentAction(
 			ctx,
 			pc,
@@ -963,6 +989,7 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 			strings.TrimSpace(template),
 			strings.TrimSpace(labName),
 			strings.TrimSpace(k8sNamespace),
+			setOverrides,
 		)
 		if err != nil {
 			return nil, err
@@ -1877,6 +1904,7 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 		template, _ := cfgAny["template"].(string)
 		labName, _ := cfgAny["labName"].(string)
 		k8sNamespace, _ := cfgAny["k8sNamespace"].(string)
+		setOverridesAny := cfgAny["netlabSetOverrides"]
 
 		netlabServer = strings.TrimSpace(netlabServer)
 		generatorMode := strings.ToLower(strings.TrimSpace(s.cfg.NetlabC9sGeneratorMode))
@@ -1920,6 +1948,31 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 			cfgAny["infraCreated"] = true
 		}
 
+		setOverrides := []string{}
+		switch vv := setOverridesAny.(type) {
+		case []any:
+			for _, it := range vv {
+				s := strings.TrimSpace(fmt.Sprintf("%v", it))
+				if s != "" {
+					setOverrides = append(setOverrides, s)
+				}
+			}
+		case []string:
+			for _, it := range vv {
+				s := strings.TrimSpace(it)
+				if s != "" {
+					setOverrides = append(setOverrides, s)
+				}
+			}
+		case string:
+			for _, ln := range strings.Split(vv, "\n") {
+				s := strings.TrimSpace(ln)
+				if s != "" {
+					setOverrides = append(setOverrides, s)
+				}
+			}
+		}
+
 		run, err = s.runNetlabC9sDeploymentAction(
 			ctx,
 			pc,
@@ -1933,6 +1986,7 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 			strings.TrimSpace(template),
 			strings.TrimSpace(labName),
 			strings.TrimSpace(k8sNamespace),
+			setOverrides,
 		)
 		if err != nil {
 			return nil, err

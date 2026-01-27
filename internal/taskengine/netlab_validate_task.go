@@ -17,6 +17,7 @@ type netlabValidateTaskSpec struct {
 	TemplatesDir   string            `json:"templatesDir,omitempty"`
 	Template       string            `json:"template,omitempty"`
 	Environment    map[string]string `json:"environment,omitempty"`
+	SetOverrides   []string          `json:"setOverrides,omitempty"`
 }
 
 type netlabValidateRunSpec struct {
@@ -28,6 +29,7 @@ type netlabValidateRunSpec struct {
 	TemplatesDir   string
 	Template       string
 	Environment    map[string]string
+	SetOverrides   []string
 }
 
 func (e *Engine) dispatchNetlabValidateTask(ctx context.Context, task *taskstore.TaskRecord, log Logger) error {
@@ -64,6 +66,7 @@ func (e *Engine) dispatchNetlabValidateTask(ctx context.Context, task *taskstore
 		TemplatesDir:   strings.TrimSpace(specIn.TemplatesDir),
 		Template:       strings.TrimSpace(specIn.Template),
 		Environment:    specIn.Environment,
+		SetOverrides:   specIn.SetOverrides,
 	}
 	return taskdispatch.WithTaskStep(ctx, e.db, task.ID, "netlab.validate", func() error {
 		return e.runNetlabValidateTask(ctx, runSpec, log)
@@ -145,6 +148,28 @@ func (e *Engine) runNetlabValidateTask(ctx context.Context, spec netlabValidateR
 	defer func() { _, _ = kubeDeleteConfigMap(context.Background(), ns, bundleCM) }()
 
 	jobName := sanitizeKubeNameFallback(fmt.Sprintf("netlab-validate-%d", time.Now().Unix()%10_000), "netlab-validate")
+	setOverrides := []string{}
+	for _, raw := range spec.SetOverrides {
+		if v := strings.TrimSpace(raw); v != "" {
+			setOverrides = append(setOverrides, v)
+		}
+	}
+	genEnv := map[string]string{
+		"SKYFORGE_VALIDATE_ONLY":          "1",
+		"SKYFORGE_NETLAB_BUNDLE_PATH":     "/input/bundle.b64",
+		"SKYFORGE_NETLAB_TOPOLOGY_PATH":   "topology.yml",
+		"SKYFORGE_NETLAB_SET_OVERRIDES":   strings.Join(setOverrides, "\n"),
+	}
+	for k, v := range spec.Environment {
+		kk := strings.TrimSpace(k)
+		if kk == "" {
+			continue
+		}
+		up := strings.ToUpper(kk)
+		if strings.HasPrefix(up, "NETLAB_") || strings.HasPrefix(kk, "netlab_") {
+			genEnv[kk] = v
+		}
+	}
 	payload := map[string]any{
 		"apiVersion": "batch/v1",
 		"kind":       "Job",
@@ -172,12 +197,7 @@ func (e *Engine) runNetlabValidateTask(ctx context.Context, spec netlabValidateR
 							"name":            "validator",
 							"image":           image,
 							"imagePullPolicy": pullPolicy,
-							"env": kubeEnvList(map[string]string{
-								"SKYFORGE_VALIDATE_ONLY":          "1",
-								"SKYFORGE_NETLAB_BUNDLE_PATH":     "/input/bundle.b64",
-								"SKYFORGE_NETLAB_TOPOLOGY_PATH":   "topology.yml",
-								"SKYFORGE_NETLAB_DEVICE_OVERRIDE": strings.TrimSpace(spec.Environment["NETLAB_DEVICE"]),
-							}),
+							"env": kubeEnvList(genEnv),
 							"volumeMounts": []map[string]any{
 								{"name": "input", "mountPath": "/input", "readOnly": true},
 								{"name": "work", "mountPath": "/work"},
