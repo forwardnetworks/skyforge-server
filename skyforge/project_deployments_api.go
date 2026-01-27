@@ -372,7 +372,12 @@ func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req 
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("custom repo is required").Err()
 		}
 		if templatesDir == "" {
-			templatesDir = fmt.Sprintf("cloud/terraform/%s", cloud)
+			switch templateSource {
+			case "blueprints", "blueprint", "external", "custom":
+				templatesDir = "terraform"
+			default:
+				templatesDir = "blueprints/terraform"
+			}
 		}
 		if !isSafeRelativePath(templatesDir) {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("templatesDir must be a safe repo-relative path").Err()

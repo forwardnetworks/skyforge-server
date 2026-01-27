@@ -158,7 +158,9 @@ func (e *Engine) runNetlabValidateTask(ctx context.Context, spec netlabValidateR
 		"SKYFORGE_VALIDATE_ONLY":          "1",
 		"SKYFORGE_NETLAB_BUNDLE_PATH":     "/input/bundle.b64",
 		"SKYFORGE_NETLAB_TOPOLOGY_PATH":   "topology.yml",
-		"SKYFORGE_NETLAB_SET_OVERRIDES":   strings.Join(setOverrides, "\n"),
+	}
+	if len(setOverrides) > 0 {
+		genEnv["SKYFORGE_NETLAB_SET_OVERRIDES"] = strings.Join(setOverrides, "\n")
 	}
 	for k, v := range spec.Environment {
 		kk := strings.TrimSpace(k)
@@ -166,7 +168,11 @@ func (e *Engine) runNetlabValidateTask(ctx context.Context, spec netlabValidateR
 			continue
 		}
 		up := strings.ToUpper(kk)
-		if strings.HasPrefix(up, "NETLAB_") || strings.HasPrefix(kk, "netlab_") {
+		if strings.HasPrefix(up, "NETLAB_") || strings.HasPrefix(kk, "netlab_") || up == "SKYFORGE_NETLAB_SET_OVERRIDES" {
+			// Prefer explicit SetOverrides over environment-provided overrides.
+			if up == "SKYFORGE_NETLAB_SET_OVERRIDES" && len(setOverrides) > 0 {
+				continue
+			}
 			genEnv[kk] = v
 		}
 	}

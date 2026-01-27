@@ -106,39 +106,79 @@ func (s *Service) GetWorkspaceTerraformTemplates(ctx context.Context, id string,
 		}
 	}
 
-	dir := "cloud/terraform/aws"
-	if req != nil {
-		if next := strings.Trim(strings.TrimSpace(req.Dir), "/"); next != "" {
-			if !isSafeRelativePath(next) {
-				return nil, errs.B().Code(errs.InvalidArgument).Msg("dir must be a safe repo-relative path").Err()
+	switch source {
+	case "blueprints", "blueprint", "external", "custom":
+		// The shared blueprints repo has `terraform/` at the repo root.
+		// A workspace repo syncs that same content under `blueprints/terraform/`.
+		dir := "terraform"
+		if req != nil {
+			if next := strings.Trim(strings.TrimSpace(req.Dir), "/"); next != "" {
+				if !isSafeRelativePath(next) {
+					return nil, errs.B().Code(errs.InvalidArgument).Msg("dir must be a safe repo-relative path").Err()
+				}
+				dir = next
 			}
-			dir = next
 		}
-	}
-
-	entries, err := listGiteaDirectory(s.cfg, owner, repo, dir, branch)
-	if err != nil {
-		log.Printf("terraform templates list: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to query templates").Err()
-	}
-	templates := make([]string, 0, len(entries))
-	for _, e := range entries {
-		if e.Type != "dir" {
-			continue
+		entries, err := listGiteaDirectory(s.cfg, owner, repo, dir, branch)
+		if err != nil {
+			log.Printf("terraform templates list: %v", err)
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to query templates").Err()
 		}
-		name := strings.TrimSpace(e.Name)
-		if name == "" || strings.HasPrefix(name, ".") {
-			continue
+		templates := make([]string, 0, len(entries))
+		for _, e := range entries {
+			if e.Type != "dir" {
+				continue
+			}
+			name := strings.TrimSpace(e.Name)
+			if name == "" || strings.HasPrefix(name, ".") {
+				continue
+			}
+			templates = append(templates, name)
 		}
-		templates = append(templates, name)
+		sort.Strings(templates)
+		_ = ctx
+		return &WorkspaceTerraformTemplatesResponse{
+			WorkspaceID: pc.workspace.ID,
+			Repo:        fmt.Sprintf("%s/%s", owner, repo),
+			Branch:      branch,
+			Dir:         dir,
+			Templates:   templates,
+		}, nil
+	default:
+		dir := "blueprints/terraform"
+		if req != nil {
+			if next := strings.Trim(strings.TrimSpace(req.Dir), "/"); next != "" {
+				if !isSafeRelativePath(next) {
+					return nil, errs.B().Code(errs.InvalidArgument).Msg("dir must be a safe repo-relative path").Err()
+				}
+				dir = next
+			}
+		}
+		entries, err := listGiteaDirectory(s.cfg, owner, repo, dir, branch)
+		if err != nil {
+			log.Printf("terraform templates list: %v", err)
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to query templates").Err()
+		}
+		templates := make([]string, 0, len(entries))
+		for _, e := range entries {
+			if e.Type != "dir" {
+				continue
+			}
+			name := strings.TrimSpace(e.Name)
+			if name == "" || strings.HasPrefix(name, ".") {
+				continue
+			}
+			templates = append(templates, name)
+		}
+		sort.Strings(templates)
+		_ = ctx
+		return &WorkspaceTerraformTemplatesResponse{
+			WorkspaceID: pc.workspace.ID,
+			Repo:        fmt.Sprintf("%s/%s", owner, repo),
+			Branch:      branch,
+			Dir:         dir,
+			Templates:   templates,
+		}, nil
 	}
-	sort.Strings(templates)
-	_ = ctx
-	return &WorkspaceTerraformTemplatesResponse{
-		WorkspaceID: pc.workspace.ID,
-		Repo:        fmt.Sprintf("%s/%s", owner, repo),
-		Branch:      branch,
-		Dir:         dir,
-		Templates:   templates,
-	}, nil
+	// unreachable
 }

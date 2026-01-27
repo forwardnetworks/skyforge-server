@@ -189,7 +189,9 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 								"SKYFORGE_C9S_TOPOLOGY_NAME":    topologyName,
 								"SKYFORGE_C9S_LAB_NAME":         strings.TrimSpace(spec.LabName),
 								"SKYFORGE_C9S_MANIFEST_CM":      manifestCM,
-								"SKYFORGE_NETLAB_SET_OVERRIDES":   strings.Join(spec.SetOverrides, "\n"),
+								}
+								if len(spec.SetOverrides) > 0 {
+									genEnv["SKYFORGE_NETLAB_SET_OVERRIDES"] = strings.Join(spec.SetOverrides, "\n")
 								}
 								for k, v := range spec.Environment {
 									kk := strings.TrimSpace(k)
@@ -197,7 +199,11 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 										continue
 									}
 									up := strings.ToUpper(kk)
-									if strings.HasPrefix(up, "NETLAB_") || strings.HasPrefix(kk, "netlab_") {
+									if strings.HasPrefix(up, "NETLAB_") || strings.HasPrefix(kk, "netlab_") || up == "SKYFORGE_NETLAB_SET_OVERRIDES" {
+										// Prefer explicit SetOverrides over environment-provided overrides.
+										if up == "SKYFORGE_NETLAB_SET_OVERRIDES" && len(spec.SetOverrides) > 0 {
+											continue
+										}
 										genEnv[kk] = v
 									}
 								}
