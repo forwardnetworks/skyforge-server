@@ -89,11 +89,19 @@ func normalizeForwardBaseURL(raw string) (string, error) {
 }
 
 func forwardBulkStartConnectivityTests(ctx context.Context, c *forwardClient, networkID string, devices []string) error {
+	return forwardBulkStartConnectivityTestsTyped(ctx, c, networkID, devices, "")
+}
+
+func forwardBulkStartConnectivityTestsTyped(ctx context.Context, c *forwardClient, networkID string, devices []string, targetType string) error {
 	if len(devices) == 0 {
 		return nil
 	}
 	payload := forwardConnectivityBulkStartRequest{Devices: devices}
-	resp, body, err := c.doJSON(ctx, http.MethodPost, "/api/networks/"+url.PathEscape(strings.TrimSpace(networkID))+"/connectivityTests/bulkStart", nil, payload)
+	query := url.Values{}
+	if strings.TrimSpace(targetType) != "" {
+		query.Set("type", strings.TrimSpace(targetType))
+	}
+	resp, body, err := c.doJSON(ctx, http.MethodPost, "/api/networks/"+url.PathEscape(strings.TrimSpace(networkID))+"/connectivityTests/bulkStart", query, payload)
 	if err != nil {
 		return err
 	}

@@ -560,6 +560,10 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, f
 								// The Forward collector runs connectivity checks that rely on ICMP (ping).
 								// Grant NET_RAW so ping works without requiring privileged mode.
 								"securityContext": map[string]any{
+									// Run as root so NET_RAW is effective (Linux drops capabilities on exec
+									// for non-root users unless the binary has file capabilities).
+									"runAsUser":  0,
+									"runAsGroup": 0,
 									"capabilities": map[string]any{
 										"add": []string{"NET_RAW"},
 									},
@@ -704,6 +708,8 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, f
 									"image":           collectorImage,
 									"imagePullPolicy": collectorPullPolicy,
 									"securityContext": map[string]any{
+										"runAsUser":  0,
+										"runAsGroup": 0,
 										"capabilities": map[string]any{
 											"add": []string{"NET_RAW"},
 										},

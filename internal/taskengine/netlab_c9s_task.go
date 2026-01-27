@@ -365,25 +365,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 			forwardSSHReady = true
 		}
 
-		// 3) Start a connectivity test as soon as SSH is reachable. This provides earlier
-		// feedback in Forward UI even before we begin collection.
-		if forwardSSHReady {
-			if log != nil {
-				log.Infof("forward sync: ssh ready; starting connectivity test")
-			}
-			_ = taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "forward.connectivity.start", func() error {
-				if err := e.startForwardConnectivityTestsForDeployment(ctx, spec.TaskID, spec.WorkspaceCtx, dep, graph); err != nil {
-					if log != nil {
-						log.Infof("forward sync skipped: %v", err)
-					}
-					return err
-				}
-				if log != nil {
-					log.Infof("forward sync: connectivity test started")
-				}
-				return nil
-			})
-		}
+		_ = forwardSSHReady // computed for logging/debugging; Forward connectivity start is delayed until after post-up config.
 	}
 
 	// 4) Apply post-up config for supported NOS kinds (cfglets, SSH enable, etc).
@@ -394,6 +376,28 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	}); err != nil && log != nil {
 		// Best-effort: lab is still usable even if cfglets fail.
 		log.Infof("c9s post-up config failed (ignored): %v", err)
+	}
+
+	// Start connectivity tests after post-up config has been applied. Some NOSs accept TCP
+	// connections early but fail/timeout during SSH handshake until initialization is done.
+	// Delaying improves reliability of Forward's initial reachability signals.
+	if dep != nil && graph != nil {
+		_ = taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "forward.connectivity.start", func() error {
+			delaySeconds := envInt(spec.Environment, "SKYFORGE_FORWARD_CONNECTIVITY_DELAY_SECONDS", 15)
+			if delaySeconds > 0 {
+				time.Sleep(time.Duration(delaySeconds) * time.Second)
+			}
+			if err := e.startForwardConnectivityTestsForDeployment(ctx, spec.TaskID, spec.WorkspaceCtx, dep, graph); err != nil {
+				if log != nil {
+					log.Infof("forward sync skipped: %v", err)
+				}
+				return err
+			}
+			if log != nil {
+				log.Infof("forward sync: connectivity test started")
+			}
+			return nil
+		})
 	}
 
 	// 5) Start collection after post-up config has been applied (best-effort).

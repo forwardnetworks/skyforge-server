@@ -521,12 +521,12 @@ func (e *Engine) startForwardConnectivityTestsForDeployment(ctx context.Context,
 		return nil
 	}
 
-	// Only start connectivity tests for non-linux nodes we synced as classic devices.
-	names := make([]string, 0, len(graph.Nodes))
+	// Start connectivity tests for:
+	// - classic devices (NOS nodes)
+	// - endpoints (Linux nodes)
+	classicNames := make([]string, 0, len(graph.Nodes))
+	endpointNames := make([]string, 0, len(graph.Nodes))
 	for _, node := range graph.Nodes {
-		if strings.EqualFold(strings.TrimSpace(node.Kind), "linux") {
-			continue
-		}
 		name := strings.TrimSpace(node.Label)
 		if name == "" {
 			name = strings.TrimSpace(node.ID)
@@ -534,9 +534,13 @@ func (e *Engine) startForwardConnectivityTestsForDeployment(ctx context.Context,
 		if name == "" {
 			continue
 		}
-		names = append(names, name)
+		if strings.EqualFold(strings.TrimSpace(node.Kind), "linux") {
+			endpointNames = append(endpointNames, name)
+			continue
+		}
+		classicNames = append(classicNames, name)
 	}
-	if len(names) == 0 {
+	if len(classicNames) == 0 && len(endpointNames) == 0 {
 		return nil
 	}
 
@@ -548,13 +552,24 @@ func (e *Engine) startForwardConnectivityTestsForDeployment(ctx context.Context,
 	if err != nil {
 		return err
 	}
-	if err := forwardBulkStartConnectivityTests(ctx, client, networkID, names); err != nil {
-		return err
+
+	if len(classicNames) > 0 {
+		if err := forwardBulkStartConnectivityTests(ctx, client, networkID, classicNames); err != nil {
+			return err
+		}
+	}
+	if len(endpointNames) > 0 {
+		// Forward supports endpoint connectivity tests via:
+		//   POST /api/networks/{id}/connectivityTests/bulkStart?type=endpoint
+		if err := forwardBulkStartConnectivityTestsTyped(ctx, client, networkID, endpointNames, "endpoint"); err != nil {
+			return err
+		}
 	}
 	if taskID > 0 {
 		_ = taskstore.AppendTaskEvent(context.Background(), e.db, taskID, "forward.connectivity.started", map[string]any{
-			"networkId":   networkID,
-			"deviceCount": len(names),
+			"networkId":     networkID,
+			"deviceCount":   len(classicNames),
+			"endpointCount": len(endpointNames),
 		})
 	}
 	return nil
