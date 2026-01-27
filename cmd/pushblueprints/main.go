@@ -14,15 +14,17 @@ import (
 
 func main() {
 	var (
-		srcDir        = flag.String("src", "", "Path to local blueprints directory (default: ../blueprints relative to server/)")
-		giteaAPIURL   = flag.String("gitea-api-url", getenv("GITEA_API_URL", ""), "Gitea API URL (e.g. https://skyforge.local.forwardnetworks.com/git/api/v1)")
-		giteaUsername = flag.String("gitea-username", getenv("GITEA_USERNAME", ""), "Gitea username (e.g. skyforge)")
-		giteaPassword = flag.String("gitea-password", getenv("GITEA_PASSWORD", ""), "Gitea password")
-		owner         = flag.String("owner", getenv("GITEA_OWNER", "skyforge"), "Repo owner/org (default: skyforge)")
-		repo          = flag.String("repo", getenv("GITEA_REPO", "blueprints"), "Repo name (default: blueprints)")
-		branch        = flag.String("branch", getenv("GITEA_BRANCH", "main"), "Target branch (default: main)")
-		include       = flag.String("include", getenv("GITEA_BLUEPRINT_DIRS", "containerlab,netlab,terraform"), "Comma-separated list of subdirectories to sync (default: containerlab,netlab,terraform)")
-		dryRun        = flag.Bool("dry-run", false, "Print planned updates without writing to Gitea")
+		srcDir            = flag.String("src", "", "Path to local blueprints directory (default: ../blueprints relative to server/)")
+		giteaAPIURL       = flag.String("gitea-api-url", getenv("GITEA_API_URL", ""), "Gitea API URL (e.g. https://skyforge.local.forwardnetworks.com/git/api/v1)")
+		giteaUsername     = flag.String("gitea-username", getenv("GITEA_USERNAME", ""), "Gitea username (e.g. skyforge)")
+		giteaPassword     = flag.String("gitea-password", getenv("GITEA_PASSWORD", ""), "Gitea password")
+		giteaPasswordFile = flag.String("gitea-password-file", getenv("GITEA_PASSWORD_FILE", ""), "Path to file containing Gitea password (alternative to --gitea-password)")
+		skipTLSVerify     = flag.Bool("skip-tls-verify", getenvBool("GITEA_SKIP_TLS_VERIFY", false), "Skip TLS verification when calling Gitea (intended for internal/self-signed deployments)")
+		owner             = flag.String("owner", getenv("GITEA_OWNER", "skyforge"), "Repo owner/org (default: skyforge)")
+		repo              = flag.String("repo", getenv("GITEA_REPO", "blueprints"), "Repo name (default: blueprints)")
+		branch            = flag.String("branch", getenv("GITEA_BRANCH", "main"), "Target branch (default: main)")
+		include           = flag.String("include", getenv("GITEA_BLUEPRINT_DIRS", "containerlab,netlab,terraform"), "Comma-separated list of subdirectories to sync (default: containerlab,netlab,terraform)")
+		dryRun            = flag.Bool("dry-run", false, "Print planned updates without writing to Gitea")
 	)
 	flag.Parse()
 
@@ -41,6 +43,13 @@ func main() {
 
 	username := strings.TrimSpace(*giteaUsername)
 	password := strings.TrimSpace(*giteaPassword)
+	if password == "" && strings.TrimSpace(*giteaPasswordFile) != "" {
+		raw, err := os.ReadFile(strings.TrimSpace(*giteaPasswordFile))
+		if err != nil {
+			fatalf("read gitea password file: %v", err)
+		}
+		password = strings.TrimSpace(string(raw))
+	}
 	if username == "" || password == "" {
 		fatalf("missing gitea credentials (--gitea-username/--gitea-password or GITEA_USERNAME/GITEA_PASSWORD)")
 	}
@@ -56,11 +65,12 @@ func main() {
 	}
 
 	client := gitea.New(gitea.Config{
-		APIURL:      apiURL,
-		Username:    username,
-		Password:    password,
-		Timeout:     30 * time.Second,
-		RepoPrivate: false,
+		APIURL:        apiURL,
+		Username:      username,
+		Password:      password,
+		Timeout:       30 * time.Second,
+		RepoPrivate:   false,
+		SkipTLSVerify: *skipTLSVerify,
 	})
 
 	fmt.Printf("Ensuring repo %s/%s exists…\n", targetOwner, targetRepo)
@@ -133,6 +143,21 @@ func getenv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func getenvBool(key string, fallback bool) bool {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+	switch strings.ToLower(v) {
+	case "1", "true", "t", "yes", "y", "on":
+		return true
+	case "0", "false", "f", "no", "n", "off":
+		return false
+	default:
+		return fallback
+	}
 }
 
 func splitCSV(raw string) []string {

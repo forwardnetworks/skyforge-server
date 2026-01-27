@@ -3,6 +3,7 @@ package gitea
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -14,12 +15,13 @@ import (
 )
 
 type Config struct {
-	APIURL       string
-	Username     string
-	Password     string
-	Timeout      time.Duration
-	RepoPrivate  bool
-	DefaultEmail string
+	APIURL        string
+	Username      string
+	Password      string
+	Timeout       time.Duration
+	RepoPrivate   bool
+	DefaultEmail  string
+	SkipTLSVerify bool
 }
 
 type Client struct {
@@ -56,6 +58,11 @@ func (c *Client) Do(method, path string, payload any) (*http.Response, []byte, e
 		req.Header.Set("Content-Type", "application/json")
 	}
 	client := &http.Client{Timeout: c.cfg.Timeout}
+	if c.cfg.SkipTLSVerify {
+		client.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, nil, err
