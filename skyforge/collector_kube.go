@@ -484,6 +484,10 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, f
 							"app.kubernetes.io/component": "collector",
 							"skyforge-collector":          name,
 							"skyforge-managed":            "true",
+							// Used by server/internal/taskengine to co-locate lab pods with the
+							// user's collector (best-effort). Keep on the Pod template (not just
+							// the Deployment) so it can be selected via the Pod list API.
+							"skyforge-username": strings.TrimSpace(username),
 						},
 						"annotations": map[string]string{
 							"skyforge/restartedAt": time.Now().UTC().Format(time.RFC3339Nano),
