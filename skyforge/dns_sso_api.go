@@ -478,7 +478,7 @@ func (s *Service) DNSSSO(w http.ResponseWriter, r *http.Request) {
     <script>
       (async () => {
         try {
-          const resp = await fetch("/api/skyforge/api/dns/token", { cache: "no-store", credentials: "include" });
+          const resp = await fetch("/api/dns/token", { cache: "no-store", credentials: "include" });
           if (resp.ok) {
             const data = await resp.json();
             if (data && data.token) {
@@ -494,7 +494,7 @@ func (s *Service) DNSSSO(w http.ResponseWriter, r *http.Request) {
           const showErr = (msg) => { err.textContent = msg; err.classList.remove("hidden"); };
           skip.addEventListener("click", () => window.location.replace("` + escapedNext + `"));
           try {
-            const r = await fetch("/api/skyforge/api/dns/bootstrap", {
+            const r = await fetch("/api/dns/bootstrap", {
               method: "POST",
               credentials: "include",
               headers: { "content-type": "application/json" },
