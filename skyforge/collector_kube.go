@@ -233,38 +233,94 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, f
 		body, _ := json.Marshal(payload)
 
 		createURL := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/persistentvolumeclaims", url.PathEscape(ns))
-		createReq, err := kubeRequest(ctx, http.MethodPost, createURL, bytes.NewReader(body))
-		if err != nil {
-			return nil, err
-		}
-		createReq.Header.Set("Content-Type", "application/json")
-		resp, err := client.Do(createReq)
-		if err != nil {
-			return nil, err
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
+		pvcURL := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/persistentvolumeclaims/%s", url.PathEscape(ns), url.PathEscape(dataPVCName))
+		patchBody, _ := json.Marshal(map[string]any{"metadata": map[string]any{"labels": labels}})
+
+		// Deprovisioning deletes the PVC; if a user reprovisions quickly, the PVC
+		// might still exist but be terminating (or disappear between calls). Treat
+		// conflict as a signal to verify the PVC and wait/retry as needed.
+		waitUntil := time.Now().Add(2 * time.Minute)
+		for {
+			pvcReady := false
+			createReq, err := kubeRequest(ctx, http.MethodPost, createURL, bytes.NewReader(body))
+			if err != nil {
+				return nil, err
+			}
+			createReq.Header.Set("Content-Type", "application/json")
+			resp, err := client.Do(createReq)
+			if err != nil {
+				return nil, err
+			}
 			data, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<10))
-			return nil, fmt.Errorf("kube pvc create failed: %s: %s", resp.Status, strings.TrimSpace(string(data)))
-		}
-		if resp.StatusCode == http.StatusConflict {
-			patchBody, _ := json.Marshal(map[string]any{
-				"metadata": map[string]any{"labels": labels},
-			})
-			patchURL := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/persistentvolumeclaims/%s", url.PathEscape(ns), url.PathEscape(dataPVCName))
-			patchReq, err := kubeRequest(ctx, http.MethodPatch, patchURL, bytes.NewReader(patchBody))
-			if err != nil {
-				return nil, err
+			resp.Body.Close()
+
+			switch resp.StatusCode {
+			case http.StatusCreated:
+				// Fresh PVC.
+				pvcReady = true
+			case http.StatusConflict:
+				// The PVC name exists. Confirm it isn't deleting.
+				getReq, err := kubeRequest(ctx, http.MethodGet, pvcURL, nil)
+				if err != nil {
+					return nil, err
+				}
+				getResp, err := client.Do(getReq)
+				if err != nil {
+					return nil, err
+				}
+				getData, _ := io.ReadAll(io.LimitReader(getResp.Body, 32<<10))
+				getResp.Body.Close()
+				if getResp.StatusCode == http.StatusNotFound {
+					// PVC disappeared after we got a conflict. Retry create.
+					continue
+				}
+				if getResp.StatusCode < 200 || getResp.StatusCode >= 300 {
+					return nil, fmt.Errorf("kube pvc get failed: %s: %s", getResp.Status, strings.TrimSpace(string(getData)))
+				}
+				var pvc struct {
+					Metadata struct {
+						DeletionTimestamp *string `json:"deletionTimestamp"`
+					} `json:"metadata"`
+				}
+				if err := json.Unmarshal(getData, &pvc); err != nil {
+					return nil, fmt.Errorf("kube pvc get parse failed: %w", err)
+				}
+				if pvc.Metadata.DeletionTimestamp != nil && strings.TrimSpace(*pvc.Metadata.DeletionTimestamp) != "" {
+					// Still terminating; wait for it to be gone, then retry create.
+					if time.Now().After(waitUntil) {
+						return nil, fmt.Errorf("collector data pvc %q is still deleting; retry in a moment", dataPVCName)
+					}
+					rlog.Info("collector data pvc deleting; waiting", "pvc", dataPVCName)
+					select {
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					case <-time.After(2 * time.Second):
+					}
+					continue
+				}
+
+				// PVC exists and is not deleting. Patch labels and continue.
+				patchReq, err := kubeRequest(ctx, http.MethodPatch, pvcURL, bytes.NewReader(patchBody))
+				if err != nil {
+					return nil, err
+				}
+				patchReq.Header.Set("Content-Type", "application/strategic-merge-patch+json")
+				patchResp, err := client.Do(patchReq)
+				if err != nil {
+					return nil, err
+				}
+				patchData, _ := io.ReadAll(io.LimitReader(patchResp.Body, 32<<10))
+				patchResp.Body.Close()
+				if patchResp.StatusCode < 200 || patchResp.StatusCode >= 300 {
+					return nil, fmt.Errorf("kube pvc patch failed: %s: %s", patchResp.Status, strings.TrimSpace(string(patchData)))
+				}
+				pvcReady = true
+			default:
+				return nil, fmt.Errorf("kube pvc create failed: %s: %s", resp.Status, strings.TrimSpace(string(data)))
 			}
-			patchReq.Header.Set("Content-Type", "application/strategic-merge-patch+json")
-			patchResp, err := client.Do(patchReq)
-			if err != nil {
-				return nil, err
-			}
-			defer patchResp.Body.Close()
-			if patchResp.StatusCode < 200 || patchResp.StatusCode >= 300 {
-				data, _ := io.ReadAll(io.LimitReader(patchResp.Body, 32<<10))
-				return nil, fmt.Errorf("kube pvc patch failed: %s: %s", patchResp.Status, strings.TrimSpace(string(data)))
+
+			if pvcReady {
+				break
 			}
 		}
 	}
