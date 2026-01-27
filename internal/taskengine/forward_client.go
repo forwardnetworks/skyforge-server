@@ -472,10 +472,10 @@ type forwardEndpoint struct {
 }
 
 type forwardEndpointProfile struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Type         string   `json:"type"`
-	CommandSets  []string `json:"commandSets"`
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Type           string   `json:"type"`
+	CommandSets    []string `json:"commandSets"`
 	CustomCommands []string `json:"customCommands"`
 }
 
@@ -515,10 +515,36 @@ func forwardListEndpointProfiles(ctx context.Context, c *forwardClient, profileT
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("forward list endpoint profiles failed: %s", strings.TrimSpace(string(body)))
 	}
-	var profiles []forwardEndpointProfile
-	if err := json.Unmarshal(body, &profiles); err != nil {
+
+	// Forward deployments can return different shapes for list endpoints.
+	// Support:
+	//   - raw array: [...]
+	//   - wrapped: {"items":[...]}, {"profiles":[...]}, {"data":[...]}, {"results":[...]}
+	var payload any
+	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, err
 	}
+
+	profiles := []forwardEndpointProfile{}
+	switch v := payload.(type) {
+	case []any:
+		for _, raw := range v {
+			buf, _ := json.Marshal(raw)
+			var item forwardEndpointProfile
+			if err := json.Unmarshal(buf, &item); err == nil {
+				profiles = append(profiles, item)
+			}
+		}
+	case map[string]any:
+		for _, key := range []string{"items", "profiles", "endpointProfiles", "data", "results"} {
+			if raw, ok := v[key]; ok {
+				buf, _ := json.Marshal(raw)
+				_ = json.Unmarshal(buf, &profiles)
+				break
+			}
+		}
+	}
+
 	return profiles, nil
 }
 
