@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
@@ -49,18 +51,38 @@ func ExecPodCommand(ctx context.Context, kcfg *rest.Config, ns, podName, contain
 	req.VersionedParams(opts, scheme.ParameterCodec)
 	execURL := req.URL()
 
-	executor, err := remotecommand.NewSPDYExecutor(kcfg, http.MethodPost, execURL)
-	if err != nil {
-		return "", "", err
+	// k0s can fail kube exec transiently with "error dialing backend: No agent available"
+	// (konnectivity/apiserver-network-proxy). Retry a few times to avoid random flakiness.
+	backoff := 250 * time.Millisecond
+	for attempt := 0; attempt < 4; attempt++ {
+		executor, err := remotecommand.NewSPDYExecutor(kcfg, http.MethodPost, execURL)
+		if err != nil {
+			return "", "", err
+		}
+
+		var outBuf bytes.Buffer
+		var errBuf bytes.Buffer
+		streamErr := executor.StreamWithContext(ctx, remotecommand.StreamOptions{
+			Stdout: &outBuf,
+			Stderr: &errBuf,
+		})
+		if streamErr == nil || !isRetryableExecErr(streamErr) || attempt == 3 {
+			return outBuf.String(), errBuf.String(), streamErr
+		}
+
+		timer := time.NewTimer(backoff)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return outBuf.String(), errBuf.String(), streamErr
+		case <-timer.C:
+		}
+		if backoff < 2*time.Second {
+			backoff *= 2
+		}
 	}
 
-	var outBuf bytes.Buffer
-	var errBuf bytes.Buffer
-	streamErr := executor.StreamWithContext(ctx, remotecommand.StreamOptions{
-		Stdout: &outBuf,
-		Stderr: &errBuf,
-	})
-	return outBuf.String(), errBuf.String(), streamErr
+	return "", "", fmt.Errorf("kube exec retry attempts exhausted")
 }
 
 func ExecPodShell(ctx context.Context, kcfg *rest.Config, ns, podName, container, script string) (stdout, stderr string, err error) {
@@ -69,4 +91,9 @@ func ExecPodShell(ctx context.Context, kcfg *rest.Config, ns, podName, container
 	}
 	cmd := []string{"sh", "-lc", script}
 	return ExecPodCommand(ctx, kcfg, ns, podName, container, cmd)
+}
+
+func isRetryableExecErr(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no agent available") || strings.Contains(msg, "error dialing backend")
 }
