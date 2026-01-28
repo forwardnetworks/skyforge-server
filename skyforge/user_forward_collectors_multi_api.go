@@ -222,6 +222,20 @@ FROM sf_user_forward_credentials WHERE username=$1`, username).Scan(&baseURL, &f
 		}
 		return err
 	}
+
+	// Prevent "phantom re-creation" if a user later deletes all configured collectors:
+	// ListUserForwardCollectorConfigs calls migrateLegacyUserForwardCollectorIfNeeded when no collector
+	// configs exist. If we keep the legacy row around, a delete would appear to "succeed" but the next
+	// list would immediately re-import it, making it look like the UI delete didn't work.
+	//
+	// The multi-collector endpoints are the source of truth going forward; delete the legacy row
+	// best-effort (it's safe to ignore missing-table errors on fresh installs).
+	if _, delErr := db.ExecContext(ctx, `DELETE FROM sf_user_forward_credentials WHERE username=$1`, username); delErr != nil {
+		if !isMissingDBRelation(delErr) {
+			log.Printf("user forward collectors migrate: failed to delete legacy row: %v", delErr)
+		}
+	}
+
 	return nil
 }
 
@@ -542,6 +556,17 @@ func (s *Service) DeleteUserForwardCollectorConfig(ctx context.Context, id strin
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to delete collector").Err()
 	}
+
+	// Best-effort cleanup of the legacy single-collector table (used for historical migrations).
+	// This avoids deleted collectors reappearing via migrateLegacyUserForwardCollectorIfNeeded.
+	if isDefault {
+		if _, delErr := s.db.ExecContext(ctxReq, `DELETE FROM sf_user_forward_credentials WHERE username=$1`, user.Username); delErr != nil {
+			if !isMissingDBRelation(delErr) {
+				log.Printf("collector delete legacy row: %v", delErr)
+			}
+		}
+	}
+
 	return &DeleteUserForwardCollectorConfigResponse{Deleted: true}, nil
 }
 
