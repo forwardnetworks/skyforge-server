@@ -54,7 +54,7 @@ func ExecPodCommand(ctx context.Context, kcfg *rest.Config, ns, podName, contain
 	// k0s can fail kube exec transiently with "error dialing backend: No agent available"
 	// (konnectivity/apiserver-network-proxy). Retry a few times to avoid random flakiness.
 	backoff := 250 * time.Millisecond
-	for attempt := 0; attempt < 4; attempt++ {
+	for attempt := 0; attempt < 8; attempt++ {
 		executor, err := remotecommand.NewSPDYExecutor(kcfg, http.MethodPost, execURL)
 		if err != nil {
 			return "", "", err
@@ -66,7 +66,7 @@ func ExecPodCommand(ctx context.Context, kcfg *rest.Config, ns, podName, contain
 			Stdout: &outBuf,
 			Stderr: &errBuf,
 		})
-		if streamErr == nil || !isRetryableExecErr(streamErr) || attempt == 3 {
+		if streamErr == nil || !isRetryableExecErr(streamErr) || attempt == 7 {
 			return outBuf.String(), errBuf.String(), streamErr
 		}
 
@@ -77,7 +77,7 @@ func ExecPodCommand(ctx context.Context, kcfg *rest.Config, ns, podName, contain
 			return outBuf.String(), errBuf.String(), streamErr
 		case <-timer.C:
 		}
-		if backoff < 2*time.Second {
+		if backoff < 4*time.Second {
 			backoff *= 2
 		}
 	}

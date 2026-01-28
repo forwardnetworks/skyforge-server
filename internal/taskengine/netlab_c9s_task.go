@@ -9,6 +9,7 @@ import (
 	"net"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"encore.app/internal/taskdispatch"
@@ -311,7 +312,6 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	// resolved management IPs without querying netlab output.
 	var graph *TopologyGraph
 	var dep *WorkspaceDeployment
-	var forwardSSHReady bool
 
 	captureErr := error(nil)
 	graph, captureErr = e.captureC9sTopologyArtifact(ctx, spec, ns, topologyName, labName, topologyBytes, nodeNameMapping, log)
@@ -340,6 +340,11 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	// Forward device import (best-effort) should happen as soon as management IPs are available
 	// so Forward can start its own reachability checks early.
 	if dep != nil && graph != nil {
+		earlyConnectivityEnabled := envBool(spec.Environment, "SKYFORGE_FORWARD_CONNECTIVITY_EARLY", true)
+		earlyConnectivitySeconds := envInt(spec.Environment, "SKYFORGE_FORWARD_CONNECTIVITY_EARLY_SECONDS", 300)
+		earlyConnectivityConcurrency := envInt(spec.Environment, "SKYFORGE_FORWARD_CONNECTIVITY_EARLY_CONCURRENCY", 12)
+		earlyConnectivityBatchSize := envInt(spec.Environment, "SKYFORGE_FORWARD_CONNECTIVITY_EARLY_BATCH", 10)
+
 		// 1) Import devices/endpoints into Forward as soon as management IPs are available.
 		// We intentionally do this before applying post-up config so Forward can start its
 		// own reachability checks early.
@@ -353,24 +358,16 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 			log.Infof("forward sync: devices uploaded (collection deferred)")
 		}
 
-		// 2) Wait for SSH readiness as early as possible (before config push/collection).
-		// Some NOSs (notably cEOS) take additional time after the topology reports "ready"
-		// before SSH is actually reachable.
-		if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "forward.ready", func() error {
-			timeoutSeconds := envInt(spec.Environment, "SKYFORGE_FORWARD_SYNC_WAIT_SECONDS", 180)
-			if timeoutSeconds <= 0 {
-				return nil
-			}
-			return waitForForwardSSHReady(ctx, spec.TaskID, e, graph, time.Duration(timeoutSeconds)*time.Second, log)
-		}); err != nil {
-			if log != nil {
-				log.Infof("forward sync skipped: %v", err)
-			}
-		} else {
-			forwardSSHReady = true
+		// 2) Start Forward connectivity tests as soon as each node becomes SSH-ready (SSH banner).
+		// This runs concurrently with post-up config to reduce time-to-signal.
+		if earlyConnectivityEnabled && earlyConnectivitySeconds > 0 {
+			ctxEarly, cancel := context.WithTimeout(ctx, time.Duration(earlyConnectivitySeconds)*time.Second)
+			defer cancel()
+			go func() {
+				_ = startForwardConnectivityAsNodesSSHReady(ctxEarly, spec.TaskID, e, spec.WorkspaceCtx, dep, graph, earlyConnectivityConcurrency, earlyConnectivityBatchSize, log)
+			}()
 		}
 
-		_ = forwardSSHReady // computed for logging/debugging; Forward connectivity start is delayed until after post-up config.
 	}
 
 	// 4) Apply post-up config for supported NOS kinds (cfglets, SSH enable, etc).
@@ -383,12 +380,12 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		log.Infof("c9s post-up config failed (ignored): %v", err)
 	}
 
-	// Start connectivity tests after post-up config has been applied. Some NOSs accept TCP
-	// connections early but fail/timeout during SSH handshake until initialization is done.
-	// Delaying improves reliability of Forward's initial reachability signals.
-	if dep != nil && graph != nil {
+	// Optional: start connectivity tests in a single batch after post-up config.
+	// Default is to start them earlier (per-node as SSH becomes ready).
+	postupConnectivity := envBool(spec.Environment, "SKYFORGE_FORWARD_CONNECTIVITY_POSTUP", false)
+	if dep != nil && graph != nil && postupConnectivity {
 		_ = taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "forward.connectivity.start", func() error {
-			delaySeconds := envInt(spec.Environment, "SKYFORGE_FORWARD_CONNECTIVITY_DELAY_SECONDS", 15)
+			delaySeconds := envInt(spec.Environment, "SKYFORGE_FORWARD_CONNECTIVITY_DELAY_SECONDS", 0)
 			if delaySeconds > 0 {
 				time.Sleep(time.Duration(delaySeconds) * time.Second)
 			}
@@ -399,7 +396,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 				return err
 			}
 			if log != nil {
-				log.Infof("forward sync: connectivity test started")
+				log.Infof("forward sync: connectivity test started (post-up)")
 			}
 			return nil
 		})
@@ -457,6 +454,186 @@ func envInt(env map[string]string, key string, def int) int {
 		return def
 	}
 	return n
+}
+
+type forwardSSHReadyTarget struct {
+	Name string
+	Host string
+	Type string // "classic" or "endpoint"
+}
+
+func startForwardConnectivityAsNodesSSHReady(
+	ctx context.Context,
+	taskID int,
+	e *Engine,
+	pc *workspaceContext,
+	dep *WorkspaceDeployment,
+	graph *TopologyGraph,
+	concurrency int,
+	batchSize int,
+	log Logger,
+) error {
+	if e == nil || pc == nil || dep == nil || graph == nil {
+		return nil
+	}
+	if concurrency <= 0 {
+		concurrency = 1
+	}
+	if batchSize <= 0 {
+		batchSize = 10
+	}
+
+	cfgAny, err := e.ensureForwardNetworkForDeployment(ctx, pc, dep)
+	if err != nil || cfgAny == nil {
+		return err
+	}
+	rawID, ok := cfgAny[forwardNetworkIDKey]
+	if !ok || rawID == nil {
+		return nil
+	}
+	networkID := strings.TrimSpace(fmt.Sprintf("%v", rawID))
+	if networkID == "" {
+		return nil
+	}
+
+	forwardCfg, err := e.forwardConfigForUser(ctx, pc.claims.Username)
+	if err != nil || forwardCfg == nil {
+		return err
+	}
+	client, err := newForwardClient(*forwardCfg)
+	if err != nil {
+		return err
+	}
+
+	targets := make([]forwardSSHReadyTarget, 0, len(graph.Nodes))
+	for _, n := range graph.Nodes {
+		name := strings.TrimSpace(n.Label)
+		if name == "" {
+			name = strings.TrimSpace(n.ID)
+		}
+		if name == "" {
+			continue
+		}
+		host := strings.TrimSpace(n.MgmtHost)
+		if host == "" {
+			host = strings.TrimSpace(n.MgmtIP)
+		}
+		if host == "" {
+			continue
+		}
+		t := "classic"
+		if strings.EqualFold(strings.TrimSpace(n.Kind), "linux") {
+			t = "endpoint"
+		}
+		targets = append(targets, forwardSSHReadyTarget{Name: name, Host: host, Type: t})
+	}
+	if len(targets) == 0 {
+		return nil
+	}
+
+	if log != nil {
+		log.Infof("forward sync: early connectivity armed (targets=%d concurrency=%d)", len(targets), concurrency)
+	}
+
+	readyCh := make(chan forwardSSHReadyTarget, 64)
+	sem := make(chan struct{}, concurrency)
+
+	var wg sync.WaitGroup
+	for _, tgt := range targets {
+		tgt := tgt
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			backoff := 1 * time.Second
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+
+				if forwardSSHBannerReady(ctx, tgt.Host) {
+					select {
+					case readyCh <- tgt:
+					case <-ctx.Done():
+					}
+					return
+				}
+
+				timer := time.NewTimer(backoff)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return
+				case <-timer.C:
+				}
+				if backoff < 60*time.Second {
+					backoff *= 2
+					if backoff > 60*time.Second {
+						backoff = 60 * time.Second
+					}
+				}
+			}
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(readyCh)
+	}()
+
+	flush := func(classic []string, endpoints []string) {
+		if len(classic) > 0 {
+			if err := forwardBulkStartConnectivityTests(ctx, client, networkID, classic); err != nil && log != nil {
+				log.Infof("forward sync: early connectivity start failed (devices=%d): %v", len(classic), err)
+			} else if log != nil {
+				log.Infof("forward sync: early connectivity started (devices=%d)", len(classic))
+			}
+		}
+		if len(endpoints) > 0 {
+			if err := forwardBulkStartConnectivityTestsTyped(ctx, client, networkID, endpoints, "endpoint"); err != nil && log != nil {
+				log.Infof("forward sync: early endpoint connectivity start failed (endpoints=%d): %v", len(endpoints), err)
+			} else if log != nil {
+				log.Infof("forward sync: early endpoint connectivity started (endpoints=%d)", len(endpoints))
+			}
+		}
+	}
+
+	classicBatch := []string{}
+	endpointBatch := []string{}
+	ticker := time.NewTicker(750 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case tgt, ok := <-readyCh:
+			if !ok {
+				flush(classicBatch, endpointBatch)
+				return nil
+			}
+			if tgt.Type == "endpoint" {
+				endpointBatch = append(endpointBatch, tgt.Name)
+			} else {
+				classicBatch = append(classicBatch, tgt.Name)
+			}
+			if len(classicBatch)+len(endpointBatch) >= batchSize {
+				flush(classicBatch, endpointBatch)
+				classicBatch = []string{}
+				endpointBatch = []string{}
+			}
+		case <-ticker.C:
+			if len(classicBatch) > 0 || len(endpointBatch) > 0 {
+				flush(classicBatch, endpointBatch)
+				classicBatch = []string{}
+				endpointBatch = []string{}
+			}
+		}
+	}
 }
 
 func waitForForwardSSHReady(ctx context.Context, taskID int, e *Engine, graph *TopologyGraph, timeout time.Duration, log Logger) error {
