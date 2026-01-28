@@ -15,18 +15,18 @@ import (
 )
 
 type UserForwardCollectorConfigSummary struct {
-	ID               string                  `json:"id"`
-	Name             string                  `json:"name"`
-	BaseURL          string                  `json:"baseUrl"`
-	SkipTLSVerify    bool                    `json:"skipTlsVerify"`
-	Username         string                  `json:"username,omitempty"`
-	CollectorID      string                  `json:"collectorId,omitempty"`
-	CollectorUsername string                 `json:"collectorUsername,omitempty"`
-	IsDefault        bool                    `json:"isDefault"`
-	UpdatedAt        string                  `json:"updatedAt,omitempty"`
-	Runtime          *collectorRuntimeStatus `json:"runtime,omitempty"`
-	ForwardCollector *ForwardCollectorInfo   `json:"forwardCollector,omitempty"`
-	DecryptionFailed bool                    `json:"decryptionFailed,omitempty"`
+	ID                string                  `json:"id"`
+	Name              string                  `json:"name"`
+	BaseURL           string                  `json:"baseUrl"`
+	SkipTLSVerify     bool                    `json:"skipTlsVerify"`
+	Username          string                  `json:"username,omitempty"`
+	CollectorID       string                  `json:"collectorId,omitempty"`
+	CollectorUsername string                  `json:"collectorUsername,omitempty"`
+	IsDefault         bool                    `json:"isDefault"`
+	UpdatedAt         string                  `json:"updatedAt,omitempty"`
+	Runtime           *collectorRuntimeStatus `json:"runtime,omitempty"`
+	ForwardCollector  *ForwardCollectorInfo   `json:"forwardCollector,omitempty"`
+	DecryptionFailed  bool                    `json:"decryptionFailed,omitempty"`
 }
 
 type ListUserForwardCollectorConfigsResponse struct {
@@ -34,12 +34,12 @@ type ListUserForwardCollectorConfigsResponse struct {
 }
 
 type CreateUserForwardCollectorConfigRequest struct {
-	Name         string `json:"name"`
-	BaseURL      string `json:"baseUrl"`
-	SkipTLSVerify bool  `json:"skipTlsVerify"`
-	Username     string `json:"username"`
-	Password     string `json:"password"`
-	SetDefault   bool   `json:"setDefault"`
+	Name          string `json:"name"`
+	BaseURL       string `json:"baseUrl"`
+	SkipTLSVerify bool   `json:"skipTlsVerify"`
+	Username      string `json:"username"`
+	Password      string `json:"password"`
+	SetDefault    bool   `json:"setDefault"`
 }
 
 type DeleteUserForwardCollectorConfigResponse struct {
@@ -47,18 +47,18 @@ type DeleteUserForwardCollectorConfigResponse struct {
 }
 
 type userForwardCollectorConfigRow struct {
-	ID               string
-	Username         string
-	Name             string
-	BaseURL          string
-	SkipTLSVerify    bool
-	ForwardUsername  string
-	ForwardPassword  string
-	CollectorID      string
+	ID                string
+	Username          string
+	Name              string
+	BaseURL           string
+	SkipTLSVerify     bool
+	ForwardUsername   string
+	ForwardPassword   string
+	CollectorID       string
 	CollectorUsername string
-	AuthorizationKey string
-	UpdatedAt        time.Time
-	IsDefault        bool
+	AuthorizationKey  string
+	UpdatedAt         time.Time
+	IsDefault         bool
 }
 
 func collectorDeploymentNameForConfig(username, configID string, isDefault bool) string {
@@ -259,14 +259,14 @@ func (s *Service) ListUserForwardCollectorConfigs(ctx context.Context) (*ListUse
 		cfg := UserForwardCollectorConfigSummary{
 			ID:                r.ID,
 			Name:              r.Name,
-			BaseURL:            baseURL,
-			SkipTLSVerify:      r.SkipTLSVerify,
-			Username:           r.ForwardUsername,
-			CollectorID:        r.CollectorID,
-			CollectorUsername:  r.CollectorUsername,
-			IsDefault:          r.IsDefault,
-			UpdatedAt:          updatedAt,
-			DecryptionFailed:   strings.TrimSpace(r.ForwardUsername) == "" && strings.TrimSpace(r.ForwardPassword) == "" && strings.TrimSpace(r.CollectorID) == "" && strings.TrimSpace(r.AuthorizationKey) == "",
+			BaseURL:           baseURL,
+			SkipTLSVerify:     r.SkipTLSVerify,
+			Username:          r.ForwardUsername,
+			CollectorID:       r.CollectorID,
+			CollectorUsername: r.CollectorUsername,
+			IsDefault:         r.IsDefault,
+			UpdatedAt:         updatedAt,
+			DecryptionFailed:  strings.TrimSpace(r.ForwardUsername) == "" && strings.TrimSpace(r.ForwardPassword) == "" && strings.TrimSpace(r.CollectorID) == "" && strings.TrimSpace(r.AuthorizationKey) == "",
 		}
 		// Best-effort runtime and Forward status.
 		{
@@ -378,8 +378,41 @@ func (s *Service) CreateUserForwardCollectorConfig(ctx context.Context, req *Cre
 	}
 
 	configID := uuid.NewString()
-	forwardCollectorName := fmt.Sprintf("skyforge-%s-%s", sanitizeKubeDNSLabelPart(user.Username, 32), strings.ReplaceAll(configID, "-", "")[:8])
-	created, err := forwardCreateCollector(ctx, client, forwardCollectorName)
+	baseCollectorName := fmt.Sprintf("skyforge-%s", sanitizeKubeDNSLabelPart(user.Username, 48))
+	shortID := strings.ReplaceAll(configID, "-", "")
+	if len(shortID) > 8 {
+		shortID = shortID[:8]
+	}
+	isConflict := func(err error) bool {
+		if err == nil {
+			return false
+		}
+		msg := strings.ToLower(err.Error())
+		return strings.Contains(msg, "failed (409)") || strings.Contains(msg, "status 409") || (strings.Contains(msg, "409") && strings.Contains(msg, "already"))
+	}
+
+	var (
+		forwardCollectorName string
+		created              *forwardCollectorCreateResponse
+	)
+	for attempt := 0; attempt < 3; attempt++ {
+		switch attempt {
+		case 0:
+			forwardCollectorName = baseCollectorName
+		case 1:
+			forwardCollectorName = fmt.Sprintf("%s-%s", baseCollectorName, shortID)
+		default:
+			forwardCollectorName = fmt.Sprintf("%s-%s-%s", baseCollectorName, shortID, uuid.NewString()[:4])
+		}
+		created, err = forwardCreateCollector(ctx, client, forwardCollectorName)
+		if err == nil {
+			break
+		}
+		if !isConflict(err) {
+			log.Printf("forward create collector (%s): %v", forwardCollectorName, err)
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to create Forward collector").Err()
+		}
+	}
 	if err != nil {
 		log.Printf("forward create collector (%s): %v", forwardCollectorName, err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to create Forward collector").Err()
@@ -457,12 +490,12 @@ func (s *Service) CreateUserForwardCollectorConfig(ctx context.Context, req *Cre
 	return &UserForwardCollectorConfigSummary{
 		ID:                configID,
 		Name:              name,
-		BaseURL:            baseURL,
-		SkipTLSVerify:      skipTLSVerify,
-		Username:           fwdUser,
-		CollectorID:        strings.TrimSpace(created.ID),
-		CollectorUsername:  strings.TrimSpace(created.Username),
-		IsDefault:          req.SetDefault,
+		BaseURL:           baseURL,
+		SkipTLSVerify:     skipTLSVerify,
+		Username:          fwdUser,
+		CollectorID:       strings.TrimSpace(created.ID),
+		CollectorUsername: strings.TrimSpace(created.Username),
+		IsDefault:         req.SetDefault,
 	}, nil
 }
 
