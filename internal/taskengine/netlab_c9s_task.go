@@ -496,7 +496,19 @@ func startForwardConnectivityAsNodesSSHReady(
 		return nil
 	}
 
-	forwardCfg, err := e.forwardConfigForUser(ctx, pc.claims.Username)
+	getString := func(key string) string {
+		raw, ok := cfgAny[key]
+		if !ok {
+			return ""
+		}
+		if s, ok := raw.(string); ok {
+			return strings.TrimSpace(s)
+		}
+		return strings.TrimSpace(fmt.Sprintf("%v", raw))
+	}
+
+	collectorConfigID := getString(forwardCollectorIDKey)
+	forwardCfg, err := e.forwardConfigForUserCollector(ctx, pc.claims.Username, collectorConfigID)
 	if err != nil || forwardCfg == nil {
 		return err
 	}

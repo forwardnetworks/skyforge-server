@@ -12,6 +12,7 @@ import (
 
 type DeploymentForwardConfigRequest struct {
 	Enabled           bool   `json:"enabled"`
+	CollectorConfigID string `json:"collectorConfigId,omitempty"`
 	CollectorUsername string `json:"collectorUsername,omitempty"`
 }
 
@@ -19,6 +20,7 @@ type DeploymentForwardConfigResponse struct {
 	WorkspaceID        string `json:"workspaceId"`
 	DeploymentID       string `json:"deploymentId"`
 	Enabled            bool   `json:"enabled"`
+	CollectorConfigID  string `json:"collectorConfigId,omitempty"`
 	CollectorUsername  string `json:"collectorUsername,omitempty"`
 	ForwardNetworkID   string `json:"forwardNetworkId,omitempty"`
 	ForwardSnapshotURL string `json:"forwardSnapshotUrl,omitempty"`
@@ -55,10 +57,21 @@ func (s *Service) UpdateWorkspaceDeploymentForwardConfig(ctx context.Context, id
 		cfgAny = map[string]any{}
 	}
 	cfgAny["forwardEnabled"] = req.Enabled
-	collector := strings.TrimSpace(req.CollectorUsername)
-	if collector != "" {
-		cfgAny["forwardCollectorUsername"] = collector
+	collectorConfigID := strings.TrimSpace(req.CollectorConfigID)
+	collectorUsername := strings.TrimSpace(req.CollectorUsername)
+	if !req.Enabled {
+		delete(cfgAny, "forwardCollectorId")
+		delete(cfgAny, "forwardCollectorUsername")
+	} else if collectorConfigID != "" {
+		cfgAny["forwardCollectorId"] = collectorConfigID
+		// Keep backwards compat but do not require/force a specific Forward-side collector username here;
+		// taskengine uses forwardCollectorId to select the user-managed collector config.
+		delete(cfgAny, "forwardCollectorUsername")
+	} else if collectorUsername != "" {
+		cfgAny["forwardCollectorUsername"] = collectorUsername
+		delete(cfgAny, "forwardCollectorId")
 	} else {
+		delete(cfgAny, "forwardCollectorId")
 		delete(cfgAny, "forwardCollectorUsername")
 	}
 
@@ -78,7 +91,8 @@ func (s *Service) UpdateWorkspaceDeploymentForwardConfig(ctx context.Context, id
 		WorkspaceID:       pc.workspace.ID,
 		DeploymentID:      dep.ID,
 		Enabled:           req.Enabled,
-		CollectorUsername: collector,
+		CollectorConfigID: collectorConfigID,
+		CollectorUsername: collectorUsername,
 	}
 	if v, ok := cfgAny["forwardNetworkId"].(string); ok {
 		resp.ForwardNetworkID = strings.TrimSpace(v)
@@ -120,7 +134,8 @@ func (s *Service) SyncWorkspaceDeploymentForward(ctx context.Context, id, deploy
 	if !enabled {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward is disabled for this deployment").Err()
 	}
-	if strings.TrimSpace(fmt.Sprintf("%v", cfgAny["forwardCollectorUsername"])) == "" {
+	if strings.TrimSpace(fmt.Sprintf("%v", cfgAny["forwardCollectorId"])) == "" &&
+		strings.TrimSpace(fmt.Sprintf("%v", cfgAny["forwardCollectorUsername"])) == "" {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("collector selection is required").Err()
 	}
 

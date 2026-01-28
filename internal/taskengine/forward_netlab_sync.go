@@ -23,6 +23,7 @@ const (
 	forwardJumpServerIDKey     = "forwardJumpServerId"
 	forwardEnabledKey          = "forwardEnabled"
 	forwardCollectorUserKey    = "forwardCollectorUsername"
+	forwardCollectorIDKey      = "forwardCollectorId"
 )
 
 const defaultForwardBaseURL = "https://fwd.app"
@@ -236,12 +237,16 @@ func parseNetlabStatusOutput(logText string) []netlabStatusDevice {
 }
 
 func (e *Engine) forwardConfigForUser(ctx context.Context, username string) (*forwardCredentials, error) {
+	return e.forwardConfigForUserCollector(ctx, username, "")
+}
+
+func (e *Engine) forwardConfigForUserCollector(ctx context.Context, username string, collectorConfigID string) (*forwardCredentials, error) {
 	if e == nil || e.db == nil || e.box == nil {
 		return nil, fmt.Errorf("database unavailable")
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	rec, err := e.getUserForwardCredentials(ctxReq, username)
+	rec, err := e.getUserForwardCredentials(ctxReq, username, collectorConfigID)
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +262,7 @@ func (e *Engine) forwardConfigForUser(ctx context.Context, username string) (*fo
 	return rec, nil
 }
 
-func (e *Engine) getUserForwardCredentials(ctx context.Context, username string) (*forwardCredentials, error) {
+func (e *Engine) getUserForwardCredentials(ctx context.Context, username string, collectorConfigID string) (*forwardCredentials, error) {
 	if e == nil || e.db == nil || e.box == nil {
 		return nil, fmt.Errorf("db unavailable")
 	}
@@ -265,6 +270,82 @@ func (e *Engine) getUserForwardCredentials(ctx context.Context, username string)
 	if username == "" {
 		return nil, fmt.Errorf("username is required")
 	}
+
+	collectorConfigID = strings.TrimSpace(collectorConfigID)
+	type row struct {
+		baseURL        sql.NullString
+		fwdUser        sql.NullString
+		fwdPass        sql.NullString
+		collectorUser  sql.NullString
+		authKey        sql.NullString
+		skipTLSVerify  sql.NullBool
+	}
+	var r row
+	if collectorConfigID != "" {
+		err := e.db.QueryRowContext(ctx, `SELECT base_url, forward_username, forward_password,
+  COALESCE(collector_username, ''), COALESCE(authorization_key, ''),
+  COALESCE(skip_tls_verify, false)
+FROM sf_user_forward_collectors WHERE username=$1 AND id=$2`, username, collectorConfigID).Scan(
+			&r.baseURL, &r.fwdUser, &r.fwdPass, &r.collectorUser, &r.authKey, &r.skipTLSVerify,
+		)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, nil
+			}
+			if isMissingDBRelation(err) {
+				return e.getUserForwardCredentialsLegacy(ctx, username)
+			}
+			return nil, err
+		}
+	} else {
+		err := e.db.QueryRowContext(ctx, `SELECT base_url, forward_username, forward_password,
+  COALESCE(collector_username, ''), COALESCE(authorization_key, ''),
+  COALESCE(skip_tls_verify, false)
+FROM sf_user_forward_collectors WHERE username=$1
+ORDER BY is_default DESC, updated_at DESC
+LIMIT 1`, username).Scan(
+			&r.baseURL, &r.fwdUser, &r.fwdPass, &r.collectorUser, &r.authKey, &r.skipTLSVerify,
+		)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) || isMissingDBRelation(err) {
+				return e.getUserForwardCredentialsLegacy(ctx, username)
+			}
+			return nil, err
+		}
+	}
+
+	dec := func(v sql.NullString) (string, error) {
+		return e.box.decrypt(v.String)
+	}
+	baseURLValue, err := dec(r.baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("forward credentials could not be decrypted; re-save Forward settings")
+	}
+	usernameValue, err := dec(r.fwdUser)
+	if err != nil {
+		return nil, fmt.Errorf("forward credentials could not be decrypted; re-save Forward settings")
+	}
+	passwordValue, err := dec(r.fwdPass)
+	if err != nil {
+		return nil, fmt.Errorf("forward credentials could not be decrypted; re-save Forward settings")
+	}
+	collectorUserValue, _ := dec(r.collectorUser)
+	authKeyValue, _ := dec(r.authKey)
+	if strings.TrimSpace(collectorUserValue) == "" && strings.TrimSpace(authKeyValue) != "" {
+		if before, _, ok := strings.Cut(strings.TrimSpace(authKeyValue), ":"); ok {
+			collectorUserValue = before
+		}
+	}
+
+	return &forwardCredentials{
+		BaseURL:       strings.TrimSpace(baseURLValue),
+		Username:      strings.TrimSpace(usernameValue),
+		Password:      strings.TrimSpace(passwordValue),
+		CollectorUser: strings.TrimSpace(collectorUserValue),
+	}, nil
+}
+
+func (e *Engine) getUserForwardCredentialsLegacy(ctx context.Context, username string) (*forwardCredentials, error) {
 	var baseURL, fwdUser, fwdPass sql.NullString
 	var collectorUser sql.NullString
 	var deviceUser, devicePass sql.NullString
@@ -297,8 +378,6 @@ FROM sf_user_forward_credentials WHERE username=$1`, username).Scan(
 	}
 	baseURLValue, err := dec(baseURL)
 	if err != nil {
-		// If decryption fails, credentials exist but are unusable (likely due to session secret rotation).
-		// Surface this so tasks fail loudly instead of silently skipping Forward integration.
 		return nil, fmt.Errorf("forward credentials could not be decrypted; re-save Forward settings")
 	}
 	usernameValue, err := dec(fwdUser)
@@ -369,14 +448,6 @@ func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *work
 	if !enabled {
 		return cfgAny, nil
 	}
-	forwardCfg, err := e.forwardConfigForUser(ctx, pc.claims.Username)
-	if err != nil || forwardCfg == nil {
-		return cfgAny, err
-	}
-	client, err := newForwardClient(*forwardCfg)
-	if err != nil {
-		return cfgAny, err
-	}
 
 	getString := func(key string) string {
 		raw, ok := cfgAny[key]
@@ -387,6 +458,16 @@ func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *work
 			return strings.TrimSpace(v)
 		}
 		return strings.TrimSpace(fmt.Sprintf("%v", raw))
+	}
+
+	collectorConfigID := strings.TrimSpace(getString(forwardCollectorIDKey))
+	forwardCfg, err := e.forwardConfigForUserCollector(ctx, pc.claims.Username, collectorConfigID)
+	if err != nil || forwardCfg == nil {
+		return cfgAny, err
+	}
+	client, err := newForwardClient(*forwardCfg)
+	if err != nil {
+		return cfgAny, err
 	}
 
 	networkID := getString(forwardNetworkIDKey)
@@ -485,7 +566,8 @@ func (e *Engine) startForwardCollectionForDeployment(ctx context.Context, taskID
 	if networkID == "" {
 		return nil
 	}
-	forwardCfg, err := e.forwardConfigForUser(ctx, pc.claims.Username)
+	collectorConfigID := strings.TrimSpace(fmt.Sprintf("%v", cfgAny[forwardCollectorIDKey]))
+	forwardCfg, err := e.forwardConfigForUserCollector(ctx, pc.claims.Username, collectorConfigID)
 	if err != nil || forwardCfg == nil {
 		return err
 	}
@@ -544,7 +626,8 @@ func (e *Engine) startForwardConnectivityTestsForDeployment(ctx context.Context,
 		return nil
 	}
 
-	forwardCfg, err := e.forwardConfigForUser(ctx, pc.claims.Username)
+	collectorConfigID := strings.TrimSpace(fmt.Sprintf("%v", cfgAny[forwardCollectorIDKey]))
+	forwardCfg, err := e.forwardConfigForUserCollector(ctx, pc.claims.Username, collectorConfigID)
 	if err != nil || forwardCfg == nil {
 		return err
 	}
@@ -616,14 +699,6 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 	if err != nil {
 		return 0, err
 	}
-	forwardCfg, err := e.forwardConfigForUser(ctx, pc.claims.Username)
-	if err != nil || forwardCfg == nil {
-		return 0, err
-	}
-	client, err := newForwardClient(*forwardCfg)
-	if err != nil {
-		return 0, err
-	}
 
 	getString := func(key string) string {
 		raw, ok := cfgAny[key]
@@ -634,6 +709,16 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 			return strings.TrimSpace(v)
 		}
 		return strings.TrimSpace(fmt.Sprintf("%v", raw))
+	}
+
+	collectorConfigID := getString(forwardCollectorIDKey)
+	forwardCfg, err := e.forwardConfigForUserCollector(ctx, pc.claims.Username, collectorConfigID)
+	if err != nil || forwardCfg == nil {
+		return 0, err
+	}
+	client, err := newForwardClient(*forwardCfg)
+	if err != nil {
+		return 0, err
 	}
 
 	networkID := getString(forwardNetworkIDKey)
@@ -899,14 +984,6 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 	if err != nil {
 		return 0, err
 	}
-	forwardCfg, err := e.forwardConfigForUser(ctx, pc.claims.Username)
-	if err != nil || forwardCfg == nil {
-		return 0, err
-	}
-	client, err := newForwardClient(*forwardCfg)
-	if err != nil {
-		return 0, err
-	}
 
 	getString := func(key string) string {
 		raw, ok := cfgAny[key]
@@ -922,6 +999,16 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 	networkID := getString(forwardNetworkIDKey)
 	if networkID == "" {
 		return 0, nil
+	}
+
+	collectorConfigID := getString(forwardCollectorIDKey)
+	forwardCfg, err := e.forwardConfigForUserCollector(ctx, pc.claims.Username, collectorConfigID)
+	if err != nil || forwardCfg == nil {
+		return 0, err
+	}
+	client, err := newForwardClient(*forwardCfg)
+	if err != nil {
+		return 0, err
 	}
 
 	forwardTypes := e.forwardDeviceTypes(ctx)

@@ -37,9 +37,8 @@ type collectorRuntimeStatus struct {
 
 var ghcrImageRe = regexp.MustCompile(`^ghcr\.io/([^/]+)/([^:]+):(.+)$`)
 
-func collectorResourceNameForUser(username string) string {
-	// Kubernetes DNS label (<=63). Keep it deterministic and human-readable.
-	base := strings.TrimSpace(strings.ToLower(username))
+func sanitizeKubeDNSLabelPart(value string, maxLen int) string {
+	base := strings.TrimSpace(strings.ToLower(value))
 	base = strings.ReplaceAll(base, "@", "-")
 	base = strings.ReplaceAll(base, ".", "-")
 	base = strings.ReplaceAll(base, " ", "-")
@@ -50,22 +49,48 @@ func collectorResourceNameForUser(username string) string {
 	if base == "" {
 		base = "user"
 	}
-	if len(base) > 40 {
-		base = base[:40]
+	if maxLen > 0 && len(base) > maxLen {
+		base = base[:maxLen]
 	}
+	return base
+}
+
+func collectorResourceNameForUser(username string) string {
+	// Kubernetes DNS label (<=63). Keep it deterministic and human-readable.
+	base := sanitizeKubeDNSLabelPart(username, 40)
 	return "skyforge-collector-" + base
 }
 
+func collectorResourceNameForUserCollector(username, collectorID string) string {
+	collectorID = strings.TrimSpace(collectorID)
+	collectorID = strings.ReplaceAll(collectorID, "-", "")
+	collectorID = strings.ToLower(collectorID)
+	if len(collectorID) > 8 {
+		collectorID = collectorID[:8]
+	}
+	if collectorID == "" {
+		collectorID = "c"
+	}
+	// "skyforge-collector-" + base + "-" + suffix must fit in 63 chars.
+	// len("skyforge-collector-") == 17, plus "-" + 8 => 26, leaving 37 chars.
+	base := sanitizeKubeDNSLabelPart(username, 32)
+	return "skyforge-collector-" + base + "-" + collectorID
+}
+
 func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, forwardBaseURL string, skipTLSVerify bool) (*collectorRuntimeStatus, error) {
+	return ensureCollectorDeployedForName(ctx, cfg, username, collectorResourceNameForUser(username), token, forwardBaseURL, skipTLSVerify)
+}
+
+func ensureCollectorDeployedForName(ctx context.Context, cfg Config, username, deploymentName, token, forwardBaseURL string, skipTLSVerify bool) (*collectorRuntimeStatus, error) {
 	collectorImage := strings.TrimSpace(cfg.ForwardCollectorImage)
 	if collectorImage == "" {
 		// Explicitly do not deploy anything if the collector image isn't configured.
 		// This avoids a broken UX when the cluster cannot pull the image.
 		return &collectorRuntimeStatus{
 			Namespace:       kubeNamespace(),
-			DeploymentName:  collectorResourceNameForUser(username),
+			DeploymentName:  strings.TrimSpace(deploymentName),
 			UpdateStatus:    "not_configured",
-			LogsCommandHint: fmt.Sprintf("kubectl -n %s logs deploy/%s -f", kubeNamespace(), collectorResourceNameForUser(username)),
+			LogsCommandHint: fmt.Sprintf("kubectl -n %s logs deploy/%s -f", kubeNamespace(), strings.TrimSpace(deploymentName)),
 		}, nil
 	}
 	collectorPullPolicy := strings.TrimSpace(cfg.ForwardCollectorPullPolicy)
@@ -75,7 +100,10 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, f
 	collectorHeapSizeGB := cfg.ForwardCollectorHeapSizeGB
 
 	ns := kubeNamespace()
-	name := collectorResourceNameForUser(username)
+	name := strings.TrimSpace(deploymentName)
+	if name == "" {
+		name = collectorResourceNameForUser(username)
+	}
 	dataPVCName := name + "-data"
 	configName := name + "-cfg"
 	labels := map[string]string{
@@ -83,6 +111,7 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, f
 		"app.kubernetes.io/component": "collector",
 		"skyforge-managed":            "true",
 		"skyforge-username":           strings.TrimSpace(username),
+		"skyforge-collector-name":     name,
 	}
 
 	client, err := kubeHTTPClient()
@@ -666,7 +695,7 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, f
 	}
 
 	// Best-effort runtime status
-	st, err := getCollectorRuntimeStatus(ctx, username)
+	st, err := getCollectorRuntimeStatusByName(ctx, name)
 	if err != nil {
 		rlog.Debug("collector runtime status failed", "err", err)
 		return &collectorRuntimeStatus{
@@ -714,8 +743,15 @@ version = 1.7
 }
 
 func getCollectorRuntimeStatus(ctx context.Context, username string) (*collectorRuntimeStatus, error) {
+	return getCollectorRuntimeStatusByName(ctx, collectorResourceNameForUser(username))
+}
+
+func getCollectorRuntimeStatusByName(ctx context.Context, deploymentName string) (*collectorRuntimeStatus, error) {
 	ns := kubeNamespace()
-	name := collectorResourceNameForUser(username)
+	name := strings.TrimSpace(deploymentName)
+	if name == "" {
+		return nil, fmt.Errorf("collector deployment name not specified")
+	}
 	client, err := kubeHTTPClient()
 	if err != nil {
 		return nil, err
@@ -946,8 +982,15 @@ func checkGHCRTagDigest(ctx context.Context, image string) (digest string, statu
 }
 
 func deleteCollectorResources(ctx context.Context, username string) error {
+	return deleteCollectorResourcesByName(ctx, collectorResourceNameForUser(username))
+}
+
+func deleteCollectorResourcesByName(ctx context.Context, deploymentName string) error {
 	ns := kubeNamespace()
-	name := collectorResourceNameForUser(username)
+	name := strings.TrimSpace(deploymentName)
+	if name == "" {
+		return fmt.Errorf("collector deployment name not specified")
+	}
 	dataPVCName := name + "-data"
 	configName := name + "-cfg"
 	client, err := kubeHTTPClient()
@@ -1032,8 +1075,15 @@ func deleteCollectorResources(ctx context.Context, username string) error {
 }
 
 func restartCollectorDeployment(ctx context.Context, username string) error {
+	return restartCollectorDeploymentByName(ctx, collectorResourceNameForUser(username))
+}
+
+func restartCollectorDeploymentByName(ctx context.Context, deploymentName string) error {
 	ns := kubeNamespace()
-	name := collectorResourceNameForUser(username)
+	name := strings.TrimSpace(deploymentName)
+	if name == "" {
+		return fmt.Errorf("collector deployment name not specified")
+	}
 	client, err := kubeHTTPClient()
 	if err != nil {
 		return err
