@@ -1,9 +1,11 @@
 package taskengine
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"path"
 	"strings"
@@ -504,11 +506,9 @@ func waitForForwardSSHReady(ctx context.Context, taskID int, e *Engine, graph *T
 				}
 			}
 
-			ctxDial, cancel := context.WithTimeout(ctx, 2*time.Second)
-			conn, err := (&net.Dialer{}).DialContext(ctxDial, "tcp", net.JoinHostPort(host, "22"))
-			cancel()
-			if err == nil && conn != nil {
-				_ = conn.Close()
+			// Prefer a real SSH banner read instead of a bare TCP connect. Some NOS images
+			// accept TCP connections early but drop/reset them before SSH is usable.
+			if forwardSSHBannerReady(ctx, host) {
 				break
 			}
 			time.Sleep(2 * time.Second)
@@ -519,6 +519,28 @@ func waitForForwardSSHReady(ctx context.Context, taskID int, e *Engine, graph *T
 		log.Infof("forward ssh readiness ok: nodes=%d", len(targets))
 	}
 	return nil
+}
+
+func forwardSSHBannerReady(ctx context.Context, host string) bool {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return false
+	}
+
+	ctxDial, cancel := context.WithTimeout(ctx, 2*time.Second)
+	conn, err := (&net.Dialer{}).DialContext(ctxDial, "tcp", net.JoinHostPort(host, "22"))
+	cancel()
+	if err != nil || conn == nil {
+		return false
+	}
+	defer conn.Close()
+
+	_ = conn.SetReadDeadline(time.Now().Add(750 * time.Millisecond))
+	buf := make([]byte, 4)
+	if _, err := io.ReadFull(conn, buf); err != nil {
+		return false
+	}
+	return bytes.Equal(buf, []byte("SSH-"))
 }
 
 func (e *Engine) captureC9sTopologyArtifact(ctx context.Context, spec netlabC9sRunSpec, ns, topologyName, labName string, topologyYAML []byte, nodeNameMapping map[string]string, log Logger) (*TopologyGraph, error) {
