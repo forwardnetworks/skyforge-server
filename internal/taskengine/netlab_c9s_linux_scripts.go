@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,32 +19,6 @@ type netlabC9sLinuxScriptResult struct {
 	Stdout string
 	Stderr string
 	Err    error
-}
-
-func prepareNetlabC9sLinuxInterfaces(ctx context.Context, ns, podName, container string) (stdout, stderr string, err error) {
-	cmd := `set -e
-if ! command -v ip >/dev/null 2>&1; then
-  echo "ip command not found; skipping interface prep"
-  exit 0
-fi
-
-# Some CNIs may attach secondary interfaces as net1, net2, ...
-# Netlab-generated scripts expect eth1, eth2, ...
-for i in $(seq 1 32); do
-  if ip link show dev "eth${i}" >/dev/null 2>&1; then
-    continue
-  fi
-  if ip link show dev "net${i}" >/dev/null 2>&1; then
-    ip link set dev "net${i}" down >/dev/null 2>&1 || true
-    ip link set dev "net${i}" name "eth${i}" >/dev/null 2>&1 || true
-  fi
-done
-`
-	kcfg, err := kubeutil.InClusterConfig()
-	if err != nil {
-		return "", "", err
-	}
-	return kubeutil.ExecPodShell(ctx, kcfg, ns, podName, container, cmd)
 }
 
 func runNetlabC9sLinuxScripts(ctx context.Context, ns, topologyOwner string, topologyYAML []byte, nodeMounts map[string][]c9sFileFromConfigMap, enableSSH bool, log Logger) error {
@@ -108,23 +83,28 @@ func runNetlabC9sLinuxScripts(ctx context.Context, ns, topologyOwner string, top
 
 	scripts := []string{"initial", "routing"}
 
-	sem := make(chan struct{}, 6)
+	concurrency := 6
+	if raw := strings.TrimSpace(os.Getenv("SKYFORGE_NETLAB_C9S_LINUX_CONCURRENCY")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 64 {
+			concurrency = n
+		}
+	}
+	sem := make(chan struct{}, concurrency)
 	var wg sync.WaitGroup
-	// We buffer all results because we only drain the channel after all goroutines
-	// complete. Make sure the capacity accounts for every goroutine that writes a
-	// result, otherwise we'll deadlock on send.
-	//
-	// Per node:
-	// - 1x prep-interfaces
+	// We buffer all results because we only drain the channel after all goroutines complete.
+	// Per node, we emit:
+	// - prep-interfaces
 	// - len(scripts) script runs
-	// - optional 1x ssh enable
-	capacity := len(linuxNodes) * (1 + len(scripts))
+	// - optional ssh enable
+	// - optional noise
+	perNode := 1 + len(scripts)
 	if enableSSH {
-		capacity += len(linuxNodes)
+		perNode++
 	}
 	if enableNoise {
-		capacity += len(linuxNodes)
+		perNode++
 	}
+	capacity := len(linuxNodes) * perNode
 	results := make(chan netlabC9sLinuxScriptResult, capacity)
 
 	for _, node := range linuxNodes {
@@ -138,169 +118,233 @@ func runNetlabC9sLinuxScripts(ctx context.Context, ns, topologyOwner string, top
 			continue
 		}
 
-		// Prepare interface names for netlab scripts (best-effort).
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			ctxExec, cancel := context.WithTimeout(ctx, 30*time.Second)
-			defer cancel()
-			stdout, stderr, err := prepareNetlabC9sLinuxInterfaces(ctxExec, ns, podName, container)
-			results <- netlabC9sLinuxScriptResult{
-				Node:   node,
-				Script: "prep-interfaces",
-				Stdout: strings.TrimSpace(stdout),
-				Stderr: strings.TrimSpace(stderr),
-				Err:    err,
-			}
-		}()
-
-		for _, script := range scripts {
-			script := script
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				sem <- struct{}{}
-				defer func() { <-sem }()
-
-				// Run from the netlab-generated configmap, not from a mounted file:
-				// clabernetes mounts filesFromConfigMap into the launcher sidecar, not into the linux node container.
-				cmName := ""
-				if nodeMounts != nil {
-					if mounts, ok := nodeMounts[container]; ok {
-						for _, m := range mounts {
-							if strings.TrimSpace(m.ConfigMapName) != "" {
-								cmName = strings.TrimSpace(m.ConfigMapName)
-								break
-							}
+			// Run all per-node steps in a single exec to reduce k0s/konnectivity flakiness and
+			// speed up deployments (fewer round-trips through the apiserver exec proxy).
+			cmName := ""
+			if nodeMounts != nil {
+				if mounts, ok := nodeMounts[container]; ok {
+					for _, m := range mounts {
+						if strings.TrimSpace(m.ConfigMapName) != "" {
+							cmName = strings.TrimSpace(m.ConfigMapName)
+							break
 						}
 					}
 				}
-				if cmName == "" {
-					results <- netlabC9sLinuxScriptResult{Node: node, Script: script}
-					return
+			}
+
+			data := map[string]string{}
+			if cmName != "" {
+				m, ok, err := kubeGetConfigMap(ctx, ns, cmName)
+				if err != nil {
+					// Keep going; we'll mark initial/routing as skipped.
+					log.Errorf("netlab linux script failed node=%s script=configmap err=%v stderr=", node, err)
+				} else if ok {
+					data = m
 				}
-				data, ok, err := kubeGetConfigMap(ctx, ns, cmName)
-				if err != nil || !ok {
-					if err == nil && !ok {
-						err = fmt.Errorf("configmap not found: %s", cmName)
-					}
-					results <- netlabC9sLinuxScriptResult{Node: node, Script: script, Err: err}
-					return
-				}
-				body := strings.TrimSpace(data[script])
+			}
+
+			step := func(name, body string) string {
+				body = strings.TrimSpace(body)
 				if body == "" {
-					results <- netlabC9sLinuxScriptResult{Node: node, Script: script}
-					return
+					return fmt.Sprintf("echo \"__SKYFORGE_STEP_BEGIN__ %s\"; echo \"__SKYFORGE_STEP_END__ %s 0\";\n", name, name)
 				}
-				cmd := fmt.Sprintf("set -e\ncat > /tmp/skyforge-netlab-%s.sh <<'EOF_SKYFORGE'\n%s\nEOF_SKYFORGE\nchmod +x /tmp/skyforge-netlab-%s.sh 2>/dev/null || true\nsh /tmp/skyforge-netlab-%s.sh\n", script, body, script, script)
-				ctxExec, cancel := context.WithTimeout(ctx, 45*time.Second)
-				defer cancel()
-				stdout, stderr, err := kubeutil.ExecPodShell(ctxExec, kcfg, ns, podName, container, cmd)
-				results <- netlabC9sLinuxScriptResult{
-					Node:   node,
-					Script: script,
-					Stdout: strings.TrimSpace(stdout),
-					Stderr: strings.TrimSpace(stderr),
-					Err:    err,
-				}
-			}()
-		}
+				tmp := fmt.Sprintf("/tmp/skyforge-netlab-%s.sh", name)
+				return fmt.Sprintf(
+					"echo \"__SKYFORGE_STEP_BEGIN__ %s\";\n( set -e; cat > %s <<'EOF_SKYFORGE'\n%s\nEOF_SKYFORGE\nchmod +x %s 2>/dev/null || true\nsh %s\n); rc=$?; echo \"__SKYFORGE_STEP_END__ %s ${rc}\";\n",
+					name, tmp, body, tmp, tmp, name,
+				)
+			}
 
-		if enableSSH {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				sem <- struct{}{}
-				defer func() { <-sem }()
-
-				cmd := `set -e
-if command -v apk >/dev/null 2>&1; then
-  apk add --no-cache openssh-server >/dev/null 2>&1 || true
-fi
-mkdir -p /var/run/sshd
-ssh-keygen -A >/dev/null 2>&1 || true
-# Set a predictable password so Forward can use a default CLI credential.
-# Netlab linux containers are typically minimal (alpine), so use best-effort methods.
-if command -v chpasswd >/dev/null 2>&1; then
-  echo "root:admin" | chpasswd >/dev/null 2>&1 || true
-fi
-if command -v passwd >/dev/null 2>&1; then
-  ( echo admin; echo admin ) | passwd root >/dev/null 2>&1 || true
-fi
-if [ -f /etc/ssh/sshd_config ]; then
-  grep -q '^PermitRootLogin' /etc/ssh/sshd_config 2>/dev/null || echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config
-  grep -q '^PasswordAuthentication' /etc/ssh/sshd_config 2>/dev/null || echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config
-fi
-/usr/sbin/sshd -D -e >/dev/null 2>&1 &`
-
-				ctxExec, cancel := context.WithTimeout(ctx, 45*time.Second)
-				defer cancel()
-				stdout, stderr, err := kubeutil.ExecPodShell(ctxExec, kcfg, ns, podName, container, cmd)
-				results <- netlabC9sLinuxScriptResult{
-					Node:   node,
-					Script: "ssh",
-					Stdout: strings.TrimSpace(stdout),
-					Stderr: strings.TrimSpace(stderr),
-					Err:    err,
-				}
-			}()
-		}
-
-		if enableNoise {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				sem <- struct{}{}
-				defer func() { <-sem }()
-
-				// Generate a trickle of L2/L3 activity so "quiet" hosts still show state.
-				// - Send a gratuitous ARP on each eth1+ IPv4 address (L2)
-				// - Ping the default gateway if present (L3)
-				//
-				// Best-effort: if arping/ping isn't available, the loop becomes a no-op.
-				cmd := `set -e
-if [ -f /tmp/skyforge-noise.pid ] && kill -0 "$(cat /tmp/skyforge-noise.pid 2>/dev/null)" 2>/dev/null; then
-  echo "noise already running"
-  exit 0
-fi
-
-nohup sh -c '
-while true; do
-  if command -v ip >/dev/null 2>&1; then
-    for ifname in $(ip -o link show | awk -F\": \" \"{print \\$2}\" | grep -E \"^eth[1-9][0-9]*$\" || true); do
-      ip4=$(ip -4 -o addr show dev \"$ifname\" 2>/dev/null | awk \"{print \\$4}\" | head -n1)
-      ip4=${ip4%%/*}
-      if [ -n \"$ip4\" ] && command -v arping >/dev/null 2>&1; then
-        arping -U -c 1 -I \"$ifname\" \"$ip4\" >/dev/null 2>&1 || true
-      fi
-    done
-    gw=$(ip route show default 2>/dev/null | awk \"{print \\$3}\" | head -n1)
-    if [ -n \"$gw\" ] && command -v ping >/dev/null 2>&1; then
-      ping -c 1 -W 1 \"$gw\" >/dev/null 2>&1 || true
-    fi
+			// Interface prep (best-effort).
+			prep := `echo "__SKYFORGE_STEP_BEGIN__ prep-interfaces"
+( set -e
+  if ! command -v ip >/dev/null 2>&1; then
+    echo "ip command not found; skipping interface prep"
+    exit 0
   fi
-  sleep 30
-done
-' >/dev/null 2>&1 &
-echo $! > /tmp/skyforge-noise.pid
-echo "noise started"
+  for i in $(seq 1 32); do
+    if ip link show dev "eth${i}" >/dev/null 2>&1; then
+      continue
+    fi
+    if ip link show dev "net${i}" >/dev/null 2>&1; then
+      ip link set dev "net${i}" down >/dev/null 2>&1 || true
+      ip link set dev "net${i}" name "eth${i}" >/dev/null 2>&1 || true
+    fi
+  done
+); rc=$?; echo "__SKYFORGE_STEP_END__ prep-interfaces ${rc}"
 `
 
-				ctxExec, cancel := context.WithTimeout(ctx, 20*time.Second)
-				defer cancel()
-				stdout, stderr, err := kubeutil.ExecPodShell(ctxExec, kcfg, ns, podName, container, cmd)
+			sshEnable := ""
+			if enableSSH {
+				sshEnable = `echo "__SKYFORGE_STEP_BEGIN__ ssh"
+( set -e
+  if command -v apk >/dev/null 2>&1; then
+    apk add --no-cache openssh-server >/dev/null 2>&1 || true
+  fi
+  mkdir -p /var/run/sshd
+  ssh-keygen -A >/dev/null 2>&1 || true
+  if command -v chpasswd >/dev/null 2>&1; then
+    echo "root:admin" | chpasswd >/dev/null 2>&1 || true
+  fi
+  if command -v passwd >/dev/null 2>&1; then
+    ( echo admin; echo admin ) | passwd root >/dev/null 2>&1 || true
+  fi
+  if [ -f /etc/ssh/sshd_config ]; then
+    grep -q '^PermitRootLogin' /etc/ssh/sshd_config 2>/dev/null || echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config
+    grep -q '^PasswordAuthentication' /etc/ssh/sshd_config 2>/dev/null || echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config
+  fi
+  /usr/sbin/sshd -D -e >/dev/null 2>&1 &
+); rc=$?; echo "__SKYFORGE_STEP_END__ ssh ${rc}"
+`
+			}
+
+			noise := ""
+			if enableNoise {
+				noise = `echo "__SKYFORGE_STEP_BEGIN__ noise"
+( set -e
+  if [ -f /tmp/skyforge-noise.pid ] && kill -0 "$(cat /tmp/skyforge-noise.pid 2>/dev/null)" 2>/dev/null; then
+    echo "noise already running"
+    exit 0
+  fi
+  nohup sh -c '
+  while true; do
+    if command -v ip >/dev/null 2>&1; then
+      for ifname in $(ip -o link show | awk -F": " "{print $2}" | grep -E "^eth[1-9][0-9]*$" || true); do
+        ip4=$(ip -4 -o addr show dev "$ifname" 2>/dev/null | awk "{print $4}" | head -n1)
+        ip4=${ip4%%/*}
+        if [ -n "$ip4" ] && command -v arping >/dev/null 2>&1; then
+          arping -U -c 1 -I "$ifname" "$ip4" >/dev/null 2>&1 || true
+        fi
+      done
+      gw=$(ip route show default 2>/dev/null | awk "{print $3}" | head -n1)
+      if [ -n "$gw" ] && command -v ping >/dev/null 2>&1; then
+        ping -c 1 -W 1 "$gw" >/dev/null 2>&1 || true
+      fi
+    fi
+    sleep 30
+  done
+  ' >/dev/null 2>&1 &
+  echo $! > /tmp/skyforge-noise.pid
+  echo "noise started"
+); rc=$?; echo "__SKYFORGE_STEP_END__ noise ${rc}"
+`
+			}
+
+			combined := strings.Builder{}
+			combined.WriteString("set +e\n")
+			combined.WriteString(prep)
+			for _, s := range scripts {
+				combined.WriteString(step(s, data[s]))
+			}
+			if sshEnable != "" {
+				combined.WriteString(sshEnable)
+			}
+			if noise != "" {
+				combined.WriteString(noise)
+			}
+			combined.WriteString("\nexit 0\n")
+
+			ctxExec, cancel := context.WithTimeout(ctx, 90*time.Second)
+			defer cancel()
+			stdout, stderr, err := kubeutil.ExecPodShell(ctxExec, kcfg, ns, podName, container, combined.String())
+			stdout = strings.TrimSpace(stdout)
+			stderr = strings.TrimSpace(stderr)
+			if err != nil {
+				// We couldn't exec at all; emit a failure for each step so downstream logs are consistent.
+				for _, s := range append(append([]string{"prep-interfaces"}, scripts...), func() []string {
+					extra := []string{}
+					if enableSSH {
+						extra = append(extra, "ssh")
+					}
+					if enableNoise {
+						extra = append(extra, "noise")
+					}
+					return extra
+				}()...) {
+					results <- netlabC9sLinuxScriptResult{
+						Node:   node,
+						Script: s,
+						Stdout: "",
+						Stderr: stderr,
+						Err:    err,
+					}
+				}
+				return
+			}
+
+			// Parse step markers so we keep per-script log lines without multiple execs.
+			type stepRes struct {
+				lines []string
+				rc    int
+			}
+			steps := map[string]*stepRes{}
+			var current string
+			for _, line := range strings.Split(stdout, "\n") {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "__SKYFORGE_STEP_BEGIN__ ") {
+					current = strings.TrimSpace(strings.TrimPrefix(line, "__SKYFORGE_STEP_BEGIN__ "))
+					if current != "" && steps[current] == nil {
+						steps[current] = &stepRes{lines: []string{}, rc: 0}
+					}
+					continue
+				}
+				if strings.HasPrefix(line, "__SKYFORGE_STEP_END__ ") {
+					rest := strings.TrimSpace(strings.TrimPrefix(line, "__SKYFORGE_STEP_END__ "))
+					parts := strings.Fields(rest)
+					if len(parts) >= 2 {
+						name := parts[0]
+						if sr := steps[name]; sr != nil {
+							if n, err := strconv.Atoi(parts[1]); err == nil {
+								sr.rc = n
+							}
+						}
+					}
+					current = ""
+					continue
+				}
+				if current != "" {
+					steps[current].lines = append(steps[current].lines, line)
+				}
+			}
+
+			emit := func(name string) {
+				sr := steps[name]
+				out := ""
+				rc := 0
+				if sr != nil {
+					out = strings.TrimSpace(strings.Join(sr.lines, "\n"))
+					rc = sr.rc
+				}
+				var stepErr error
+				if rc != 0 {
+					stepErr = fmt.Errorf("command terminated with exit code %d", rc)
+				}
 				results <- netlabC9sLinuxScriptResult{
 					Node:   node,
-					Script: "noise",
-					Stdout: strings.TrimSpace(stdout),
-					Stderr: strings.TrimSpace(stderr),
-					Err:    err,
+					Script: name,
+					Stdout: out,
+					Stderr: stderr,
+					Err:    stepErr,
 				}
-			}()
-		}
+			}
+
+			emit("prep-interfaces")
+			for _, s := range scripts {
+				emit(s)
+			}
+			if enableSSH {
+				emit("ssh")
+			}
+			if enableNoise {
+				emit("noise")
+			}
+		}()
 	}
 
 	wg.Wait()

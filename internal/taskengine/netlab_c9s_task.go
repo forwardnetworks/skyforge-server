@@ -704,6 +704,17 @@ func forwardSSHBannerReady(ctx context.Context, host string) bool {
 		return false
 	}
 
+	// Some NOS images briefly emit an SSH banner and then reset connections while
+	// still booting. Require two consecutive banner reads to reduce false-positives.
+	if !forwardSSHBannerReadyOnce(ctx, host) {
+		return false
+	}
+	// Small jitter between attempts to avoid hitting the same transient window.
+	time.Sleep(250 * time.Millisecond)
+	return forwardSSHBannerReadyOnce(ctx, host)
+}
+
+func forwardSSHBannerReadyOnce(ctx context.Context, host string) bool {
 	ctxDial, cancel := context.WithTimeout(ctx, 2*time.Second)
 	conn, err := (&net.Dialer{}).DialContext(ctxDial, "tcp", net.JoinHostPort(host, "22"))
 	cancel()
