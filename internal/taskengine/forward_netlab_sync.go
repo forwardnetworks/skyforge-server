@@ -969,11 +969,18 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 	seen := map[string]bool{}
 	linuxEndpointProfileID := ""
 	for _, node := range graph.Nodes {
-		mgmt := strings.TrimSpace(node.MgmtIP)
-		if mgmt == "" || mgmt == "—" {
+		host := strings.TrimSpace(node.MgmtHost)
+		if host == "" {
+			host = strings.TrimSpace(node.MgmtIP)
+		}
+		pingIP := strings.TrimSpace(node.PingIP)
+		if pingIP == "" {
+			pingIP = strings.TrimSpace(node.MgmtIP)
+		}
+		if host == "" || host == "—" {
 			continue
 		}
-		key := strings.ToLower(mgmt)
+		key := strings.ToLower(host)
 		if seen[key] {
 			continue
 		}
@@ -1007,12 +1014,12 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 				name = strings.TrimSpace(node.ID)
 			}
 			if name == "" {
-				name = mgmt
+				name = host
 			}
 			endpoints = append(endpoints, forwardEndpoint{
 				Type:     "CLI",
 				Name:     name,
-				Host:     mgmt,
+				Host:     host,
 				Protocol: "SSH",
 				// Forward endpoint API uses "credentialId" (not "cliCredentialId").
 				CredentialID: cliCredentialID,
@@ -1041,7 +1048,7 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 			name = strings.TrimSpace(node.ID)
 		}
 		if name == "" {
-			name = mgmt
+			name = host
 		}
 
 		forwardType := ""
@@ -1052,7 +1059,7 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 		devices = append(devices, forwardClassicDevice{
 			Name:                     name,
 			Type:                     forwardType,
-			Host:                     mgmt,
+			Host:                     host,
 			CliCredentialID:          cliCredentialID,
 			SnmpCredentialID:         snmpCredentialID,
 			JumpServerID:             jumpServerID,

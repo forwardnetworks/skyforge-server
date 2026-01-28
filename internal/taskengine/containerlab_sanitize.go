@@ -89,6 +89,70 @@ func sanitizeContainerlabYAMLForClabernetes(containerlabYAML string) (string, ma
 	// NOTE: This function also performs Skyforge-specific compatibility tweaks for running
 	// containerlab nodes as Kubernetes pods (clabernetes). These should apply even when no
 	// node name rewriting is needed.
+	//
+	// Expose management ports on per-node ClusterIP services so in-cluster consumers (Forward
+	// collector, Skyforge terminal) can reliably reach nodes cross-node via stable DNS names.
+	// We use full port definitions (src:dst[/proto]) to avoid clabernetes port parsing quirks
+	// with "bare" port values.
+	{
+		defaults, _ := topology["defaults"].(map[string]any)
+		if defaults == nil {
+			defaults = map[string]any{}
+			topology["defaults"] = defaults
+		}
+
+		var ports []any
+		existing := map[string]bool{}
+
+		addExisting := func(raw string) {
+			raw = strings.TrimSpace(raw)
+			if raw == "" {
+				return
+			}
+			// normalize for de-duping
+			key := strings.ToUpper(raw)
+			existing[key] = true
+		}
+
+		switch cur := defaults["ports"].(type) {
+		case []any:
+			ports = append(ports, cur...)
+			for _, v := range cur {
+				addExisting(fmt.Sprintf("%v", v))
+			}
+		case []string:
+			for _, v := range cur {
+				ports = append(ports, v)
+				addExisting(v)
+			}
+		case nil:
+			// nothing
+		default:
+			// Unexpected shape; preserve it by appending string form, then normalize.
+			ports = append(ports, fmt.Sprintf("%v", cur))
+			addExisting(fmt.Sprintf("%v", cur))
+		}
+
+		ensurePort := func(def string) {
+			def = strings.TrimSpace(def)
+			if def == "" {
+				return
+			}
+			key := strings.ToUpper(def)
+			if existing[key] {
+				return
+			}
+			existing[key] = true
+			ports = append(ports, def)
+		}
+
+		ensurePort("22:22/tcp")
+		ensurePort("443:443/tcp")
+		ensurePort("161:161/udp")
+
+		defaults["ports"] = ports
+		topology["defaults"] = defaults
+	}
 
 	// Create deterministic mapping and avoid collisions.
 	oldNames := make([]string, 0, len(nodes))

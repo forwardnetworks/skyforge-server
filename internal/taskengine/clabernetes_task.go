@@ -180,7 +180,9 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		hostNetwork := envBool(spec.Environment, "SKYFORGE_CLABERNETES_HOST_NETWORK", false)
 		forceNativeMode := envBool(spec.Environment, "SKYFORGE_CLABERNETES_FORCE_NATIVE_MODE", false)
 		disableExpose := envBool(spec.Environment, "SKYFORGE_CLABERNETES_DISABLE_EXPOSE", false)
-		disableAutoExpose := envBool(spec.Environment, "SKYFORGE_CLABERNETES_DISABLE_AUTO_EXPOSE", true)
+		// Default to auto-exposing so clabernetes creates per-node ClusterIP services for
+		// management ports defined in topology.defaults.ports (injected by Skyforge).
+		disableAutoExpose := envBool(spec.Environment, "SKYFORGE_CLABERNETES_DISABLE_AUTO_EXPOSE", false)
 
 		// Default away from LoadBalancer to avoid klipper-lb hostPort conflicts (80/443) that can
 		// prevent ingress/traefik from scheduling.
@@ -498,11 +500,14 @@ func (e *Engine) captureClabernetesTopologyArtifact(ctx context.Context, spec cl
 		if node == "" {
 			continue
 		}
+		svcName := fmt.Sprintf("%s-%s", topologyOwner, node)
 		podInfo[node] = TopologyNode{
-			ID:     node,
-			Label:  node,
-			MgmtIP: strings.TrimSpace(pod.Status.PodIP),
-			Status: strings.TrimSpace(pod.Status.Phase),
+			ID:       node,
+			Label:    node,
+			MgmtIP:   strings.TrimSpace(pod.Status.PodIP),
+			MgmtHost: kubeServiceFQDN(svcName, ns),
+			PingIP:   strings.TrimSpace(pod.Status.PodIP),
+			Status:   strings.TrimSpace(pod.Status.Phase),
 		}
 	}
 

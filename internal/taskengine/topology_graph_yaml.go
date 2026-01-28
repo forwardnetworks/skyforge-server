@@ -37,6 +37,12 @@ func containerlabYAMLBytesToTopologyGraph(raw []byte, podInfo map[string]Topolog
 				if strings.TrimSpace(info.MgmtIP) != "" {
 					nodes[i].MgmtIP = strings.TrimSpace(info.MgmtIP)
 				}
+				if strings.TrimSpace(info.MgmtHost) != "" {
+					nodes[i].MgmtHost = strings.TrimSpace(info.MgmtHost)
+				}
+				if strings.TrimSpace(info.PingIP) != "" {
+					nodes[i].PingIP = strings.TrimSpace(info.PingIP)
+				}
 				if strings.TrimSpace(info.Status) != "" {
 					nodes[i].Status = strings.TrimSpace(info.Status)
 				}

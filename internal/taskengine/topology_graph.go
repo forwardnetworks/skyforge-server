@@ -16,11 +16,13 @@ type TopologyGraph struct {
 }
 
 type TopologyNode struct {
-	ID     string `json:"id"`
-	Label  string `json:"label"`
-	Kind   string `json:"kind,omitempty"`
-	MgmtIP string `json:"mgmtIp,omitempty"`
-	Status string `json:"status,omitempty"`
+	ID       string `json:"id"`
+	Label    string `json:"label"`
+	Kind     string `json:"kind,omitempty"`
+	MgmtIP   string `json:"mgmtIp,omitempty"`   // pod IP (for ping/debug)
+	MgmtHost string `json:"mgmtHost,omitempty"` // service DNS (for TCP/UDP mgmt)
+	PingIP   string `json:"pingIp,omitempty"`   // explicit ping target (usually pod IP)
+	Status   string `json:"status,omitempty"`
 }
 
 type TopologyEdge struct {

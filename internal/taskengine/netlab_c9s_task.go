@@ -477,7 +477,7 @@ func waitForForwardSSHReady(ctx context.Context, taskID int, e *Engine, graph *T
 		if kind == "linux" {
 			continue
 		}
-		if strings.TrimSpace(n.MgmtIP) == "" {
+		if strings.TrimSpace(n.MgmtHost) == "" && strings.TrimSpace(n.MgmtIP) == "" {
 			continue
 		}
 		targets = append(targets, n)
@@ -489,9 +489,13 @@ func waitForForwardSSHReady(ctx context.Context, taskID int, e *Engine, graph *T
 	deadline := time.Now().Add(timeout)
 	for _, node := range targets {
 		node := node
+		host := strings.TrimSpace(node.MgmtHost)
+		if host == "" {
+			host = strings.TrimSpace(node.MgmtIP)
+		}
 		for {
 			if time.Now().After(deadline) {
-				return fmt.Errorf("forward sync wait timed out waiting for ssh on %s (%s)", strings.TrimSpace(node.Label), strings.TrimSpace(node.MgmtIP))
+				return fmt.Errorf("forward sync wait timed out waiting for ssh on %s (%s)", strings.TrimSpace(node.Label), host)
 			}
 			if taskID > 0 && e != nil {
 				canceled, _ := e.taskCanceled(ctx, taskID)
@@ -501,7 +505,7 @@ func waitForForwardSSHReady(ctx context.Context, taskID int, e *Engine, graph *T
 			}
 
 			ctxDial, cancel := context.WithTimeout(ctx, 2*time.Second)
-			conn, err := (&net.Dialer{}).DialContext(ctxDial, "tcp", net.JoinHostPort(strings.TrimSpace(node.MgmtIP), "22"))
+			conn, err := (&net.Dialer{}).DialContext(ctxDial, "tcp", net.JoinHostPort(host, "22"))
 			cancel()
 			if err == nil && conn != nil {
 				_ = conn.Close()
@@ -540,11 +544,14 @@ func (e *Engine) captureC9sTopologyArtifact(ctx context.Context, spec netlabC9sR
 			continue
 		}
 		mgmtIP := strings.TrimSpace(pod.Status.PodIP)
+		svcName := fmt.Sprintf("%s-%s", topologyName, node)
 		podInfo[node] = TopologyNode{
-			ID:     node,
-			Label:  node,
-			MgmtIP: mgmtIP,
-			Status: strings.TrimSpace(pod.Status.Phase),
+			ID:       node,
+			Label:    node,
+			MgmtIP:   mgmtIP,
+			MgmtHost: kubeServiceFQDN(svcName, ns),
+			PingIP:   mgmtIP,
+			Status:   strings.TrimSpace(pod.Status.Phase),
 		}
 	}
 
