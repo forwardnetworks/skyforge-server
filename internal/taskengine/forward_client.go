@@ -31,7 +31,10 @@ type forwardCliCredential struct {
 }
 
 type forwardSnmpCredential struct {
-	ID string `json:"id"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Version         string `json:"version"`
+	CommunityString string `json:"communityString"`
 }
 
 type forwardJumpServer struct {
@@ -310,29 +313,116 @@ func forwardCreateSnmpCredential(ctx context.Context, c *forwardClient, networkI
 		body []byte
 		err  error
 	)
+	var lastResp *http.Response
+	var lastBody []byte
 	for _, p := range paths {
 		resp, body, err = c.doJSON(ctx, http.MethodPost, p, nil, payload)
 		if err != nil {
 			continue
 		}
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			lastResp = resp
+			lastBody = body
 			break
 		}
+		lastResp = resp
+		lastBody = body
 	}
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("forward create snmp credential failed: %s", strings.TrimSpace(string(body)))
+	if lastResp == nil {
+		return nil, fmt.Errorf("forward create snmp credential failed: no response")
+	}
+
+	// If the credential already exists, try to find and reuse it so this call is idempotent.
+	if lastResp.StatusCode == 409 || strings.Contains(strings.ToLower(string(lastBody)), "already") {
+		existing, listErr := forwardFindSnmpCredential(ctx, c, networkID, community)
+		if listErr == nil && existing != nil && strings.TrimSpace(existing.ID) != "" {
+			return existing, nil
+		}
+	}
+
+	if lastResp.StatusCode < 200 || lastResp.StatusCode >= 300 {
+		return nil, fmt.Errorf("forward create snmp credential failed: %s", strings.TrimSpace(string(lastBody)))
 	}
 	var out forwardSnmpCredential
-	if err := json.Unmarshal(body, &out); err != nil {
+	if err := json.Unmarshal(lastBody, &out); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(out.ID) == "" {
 		return nil, fmt.Errorf("forward create snmp credential returned empty id")
 	}
 	return &out, nil
+}
+
+func forwardFindSnmpCredential(ctx context.Context, c *forwardClient, networkID string, community string) (*forwardSnmpCredential, error) {
+	community = strings.TrimSpace(community)
+	if community == "" {
+		return nil, nil
+	}
+
+	paths := []string{
+		"/api/networks/" + url.PathEscape(strings.TrimSpace(networkID)) + "/snmpCredentials",
+		"/api/networks/" + url.PathEscape(strings.TrimSpace(networkID)) + "/snmp-credentials",
+	}
+
+	for _, p := range paths {
+		resp, body, err := c.doJSON(ctx, http.MethodGet, p, nil, nil)
+		if err != nil {
+			continue
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			continue
+		}
+
+		var payload any
+		if err := json.Unmarshal(body, &payload); err != nil {
+			continue
+		}
+
+		items := []forwardSnmpCredential{}
+		switch v := payload.(type) {
+		case []any:
+			for _, raw := range v {
+				buf, _ := json.Marshal(raw)
+				var item forwardSnmpCredential
+				if err := json.Unmarshal(buf, &item); err == nil {
+					items = append(items, item)
+				}
+			}
+		case map[string]any:
+			// Common wrapper shapes: {"items":[...]}, {"data":[...]}.
+			for _, key := range []string{"items", "data", "results", "snmpCredentials"} {
+				if raw, ok := v[key]; ok {
+					buf, _ := json.Marshal(raw)
+					_ = json.Unmarshal(buf, &items)
+					break
+				}
+			}
+			// Sometimes a single object is returned.
+			if len(items) == 0 {
+				if _, ok := v["id"]; ok {
+					buf, _ := json.Marshal(v)
+					var item forwardSnmpCredential
+					if err := json.Unmarshal(buf, &item); err == nil && strings.TrimSpace(item.ID) != "" {
+						items = append(items, item)
+					}
+				}
+			}
+		}
+
+		for _, item := range items {
+			if strings.TrimSpace(item.ID) == "" {
+				continue
+			}
+			if strings.EqualFold(strings.TrimSpace(item.Name), community) || strings.EqualFold(strings.TrimSpace(item.CommunityString), community) {
+				return &item, nil
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("snmp credential %q not found", community)
 }
 
 func forwardCreateJumpServer(ctx context.Context, c *forwardClient, networkID string, host string, username string, privateKey string, cert string) (*forwardJumpServer, error) {
