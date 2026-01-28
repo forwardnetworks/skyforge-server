@@ -10,12 +10,9 @@ This document captures the Skyforge access-control conventions for Skyforge’s 
 
 ## Workspace-scoped endpoints
 
-Skyforge has two “workspace identity” shapes:
+Skyforge uses a single workspace identity:
 
-1) **Skyforge workspace key** (string): slug/ID used in routes like `/api/workspaces/:id/...`  
-2) **Legacy workspace id** (int): `project_id` used in query params for run/task endpoints like `/api/runs?project_id=...`
-
-Use the correct guard for each.
+1) **Skyforge workspace key** (string): slug/ID used in routes like `/api/workspaces/:id/...`
 
 ### A) Skyforge workspace key endpoints (preferred)
 
@@ -26,14 +23,6 @@ This enforces:
 - authentication required
 - workspace exists
 - membership/role access is not `"none"`
-
-### B) Legacy workspace id endpoints
-
-If an endpoint is scoped by `project_id` (legacy workspace id), call:
-
-This enforces:
-- authentication required
-- the workspace exists in Skyforge state and the user has access, or the user is admin/default-workspace access applies
 
 ## Impersonation
 

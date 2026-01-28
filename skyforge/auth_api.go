@@ -356,10 +356,6 @@ func authUserToProfile(user *AuthUser) *UserProfile {
 	}
 }
 
-type nginxSessionPayload struct {
-	Status string `json:"status,omitempty"`
-}
-
 type forwardAuthSessionPayload struct {
 	Status string `json:"status,omitempty"`
 }
