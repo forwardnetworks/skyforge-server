@@ -402,7 +402,17 @@ func (s *Service) CreateUserForwardCollectorConfig(ctx context.Context, req *Cre
 			return false
 		}
 		msg := strings.ToLower(err.Error())
-		return strings.Contains(msg, "failed (409)") || strings.Contains(msg, "status 409") || (strings.Contains(msg, "409") && strings.Contains(msg, "already"))
+		// Forward typically returns HTTP 409 for "already exists", but we've observed
+		// HTTP 400 with an "already exists" message in the payload.
+		if strings.Contains(msg, "failed (409)") || strings.Contains(msg, "status 409") || (strings.Contains(msg, "409") && strings.Contains(msg, "already")) {
+			return true
+		}
+		// Example:
+		//   forward create collector failed (400): {"message":"Collector named ... already exists"}
+		if strings.Contains(msg, "failed (400)") && strings.Contains(msg, "collector") && strings.Contains(msg, "already exists") {
+			return true
+		}
+		return false
 	}
 
 	var (
