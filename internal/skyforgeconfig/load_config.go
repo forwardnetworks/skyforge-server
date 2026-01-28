@@ -159,7 +159,7 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		SupportURL:       strings.TrimSpace(enc.UI.SupportURL),
 		ThemeDefault:     strings.TrimSpace(enc.UI.ThemeDefault),
 		OIDCEnabled:      strings.TrimSpace(oidcIssuerURL) != "" && strings.TrimSpace(oidcClientID) != "" && strings.TrimSpace(oidcClientSecret) != "" && strings.TrimSpace(oidcRedirectURL) != "",
-		OIDCLoginURL:     "/api/skyforge/api/oidc/login",
+		OIDCLoginURL:     "/api/oidc/login",
 	}
 	if uiCfg.ProductName == "" {
 		uiCfg.ProductName = "Skyforge"

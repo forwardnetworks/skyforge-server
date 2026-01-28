@@ -2294,6 +2294,152 @@
         "summary": "GetAdminAudit returns audit events (admin only).\n"
       }
     },
+    "/api/admin/config": {
+      "get": {
+        "description": "This endpoint is meant for self-diagnosis: it reports the config actually seen by the running API process (including defaults), plus a list of required fields that are missing.\n",
+        "operationId": "GET:skyforge.GetAdminEffectiveConfig",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "flags": {
+                      "properties": {
+                        "disableEncoreCache": {
+                          "type": "boolean"
+                        },
+                        "notificationsEnabled": {
+                          "type": "boolean"
+                        },
+                        "taskWorkerEnabled": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "taskWorkerEnabled",
+                        "notificationsEnabled",
+                        "disableEncoreCache"
+                      ],
+                      "type": "object"
+                    },
+                    "forwardCollector": {
+                      "properties": {
+                        "heapSizeGb": {
+                          "format": "int64",
+                          "type": "integer"
+                        },
+                        "image": {
+                          "type": "string"
+                        },
+                        "imagePullSecretName": {
+                          "type": "string"
+                        },
+                        "imagePullSecretNamespace": {
+                          "type": "string"
+                        },
+                        "pullPolicy": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "image",
+                        "pullPolicy",
+                        "imagePullSecretName",
+                        "imagePullSecretNamespace",
+                        "heapSizeGb"
+                      ],
+                      "type": "object"
+                    },
+                    "integrations": {
+                      "properties": {
+                        "giteaBaseUrl": {
+                          "type": "string"
+                        },
+                        "nautobotBaseUrl": {
+                          "type": "string"
+                        },
+                        "netboxBaseUrl": {
+                          "type": "string"
+                        },
+                        "yaadeBaseUrl": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "giteaBaseUrl",
+                        "netboxBaseUrl",
+                        "nautobotBaseUrl",
+                        "yaadeBaseUrl"
+                      ],
+                      "type": "object"
+                    },
+                    "missing": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "netlabGenerator": {
+                      "properties": {
+                        "generatorImage": {
+                          "type": "string"
+                        },
+                        "mode": {
+                          "type": "string"
+                        },
+                        "pullPolicy": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "mode",
+                        "generatorImage",
+                        "pullPolicy"
+                      ],
+                      "type": "object"
+                    },
+                    "objectStorage": {
+                      "properties": {
+                        "endpoint": {
+                          "type": "string"
+                        },
+                        "useSsl": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "endpoint",
+                        "useSsl"
+                      ],
+                      "type": "object"
+                    },
+                    "publicUrl": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "publicUrl",
+                    "flags",
+                    "netlabGenerator",
+                    "objectStorage",
+                    "integrations",
+                    "forwardCollector",
+                    "missing"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetAdminEffectiveConfig returns the effective (non-secret) typed Encore config\n(admin only).\n"
+      }
+    },
     "/api/admin/governance/costs": {
       "get": {
         "operationId": "GET:skyforge.ListGovernanceCosts",
@@ -6325,9 +6471,9 @@
         }
       }
     },
-    "/api/session/nginx": {
+    "/api/session/forwardauth": {
       "get": {
-        "operationId": "GET:skyforge.SessionNginx",
+        "operationId": "GET:skyforge.SessionForwardAuth",
         "responses": {
           "200": {
             "description": "Success response"
@@ -6336,10 +6482,10 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "SessionNginx is a Skyforge SSO gate compatible endpoint.\n"
+        "summary": "SessionForwardAuth is a Skyforge SSO gate compatible endpoint used by Traefik\nforwardAuth.\n"
       },
       "head": {
-        "operationId": "HEAD:skyforge.SessionNginxHead",
+        "operationId": "HEAD:skyforge.SessionForwardAuthHead",
         "responses": {
           "200": {
             "description": "Success response"
@@ -6348,35 +6494,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "SessionNginxHead is a Skyforge SSO gate compatible endpoint (HEAD).\n"
-      }
-    },
-    "/api/skyforge/api/oidc/callback": {
-      "get": {
-        "operationId": "GET:skyforge.OIDCCallbackAlias",
-        "responses": {
-          "200": {
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "OIDCCallbackAlias provides backward-compatible routing for legacy OIDC callback\nURLs.\n"
-      }
-    },
-    "/api/skyforge/api/oidc/login": {
-      "get": {
-        "operationId": "GET:skyforge.OIDCLoginAlias",
-        "responses": {
-          "200": {
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "OIDCLoginAlias provides backward-compatible routing for legacy OIDC login URLs.\n"
+        "summary": "SessionForwardAuthHead is a Skyforge SSO gate compatible endpoint used by\nTraefik forwardAuth (HEAD).\n"
       }
     },
     "/api/snmp/traps/events": {

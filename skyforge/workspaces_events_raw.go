@@ -102,66 +102,87 @@ func (s *Service) WorkspacesEvents(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache, no-transform")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-
-	flusher, ok := w.(http.Flusher)
-	if !ok {
+	stream, err := newSSEStream(w)
+	if err != nil {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
 
-	write := func(format string, args ...any) {
-		_, _ = fmt.Fprintf(w, format, args...)
-	}
-
 	ctx := req.Context()
-	write(": ok\n\n")
-	flusher.Flush()
+	stream.comment("ok")
+	stream.flush()
+
+	// Subscribe to updates before the initial snapshot load to avoid race windows
+	// where we miss a pg NOTIFY and look stale until the keep-alive.
+	hub := ensurePGNotifyHub(s.db)
+	updates := hub.subscribe(ctx)
+
+	// Drain pg NOTIFY continuously to avoid the hub dropping signals while we
+	// perform snapshot loads.
+	reloadSignals := make(chan struct{}, 1)
+	claimUser := strings.ToLower(strings.TrimSpace(claims.Username))
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case n, ok := <-updates:
+				if !ok {
+					return
+				}
+				if n.Channel != pgNotifyWorkspacesChannel {
+					continue
+				}
+				payload := strings.ToLower(strings.TrimSpace(n.Payload))
+				if payload == "*" || payload == claimUser {
+					select {
+					case reloadSignals <- struct{}{}:
+					default:
+						// Coalesce.
+					}
+				}
+			}
+		}
+	}()
 
 	lastPayload := ""
-	lastEventID := int64(0)
+	id := int64(0)
+	reload := true
+
+	pingTicker := time.NewTicker(30 * time.Second)
+	defer pingTicker.Stop()
 
 	for {
+		if reload {
+			workspaces, err := loadWorkspacesSnapshot(ctx, s, claims, all)
+			if err != nil {
+				stream.comment("retry")
+				stream.flush()
+			} else {
+				payloadBytes, _ := json.Marshal(map[string]any{
+					"user":        claims.Username,
+					"workspaces":  workspaces,
+					"refreshedAt": time.Now().UTC().Format(time.RFC3339),
+				})
+				payload := strings.TrimSpace(string(payloadBytes))
+				if payload != "" && payload != lastPayload {
+					lastPayload = payload
+					id++
+					stream.event(id, "snapshot", []byte(payload))
+					stream.flush()
+				}
+			}
+			reload = false
+		}
+
 		select {
 		case <-ctx.Done():
 			return
-		default:
+		case <-reloadSignals:
+			reload = true
+		case <-pingTicker.C:
+			stream.comment("ping")
+			stream.flush()
 		}
-
-		workspaces, err := loadWorkspacesSnapshot(ctx, s, claims, all)
-		if err != nil {
-			write(": retry\n\n")
-			flusher.Flush()
-		} else {
-			payloadBytes, _ := json.Marshal(map[string]any{
-				"user":        claims.Username,
-				"workspaces":  workspaces,
-				"refreshedAt": time.Now().UTC().Format(time.RFC3339),
-			})
-			payload := strings.TrimSpace(string(payloadBytes))
-			if payload != "" && payload != lastPayload {
-				lastPayload = payload
-				lastEventID++
-				write("id: %d\n", lastEventID)
-				write("event: snapshot\n")
-				write("data: %s\n\n", payload)
-				flusher.Flush()
-			} else {
-				write(": ping\n\n")
-				flusher.Flush()
-			}
-		}
-
-		waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		updated := waitForWorkspacesUpdateSignal(waitCtx, s.db, claims.Username)
-		cancel()
-		if updated {
-			continue
-		}
-		write(": ping\n\n")
-		flusher.Flush()
 	}
 }

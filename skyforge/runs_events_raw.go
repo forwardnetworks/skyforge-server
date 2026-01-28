@@ -78,45 +78,80 @@ func (s *Service) RunEvents(w http.ResponseWriter, req *http.Request) {
 	stream.comment("ok")
 	stream.flush()
 
+	// Subscribe to pg NOTIFY updates before we start streaming to avoid races
+	// where we miss a task update and appear stalled until the keep-alive.
+	hub := ensurePGNotifyHub(s.db)
+	updates := hub.subscribe(ctx)
+	reloadSignals := make(chan struct{}, 1)
+	go func() {
+		payloadWant := strconv.Itoa(taskID)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case n, ok := <-updates:
+				if !ok {
+					return
+				}
+				if n.Channel != pgNotifyTasksChannel {
+					continue
+				}
+				if strings.TrimSpace(n.Payload) != payloadWant {
+					continue
+				}
+				select {
+				case reloadSignals <- struct{}{}:
+				default:
+				}
+			}
+		}
+	}()
+
+	pingTicker := time.NewTicker(30 * time.Second)
+	defer pingTicker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
-			// If canceled, stop streaming.
-			ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
-			rows, err := listTaskLogsAfter(ctxReq, s.db, taskID, lastID, 500)
-			cancel()
-			if err != nil {
-				stream.comment("retry")
-				stream.flush()
+		}
+
+		// If canceled, stop streaming.
+		ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
+		rows, err := listTaskLogsAfter(ctxReq, s.db, taskID, lastID, 500)
+		cancel()
+		if err != nil {
+			stream.comment("retry")
+			stream.flush()
+			continue
+		}
+		if len(rows) == 0 {
+			// Block until we see an update (or periodically emit keep-alives).
+			select {
+			case <-ctx.Done():
+				return
+			case <-reloadSignals:
 				continue
-			}
-			if len(rows) == 0 {
-				// Block until we see an update (or periodically emit keep-alives).
-				waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-				updated := waitForTaskUpdateSignal(waitCtx, s.db, taskID)
-				cancel()
-				if updated {
-					continue
-				}
+			case <-pingTicker.C:
 				stream.comment("ping")
 				stream.flush()
 				continue
 			}
-			entries := make([]TaskLogEntry, 0, len(rows))
-			for _, row := range rows {
-				entries = append(entries, row.Entry)
-				if row.ID > lastID {
-					lastID = row.ID
-				}
-			}
-			payload := map[string]any{
-				"cursor":  lastID,
-				"entries": entries,
-			}
-			stream.eventJSON(lastID, skyforgecore.SSEEventOutput, payload)
-			stream.flush()
 		}
+
+		entries := make([]TaskLogEntry, 0, len(rows))
+		for _, row := range rows {
+			entries = append(entries, row.Entry)
+			if row.ID > lastID {
+				lastID = row.ID
+			}
+		}
+		payload := map[string]any{
+			"cursor":  lastID,
+			"entries": entries,
+		}
+		stream.eventJSON(lastID, skyforgecore.SSEEventOutput, payload)
+		stream.flush()
 	}
 }

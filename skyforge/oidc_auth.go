@@ -232,13 +232,6 @@ func (s *Service) OIDCLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
-// OIDCLoginAlias provides backward-compatible routing for legacy OIDC login URLs.
-//
-//encore:api public raw method=GET path=/api/skyforge/api/oidc/login
-func (s *Service) OIDCLoginAlias(w http.ResponseWriter, r *http.Request) {
-	s.OIDCLogin(w, r)
-}
-
 // OIDCCallback finishes the OIDC flow and issues the Skyforge session cookie.
 //
 //encore:api public raw method=GET path=/api/oidc/callback
@@ -383,13 +376,6 @@ func (s *Service) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, next, http.StatusFound)
-}
-
-// OIDCCallbackAlias provides backward-compatible routing for legacy OIDC callback URLs.
-//
-//encore:api public raw method=GET path=/api/skyforge/api/oidc/callback
-func (s *Service) OIDCCallbackAlias(w http.ResponseWriter, r *http.Request) {
-	s.OIDCCallback(w, r)
 }
 
 func sanitizeOIDCNext(raw string) string {

@@ -239,7 +239,7 @@ func (s *Service) Reauth(w http.ResponseWriter, r *http.Request) {
 	}
 	http.SetCookie(w, s.sessionManager.ClearCookie())
 	if s.oidc != nil {
-		http.Redirect(w, r, "/api/skyforge/api/oidc/login?next="+url.QueryEscape(next), http.StatusFound)
+		http.Redirect(w, r, "/api/oidc/login?next="+url.QueryEscape(next), http.StatusFound)
 		return
 	}
 	http.Redirect(w, r, "/status?signin=1&next="+url.QueryEscape(next), http.StatusFound)
@@ -360,27 +360,31 @@ type nginxSessionPayload struct {
 	Status string `json:"status,omitempty"`
 }
 
-// SessionNginx is a Skyforge SSO gate compatible endpoint.
+type forwardAuthSessionPayload struct {
+	Status string `json:"status,omitempty"`
+}
+
+// SessionForwardAuth is a Skyforge SSO gate compatible endpoint used by Traefik forwardAuth.
 //
-//encore:api public raw method=GET path=/api/session/nginx
-func (s *Service) SessionNginx(w http.ResponseWriter, req *http.Request) {
+//encore:api public raw method=GET path=/api/session/forwardauth
+func (s *Service) SessionForwardAuth(w http.ResponseWriter, req *http.Request) {
 	claims := claimsFromCookie(s.sessionManager, req.Header.Get("Cookie"))
 	if claims == nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
-		_ = json.NewEncoder(w).Encode(&nginxSessionPayload{Status: "unauthenticated"})
+		_ = json.NewEncoder(w).Encode(&forwardAuthSessionPayload{Status: "unauthenticated"})
 		return
 	}
 	addSessionHeaders(w.Header(), claims)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(&nginxSessionPayload{Status: "ok"})
+	_ = json.NewEncoder(w).Encode(&forwardAuthSessionPayload{Status: "ok"})
 }
 
-// SessionNginxHead is a Skyforge SSO gate compatible endpoint (HEAD).
+// SessionForwardAuthHead is a Skyforge SSO gate compatible endpoint used by Traefik forwardAuth (HEAD).
 //
-//encore:api public raw method=HEAD path=/api/session/nginx
-func (s *Service) SessionNginxHead(w http.ResponseWriter, req *http.Request) {
+//encore:api public raw method=HEAD path=/api/session/forwardauth
+func (s *Service) SessionForwardAuthHead(w http.ResponseWriter, req *http.Request) {
 	claims := claimsFromCookie(s.sessionManager, req.Header.Get("Cookie"))
 	if claims == nil {
 		w.WriteHeader(http.StatusUnauthorized)

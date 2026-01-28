@@ -3,7 +3,6 @@ package skyforge
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -68,64 +67,85 @@ func (s *Service) TaskLifecycleEvents(w http.ResponseWriter, req *http.Request) 
 		}
 	}
 
-	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache, no-transform")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-
-	flusher, ok := w.(http.Flusher)
-	if !ok {
+	stream, err := newSSEStream(w)
+	if err != nil {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
+	stream.comment("ok")
+	stream.flush()
 
-	write := func(format string, args ...any) {
-		_, _ = fmt.Fprintf(w, format, args...)
-	}
+	hub := ensurePGNotifyHub(s.db)
+	updates := hub.subscribe(ctx)
+	reloadSignals := make(chan struct{}, 1)
+	go func() {
+		payloadWant := strconv.Itoa(taskID)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case n, ok := <-updates:
+				if !ok {
+					return
+				}
+				if n.Channel != pgNotifyTasksChannel {
+					continue
+				}
+				if strings.TrimSpace(n.Payload) != payloadWant {
+					continue
+				}
+				select {
+				case reloadSignals <- struct{}{}:
+				default:
+				}
+			}
+		}
+	}()
 
-	write(": ok\n\n")
-	flusher.Flush()
+	pingTicker := time.NewTicker(30 * time.Second)
+	defer pingTicker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
-			ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
-			rows, err := listTaskEventsAfter(ctxReq, s.db, taskID, lastID, 500)
-			cancel()
-			if err != nil {
-				write(": retry\n\n")
-				flusher.Flush()
-				continue
-			}
-			if len(rows) == 0 {
-				// Block until we see an update (or periodically emit keep-alives).
-				waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-				updated := waitForTaskUpdateSignal(waitCtx, s.db, taskID)
-				cancel()
-				if updated {
-					continue
-				}
-				write(": ping\n\n")
-				flusher.Flush()
-				continue
-			}
-			entries := make([]TaskEventEntry, 0, len(rows))
-			for _, row := range rows {
-				entries = append(entries, row.Entry)
-				if row.ID > lastID {
-					lastID = row.ID
-				}
-			}
-			payload, _ := json.Marshal(map[string]any{
-				"cursor":  lastID,
-				"entries": entries,
-			})
-			write("id: %d\n", lastID)
-			write("event: lifecycle\n")
-			write("data: %s\n\n", strings.TrimSpace(string(payload)))
-			flusher.Flush()
 		}
+
+		ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
+		rows, err := listTaskEventsAfter(ctxReq, s.db, taskID, lastID, 500)
+		cancel()
+		if err != nil {
+			stream.comment("retry")
+			stream.flush()
+			continue
+		}
+
+		if len(rows) == 0 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-reloadSignals:
+				continue
+			case <-pingTicker.C:
+				stream.comment("ping")
+				stream.flush()
+				continue
+			}
+		}
+
+		entries := make([]TaskEventEntry, 0, len(rows))
+		for _, row := range rows {
+			entries = append(entries, row.Entry)
+			if row.ID > lastID {
+				lastID = row.ID
+			}
+		}
+		payload, _ := json.Marshal(map[string]any{
+			"cursor":  lastID,
+			"entries": entries,
+		})
+		stream.event(lastID, "lifecycle", payload)
+		stream.flush()
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -82,65 +81,79 @@ func (s *Service) SnmpTrapEventsStream(w http.ResponseWriter, req *http.Request)
 		}
 	}
 
-	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache, no-transform")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-
-	flusher, ok := w.(http.Flusher)
-	if !ok {
+	stream, err := newSSEStream(w)
+	if err != nil {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
 
-	write := func(format string, args ...any) {
-		_, _ = fmt.Fprintf(w, format, args...)
-	}
-
 	ctx := req.Context()
-	write(": ok\n\n")
-	flusher.Flush()
+	stream.comment("ok")
+	stream.flush()
+
+	hub := ensurePGNotifyHub(s.db)
+	updates := hub.subscribe(ctx)
+
+	reloadSignals := make(chan struct{}, 1)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case n, ok := <-updates:
+				if !ok {
+					return
+				}
+				if n.Channel != pgNotifySnmpChannel {
+					continue
+				}
+				if strings.TrimSpace(n.Payload) == username {
+					select {
+					case reloadSignals <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
 
 	lastPayload := ""
-	lastEventID := int64(0)
+	id := int64(0)
+	reload := true
+
+	pingTicker := time.NewTicker(30 * time.Second)
+	defer pingTicker.Stop()
 
 	for {
+		if reload {
+			events, err := listSnmpTrapEventsForUser(ctx, s.db, username, limit)
+			if err != nil {
+				stream.comment("retry")
+				stream.flush()
+			} else {
+				payloadBytes, _ := json.Marshal(map[string]any{
+					"events":      events,
+					"refreshedAt": time.Now().UTC().Format(time.RFC3339),
+				})
+				payload := strings.TrimSpace(string(payloadBytes))
+				if payload != "" && payload != lastPayload {
+					lastPayload = payload
+					id++
+					stream.event(id, "snapshot", []byte(payload))
+					stream.flush()
+				}
+			}
+			reload = false
+		}
+
 		select {
 		case <-ctx.Done():
 			return
-		default:
+		case <-reloadSignals:
+			reload = true
+		case <-pingTicker.C:
+			stream.comment("ping")
+			stream.flush()
 		}
-
-		events, err := listSnmpTrapEventsForUser(ctx, s.db, username, limit)
-		if err != nil {
-			write(": retry\n\n")
-			flusher.Flush()
-		} else {
-			payloadBytes, _ := json.Marshal(map[string]any{
-				"events":      events,
-				"refreshedAt": time.Now().UTC().Format(time.RFC3339),
-			})
-			payload := strings.TrimSpace(string(payloadBytes))
-			if payload != "" && payload != lastPayload {
-				lastPayload = payload
-				lastEventID++
-				write("id: %d\n", lastEventID)
-				write("event: snapshot\n")
-				write("data: %s\n\n", payload)
-				flusher.Flush()
-			} else {
-				write(": ping\n\n")
-				flusher.Flush()
-			}
-		}
-
-		waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		updated := waitForSnmpUpdateSignal(waitCtx, s.db, username)
-		cancel()
-		if updated {
-			continue
-		}
-		write(": ping\n\n")
-		flusher.Flush()
 	}
 }
