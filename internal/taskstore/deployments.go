@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"strings"
 	"time"
+
+	"encore.app/internal/tasknotify"
 )
 
 func UpdateDeploymentStatus(ctx context.Context, db *sql.DB, workspaceID, deploymentID string, status string, finishedAt *time.Time) error {
@@ -31,6 +33,10 @@ func UpdateDeploymentStatus(ctx context.Context, db *sql.DB, workspaceID, deploy
   updated_at=now()
 WHERE id=$3 AND workspace_id=$4`,
 		status, finished, deploymentID, workspaceID)
+	if err == nil {
+		_ = tasknotify.NotifyDeploymentEvent(ctx, db, workspaceID, deploymentID)
+		_ = tasknotify.NotifyDashboardUpdate(ctx, db)
+	}
 	return err
 }
 

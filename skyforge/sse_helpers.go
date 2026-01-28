@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"encore.app/internal/skyforgecore"
@@ -27,6 +28,11 @@ func newSSEStream(w http.ResponseWriter) (*sseStream, error) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.Header().Set(skyforgecore.HeaderAPIVersion, skyforgecore.APIVersion)
+	if w.Header().Get("X-Skyforge-Instance") == "" {
+		if hn, err := os.Hostname(); err == nil && strings.TrimSpace(hn) != "" {
+			w.Header().Set("X-Skyforge-Instance", strings.TrimSpace(hn))
+		}
+	}
 	return &sseStream{w: w, f: f}, nil
 }
 

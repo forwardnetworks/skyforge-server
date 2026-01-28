@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 	"sync"
@@ -88,8 +89,14 @@ func (h *pgNotifyHub) run() {
 	}
 
 	backoff := 250 * time.Millisecond
+	lastLog := time.Time{}
 	for {
 		if err := h.listenOnce(context.Background()); err != nil {
+			// Avoid log spam if the DB is unavailable; report occasionally while backing off.
+			if time.Since(lastLog) > 30*time.Second {
+				log.Printf("pg notify hub listen failed (backing off): %v", err)
+				lastLog = time.Now()
+			}
 			time.Sleep(backoff)
 			if backoff < 10*time.Second {
 				backoff *= 2
@@ -97,6 +104,7 @@ func (h *pgNotifyHub) run() {
 			continue
 		}
 		backoff = 250 * time.Millisecond
+		lastLog = time.Time{}
 	}
 }
 

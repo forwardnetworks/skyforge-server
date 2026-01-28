@@ -310,11 +310,39 @@ func (s *Service) DashboardEvents(w http.ResponseWriter, req *http.Request) {
 	hub := ensurePGNotifyHub(s.db)
 	updates := hub.subscribe(ctx)
 
+	// Drain pg NOTIFY events continuously so the subscription channel cannot fill
+	// up while we're doing an expensive snapshot load. If the channel fills, the
+	// hub drops signals and the UI can look stale until the next keep-alive.
+	reloadSignals := make(chan struct{}, 1)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case n, ok := <-updates:
+				if !ok {
+					return
+				}
+				switch n.Channel {
+				case pgNotifyDashboardChannel, pgNotifyTasksChannel, pgNotifyDeploymentEventsChan, pgNotifyWorkspacesChannel:
+					select {
+					case reloadSignals <- struct{}{}:
+					default:
+						// Coalesce.
+					}
+				}
+			}
+		}
+	}()
+
 	lastPayload := ""
 	id := int64(0)
 
 	// Initial load
 	reload := true
+
+	pingTicker := time.NewTicker(30 * time.Second)
+	defer pingTicker.Stop()
 
 	for {
 		if reload {
@@ -342,17 +370,9 @@ func (s *Service) DashboardEvents(w http.ResponseWriter, req *http.Request) {
 		select {
 		case <-ctx.Done():
 			return
-		case n, ok := <-updates:
-			if !ok {
-				return
-			}
-			// Filter for relevant channels.
-			// We reload on dashboard signals, task signals (status changes), and deployment events.
-			switch n.Channel {
-			case pgNotifyDashboardChannel, pgNotifyTasksChannel, pgNotifyDeploymentEventsChan:
-				reload = true
-			}
-		case <-time.After(30 * time.Second):
+		case <-reloadSignals:
+			reload = true
+		case <-pingTicker.C:
 			stream.comment("ping")
 			stream.flush()
 		}
