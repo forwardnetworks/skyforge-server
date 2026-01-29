@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"time"
 
@@ -56,6 +57,13 @@ func (e *Engine) forwardDeviceTypes(ctx context.Context) map[string]string {
 		// Some netlab outputs use IOS-XE-ish labels even when the device is IOL.
 		"ios_xe": "cisco_ios_ssh",
 		"ios-xe": "cisco_ios_ssh",
+		"iosv":   "cisco_ios_ssh",
+		"iosvl2": "cisco_ios_ssh",
+		"csr":    "cisco_ios_xe_ssh",
+		"cat8000v": "cisco_ios_xe_ssh",
+		"asav":   "cisco_asa_ssh",
+		"nxos":   "cisco_nxos_ssh",
+		"iosxr":  "cisco_ios_xr_ssh",
 	}
 	if e == nil || e.db == nil {
 		return out
@@ -795,7 +803,49 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 	seen := map[string]bool{}
 	changed := false
 	linuxProfileID := ""
-	for _, row := range parseNetlabStatusOutput(logText) {
+	rows := parseNetlabStatusOutput(logText)
+
+	// In-cluster deployments should use stable per-node service DNS names (not pod IPs).
+	inCluster := dep != nil && (strings.EqualFold(strings.TrimSpace(dep.Type), "netlab-c9s") || strings.EqualFold(strings.TrimSpace(dep.Type), "clabernetes"))
+	k8sNamespace := ""
+	topologyName := ""
+	nodeNameMapping := map[string]string{}
+	if inCluster && pc != nil {
+		k8sNamespace = clabernetesWorkspaceNamespace(pc.workspace.Slug)
+		topologyName = clabernetesTopologyName(containerlabLabName(pc.workspace.Slug, dep.Name))
+
+		// Build the same deterministic node-name mapping used for containerlab YAML sanitation.
+		// This ensures Forward device names can preserve original case while hosts reference the
+		// correct per-node Service names.
+		oldNames := make([]string, 0, len(rows))
+		for _, row := range rows {
+			n := strings.TrimSpace(row.Node)
+			if n != "" {
+				oldNames = append(oldNames, n)
+			}
+		}
+		sort.Strings(oldNames)
+		used := map[string]bool{}
+		for _, old := range oldNames {
+			newName := sanitizeDNS1035Label(old)
+			base := newName
+			for i := 2; used[newName]; i++ {
+				suffix := fmt.Sprintf("-%d", i)
+				max := 63 - len(suffix)
+				if max < 1 {
+					newName = "n" + suffix
+				} else if len(base) > max {
+					newName = base[:max] + suffix
+				} else {
+					newName = base + suffix
+				}
+			}
+			used[newName] = true
+			nodeNameMapping[old] = newName
+		}
+	}
+
+	for _, row := range rows {
 		name := strings.TrimSpace(row.Node)
 		rawDeviceKey := strings.ToLower(strings.TrimSpace(row.Device))
 		deviceKey := rawDeviceKey
@@ -808,6 +858,17 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 		if mgmt == "" || mgmt == "—" {
 			continue
 		}
+
+		host := mgmt
+		if inCluster && name != "" && k8sNamespace != "" && topologyName != "" {
+			sanitizedNode := strings.TrimSpace(nodeNameMapping[name])
+			if sanitizedNode == "" {
+				sanitizedNode = sanitizeDNS1035Label(name)
+			}
+			serviceName := sanitizeKubeNameFallback(fmt.Sprintf("%s-%s", topologyName, sanitizedNode), topologyName)
+			host = fmt.Sprintf("%s.%s.svc.cluster.local", serviceName, k8sNamespace)
+		}
+
 		key := strings.ToLower(mgmt)
 		if seen[key] {
 			continue
@@ -844,7 +905,7 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 			endpoints = append(endpoints, forwardEndpoint{
 				Type:         "CLI",
 				Name:         name,
-				Host:         mgmt,
+				Host:         host,
 				Protocol:     "SSH",
 				CredentialID: credID,
 				ProfileID:    linuxProfileID,
@@ -885,7 +946,7 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 		devices = append(devices, forwardClassicDevice{
 			Name:                     name,
 			Type:                     forwardType,
-			Host:                     mgmt,
+			Host:                     host,
 			CliCredentialID:          cliCredentialID,
 			SnmpCredentialID:         snmpCredentialID,
 			JumpServerID:             jumpServerID,

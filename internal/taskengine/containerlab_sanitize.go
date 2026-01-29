@@ -154,6 +154,15 @@ func sanitizeContainerlabYAMLForClabernetes(containerlabYAML string) (string, ma
 		topology["defaults"] = defaults
 	}
 
+	vrnetlabPortDefs := []string{
+		"22:22/tcp",
+		"80:80/tcp",
+		"443:443/tcp",
+		"830:830/tcp",
+		"57400:57400/tcp",
+		"161:161/udp",
+	}
+
 	// Create deterministic mapping and avoid collisions.
 	oldNames := make([]string, 0, len(nodes))
 	for name := range nodes {
@@ -281,6 +290,57 @@ func sanitizeContainerlabYAMLForClabernetes(containerlabYAML string) (string, ma
 					cfgMap["binds"] = out
 					cfg = cfgMap
 				}
+			}
+
+			// Ensure vrnetlab nodes expose a full set of management ports via per-node services.
+			// This keeps Skyforge/Forward connectivity stable when pods are rescheduled.
+			kindLower := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfgMap["kind"])))
+			imageLower := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfgMap["image"])))
+			isVrnetlab := strings.Contains(imageLower, "vrnetlab/") || strings.Contains(imageLower, "/vrnetlab/")
+			isVrnetlab = isVrnetlab || strings.HasPrefix(kindLower, "vr-") || strings.HasPrefix(kindLower, "cisco_") || strings.HasPrefix(kindLower, "juniper_") || strings.HasPrefix(kindLower, "nokia_")
+			if isVrnetlab {
+				var nodePorts []any
+				nodeExisting := map[string]bool{}
+				addExistingPort := func(raw string) {
+					raw = strings.TrimSpace(raw)
+					if raw == "" {
+						return
+					}
+					nodeExisting[strings.ToUpper(raw)] = true
+				}
+				switch cur := cfgMap["ports"].(type) {
+				case []any:
+					nodePorts = append(nodePorts, cur...)
+					for _, v := range cur {
+						addExistingPort(fmt.Sprintf("%v", v))
+					}
+				case []string:
+					for _, v := range cur {
+						nodePorts = append(nodePorts, v)
+						addExistingPort(v)
+					}
+				case nil:
+					// nothing
+				default:
+					nodePorts = append(nodePorts, fmt.Sprintf("%v", cur))
+					addExistingPort(fmt.Sprintf("%v", cur))
+				}
+				ensureNodePort := func(def string) {
+					def = strings.TrimSpace(def)
+					if def == "" {
+						return
+					}
+					key := strings.ToUpper(def)
+					if nodeExisting[key] {
+						return
+					}
+					nodeExisting[key] = true
+					nodePorts = append(nodePorts, def)
+				}
+				for _, def := range vrnetlabPortDefs {
+					ensureNodePort(def)
+				}
+				cfgMap["ports"] = nodePorts
 			}
 		}
 		newNodes[newName] = cfg
