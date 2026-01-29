@@ -192,14 +192,6 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		}
 
 		disableNativeForCeos := envBool(spec.Environment, "SKYFORGE_CLABERNETES_DISABLE_NATIVE_FOR_CEOS", false)
-		// vrnetlab-style NOS containers (IOL/VIOS/NXOSv/etc) often assume they can "own" the
-		// primary network interface (eth0).
-		//
-		// In Skyforge's clabernetes-native path, we rely on the clabernetes manager to make
-		// these nodes reachable without requiring Multus (for example, by ensuring IOS owns
-		// the pod IP for IOL). Set SKYFORGE_CLABERNETES_DISABLE_NATIVE_FOR_VRNETLAB=true to
-		// force DIND for these nodes if needed.
-		disableNativeForVrnetlab := envBool(spec.Environment, "SKYFORGE_CLABERNETES_DISABLE_NATIVE_FOR_VRNETLAB", false)
 		// Ensure clabernetes launcher pods can pull private images (launcher/NOS) by wiring the
 		// namespace pull secret into the topology service account via spec.imagePull.pullSecrets.
 		secretName := strings.TrimSpace(e.cfg.ImagePullSecretName)
@@ -318,25 +310,6 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		if nativeMode && disableNativeForCeos && !forceNativeMode && containerlabTopologyHasKind(spec.TopologyYAML, "ceos") {
 			log.Infof("Clabernetes: disabling native mode for cEOS nodes (set SKYFORGE_CLABERNETES_FORCE_NATIVE_MODE=true to override)")
 			nativeMode = false
-		}
-		if nativeMode && disableNativeForVrnetlab && !forceNativeMode {
-			vrKinds := []string{
-				"cisco_iol",
-				"cisco_vios",
-				"cisco_viosl2",
-				"vr-n9kv",
-				"cisco_asav",
-				"vr-vmx",
-				"vr-sros",
-				"vr-csr",
-			}
-			for _, k := range vrKinds {
-				if containerlabTopologyHasKind(spec.TopologyYAML, k) {
-					log.Infof("Clabernetes: disabling native mode for %s nodes (set SKYFORGE_CLABERNETES_DISABLE_NATIVE_FOR_VRNETLAB=false or SKYFORGE_CLABERNETES_FORCE_NATIVE_MODE=true to override)", k)
-					nativeMode = false
-					break
-				}
-			}
 		}
 
 		deployment := map[string]any{
