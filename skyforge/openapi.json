@@ -2199,6 +2199,49 @@
           "errors"
         ],
         "type": "object"
+      },
+      "skyforgecore.FeaturesConfig": {
+        "properties": {
+          "coderEnabled": {
+            "type": "boolean"
+          },
+          "dexEnabled": {
+            "type": "boolean"
+          },
+          "dnsEnabled": {
+            "type": "boolean"
+          },
+          "giteaEnabled": {
+            "type": "boolean"
+          },
+          "minioEnabled": {
+            "type": "boolean"
+          },
+          "nautobotEnabled": {
+            "type": "boolean"
+          },
+          "netboxEnabled": {
+            "type": "boolean"
+          },
+          "swaggerUIEnabled": {
+            "type": "boolean"
+          },
+          "yaadeEnabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "giteaEnabled",
+          "minioEnabled",
+          "dexEnabled",
+          "coderEnabled",
+          "yaadeEnabled",
+          "swaggerUIEnabled",
+          "netboxEnabled",
+          "nautobotEnabled",
+          "dnsEnabled"
+        ],
+        "type": "object"
       }
     }
   },
@@ -7028,6 +7071,9 @@
                     "externalUrl": {
                       "type": "string"
                     },
+                    "features": {
+                      "$ref": "#/components/schemas/skyforgecore.FeaturesConfig"
+                    },
                     "headerBackground": {
                       "type": "string"
                     },
@@ -7070,7 +7116,8 @@
                     "themeDefault",
                     "externalUrl",
                     "oidcEnabled",
-                    "oidcLoginUrl"
+                    "oidcLoginUrl",
+                    "features"
                   ],
                   "type": "object"
                 }

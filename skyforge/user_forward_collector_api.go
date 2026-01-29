@@ -314,6 +314,9 @@ func defaultCollectorNameForUser(username string) string {
 //
 //encore:api auth method=GET path=/api/forward/collector
 func (s *Service) GetUserForwardCollector(ctx context.Context) (*UserForwardCollectorResponse, error) {
+	if !s.cfg.Features.ForwardEnabled {
+		return nil, errs.B().Code(errs.NotFound).Msg("Forward integration is disabled").Err()
+	}
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -432,6 +435,9 @@ func (s *Service) GetUserForwardCollector(ctx context.Context) (*UserForwardColl
 //
 //encore:api auth method=PUT path=/api/forward/collector
 func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwardCollectorRequest) (*UserForwardCollectorResponse, error) {
+	if !s.cfg.Features.ForwardEnabled {
+		return nil, errs.B().Code(errs.NotFound).Msg("Forward integration is disabled").Err()
+	}
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -592,6 +598,9 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 //
 //encore:api auth method=POST path=/api/forward/collector/reset
 func (s *Service) ResetUserForwardCollector(ctx context.Context) (*UserForwardCollectorResponse, error) {
+	if !s.cfg.Features.ForwardEnabled {
+		return nil, errs.B().Code(errs.NotFound).Msg("Forward integration is disabled").Err()
+	}
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err

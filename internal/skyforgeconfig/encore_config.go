@@ -108,6 +108,19 @@ type ForwardCollectorDefaultsConfig struct {
 	HeapSizeGB int
 }
 
+type FeaturesDefaultsConfig struct {
+	GiteaEnabled     bool
+	MinioEnabled     bool
+	DexEnabled       bool
+	CoderEnabled     bool
+	YaadeEnabled     bool
+	SwaggerUIEnabled bool
+	ForwardEnabled   bool
+	NetboxEnabled    bool
+	NautobotEnabled  bool
+	DNSEnabled       bool
+}
+
 type EncoreConfig struct {
 	TaskWorkerEnabled    bool
 	DisableEncoreCache   bool
@@ -152,6 +165,7 @@ type EncoreConfig struct {
 	Terraform        TerraformDefaultsConfig
 	Forward          ForwardDefaultsConfig
 	ForwardCollector ForwardCollectorDefaultsConfig
+	Features         FeaturesDefaultsConfig
 	NetlabGenerator  NetlabGeneratorDefaultsConfig
 	Kubernetes       KubernetesDefaultsConfig
 }
@@ -165,6 +179,7 @@ type WorkerConfig struct {
 	Terraform        TerraformDefaultsConfig
 	Forward          ForwardDefaultsConfig
 	ForwardCollector ForwardCollectorDefaultsConfig
+	Features         FeaturesDefaultsConfig
 	NetlabGenerator  NetlabGeneratorDefaultsConfig
 	Kubernetes       KubernetesDefaultsConfig
 }

@@ -82,6 +82,14 @@ func ensureCollectorDeployed(ctx context.Context, cfg Config, username, token, f
 }
 
 func ensureCollectorDeployedForName(ctx context.Context, cfg Config, username, deploymentName, token, forwardBaseURL string, skipTLSVerify bool) (*collectorRuntimeStatus, error) {
+	if !cfg.Features.ForwardEnabled {
+		return &collectorRuntimeStatus{
+			Namespace:       kubeNamespace(),
+			DeploymentName:  strings.TrimSpace(deploymentName),
+			UpdateStatus:    "disabled",
+			LogsCommandHint: fmt.Sprintf("kubectl -n %s logs deploy/%s -f", kubeNamespace(), strings.TrimSpace(deploymentName)),
+		}, nil
+	}
 	collectorImage := strings.TrimSpace(cfg.ForwardCollectorImage)
 	if collectorImage == "" {
 		// Explicitly do not deploy anything if the collector image isn't configured.

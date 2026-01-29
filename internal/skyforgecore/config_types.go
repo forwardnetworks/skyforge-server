@@ -76,11 +76,25 @@ type Config struct {
 	// collector container. When 0, the image default is used.
 	ForwardCollectorHeapSizeGB int
 	Forward                    ForwardConfig
+	Features                   FeaturesConfig
 }
 
 type ForwardConfig struct {
 	SNMPPlaceholderEnabled bool
 	SNMPCommunity          string
+}
+
+type FeaturesConfig struct {
+	GiteaEnabled     bool `json:"giteaEnabled"`
+	MinioEnabled     bool `json:"minioEnabled"`
+	DexEnabled       bool `json:"dexEnabled"`
+	CoderEnabled     bool `json:"coderEnabled"`
+	YaadeEnabled     bool `json:"yaadeEnabled"`
+	SwaggerUIEnabled bool `json:"swaggerUIEnabled"`
+	ForwardEnabled   bool `json:"forwardEnabled"`
+	NetboxEnabled    bool `json:"netboxEnabled"`
+	NautobotEnabled  bool `json:"nautobotEnabled"`
+	DNSEnabled       bool `json:"dnsEnabled"`
 }
 
 type OIDCConfig struct {

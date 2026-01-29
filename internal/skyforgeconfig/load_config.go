@@ -149,6 +149,19 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 	netlabGeneratorImage := strings.TrimSpace(enc.NetlabGenerator.GeneratorImage)
 	netlabGeneratorPullPolicy := strings.TrimSpace(enc.NetlabGenerator.PullPolicy)
 
+	featuresCfg := skyforgecore.FeaturesConfig{
+		GiteaEnabled:     enc.Features.GiteaEnabled,
+		MinioEnabled:     enc.Features.MinioEnabled,
+		DexEnabled:       enc.Features.DexEnabled,
+		CoderEnabled:     enc.Features.CoderEnabled,
+		YaadeEnabled:     enc.Features.YaadeEnabled,
+		SwaggerUIEnabled: enc.Features.SwaggerUIEnabled,
+		ForwardEnabled:   enc.Features.ForwardEnabled,
+		NetboxEnabled:    enc.Features.NetboxEnabled,
+		NautobotEnabled:  enc.Features.NautobotEnabled,
+		DNSEnabled:       enc.Features.DNSEnabled,
+	}
+
 	uiCfg := skyforgecore.UIConfig{
 		ProductName:      strings.TrimSpace(enc.UI.ProductName),
 		ProductSubtitle:  strings.TrimSpace(enc.UI.ProductSubtitle),
@@ -316,6 +329,7 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		NetlabC9sGeneratorMode:                   netlabC9sGeneratorMode,
 		NetlabGeneratorImage:                     netlabGeneratorImage,
 		NetlabGeneratorPullPolicy:                netlabGeneratorPullPolicy,
+		Features:                                 featuresCfg,
 	}
 }
 
@@ -388,6 +402,19 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 	netlabGeneratorImage := strings.TrimSpace(enc.NetlabGenerator.GeneratorImage)
 	netlabGeneratorPullPolicy := strings.TrimSpace(enc.NetlabGenerator.PullPolicy)
 
+	featuresCfg := skyforgecore.FeaturesConfig{
+		GiteaEnabled:     enc.Features.GiteaEnabled,
+		MinioEnabled:     enc.Features.MinioEnabled,
+		DexEnabled:       enc.Features.DexEnabled,
+		CoderEnabled:     enc.Features.CoderEnabled,
+		YaadeEnabled:     enc.Features.YaadeEnabled,
+		SwaggerUIEnabled: enc.Features.SwaggerUIEnabled,
+		ForwardEnabled:   enc.Features.ForwardEnabled,
+		NetboxEnabled:    enc.Features.NetboxEnabled,
+		NautobotEnabled:  enc.Features.NautobotEnabled,
+		DNSEnabled:       enc.Features.DNSEnabled,
+	}
+
 	// Note: Worker does not need OIDC, LDAP, DNS, UI, or admin users.
 	// However it *does* need SessionSecret to decrypt any encrypted credentials
 	// stored in Postgres (Forward creds, cloud creds, etc.).
@@ -416,5 +443,6 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		PKICACert: strings.TrimSpace(sec.PKICACert),
 		PKICAKey:  strings.TrimSpace(sec.PKICAKey),
 		SSHCAKey:  strings.TrimSpace(sec.SSHCAKey),
+		Features:  featuresCfg,
 	}
 }

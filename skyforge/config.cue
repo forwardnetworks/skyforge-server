@@ -130,6 +130,19 @@ ForwardCollector: {
 	HeapSizeGB: 0
 }
 
+Features: {
+	GiteaEnabled: true
+	MinioEnabled: true
+	DexEnabled: true
+	CoderEnabled: true
+	YaadeEnabled: true
+	SwaggerUIEnabled: true
+	ForwardEnabled: true
+	NetboxEnabled: false
+	NautobotEnabled: false
+	DNSEnabled: false
+}
+
 Kubernetes: {
 	// ImagePullSecretName is the name of a docker registry secret that allows
 	// pulling images (e.g. from GHCR). When set, Skyforge can mirror it into

@@ -45,6 +45,19 @@ ForwardCollector: {
 	HeapSizeGB: 0
 }
 
+Features: {
+	GiteaEnabled: true
+	MinioEnabled: true
+	DexEnabled: true
+	CoderEnabled: true
+	YaadeEnabled: true
+	SwaggerUIEnabled: true
+	ForwardEnabled: true
+	NetboxEnabled: false
+	NautobotEnabled: false
+	DNSEnabled: false
+}
+
 Kubernetes: {
 	ImagePullSecretName: "ghcr-pull"
 	ImagePullSecretNamespace: "skyforge"

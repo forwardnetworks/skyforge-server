@@ -1,19 +1,24 @@
 package skyforge
 
-import "context"
+import (
+	"context"
+
+	"encore.app/internal/skyforgecore"
+)
 
 type UIConfigResponse struct {
-	ProductName      string `json:"productName"`
-	ProductSubtitle  string `json:"productSubtitle"`
-	LogoURL          string `json:"logoUrl"`
-	LogoAlt          string `json:"logoAlt"`
-	HeaderBackground string `json:"headerBackground"`
-	SupportText      string `json:"supportText"`
-	SupportURL       string `json:"supportUrl"`
-	ThemeDefault     string `json:"themeDefault"`
-	ExternalURL      string `json:"externalUrl"`
-	OIDCEnabled      bool   `json:"oidcEnabled"`
-	OIDCLoginURL     string `json:"oidcLoginUrl"`
+	ProductName      string                      `json:"productName"`
+	ProductSubtitle  string                      `json:"productSubtitle"`
+	LogoURL          string                      `json:"logoUrl"`
+	LogoAlt          string                      `json:"logoAlt"`
+	HeaderBackground string                      `json:"headerBackground"`
+	SupportText      string                      `json:"supportText"`
+	SupportURL       string                      `json:"supportUrl"`
+	ThemeDefault     string                      `json:"themeDefault"`
+	ExternalURL      string                      `json:"externalUrl"`
+	OIDCEnabled      bool                        `json:"oidcEnabled"`
+	OIDCLoginURL     string                      `json:"oidcLoginUrl"`
+	Features         skyforgecore.FeaturesConfig `json:"features"`
 }
 
 // GetUIConfig returns UI configuration values.
@@ -32,5 +37,6 @@ func (s *Service) GetUIConfig(ctx context.Context) (*UIConfigResponse, error) {
 		ExternalURL:      detectCloudflaredQuickTunnelURL(ctx),
 		OIDCEnabled:      s.cfg.UI.OIDCEnabled,
 		OIDCLoginURL:     s.cfg.UI.OIDCLoginURL,
+		Features:         s.cfg.Features,
 	}, nil
 }
