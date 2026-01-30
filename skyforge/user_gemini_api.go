@@ -43,8 +43,14 @@ const (
 var geminiOAuthRetryableErrors = map[string]bool{
 	"account_selection_required": true,
 	"consent_required":           true,
+	// Returned by Google when prompt=none cannot be satisfied.
+	"immediate_failed": true,
 	"interaction_required":       true,
 	"login_required":             true,
+	// Can be returned when prompt=none cannot proceed or when the user denies consent.
+	// We only auto-retry on the initial (prompt=none) attempt; the consent retry path
+	// blocks looping.
+	"access_denied": true,
 }
 
 func geminiOAuthConfig(cfg Config) (*oauth2.Config, error) {
@@ -282,6 +288,8 @@ func (s *Service) GeminiCallback(w http.ResponseWriter, r *http.Request) {
 	state := strings.TrimSpace(r.URL.Query().Get("state"))
 	code := strings.TrimSpace(r.URL.Query().Get("code"))
 	errParam := strings.TrimSpace(r.URL.Query().Get("error"))
+	errSubtype := strings.TrimSpace(r.URL.Query().Get("error_subtype"))
+	retryMode := strings.TrimSpace(r.URL.Query().Get("retry"))
 	c, err := r.Cookie(geminiStateCookie)
 	if err != nil || strings.TrimSpace(c.Value) == "" || c.Value != state {
 		http.Error(w, "invalid state", http.StatusBadRequest)
@@ -290,9 +298,16 @@ func (s *Service) GeminiCallback(w http.ResponseWriter, r *http.Request) {
 
 	// If we attempted prompt=none, Google may redirect back with an interaction error.
 	// Retry once with prompt=consent to perform the one-time consent step.
-	if errParam != "" && geminiOAuthRetryableErrors[errParam] {
-		if strings.TrimSpace(r.URL.Query().Get("retry")) == "consent" {
-			http.Error(w, "oauth requires user interaction", http.StatusUnauthorized)
+	if errParam != "" {
+		if retryMode == "consent" {
+			// User explicitly denied on the consent screen or Google cannot proceed.
+			log.Printf("gemini oauth denied: error=%q subtype=%q user=%q", errParam, errSubtype, user.Username)
+			http.Redirect(w, r, "/dashboard/gemini?error=oauth_denied", http.StatusFound)
+			return
+		}
+		if !geminiOAuthRetryableErrors[errParam] {
+			log.Printf("gemini oauth failed: error=%q subtype=%q user=%q", errParam, errSubtype, user.Username)
+			http.Redirect(w, r, "/dashboard/gemini?error=oauth_failed", http.StatusFound)
 			return
 		}
 		loginHint := strings.TrimSpace(user.Email)
