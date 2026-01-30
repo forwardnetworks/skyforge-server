@@ -386,6 +386,12 @@ func (i *serviceNowInstaller) ensureEventAndScriptAction(ctx context.Context) er
 		"event_name":  eventName,
 		"script":      i.cfg.Assets.AnalyzeTicketScriptJS,
 	}); err != nil {
+		// Some PDIs (or Table API restrictions) report "Invalid table sys_script_action".
+		// The demo can run without this record because the Service Portal widget uses
+		// a synchronous analysis path.
+		if strings.Contains(err.Error(), "Invalid table sys_script_action") {
+			return nil
+		}
 		return fmt.Errorf("script action: %w", err)
 	}
 	return nil

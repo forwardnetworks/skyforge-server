@@ -82,7 +82,10 @@
       if (!ticketSysId) return bad("ticketSysId required");
       var t2 = new GlideRecord("x_fwd_demo_connectivity_ticket");
       if (!t2.get(ticketSysId)) return bad("Ticket not found");
-      gs.eventQueue("x_fwd_demo.analyze_ticket", t2, ticketSysId, "");
+      // Prefer a synchronous analysis run to avoid relying on Script Actions (which
+      // may be restricted from Table API automation in some PDIs). This keeps the
+      // demo "dead simple" and reduces manual steps.
+      new TicketAnalysis().analyzeTicketBySysId(ticketSysId);
       return;
     }
 
@@ -130,4 +133,3 @@
     return bad(e && e.message ? e.message : "Server error");
   }
 })();
-
