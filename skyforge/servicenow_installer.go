@@ -27,19 +27,6 @@ type serviceNowInstaller struct {
 	client *http.Client
 }
 
-type serviceNowDictField struct {
-	Table        string
-	Element      string
-	Label        string
-	InternalType string
-	MaxLength    int
-	ChoiceValues []struct {
-		Value string
-		Label string
-	}
-	Reference string
-}
-
 func newServiceNowInstaller(cfg serviceNowInstallerConfig) *serviceNowInstaller {
 	return &serviceNowInstaller{
 		cfg: cfg,
@@ -67,12 +54,14 @@ func (i *serviceNowInstaller) Install(ctx context.Context) error {
 	}
 
 	// Best-effort: install all script artifacts + portal widget + REST message + basic auth credential.
-	// The schema (tables/fields) remains a manual step for now due to ServiceNow platform complexity.
+	// The schema (tables/fields) is a manual step due to ServiceNow platform complexity and Table API restrictions.
 	if err := i.ensureProperties(ctx); err != nil {
 		return err
 	}
-	if err := i.ensureSchema(ctx); err != nil {
+	if missing, err := i.checkSchema(ctx); err != nil {
 		return err
+	} else if len(missing) > 0 {
+		return fmt.Errorf("servicenow schema not installed; create required tables/fields in ServiceNow and retry (missing: %s)", strings.Join(missing, ", "))
 	}
 	credID, err := i.ensureForwardBasicAuthCredential(ctx)
 	if err != nil {
@@ -102,150 +91,72 @@ func (i *serviceNowInstaller) Install(ctx context.Context) error {
 	return nil
 }
 
-func (i *serviceNowInstaller) ensureSchema(ctx context.Context) error {
-	// Tables:
-	// - x_fwd_demo_connectivity_ticket (extends task)
-	// - x_fwd_demo_connectivity_hop
-
-	taskObj, err := i.findByField(ctx, "sys_db_object", "name", "task")
-	if err != nil {
-		return fmt.Errorf("schema lookup task table: %w", err)
+func (i *serviceNowInstaller) checkSchema(ctx context.Context) ([]string, error) {
+	// Required tables.
+	requiredTables := []string{
+		"x_fwd_demo_connectivity_ticket",
+		"x_fwd_demo_connectivity_hop",
 	}
-	taskSysID := ""
-	if taskObj != nil {
-		taskSysID, _ = taskObj["sys_id"].(string)
-	}
-	if strings.TrimSpace(taskSysID) == "" {
-		return fmt.Errorf("schema: could not resolve sys_db_object for task")
-	}
-
-	if err := i.upsertTableByKey(ctx, "sys_db_object", "name", "x_fwd_demo_connectivity_ticket", map[string]any{
-		"name":        "x_fwd_demo_connectivity_ticket",
-		"label":       "Connectivity Ticket",
-		"super_class": taskSysID,
-	}); err != nil {
-		return fmt.Errorf("schema: create ticket table: %w", err)
-	}
-	if err := i.upsertTableByKey(ctx, "sys_db_object", "name", "x_fwd_demo_connectivity_hop", map[string]any{
-		"name":  "x_fwd_demo_connectivity_hop",
-		"label": "Connectivity Hop",
-	}); err != nil {
-		return fmt.Errorf("schema: create hop table: %w", err)
+	var missing []string
+	for _, t := range requiredTables {
+		obj, err := i.findByField(ctx, "sys_db_object", "name", t)
+		if err != nil {
+			return nil, fmt.Errorf("schema lookup %s: %w", t, err)
+		}
+		if obj == nil {
+			missing = append(missing, "table:"+t)
+		}
 	}
 
-	fields := []serviceNowDictField{
+	// Required fields.
+	requiredFields := []struct {
+		Table   string
+		Element string
+	}{
 		// Ticket flow input
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_src_ip", Label: "Source IP", InternalType: "string", MaxLength: 45},
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_dst_ip", Label: "Destination IP", InternalType: "string", MaxLength: 45},
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_protocol", Label: "Protocol", InternalType: "choice", ChoiceValues: []struct {
-			Value string
-			Label string
-		}{{Value: "TCP", Label: "TCP"}, {Value: "UDP", Label: "UDP"}}},
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_dst_port", Label: "Destination Port", InternalType: "integer"},
+		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_src_ip"},
+		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_dst_ip"},
+		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_protocol"},
+		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_dst_port"},
 
 		// Forward selection
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_forward_network_id", Label: "Forward Network ID", InternalType: "string"},
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_forward_snapshot_id", Label: "Forward Snapshot ID", InternalType: "string"},
+		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_forward_network_id"},
+		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_forward_snapshot_id"},
 
 		// Analysis results
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_allowed", Label: "Allowed", InternalType: "boolean"},
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_block_category", Label: "Block Category", InternalType: "choice", ChoiceValues: []struct {
-			Value string
-			Label string
-		}{{Value: "network", Label: "network"}, {Value: "security", Label: "security"}, {Value: "unknown", Label: "unknown"}}},
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_block_device", Label: "Block Device", InternalType: "string"},
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_block_interface", Label: "Block Interface", InternalType: "string"},
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_block_rule", Label: "Block Rule", InternalType: "string"},
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_block_reason", Label: "Block Reason", InternalType: "string", MaxLength: 4000},
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_forward_query_url", Label: "Forward Query URL", InternalType: "string"},
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_raw_excerpt", Label: "Raw Excerpt", InternalType: "string", MaxLength: 4000},
+		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_allowed"},
+		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_block_category"},
+		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_block_device"},
+		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_block_interface"},
+		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_block_rule"},
+		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_block_reason"},
+		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_forward_query_url"},
+		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_raw_excerpt"},
 
 		// Analysis state
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_analysis_status", Label: "Analysis Status", InternalType: "choice", ChoiceValues: []struct {
-			Value string
-			Label string
-		}{{Value: "not_run", Label: "not_run"}, {Value: "running", Label: "running"}, {Value: "complete", Label: "complete"}, {Value: "error", Label: "error"}}},
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_analysis_error", Label: "Analysis Error", InternalType: "string", MaxLength: 4000},
+		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_analysis_status"},
+		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_analysis_error"},
 
 		// Hop table
-		{Table: "x_fwd_demo_connectivity_hop", Element: "u_ticket", Label: "Ticket", InternalType: "reference", Reference: "x_fwd_demo_connectivity_ticket"},
-		{Table: "x_fwd_demo_connectivity_hop", Element: "u_hop_index", Label: "Hop Index", InternalType: "integer"},
-		{Table: "x_fwd_demo_connectivity_hop", Element: "u_device", Label: "Device", InternalType: "string"},
-		{Table: "x_fwd_demo_connectivity_hop", Element: "u_ingress", Label: "Ingress", InternalType: "string"},
-		{Table: "x_fwd_demo_connectivity_hop", Element: "u_egress", Label: "Egress", InternalType: "string"},
-		{Table: "x_fwd_demo_connectivity_hop", Element: "u_note", Label: "Note", InternalType: "string"},
+		{Table: "x_fwd_demo_connectivity_hop", Element: "u_ticket"},
+		{Table: "x_fwd_demo_connectivity_hop", Element: "u_hop_index"},
+		{Table: "x_fwd_demo_connectivity_hop", Element: "u_device"},
+		{Table: "x_fwd_demo_connectivity_hop", Element: "u_ingress"},
+		{Table: "x_fwd_demo_connectivity_hop", Element: "u_egress"},
+		{Table: "x_fwd_demo_connectivity_hop", Element: "u_note"},
 	}
-
-	for _, f := range fields {
-		if err := i.ensureDictionaryField(ctx, f); err != nil {
-			return err
+	for _, f := range requiredFields {
+		query := fmt.Sprintf("name=%s^element=%s", f.Table, f.Element)
+		existing, err := i.findByQuery(ctx, "sys_dictionary", query)
+		if err != nil {
+			return nil, fmt.Errorf("schema lookup %s.%s: %w", f.Table, f.Element, err)
 		}
-	}
-	return nil
-}
-
-func (i *serviceNowInstaller) ensureDictionaryField(ctx context.Context, f serviceNowDictField) error {
-	table := strings.TrimSpace(f.Table)
-	element := strings.TrimSpace(f.Element)
-	if table == "" || element == "" {
-		return fmt.Errorf("schema: invalid dictionary field")
-	}
-	query := fmt.Sprintf("name=%s^element=%s", table, element)
-	existing, err := i.findByQuery(ctx, "sys_dictionary", query)
-	if err != nil {
-		return fmt.Errorf("schema: lookup %s.%s: %w", table, element, err)
-	}
-	payload := map[string]any{
-		"name":          table,
-		"element":       element,
-		"column_label":  f.Label,
-		"internal_type": f.InternalType,
-	}
-	if f.MaxLength > 0 {
-		payload["max_length"] = f.MaxLength
-	}
-	if strings.TrimSpace(f.Reference) != "" {
-		payload["reference"] = strings.TrimSpace(f.Reference)
-	}
-	if existing != nil {
-		sysID, _ := existing["sys_id"].(string)
-		if strings.TrimSpace(sysID) != "" {
-			if err := i.updateBySysID(ctx, "sys_dictionary", sysID, payload); err != nil {
-				return fmt.Errorf("schema: update %s.%s: %w", table, element, err)
-			}
-		}
-	} else {
-		if _, err := i.create(ctx, "sys_dictionary", payload); err != nil {
-			return fmt.Errorf("schema: create %s.%s: %w", table, element, err)
+		if existing == nil {
+			missing = append(missing, "field:"+f.Table+"."+f.Element)
 		}
 	}
 
-	// Choices
-	if strings.EqualFold(strings.TrimSpace(f.InternalType), "choice") && len(f.ChoiceValues) > 0 {
-		for idx, c := range f.ChoiceValues {
-			choiceQuery := fmt.Sprintf("name=%s^element=%s^value=%s", table, element, c.Value)
-			ch, err := i.findByQuery(ctx, "sys_choice", choiceQuery)
-			if err != nil {
-				continue
-			}
-			chPayload := map[string]any{
-				"name":    table,
-				"element": element,
-				"value":   c.Value,
-				"label":   c.Label,
-				"sequence": (idx + 1) * 10,
-			}
-			if ch != nil {
-				sysID, _ := ch["sys_id"].(string)
-				if strings.TrimSpace(sysID) != "" {
-					_ = i.updateBySysID(ctx, "sys_choice", sysID, chPayload)
-				}
-			} else {
-				_, _ = i.create(ctx, "sys_choice", chPayload)
-			}
-		}
-	}
-	return nil
+	return missing, nil
 }
 
 func (i *serviceNowInstaller) ensureProperties(ctx context.Context) error {

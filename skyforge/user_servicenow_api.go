@@ -57,6 +57,13 @@ type WakeServiceNowPDIResponse struct {
 	CheckedAt  string `json:"checkedAt,omitempty"`
 }
 
+type ServiceNowSchemaStatusResponse struct {
+	Status    string   `json:"status"` // ok | missing | error
+	Missing   []string `json:"missing,omitempty"`
+	Detail    string   `json:"detail,omitempty"`
+	CheckedAt string   `json:"checkedAt,omitempty"`
+}
+
 const defaultServiceNowForwardBaseURL = "https://fwd.app/api"
 
 // GetUserServiceNowConfig returns the current user's ServiceNow demo integration settings.
@@ -116,6 +123,64 @@ func (s *Service) GetUserServiceNowPDIStatus(ctx context.Context) (*ServiceNowPD
 		HTTPStatus: httpStatus,
 		Detail:     detail,
 		CheckedAt:  time.Now().UTC().Format(time.RFC3339),
+	}, nil
+}
+
+// GetUserServiceNowSchemaStatus checks whether the ServiceNow demo schema is installed.
+//
+//encore:api auth method=GET path=/api/user/integrations/servicenow/schemaStatus
+func (s *Service) GetUserServiceNowSchemaStatus(ctx context.Context) (*ServiceNowSchemaStatusResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	box := newSecretBox(s.cfg.SessionSecret)
+
+	ctxCfg, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	cfg, err := getUserServiceNowConfig(ctxCfg, s.db, box, user.Username)
+	if err != nil || cfg == nil {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("ServiceNow not configured").Err()
+	}
+	if strings.TrimSpace(cfg.InstanceURL) == "" ||
+		strings.TrimSpace(cfg.AdminUsername) == "" ||
+		strings.TrimSpace(cfg.AdminPassword) == "" {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("ServiceNow not configured").Err()
+	}
+
+	ctxCheck, cancel := context.WithTimeout(ctx, 12*time.Second)
+	defer cancel()
+
+	installer := newServiceNowInstaller(serviceNowInstallerConfig{
+		InstanceURL:     cfg.InstanceURL,
+		AdminUsername:   cfg.AdminUsername,
+		AdminPassword:   cfg.AdminPassword,
+		ForwardBaseURL:  defaultServiceNowForwardBaseURL,
+		ForwardUsername: "",
+		ForwardPassword: "",
+	})
+	missing, err := installer.checkSchema(ctxCheck)
+	checkedAt := time.Now().UTC().Format(time.RFC3339)
+	if err != nil {
+		return &ServiceNowSchemaStatusResponse{
+			Status:    "error",
+			Detail:    err.Error(),
+			CheckedAt: checkedAt,
+		}, nil
+	}
+	if len(missing) > 0 {
+		return &ServiceNowSchemaStatusResponse{
+			Status:    "missing",
+			Missing:   missing,
+			CheckedAt: checkedAt,
+		}, nil
+	}
+	return &ServiceNowSchemaStatusResponse{
+		Status:    "ok",
+		CheckedAt: checkedAt,
 	}, nil
 }
 
