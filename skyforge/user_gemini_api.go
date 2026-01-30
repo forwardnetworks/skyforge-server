@@ -40,6 +40,13 @@ const (
 	geminiStateCookie = "skyforge_gemini_oauth_state"
 )
 
+var geminiOAuthRetryableErrors = map[string]bool{
+	"account_selection_required": true,
+	"consent_required":           true,
+	"interaction_required":       true,
+	"login_required":             true,
+}
+
 func geminiOAuthConfig(cfg Config) (*oauth2.Config, error) {
 	if !cfg.GeminiEnabled {
 		return nil, nil
@@ -194,11 +201,26 @@ func (s *Service) GetUserGeminiConfig(ctx context.Context) (*UserGeminiConfigRes
 	return resp, nil
 }
 
+func geminiAuthURL(cfg *oauth2.Config, state string, prompt string, loginHint string, hostedDomain string) string {
+	opts := []oauth2.AuthCodeOption{oauth2.AccessTypeOffline}
+	if strings.TrimSpace(prompt) != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("prompt", strings.TrimSpace(prompt)))
+	}
+	if strings.TrimSpace(loginHint) != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("login_hint", strings.TrimSpace(loginHint)))
+	}
+	if strings.TrimSpace(hostedDomain) != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("hd", strings.TrimSpace(hostedDomain)))
+	}
+	opts = append(opts, oauth2.SetAuthURLParam("include_granted_scopes", "true"))
+	return cfg.AuthCodeURL(state, opts...)
+}
+
 // GeminiConnect redirects the user to Google's OAuth consent screen and stores CSRF state in a cookie.
 //
 //encore:api auth raw method=GET path=/api/user/integrations/gemini/connect
 func (s *Service) GeminiConnect(w http.ResponseWriter, r *http.Request) {
-	_, err := requireAuthUser()
+	user, err := requireAuthUser()
 	if err != nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -229,11 +251,13 @@ func (s *Service) GeminiConnect(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	authURL := cfg.AuthCodeURL(
-		state,
-		oauth2.AccessTypeOffline,
-		oauth2.SetAuthURLParam("prompt", "consent"),
-	)
+	// Try to acquire/refresh a token without prompting when possible:
+	// - if the user already consented, this should be silent
+	// - otherwise, Google redirects back with error=interaction_required,
+	//   which we handle by redirecting to a prompt=consent flow in the callback.
+	loginHint := strings.TrimSpace(user.Email)
+	hostedDomain := strings.TrimSpace(s.cfg.CorpEmailDomain)
+	authURL := geminiAuthURL(cfg, state, "none", loginHint, hostedDomain)
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
@@ -257,13 +281,34 @@ func (s *Service) GeminiCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	state := strings.TrimSpace(r.URL.Query().Get("state"))
 	code := strings.TrimSpace(r.URL.Query().Get("code"))
-	if state == "" || code == "" {
-		http.Error(w, "missing state/code", http.StatusBadRequest)
-		return
-	}
+	errParam := strings.TrimSpace(r.URL.Query().Get("error"))
 	c, err := r.Cookie(geminiStateCookie)
 	if err != nil || strings.TrimSpace(c.Value) == "" || c.Value != state {
 		http.Error(w, "invalid state", http.StatusBadRequest)
+		return
+	}
+
+	// If we attempted prompt=none, Google may redirect back with an interaction error.
+	// Retry once with prompt=consent to perform the one-time consent step.
+	if errParam != "" && geminiOAuthRetryableErrors[errParam] {
+		if strings.TrimSpace(r.URL.Query().Get("retry")) == "consent" {
+			http.Error(w, "oauth requires user interaction", http.StatusUnauthorized)
+			return
+		}
+		loginHint := strings.TrimSpace(user.Email)
+		hostedDomain := strings.TrimSpace(s.cfg.CorpEmailDomain)
+		consentURL := geminiAuthURL(cfg, state, "consent", loginHint, hostedDomain)
+		if strings.Contains(consentURL, "?") {
+			consentURL += "&retry=consent"
+		} else {
+			consentURL += "?retry=consent"
+		}
+		http.Redirect(w, r, consentURL, http.StatusFound)
+		return
+	}
+
+	if state == "" || code == "" {
+		http.Error(w, "missing state/code", http.StatusBadRequest)
 		return
 	}
 
@@ -276,12 +321,6 @@ func (s *Service) GeminiCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	refresh := strings.TrimSpace(tok.RefreshToken)
-	if refresh == "" {
-		// If user already granted consent previously, Google may not return a refresh token.
-		// Ask the user to disconnect and re-connect.
-		http.Error(w, "missing refresh token (reconnect required)", http.StatusBadRequest)
-		return
-	}
 
 	// Determine user email via id_token when present, otherwise fall back to Skyforge user profile email.
 	email := strings.TrimSpace(user.Email)
@@ -314,6 +353,20 @@ func (s *Service) GeminiCallback(w http.ResponseWriter, r *http.Request) {
 	box := newSecretBox(s.cfg.SessionSecret)
 	ctxDB, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
+	if refresh == "" {
+		// Google may omit refresh_token on some exchanges. If we already have one stored,
+		// keep using it and just update metadata.
+		existing, err := getUserGeminiOAuth(ctxDB, s.db, box, user.Username)
+		if err != nil {
+			log.Printf("gemini get existing refresh: %v", err)
+		}
+		if existing == nil || strings.TrimSpace(existing.RefreshTokenEnc) == "" {
+			http.Error(w, "missing refresh token (reconnect required)", http.StatusBadRequest)
+			return
+		}
+		refresh = strings.TrimSpace(existing.RefreshTokenEnc)
+	}
+
 	if err := putUserGeminiOAuth(ctxDB, s.db, box, user.Username, email, scopeStr, refresh); err != nil {
 		log.Printf("gemini store failed: %v", err)
 		http.Error(w, "failed to store tokens", http.StatusServiceUnavailable)
