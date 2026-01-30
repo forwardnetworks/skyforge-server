@@ -1,0 +1,140 @@
+<div class="panel panel-default">
+  <div class="panel-heading">
+    <h4 class="panel-title">Connectivity Ticket</h4>
+    <p class="small text-muted m-b-0">
+      Create a ticket, analyze via Forward, and auto-route to network/security.
+    </p>
+  </div>
+
+  <div class="panel-body" ng-if="!c.state.loading">
+    <div class="alert alert-danger" ng-if="c.state.error">
+      {{c.state.error}}
+    </div>
+
+    <div class="row">
+      <div class="col-md-6">
+        <h5>Flow</h5>
+
+        <div class="form-group">
+          <label>Network</label>
+          <select class="form-control" ng-model="c.form.networkId" ng-options="n.id as n.name for n in c.state.networks" ng-change="c.onNetworkChange()">
+            <option value="">Select…</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Snapshot</label>
+          <select class="form-control" ng-model="c.form.snapshotId" ng-options="s.id as (s.note || s.processedAt || s.createdAt || s.id) for s in c.state.snapshots">
+            <option value="">Select…</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Source IP</label>
+          <input class="form-control" ng-model="c.form.srcIp" placeholder="10.0.0.10" />
+        </div>
+
+        <div class="form-group">
+          <label>Destination IP</label>
+          <input class="form-control" ng-model="c.form.dstIp" placeholder="10.0.0.20" />
+        </div>
+
+        <div class="row">
+          <div class="col-xs-6">
+            <div class="form-group">
+              <label>Protocol</label>
+              <select class="form-control" ng-model="c.form.protocol">
+                <option value="TCP">TCP</option>
+                <option value="UDP">UDP</option>
+              </select>
+            </div>
+          </div>
+          <div class="col-xs-6">
+            <div class="form-group">
+              <label>Destination port</label>
+              <input class="form-control" ng-model="c.form.dstPort" placeholder="443" />
+            </div>
+          </div>
+        </div>
+
+        <div class="btn-toolbar">
+          <button class="btn btn-primary" ng-click="c.createTicket()" ng-disabled="c.state.working">
+            Submit Ticket
+          </button>
+          <button class="btn btn-default" ng-click="c.analyze()" ng-disabled="!c.state.ticketSysId || c.state.working">
+            Analyze
+          </button>
+        </div>
+
+        <div class="small text-muted m-t-sm" ng-if="c.state.ticketNumber">
+          Ticket: <strong>{{c.state.ticketNumber}}</strong>
+        </div>
+      </div>
+
+      <div class="col-md-6">
+        <h5>Result</h5>
+        <div ng-if="!c.state.result">
+          <div class="text-muted">Run Analyze to see results.</div>
+        </div>
+
+        <div ng-if="c.state.result">
+          <div class="well well-sm">
+            <div>
+              <strong>Status:</strong>
+              <span ng-class="{'text-success': c.state.result.u_allowed, 'text-danger': !c.state.result.u_allowed}">
+                {{c.state.result.u_allowed ? 'ALLOWED' : 'BLOCKED'}}
+              </span>
+            </div>
+            <div ng-if="!c.state.result.u_allowed">
+              <div><strong>Category:</strong> {{c.state.result.u_block_category}}</div>
+              <div><strong>Blocked at:</strong> {{c.state.result.u_block_device}} <span class="text-muted">{{c.state.result.u_block_interface}}</span></div>
+              <div><strong>Reason:</strong> {{c.state.result.u_block_reason}}</div>
+            </div>
+            <div ng-if="c.state.result.u_forward_query_url">
+              <a ng-href="{{c.state.result.u_forward_query_url}}" target="_blank">Open in Forward</a>
+            </div>
+          </div>
+
+          <div class="btn-group m-b-sm">
+            <button class="btn btn-info" ng-click="c.route('network')" ng-disabled="c.state.working">Route to Network</button>
+            <button class="btn btn-warning" ng-click="c.route('security')" ng-disabled="c.state.working">Route to Security</button>
+          </div>
+
+          <h5>Trace</h5>
+          <div class="table-responsive">
+            <table class="table table-condensed table-striped">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Device</th>
+                  <th>Ingress</th>
+                  <th>Egress</th>
+                  <th>Note</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr ng-repeat="h in c.state.hops">
+                  <td>{{h.u_hop_index}}</td>
+                  <td>{{h.u_device}}</td>
+                  <td>{{h.u_ingress}}</td>
+                  <td>{{h.u_egress}}</td>
+                  <td>{{h.u_note}}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <details>
+            <summary class="text-muted">Debug excerpt</summary>
+            <pre class="small">{{c.state.result.u_raw_excerpt}}</pre>
+          </details>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel-body" ng-if="c.state.loading">
+    Loading…
+  </div>
+</div>
+

@@ -126,6 +126,7 @@ func purgeUserSQL(ctx context.Context, db *sql.DB, username string) (int, []stri
 		{"audit_actor", `DELETE FROM sf_audit_log WHERE actor_username = $1 OR impersonated_username = $1`, []any{username}},
 		{"workspace_members", `DELETE FROM sf_workspace_members WHERE username = $1`, []any{username}},
 		{"user_forward_credentials", `DELETE FROM sf_user_forward_credentials WHERE username = $1`, []any{username}},
+		{"user_servicenow_configs", `DELETE FROM sf_user_servicenow_configs WHERE username = $1`, []any{username}},
 		{"aws_sso_tokens", `DELETE FROM sf_aws_sso_tokens WHERE username = $1`, []any{username}},
 		{"dns_tokens", `DELETE FROM sf_dns_tokens WHERE username = $1`, []any{username}},
 		{"webhook_tokens", `DELETE FROM sf_webhook_tokens WHERE username = $1`, []any{username}},

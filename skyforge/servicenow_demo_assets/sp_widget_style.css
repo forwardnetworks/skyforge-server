@@ -1,0 +1,9 @@
+.panel .panel-heading p {
+  margin: 0;
+}
+
+details pre {
+  max-height: 240px;
+  overflow: auto;
+}
+
