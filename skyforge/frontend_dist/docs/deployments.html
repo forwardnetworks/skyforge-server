@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Skyforge Docs · Deployments</title>
+    <style>
+      :root {
+        color-scheme: dark light;
+        --bg: #0b1223;
+        --fg: #f1f5ff;
+        --muted: rgba(241, 245, 255, 0.75);
+        --card: rgba(15, 23, 42, 0.7);
+        --border: rgba(148, 163, 184, 0.18);
+        --link: #9fb7ff;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f7f8fc;
+          --fg: #0b1833;
+          --muted: rgba(11, 24, 53, 0.75);
+          --card: #ffffff;
+          --border: rgba(11, 24, 53, 0.12);
+          --link: #2f46ff;
+        }
+      }
+      html,
+      body {
+        margin: 0;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        background: radial-gradient(900px 500px at 20% 10%, rgba(99, 102, 241, 0.14), transparent 60%),
+          radial-gradient(800px 500px at 80% 0%, rgba(255, 122, 43, 0.12), transparent 55%), var(--bg);
+        color: var(--fg);
+      }
+      a {
+        color: var(--link);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+      header,
+      main {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 1.5rem;
+      }
+      header p {
+        margin: 0.35rem 0 0;
+        color: var(--muted);
+      }
+      .card {
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: var(--card);
+        padding: 1.1rem;
+        margin-top: 1rem;
+      }
+      h1 {
+        margin: 0;
+      }
+      h2 {
+        margin: 0 0 0.5rem;
+        font-size: 1.05rem;
+      }
+      ul,
+      ol {
+        margin: 0.6rem 0 0.4rem 1.25rem;
+      }
+      li {
+        margin: 0.25rem 0;
+      }
+      code,
+      pre {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      }
+      pre {
+        white-space: pre-wrap;
+        margin: 0.6rem 0 0;
+        padding: 0.75rem;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: rgba(2, 6, 23, 0.35);
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.35rem 0.55rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(148, 163, 184, 0.06);
+        font-size: 0.9rem;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a class="pill" href="/docs/">Docs home</a>
+      <h1 style="margin-top: 0.75rem">Deployments</h1>
+      <p>Create a lab deployment from a blueprint template, run it, and inspect nodes/logs/topology.</p>
+      <p style="margin-top: 0.75rem">
+        <a class="pill" href="/dashboard/deployments">Open deployments</a>
+      </p>
+    </header>
+    <main>
+      <div class="card">
+        <h2>Mental model</h2>
+        <ul>
+          <li><strong>Deployment</strong>: the lab you intend to run (template + variables + settings).</li>
+          <li><strong>Run</strong>: an execution attempt of that deployment (logs, artifacts, status).</li>
+          <li><strong>Topology</strong>: the nodes and links created in Kubernetes (clabernetes).</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h2>Fast path</h2>
+        <ol>
+          <li>Create a workspace and sync templates (blueprints).</li>
+          <li>Create a deployment from a Netlab template.</li>
+          <li>Click <strong>Validate</strong> to catch YAML/Netlab errors before running.</li>
+          <li>Click <strong>Start</strong>.</li>
+          <li>Open the run logs. Wait for “Topology is ready”, then post-up config.</li>
+          <li>Open the graph to see the live topology, then Terminal/Logs/Describe per node.</li>
+        </ol>
+      </div>
+
+      <div class="card">
+        <h2>Variables & overrides</h2>
+        <ul>
+          <li>Netlab supports <code>NETLAB_*</code> environment variables to override defaults (e.g. <code>NETLAB_DEVICE</code>).</li>
+          <li>Skyforge-specific knobs are passed as <code>SKYFORGE_*</code> variables.</li>
+          <li>Use Workspace Variable Groups for reusable sets of variables.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h2>Common pitfalls</h2>
+        <ul>
+          <li><strong>“Connectivity test failed” immediately</strong>: some NOS take time to start SSH. Retry / wait.</li>
+          <li><strong>Template validate passes but run fails</strong>: verify you’re validating with the same variables you run with.</li>
+          <li><strong>Device unreachable</strong>: check node readiness + collector reachability + SSH enabled.</li>
+        </ul>
+      </div>
+    </main>
+  </body>
+</html>

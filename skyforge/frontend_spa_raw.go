@@ -176,10 +176,11 @@ func (s *Service) FrontendDocs(w http.ResponseWriter, req *http.Request) {
 	}
 	// Serve embedded docs pages from /docs/*
 	if strings.HasPrefix(p, "/docs/") {
-		docPath := strings.TrimPrefix(p, "/docs")
-		if docPath == "" || docPath == "/" {
-			docPath = "/docs/index.html"
+		docSuffix := strings.TrimPrefix(p, "/docs")
+		if docSuffix == "" || docSuffix == "/" {
+			docSuffix = "/index.html"
 		}
+		docPath := "/docs" + docSuffix
 		if serveFrontendFile(w, req, docPath) {
 			return
 		}
