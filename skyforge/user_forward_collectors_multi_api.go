@@ -350,6 +350,16 @@ func (s *Service) CreateUserForwardCollectorConfig(ctx context.Context, req *Cre
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
+
+	// Governance guardrails (admin-configurable).
+	if policy, err := loadGovernancePolicy(ctx, s.db); err == nil {
+		if err := enforceGovernanceCollectorCreate(ctx, s.db, user.Username, policy); err != nil {
+			return nil, err
+		}
+	} else {
+		log.Printf("governance policy load failed (ignored): %v", err)
+	}
+
 	if req == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid payload").Err()
 	}
