@@ -38,6 +38,12 @@ type DNSDefaultsConfig struct {
 	UserZoneSuffix string
 }
 
+type GeminiDefaultsConfig struct {
+	Enabled     bool
+	ClientID    string
+	RedirectURL string
+}
+
 type ContainerlabDefaultsConfig struct {
 	APIPath       string
 	SkipTLSVerify bool
@@ -159,6 +165,7 @@ type EncoreConfig struct {
 	OIDC             OIDCDefaultsConfig
 	LDAP             LDAPDefaultsConfig
 	DNS              DNSDefaultsConfig
+	Gemini           GeminiDefaultsConfig
 	Containerlab     ContainerlabDefaultsConfig
 	Workspaces       WorkspacesDefaultsConfig
 	ObjectStorage    ObjectStorageDefaultsConfig

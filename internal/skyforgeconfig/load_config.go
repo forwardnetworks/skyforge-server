@@ -116,6 +116,13 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 
 	taskWorkerEnabled := enc.TaskWorkerEnabled
 
+	geminiEnabled := enc.Gemini.Enabled
+	geminiClientID := strings.TrimSpace(enc.Gemini.ClientID)
+	geminiRedirectURL := strings.TrimSpace(enc.Gemini.RedirectURL)
+	if geminiRedirectURL == "" && strings.TrimSpace(enc.PublicURL) != "" {
+		geminiRedirectURL = strings.TrimRight(strings.TrimSpace(enc.PublicURL), "/") + "/api/user/integrations/gemini/callback"
+	}
+
 	imagePullSecretName := strings.TrimSpace(enc.Kubernetes.ImagePullSecretName)
 	imagePullSecretNamespace := strings.TrimSpace(enc.Kubernetes.ImagePullSecretNamespace)
 	if imagePullSecretName == "" {
@@ -318,6 +325,10 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		DNSURL:                                   dnsURL,
 		DNSAdminUsername:                         dnsAdminUsername,
 		DNSUserZoneSuffix:                        dnsUserZoneSuffix,
+		GeminiEnabled:                            geminiEnabled,
+		GeminiClientID:                           geminiClientID,
+		GeminiClientSecret:                       strings.TrimSpace(sec.GeminiClientSecret),
+		GeminiRedirectURL:                        geminiRedirectURL,
 		TaskWorkerEnabled:                        taskWorkerEnabled,
 		ImagePullSecretName:                      imagePullSecretName,
 		ImagePullSecretNamespace:                 imagePullSecretNamespace,

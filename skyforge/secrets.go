@@ -8,6 +8,7 @@ var secrets struct {
 	SKYFORGE_ADMIN_PASSWORD            string `secret:"SKYFORGE_ADMIN_PASSWORD"`
 	SKYFORGE_OIDC_CLIENT_ID            string `secret:"SKYFORGE_OIDC_CLIENT_ID"`
 	SKYFORGE_OIDC_CLIENT_SECRET        string `secret:"SKYFORGE_OIDC_CLIENT_SECRET"`
+	SKYFORGE_GEMINI_OAUTH_CLIENT_SECRET string `secret:"SKYFORGE_GEMINI_OAUTH_CLIENT_SECRET"`
 	SKYFORGE_LDAP_URL                  string `secret:"SKYFORGE_LDAP_URL"`
 	SKYFORGE_LDAP_BIND_TEMPLATE        string `secret:"SKYFORGE_LDAP_BIND_TEMPLATE"`
 	SKYFORGE_LDAP_LOOKUP_BINDDN        string `secret:"SKYFORGE_LDAP_LOOKUP_BINDDN"`
@@ -30,6 +31,7 @@ func getSecrets() skyforgecore.Secrets {
 		AdminPassword:          secrets.SKYFORGE_ADMIN_PASSWORD,
 		OIDCClientID:           secrets.SKYFORGE_OIDC_CLIENT_ID,
 		OIDCClientSecret:       secrets.SKYFORGE_OIDC_CLIENT_SECRET,
+		GeminiClientSecret:     secrets.SKYFORGE_GEMINI_OAUTH_CLIENT_SECRET,
 		LDAPURL:                secrets.SKYFORGE_LDAP_URL,
 		LDAPBindTemplate:       secrets.SKYFORGE_LDAP_BIND_TEMPLATE,
 		LDAPLookupBindDN:       secrets.SKYFORGE_LDAP_LOOKUP_BINDDN,

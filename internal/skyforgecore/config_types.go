@@ -65,6 +65,10 @@ type Config struct {
 	DNSURL                                   string
 	DNSAdminUsername                         string
 	DNSUserZoneSuffix                        string
+	GeminiEnabled                            bool
+	GeminiClientID                           string
+	GeminiClientSecret                       string
+	GeminiRedirectURL                        string
 	TaskWorkerEnabled                        bool
 	ImagePullSecretName                      string
 	ImagePullSecretNamespace                 string
@@ -235,4 +239,5 @@ type Secrets struct {
 	PKICAKey               string
 	SSHCAKey               string
 	YaadeAdminPassword     string
+	GeminiClientSecret     string
 }

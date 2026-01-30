@@ -69,6 +69,14 @@ DNS: {
 	UserZoneSuffix: "skyforge"
 }
 
+Gemini: {
+	Enabled: false
+	ClientID: ""
+	// When empty, Skyforge derives the callback URL from PublicURL:
+	//   {PublicURL}/api/user/integrations/gemini/callback
+	RedirectURL: ""
+}
+
 OIDC: {
 	IssuerURL: ""
 	DiscoveryURL: ""
