@@ -242,12 +242,12 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		return err
 	}
 
-	// Prefer startup-config injection for EOS/cEOS (instead of post-start exec hacks).
+	// Prefer startup-config injection (instead of post-start exec hacks).
 	// This keeps netlab as the source-of-truth but lets Skyforge adapt the generated output
 	// for clabernetes-native execution (files are mounted into the launcher, not the NOS container).
-	if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.eos-startup-config", func() error {
+	if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.startup-config", func() error {
 		var err error
-		topologyBytes, nodeMounts, err = injectNetlabC9sEOSStartupConfig(ctx, ns, topologyName, topologyBytes, nodeMounts, log)
+		topologyBytes, nodeMounts, err = injectNetlabC9sStartupConfig(ctx, ns, topologyName, topologyBytes, nodeMounts, log)
 		return err
 	}); err != nil {
 		return err

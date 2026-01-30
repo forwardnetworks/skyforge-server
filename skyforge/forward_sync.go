@@ -53,6 +53,7 @@ func (s *Service) forwardDeviceTypes(ctx context.Context) map[string]string {
 	out := map[string]string{
 		"linux": "linux_os_ssh",
 		"eos":   "arista_eos_ssh",
+		"fortios": "fortinet_ssh",
 		// Netlab device keys for Cisco IOL/IOS images. Do not rely on auto-detection.
 		"iol":    "cisco_ios_ssh",
 		"ios":    "cisco_ios_ssh",

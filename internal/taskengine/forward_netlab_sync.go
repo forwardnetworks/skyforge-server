@@ -62,6 +62,7 @@ func (e *Engine) forwardDeviceTypes(ctx context.Context) map[string]string {
 		"csr":    "cisco_ios_xe_ssh",
 		"cat8000v": "cisco_ios_xe_ssh",
 		"asav":   "cisco_asa_ssh",
+		"fortios": "fortinet_ssh",
 		"nxos":   "cisco_nxos_ssh",
 		"iosxr":  "cisco_ios_xr_ssh",
 	}
