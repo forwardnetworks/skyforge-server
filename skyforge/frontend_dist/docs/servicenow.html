@@ -134,10 +134,35 @@
           <li>Select a Forward credential source (collector recommended).</li>
           <li>Click <strong>Save</strong>.</li>
           <li>If your PDI is sleeping, use <strong>PDI status → Wake up</strong>.</li>
-          <li>Create the demo schema (manual step):
+          <li>Create the demo schema (manual step, in ServiceNow UI):
             <ul>
-              <li>Create tables: <code>x_fwd_demo_connectivity_ticket</code> and <code>x_fwd_demo_connectivity_hop</code>.</li>
-              <li>Create the fields listed in <strong>ServiceNow → Schema status</strong> in Skyforge.</li>
+              <li>Navigate to <code>System Definition → Tables</code> and click <strong>New</strong>.</li>
+              <li>Create the ticket table:
+                <ul>
+                  <li><strong>Label</strong>: <code>Forward Connectivity Ticket</code></li>
+                  <li><strong>Name</strong>: leave blank (ServiceNow auto-creates <code>u_forward_connectivity_ticket</code>)</li>
+                  <li><strong>Extends table</strong>: <code>Task</code> (recommended for <code>number</code>, <code>short_description</code>, <code>assignment_group</code>, <code>work_notes</code>)</li>
+                </ul>
+              </li>
+              <li>Create the hop table:
+                <ul>
+                  <li><strong>Label</strong>: <code>Forward Connectivity Hop</code></li>
+                  <li><strong>Name</strong>: leave blank (ServiceNow auto-creates <code>u_forward_connectivity_hop</code>)</li>
+                </ul>
+              </li>
+              <li>Add the required columns (dictionary entries). Skyforge lists the exact required fields under <strong>ServiceNow → Schema status</strong>.</li>
+              <li>Required field types (recommended):
+                <ul>
+                  <li><code>u_src_ip</code>, <code>u_dst_ip</code>: String</li>
+                  <li><code>u_protocol</code>: Choice (TCP/UDP)</li>
+                  <li><code>u_dst_port</code>: Integer</li>
+                  <li><code>u_forward_network_id</code>, <code>u_forward_snapshot_id</code>: String</li>
+                  <li><code>u_allowed</code>: True/False</li>
+                  <li><code>u_analysis_status</code>: Choice (not_run/running/complete/error)</li>
+                  <li><code>u_analysis_error</code>, <code>u_raw_excerpt</code>, <code>u_forward_query_url</code>: String</li>
+                  <li>Hop table: <code>u_ticket</code> Reference → <code>u_forward_connectivity_ticket</code>, and Strings for <code>u_device</code>, <code>u_ingress</code>, <code>u_egress</code>, <code>u_note</code>, plus Integer <code>u_hop_index</code></li>
+                </ul>
+              </li>
             </ul>
           </li>
           <li>Click <strong>Install demo app</strong> (installs scripts, REST message, portal widget, and properties).</li>

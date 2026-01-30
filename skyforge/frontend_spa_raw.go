@@ -170,7 +170,23 @@ func (s *Service) FrontendSNMP(w http.ResponseWriter, req *http.Request) {
 //
 //encore:api public raw method=GET path=/docs/*path
 func (s *Service) FrontendDocs(w http.ResponseWriter, req *http.Request) {
-	s.serveFrontendSPA(w, req)
+	p := strings.TrimSpace(req.URL.Path)
+	if p == "" {
+		p = "/docs/"
+	}
+	// Serve embedded docs pages from /docs/*
+	if strings.HasPrefix(p, "/docs/") {
+		docPath := strings.TrimPrefix(p, "/docs")
+		if docPath == "" || docPath == "/" {
+			docPath = "/docs/index.html"
+		}
+		if serveFrontendFile(w, req, docPath) {
+			return
+		}
+		http.NotFound(w, req)
+		return
+	}
+	http.NotFound(w, req)
 }
 
 // FrontendStatus serves the SPA status page.

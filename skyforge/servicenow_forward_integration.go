@@ -140,4 +140,3 @@ func patchForwardServiceNowIntegration(ctx context.Context, fwdUsername, fwdPass
 	}
 	return nil
 }
-

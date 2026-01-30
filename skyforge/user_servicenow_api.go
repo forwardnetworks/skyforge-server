@@ -29,9 +29,9 @@ type UserServiceNowConfigResponse struct {
 }
 
 type PutUserServiceNowConfigRequest struct {
-	InstanceURL      string `json:"instanceUrl"`
-	AdminUsername    string `json:"adminUsername"`
-	AdminPassword    string `json:"adminPassword"`
+	InstanceURL              string `json:"instanceUrl"`
+	AdminUsername            string `json:"adminUsername"`
+	AdminPassword            string `json:"adminPassword"`
 	ForwardCollectorConfigID string `json:"forwardCollectorConfigId"`
 	ForwardUsername          string `json:"forwardUsername"`
 	ForwardPassword          string `json:"forwardPassword"`
@@ -306,14 +306,14 @@ func (s *Service) PutUserServiceNowConfig(ctx context.Context, req *PutUserServi
 	}
 
 	cfg := userServiceNowConfig{
-		Username:               user.Username,
-		InstanceURL:            instanceURL,
-		AdminUsername:          adminUser,
-		AdminPassword:          adminPass,
-		ForwardBaseURL:         defaultServiceNowForwardBaseURL,
+		Username:                 user.Username,
+		InstanceURL:              instanceURL,
+		AdminUsername:            adminUser,
+		AdminPassword:            adminPass,
+		ForwardBaseURL:           defaultServiceNowForwardBaseURL,
 		ForwardCollectorConfigID: forwardCollectorConfigID,
-		ForwardUsername:        fwdUser,
-		ForwardPassword:        fwdPass,
+		ForwardUsername:          fwdUser,
+		ForwardPassword:          fwdPass,
 	}
 	if err := putUserServiceNowConfig(ctx, s.db, box, cfg); err != nil {
 		log.Printf("servicenow put: %v", err)
@@ -465,20 +465,20 @@ func normalizeServiceNowInstanceURL(raw string) (string, error) {
 }
 
 type userServiceNowConfig struct {
-	Username              string
-	InstanceURL           string
-	AdminUsername         string
-	AdminPassword         string
-	ForwardBaseURL        string
+	Username                 string
+	InstanceURL              string
+	AdminUsername            string
+	AdminPassword            string
+	ForwardBaseURL           string
 	ForwardCollectorConfigID string
-	ForwardUsername       string
-	ForwardPassword       string
-	LastInstallStatus     string
-	LastInstallError      string
-	LastInstallStartedAt  time.Time
-	LastInstallFinishedAt time.Time
-	UpdatedAt             time.Time
-	DecryptionFailed      bool
+	ForwardUsername          string
+	ForwardPassword          string
+	LastInstallStatus        string
+	LastInstallError         string
+	LastInstallStartedAt     time.Time
+	LastInstallFinishedAt    time.Time
+	UpdatedAt                time.Time
+	DecryptionFailed         bool
 }
 
 func (c *userServiceNowConfig) toAPI() *UserServiceNowConfigResponse {

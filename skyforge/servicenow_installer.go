@@ -36,6 +36,11 @@ func newServiceNowInstaller(cfg serviceNowInstallerConfig) *serviceNowInstaller 
 	}
 }
 
+type serviceNowDemoTableNames struct {
+	Ticket string
+	Hop    string
+}
+
 func (i *serviceNowInstaller) Install(ctx context.Context) error {
 	if i == nil {
 		return fmt.Errorf("installer unavailable")
@@ -55,7 +60,11 @@ func (i *serviceNowInstaller) Install(ctx context.Context) error {
 
 	// Best-effort: install all script artifacts + portal widget + REST message + basic auth credential.
 	// The schema (tables/fields) is a manual step due to ServiceNow platform complexity and Table API restrictions.
-	if err := i.ensureProperties(ctx); err != nil {
+	names, err := i.resolveDemoTableNames(ctx)
+	if err != nil {
+		return err
+	}
+	if err := i.ensureProperties(ctx, names); err != nil {
 		return err
 	}
 	if missing, err := i.checkSchema(ctx); err != nil {
@@ -91,11 +100,41 @@ func (i *serviceNowInstaller) Install(ctx context.Context) error {
 	return nil
 }
 
+func (i *serviceNowInstaller) resolveDemoTableNames(ctx context.Context) (serviceNowDemoTableNames, error) {
+	// Prefer "u_*" names (Global scope default) to keep manual setup dead simple; fall back to the older "x_*" names.
+	candidates := []serviceNowDemoTableNames{
+		{Ticket: "u_forward_connectivity_ticket", Hop: "u_forward_connectivity_hop"},
+		{Ticket: "x_fwd_demo_connectivity_ticket", Hop: "x_fwd_demo_connectivity_hop"},
+	}
+
+	for _, c := range candidates {
+		t, err := i.findByField(ctx, "sys_db_object", "name", c.Ticket)
+		if err != nil {
+			return serviceNowDemoTableNames{}, fmt.Errorf("schema lookup %s: %w", c.Ticket, err)
+		}
+		h, err := i.findByField(ctx, "sys_db_object", "name", c.Hop)
+		if err != nil {
+			return serviceNowDemoTableNames{}, fmt.Errorf("schema lookup %s: %w", c.Hop, err)
+		}
+		if t != nil && h != nil {
+			return c, nil
+		}
+	}
+
+	// No schema detected yet; return the preferred names so Skyforge can guide users toward the simplest setup.
+	return candidates[0], nil
+}
+
 func (i *serviceNowInstaller) checkSchema(ctx context.Context) ([]string, error) {
+	names, err := i.resolveDemoTableNames(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Required tables.
 	requiredTables := []string{
-		"x_fwd_demo_connectivity_ticket",
-		"x_fwd_demo_connectivity_hop",
+		names.Ticket,
+		names.Hop,
 	}
 	var missing []string
 	for _, t := range requiredTables {
@@ -114,36 +153,36 @@ func (i *serviceNowInstaller) checkSchema(ctx context.Context) ([]string, error)
 		Element string
 	}{
 		// Ticket flow input
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_src_ip"},
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_dst_ip"},
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_protocol"},
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_dst_port"},
+		{Table: names.Ticket, Element: "u_src_ip"},
+		{Table: names.Ticket, Element: "u_dst_ip"},
+		{Table: names.Ticket, Element: "u_protocol"},
+		{Table: names.Ticket, Element: "u_dst_port"},
 
 		// Forward selection
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_forward_network_id"},
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_forward_snapshot_id"},
+		{Table: names.Ticket, Element: "u_forward_network_id"},
+		{Table: names.Ticket, Element: "u_forward_snapshot_id"},
 
 		// Analysis results
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_allowed"},
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_block_category"},
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_block_device"},
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_block_interface"},
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_block_rule"},
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_block_reason"},
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_forward_query_url"},
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_raw_excerpt"},
+		{Table: names.Ticket, Element: "u_allowed"},
+		{Table: names.Ticket, Element: "u_block_category"},
+		{Table: names.Ticket, Element: "u_block_device"},
+		{Table: names.Ticket, Element: "u_block_interface"},
+		{Table: names.Ticket, Element: "u_block_rule"},
+		{Table: names.Ticket, Element: "u_block_reason"},
+		{Table: names.Ticket, Element: "u_forward_query_url"},
+		{Table: names.Ticket, Element: "u_raw_excerpt"},
 
 		// Analysis state
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_analysis_status"},
-		{Table: "x_fwd_demo_connectivity_ticket", Element: "u_analysis_error"},
+		{Table: names.Ticket, Element: "u_analysis_status"},
+		{Table: names.Ticket, Element: "u_analysis_error"},
 
 		// Hop table
-		{Table: "x_fwd_demo_connectivity_hop", Element: "u_ticket"},
-		{Table: "x_fwd_demo_connectivity_hop", Element: "u_hop_index"},
-		{Table: "x_fwd_demo_connectivity_hop", Element: "u_device"},
-		{Table: "x_fwd_demo_connectivity_hop", Element: "u_ingress"},
-		{Table: "x_fwd_demo_connectivity_hop", Element: "u_egress"},
-		{Table: "x_fwd_demo_connectivity_hop", Element: "u_note"},
+		{Table: names.Hop, Element: "u_ticket"},
+		{Table: names.Hop, Element: "u_hop_index"},
+		{Table: names.Hop, Element: "u_device"},
+		{Table: names.Hop, Element: "u_ingress"},
+		{Table: names.Hop, Element: "u_egress"},
+		{Table: names.Hop, Element: "u_note"},
 	}
 	for _, f := range requiredFields {
 		query := fmt.Sprintf("name=%s^element=%s", f.Table, f.Element)
@@ -159,12 +198,14 @@ func (i *serviceNowInstaller) checkSchema(ctx context.Context) ([]string, error)
 	return missing, nil
 }
 
-func (i *serviceNowInstaller) ensureProperties(ctx context.Context) error {
+func (i *serviceNowInstaller) ensureProperties(ctx context.Context, names serviceNowDemoTableNames) error {
 	props := map[string]string{
 		"x_fwd_demo.forward.base_url":    strings.TrimRight(i.cfg.ForwardBaseURL, "/"),
 		"x_fwd_demo.forward.max_results": "1",
 		"x_fwd_demo.forward.username":    strings.TrimSpace(i.cfg.ForwardUsername),
 		"x_fwd_demo.forward.password":    strings.TrimSpace(i.cfg.ForwardPassword),
+		"x_fwd_demo.tables.ticket":       strings.TrimSpace(names.Ticket),
+		"x_fwd_demo.tables.hop":          strings.TrimSpace(names.Hop),
 		"x_fwd_demo.groups.network":      "Network Team",
 		"x_fwd_demo.groups.security":     "Security Team",
 		"x_fwd_demo.groups.triage":       "Triage",
@@ -250,10 +291,10 @@ func (i *serviceNowInstaller) ensureForwardRestMethods(ctx context.Context, rest
 		for k, v := range m.Query {
 			// Table name varies; use sys_rest_message_fn_param as a best guess.
 			_ = i.upsertTableByKey(ctx, "sys_rest_message_fn_param", "name", k, map[string]any{
-				"name":           k,
-				"value":          v,
+				"name":            k,
+				"value":           v,
 				"rest_message_fn": sysID,
-				"parameter_type": "query",
+				"parameter_type":  "query",
 			})
 		}
 	}
@@ -271,7 +312,7 @@ func (i *serviceNowInstaller) ensureScriptIncludes(ctx context.Context) error {
 	}
 	for _, inc := range includes {
 		if err := i.upsertTableByKey(ctx, "sys_script_include", "name", inc.Name, map[string]any{
-			"name":  inc.Name,
+			"name":   inc.Name,
 			"active": true,
 			"script": inc.Script,
 		}); err != nil {
@@ -292,10 +333,10 @@ func (i *serviceNowInstaller) ensureEventAndScriptAction(ctx context.Context) er
 	// Script Action bound to the event
 	actionName := "AnalyzeTicket"
 	if err := i.upsertTableByKey(ctx, "sys_script_action", "name", actionName, map[string]any{
-		"name":        actionName,
-		"active":      true,
-		"event_name":  eventName,
-		"script":      i.cfg.Assets.AnalyzeTicketScriptJS,
+		"name":       actionName,
+		"active":     true,
+		"event_name": eventName,
+		"script":     i.cfg.Assets.AnalyzeTicketScriptJS,
 	}); err != nil {
 		// Some PDIs (or Table API restrictions) report "Invalid table sys_script_action".
 		// The demo can run without this record because the Service Portal widget uses

@@ -30,14 +30,14 @@ var servicenowWidgetTemplateHTML string
 var servicenowWidgetStyleCSS string
 
 type servicenowDemoAssets struct {
-	ForwardClientJS          string
-	PathNormalizerJS         string
-	TicketAnalysisJS         string
-	AnalyzeTicketScriptJS    string
-	WidgetClientJS           string
-	WidgetServerJS           string
-	WidgetTemplateHTML       string
-	WidgetStyleCSS           string
+	ForwardClientJS       string
+	PathNormalizerJS      string
+	TicketAnalysisJS      string
+	AnalyzeTicketScriptJS string
+	WidgetClientJS        string
+	WidgetServerJS        string
+	WidgetTemplateHTML    string
+	WidgetStyleCSS        string
 }
 
 func loadServiceNowDemoAssets() servicenowDemoAssets {
@@ -53,4 +53,3 @@ func loadServiceNowDemoAssets() servicenowDemoAssets {
 		WidgetStyleCSS:        trim(servicenowWidgetStyleCSS),
 	}
 }
-

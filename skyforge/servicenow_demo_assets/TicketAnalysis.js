@@ -5,10 +5,44 @@ TicketAnalysis.prototype = {
     this._normalizer = new PathNormalizer();
   },
 
+  _tableFromProperty: function (propName, defaultTable, fallbackTable) {
+    function isValidTable(name) {
+      try {
+        var gr = new GlideRecord(String(name || ""));
+        return gr && gr.isValid();
+      } catch (e) {
+        return false;
+      }
+    }
+
+    var t = String(gs.getProperty(propName, defaultTable) || "");
+    if (t && isValidTable(t)) return t;
+    if (fallbackTable && isValidTable(fallbackTable)) return String(fallbackTable);
+    return String(defaultTable);
+  },
+
+  _ticketTable: function () {
+    // Prefer a user-friendly custom table name (Global scope => "u_*"), but fall back
+    // to the older demo name if needed.
+    return this._tableFromProperty(
+      "x_fwd_demo.tables.ticket",
+      "u_forward_connectivity_ticket",
+      "x_fwd_demo_connectivity_ticket"
+    );
+  },
+
+  _hopTable: function () {
+    return this._tableFromProperty(
+      "x_fwd_demo.tables.hop",
+      "u_forward_connectivity_hop",
+      "x_fwd_demo_connectivity_hop"
+    );
+  },
+
   analyzeTicketBySysId: function (ticketSysId) {
     if (!ticketSysId) throw new Error("ticketSysId is required");
 
-    var ticket = new GlideRecord("x_fwd_demo_connectivity_ticket");
+    var ticket = new GlideRecord(this._ticketTable());
     if (!ticket.get(ticketSysId)) throw new Error("Ticket not found: " + ticketSysId);
 
     ticket.u_analysis_status = "running";
@@ -58,14 +92,14 @@ TicketAnalysis.prototype = {
     ticket.u_raw_excerpt = norm.raw_excerpt || "";
     ticket.update();
 
-    var hopGr = new GlideRecord("x_fwd_demo_connectivity_hop");
+    var hopGr = new GlideRecord(this._hopTable());
     hopGr.addQuery("u_ticket", ticket.sys_id);
     hopGr.deleteMultiple();
 
     var hops = Array.isArray(norm.hops) ? norm.hops : [];
     for (var i = 0; i < hops.length; i++) {
       var h = hops[i] || {};
-      var rec = new GlideRecord("x_fwd_demo_connectivity_hop");
+      var rec = new GlideRecord(this._hopTable());
       rec.initialize();
       rec.u_ticket = ticket.sys_id;
       rec.u_hop_index = h.hop_index || i + 1;
@@ -79,4 +113,3 @@ TicketAnalysis.prototype = {
 
   type: "TicketAnalysis",
 };
-

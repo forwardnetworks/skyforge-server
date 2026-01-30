@@ -2,6 +2,38 @@
   data.networks = [];
   data.snapshots = [];
 
+  function tableFromProperty(propName, defaultTable, fallbackTable) {
+    function isValidTable(name) {
+      try {
+        var gr = new GlideRecord(String(name || ""));
+        return gr && gr.isValid();
+      } catch (e) {
+        return false;
+      }
+    }
+
+    var t = String(gs.getProperty(propName, defaultTable) || "");
+    if (t && isValidTable(t)) return t;
+    if (fallbackTable && isValidTable(fallbackTable)) return String(fallbackTable);
+    return String(defaultTable);
+  }
+
+  function ticketTable() {
+    return tableFromProperty(
+      "x_fwd_demo.tables.ticket",
+      "u_forward_connectivity_ticket",
+      "x_fwd_demo_connectivity_ticket"
+    );
+  }
+
+  function hopTable() {
+    return tableFromProperty(
+      "x_fwd_demo.tables.hop",
+      "u_forward_connectivity_hop",
+      "x_fwd_demo_connectivity_hop"
+    );
+  }
+
   function bad(msg) {
     data.error = msg;
     return;
@@ -61,7 +93,7 @@
 
     if (action === "create") {
       var form = (input && input.form) || {};
-      var t = new GlideRecord("x_fwd_demo_connectivity_ticket");
+      var t = new GlideRecord(ticketTable());
       t.initialize();
       t.short_description = "Connectivity check: " + (form.srcIp || "") + " -> " + (form.dstIp || "");
       t.u_src_ip = form.srcIp || "";
@@ -80,7 +112,7 @@
     if (action === "analyze") {
       var ticketSysId = input.ticketSysId || "";
       if (!ticketSysId) return bad("ticketSysId required");
-      var t2 = new GlideRecord("x_fwd_demo_connectivity_ticket");
+      var t2 = new GlideRecord(ticketTable());
       if (!t2.get(ticketSysId)) return bad("Ticket not found");
       // Prefer a synchronous analysis run to avoid relying on Script Actions (which
       // may be restricted from Table API automation in some PDIs). This keeps the
@@ -92,12 +124,12 @@
     if (action === "result") {
       var ticketSysId2 = (input && input.ticketSysId) || (request.queryParams && request.queryParams.ticketSysId) || "";
       if (!ticketSysId2) return bad("ticketSysId required");
-      var ticket = new GlideRecord("x_fwd_demo_connectivity_ticket");
+      var ticket = new GlideRecord(ticketTable());
       if (!ticket.get(ticketSysId2)) return bad("Ticket not found");
       data.ticket = serializeTicket(ticket);
 
       var hops = [];
-      var hopGr = new GlideRecord("x_fwd_demo_connectivity_hop");
+      var hopGr = new GlideRecord(hopTable());
       hopGr.addQuery("u_ticket", ticket.sys_id);
       hopGr.orderBy("u_hop_index");
       hopGr.query();
@@ -111,7 +143,7 @@
       var ticketSysId3 = String(input.ticketSysId || "");
       if (!ticketSysId3) return bad("ticketSysId required");
 
-      var ticket3 = new GlideRecord("x_fwd_demo_connectivity_ticket");
+      var ticket3 = new GlideRecord(ticketTable());
       if (!ticket3.get(ticketSysId3)) return bad("Ticket not found");
 
       var propName =
