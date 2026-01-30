@@ -18,9 +18,9 @@ type UserServiceNowConfigResponse struct {
 	InstanceURL           string `json:"instanceUrl,omitempty"`
 	AdminUsername         string `json:"adminUsername,omitempty"`
 	HasAdminPassword      bool   `json:"hasAdminPassword"`
-	ForwardBaseURL        string `json:"forwardBaseUrl,omitempty"`
-	ForwardUsername       string `json:"forwardUsername,omitempty"`
-	HasForwardPassword    bool   `json:"hasForwardPassword"`
+	ForwardCollectorID    string `json:"forwardCollectorConfigId,omitempty"`
+	ForwardUsername       string `json:"forwardUsername,omitempty"` // custom username (if using custom creds)
+	HasForwardPassword    bool   `json:"hasForwardPassword"`        // true if a custom password is stored
 	UpdatedAt             string `json:"updatedAt,omitempty"`
 	LastInstallStatus     string `json:"lastInstallStatus,omitempty"`
 	LastInstallError      string `json:"lastInstallError,omitempty"`
@@ -32,9 +32,9 @@ type PutUserServiceNowConfigRequest struct {
 	InstanceURL      string `json:"instanceUrl"`
 	AdminUsername    string `json:"adminUsername"`
 	AdminPassword    string `json:"adminPassword"`
-	ForwardBaseURL   string `json:"forwardBaseUrl"`
-	ForwardUsername  string `json:"forwardUsername"`
-	ForwardPassword  string `json:"forwardPassword"`
+	ForwardCollectorConfigID string `json:"forwardCollectorConfigId"`
+	ForwardUsername          string `json:"forwardUsername"`
+	ForwardPassword          string `json:"forwardPassword"`
 }
 
 type InstallUserServiceNowDemoResponse struct {
@@ -81,7 +81,7 @@ func (s *Service) GetUserServiceNowConfig(ctx context.Context) (*UserServiceNowC
 		return &UserServiceNowConfigResponse{
 			Configured:         false,
 			HasAdminPassword:   false,
-			ForwardBaseURL:     defaultServiceNowForwardBaseURL,
+			ForwardCollectorID: "",
 			HasForwardPassword: false,
 		}, nil
 	}
@@ -200,10 +200,7 @@ func (s *Service) PutUserServiceNowConfig(ctx context.Context, req *PutUserServi
 	}
 	adminUser := strings.TrimSpace(req.AdminUsername)
 	adminPass := strings.TrimSpace(req.AdminPassword)
-	fwdBase := strings.TrimRight(strings.TrimSpace(req.ForwardBaseURL), "/")
-	if fwdBase == "" {
-		fwdBase = defaultServiceNowForwardBaseURL
-	}
+	forwardCollectorConfigID := strings.TrimSpace(req.ForwardCollectorConfigID)
 	fwdUser := strings.TrimSpace(req.ForwardUsername)
 	fwdPass := strings.TrimSpace(req.ForwardPassword)
 
@@ -225,24 +222,33 @@ func (s *Service) PutUserServiceNowConfig(ctx context.Context, req *PutUserServi
 	if adminPass == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("adminPassword is required").Err()
 	}
-	if fwdUser == "" {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("forwardUsername is required").Err()
-	}
-	if fwdPass == "" && current != nil {
-		fwdPass = current.ForwardPassword
-	}
-	if fwdPass == "" {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("forwardPassword is required").Err()
+	if forwardCollectorConfigID == "" {
+		// Custom Forward creds required when no collector config is selected.
+		if fwdUser == "" {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("forwardUsername is required").Err()
+		}
+		if fwdPass == "" && current != nil {
+			fwdPass = current.ForwardPassword
+		}
+		if fwdPass == "" {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("forwardPassword is required").Err()
+		}
+	} else {
+		// If using collector creds, allow clearing custom creds (but keep stored password unless explicitly overwritten).
+		if fwdPass == "" && current != nil {
+			fwdPass = current.ForwardPassword
+		}
 	}
 
 	cfg := userServiceNowConfig{
-		Username:        user.Username,
-		InstanceURL:     instanceURL,
-		AdminUsername:   adminUser,
-		AdminPassword:   adminPass,
-		ForwardBaseURL:  fwdBase,
-		ForwardUsername: fwdUser,
-		ForwardPassword: fwdPass,
+		Username:               user.Username,
+		InstanceURL:            instanceURL,
+		AdminUsername:          adminUser,
+		AdminPassword:          adminPass,
+		ForwardBaseURL:         defaultServiceNowForwardBaseURL,
+		ForwardCollectorConfigID: forwardCollectorConfigID,
+		ForwardUsername:        fwdUser,
+		ForwardPassword:        fwdPass,
 	}
 	if err := putUserServiceNowConfig(ctx, s.db, box, cfg); err != nil {
 		log.Printf("servicenow put: %v", err)
@@ -256,6 +262,52 @@ func (s *Service) PutUserServiceNowConfig(ctx context.Context, req *PutUserServi
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to reload ServiceNow config").Err()
 	}
 	return stored.toAPI(), nil
+}
+
+type ConfigureForwardServiceNowTicketingResponse struct {
+	Configured bool   `json:"configured"`
+	Message    string `json:"message,omitempty"`
+}
+
+// ConfigureForwardServiceNowTicketing configures Forward SaaS to auto-create/update incidents in ServiceNow.
+//
+// This does not configure ServiceNow CMDB integration (that is per-network and handled elsewhere).
+//
+//encore:api auth method=POST path=/api/user/integrations/servicenow/configureForwardTicketing
+func (s *Service) ConfigureForwardServiceNowTicketing(ctx context.Context) (*ConfigureForwardServiceNowTicketingResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+
+	box := newSecretBox(s.cfg.SessionSecret)
+	ctxCfg, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	cfg, err := getUserServiceNowConfig(ctxCfg, s.db, box, user.Username)
+	if err != nil || cfg == nil {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("ServiceNow not configured").Err()
+	}
+
+	fwdUser, fwdPass, err := resolveForwardCredsForServiceNow(ctxCfg, s.db, box, user.Username, cfg.ForwardCollectorConfigID, cfg.ForwardUsername, cfg.ForwardPassword)
+	if err != nil {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
+	}
+
+	// Best-effort: clear any existing integration before applying the desired configuration.
+	if err := deleteForwardServiceNowIntegration(ctx, fwdUser, fwdPass); err != nil {
+		// Ignore not-found; treat everything else as failure so users see the cause.
+		if !errors.Is(err, errForwardIntegrationNotConfigured) {
+			return &ConfigureForwardServiceNowTicketingResponse{Configured: false, Message: err.Error()}, nil
+		}
+	}
+
+	if err := patchForwardServiceNowIntegration(ctx, fwdUser, fwdPass, cfg.InstanceURL, cfg.AdminUsername, cfg.AdminPassword); err != nil {
+		return &ConfigureForwardServiceNowTicketingResponse{Configured: false, Message: err.Error()}, nil
+	}
+	return &ConfigureForwardServiceNowTicketingResponse{Configured: true, Message: "configured"}, nil
 }
 
 // InstallUserServiceNowDemo installs/configures the ServiceNow Connectivity Ticket demo into the user's ServiceNow instance.
@@ -278,6 +330,11 @@ func (s *Service) InstallUserServiceNowDemo(ctx context.Context) (*InstallUserSe
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("ServiceNow not configured").Err()
 	}
 
+	fwdUser, fwdPass, err := resolveForwardCredsForServiceNow(ctxCfg, s.db, box, user.Username, cfg.ForwardCollectorConfigID, cfg.ForwardUsername, cfg.ForwardPassword)
+	if err != nil {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
+	}
+
 	startedAt := time.Now().UTC()
 	_ = updateUserServiceNowInstallStatus(ctx, s.db, user.Username, "running", "", &startedAt, nil)
 
@@ -287,8 +344,8 @@ func (s *Service) InstallUserServiceNowDemo(ctx context.Context) (*InstallUserSe
 		AdminUsername:   cfg.AdminUsername,
 		AdminPassword:   cfg.AdminPassword,
 		ForwardBaseURL:  cfg.ForwardBaseURL,
-		ForwardUsername: cfg.ForwardUsername,
-		ForwardPassword: cfg.ForwardPassword,
+		ForwardUsername: fwdUser,
+		ForwardPassword: fwdPass,
 		Assets:          assets,
 	})
 
@@ -348,6 +405,7 @@ type userServiceNowConfig struct {
 	AdminUsername         string
 	AdminPassword         string
 	ForwardBaseURL        string
+	ForwardCollectorConfigID string
 	ForwardUsername       string
 	ForwardPassword       string
 	LastInstallStatus     string
@@ -360,7 +418,7 @@ type userServiceNowConfig struct {
 
 func (c *userServiceNowConfig) toAPI() *UserServiceNowConfigResponse {
 	if c == nil {
-		return &UserServiceNowConfigResponse{Configured: false, ForwardBaseURL: defaultServiceNowForwardBaseURL}
+		return &UserServiceNowConfigResponse{Configured: false}
 	}
 	updatedAt := ""
 	if !c.UpdatedAt.IsZero() {
@@ -374,12 +432,14 @@ func (c *userServiceNowConfig) toAPI() *UserServiceNowConfigResponse {
 	if !c.LastInstallFinishedAt.IsZero() {
 		finishedAt = c.LastInstallFinishedAt.UTC().Format(time.RFC3339)
 	}
+	configured := c.InstanceURL != "" && c.AdminUsername != "" && c.AdminPassword != "" &&
+		(c.ForwardCollectorConfigID != "" || (c.ForwardUsername != "" && c.ForwardPassword != ""))
 	return &UserServiceNowConfigResponse{
-		Configured:            c.InstanceURL != "" && c.AdminUsername != "" && c.AdminPassword != "" && c.ForwardUsername != "" && c.ForwardPassword != "",
+		Configured:            configured,
 		InstanceURL:           c.InstanceURL,
 		AdminUsername:         c.AdminUsername,
 		HasAdminPassword:      c.AdminPassword != "",
-		ForwardBaseURL:        c.ForwardBaseURL,
+		ForwardCollectorID:    c.ForwardCollectorConfigID,
 		ForwardUsername:       c.ForwardUsername,
 		HasForwardPassword:    c.ForwardPassword != "",
 		UpdatedAt:             updatedAt,
@@ -396,16 +456,16 @@ func getUserServiceNowConfig(ctx context.Context, db *sql.DB, box *secretBox, us
 		return nil, fmt.Errorf("username is required")
 	}
 	row := db.QueryRowContext(ctx, `SELECT instance_url, admin_username, admin_password,
-  forward_base_url, forward_username, forward_password,
+  forward_base_url, forward_collector_config_id, forward_username, forward_password,
   COALESCE(last_install_status, ''), COALESCE(last_install_error, ''),
   COALESCE(last_install_started_at, 'epoch'::timestamptz),
   COALESCE(last_install_finished_at, 'epoch'::timestamptz),
   updated_at
 FROM sf_user_servicenow_configs WHERE username=$1`, username)
-	var instanceURL, adminUser, adminPass, fwdBase, fwdUser, fwdPass string
+	var instanceURL, adminUser, adminPass, fwdBase, fwdCollectorID, fwdUser, fwdPass string
 	var status, installErr string
 	var startedAt, finishedAt, updatedAt time.Time
-	if err := row.Scan(&instanceURL, &adminUser, &adminPass, &fwdBase, &fwdUser, &fwdPass, &status, &installErr, &startedAt, &finishedAt, &updatedAt); err != nil {
+	if err := row.Scan(&instanceURL, &adminUser, &adminPass, &fwdBase, &fwdCollectorID, &fwdUser, &fwdPass, &status, &installErr, &startedAt, &finishedAt, &updatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
@@ -462,6 +522,11 @@ FROM sf_user_servicenow_configs WHERE username=$1`, username)
 	} else {
 		rec.ForwardBaseURL = v
 	}
+	if v, bad := dec(fwdCollectorID); bad {
+		failed = true
+	} else {
+		rec.ForwardCollectorConfigID = v
+	}
 	if v, bad := dec(fwdUser); bad {
 		failed = true
 	} else {
@@ -478,6 +543,7 @@ FROM sf_user_servicenow_configs WHERE username=$1`, username)
 		rec.AdminUsername = ""
 		rec.AdminPassword = ""
 		rec.ForwardBaseURL = ""
+		rec.ForwardCollectorConfigID = ""
 		rec.ForwardUsername = ""
 		rec.ForwardPassword = ""
 	}
@@ -513,6 +579,10 @@ func putUserServiceNowConfig(ctx context.Context, db *sql.DB, box *secretBox, cf
 	if err != nil {
 		return err
 	}
+	fwdCollectorID, err := enc(cfg.ForwardCollectorConfigID)
+	if err != nil {
+		return err
+	}
 	fwdUser, err := enc(cfg.ForwardUsername)
 	if err != nil {
 		return err
@@ -524,18 +594,19 @@ func putUserServiceNowConfig(ctx context.Context, db *sql.DB, box *secretBox, cf
 
 	_, err = db.ExecContext(ctx, `INSERT INTO sf_user_servicenow_configs (
   username, instance_url, admin_username, admin_password,
-  forward_base_url, forward_username, forward_password,
+  forward_base_url, forward_collector_config_id, forward_username, forward_password,
   updated_at
-) VALUES ($1,$2,$3,$4,$5,$6,$7,now())
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now())
 ON CONFLICT (username) DO UPDATE SET
   instance_url=EXCLUDED.instance_url,
   admin_username=EXCLUDED.admin_username,
   admin_password=EXCLUDED.admin_password,
   forward_base_url=EXCLUDED.forward_base_url,
+  forward_collector_config_id=EXCLUDED.forward_collector_config_id,
   forward_username=EXCLUDED.forward_username,
   forward_password=EXCLUDED.forward_password,
   updated_at=now()`,
-		cfg.Username, instanceURL, adminUser, adminPass, fwdBase, fwdUser, fwdPass,
+		cfg.Username, instanceURL, adminUser, adminPass, fwdBase, fwdCollectorID, fwdUser, fwdPass,
 	)
 	return err
 }
