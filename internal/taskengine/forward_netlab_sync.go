@@ -65,6 +65,11 @@ func (e *Engine) forwardDeviceTypes(ctx context.Context) map[string]string {
 		"fortios": "fortinet_ssh",
 		"nxos":   "cisco_nxos_ssh",
 		"iosxr":  "cisco_ios_xr_ssh",
+		// Juniper routers/switches (including vMX, vJunos-switch, vJunos-router).
+		"vjunos-switch": "juniper_junos_ssh",
+		"vjunos-router": "juniper_junos_ssh",
+		"vmx":           "juniper_junos_ssh",
+		"junos":         "juniper_junos_ssh",
 	}
 	if e == nil || e.db == nil {
 		return out

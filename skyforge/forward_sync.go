@@ -54,6 +54,11 @@ func (s *Service) forwardDeviceTypes(ctx context.Context) map[string]string {
 		"linux": "linux_os_ssh",
 		"eos":   "arista_eos_ssh",
 		"fortios": "fortinet_ssh",
+		// Juniper routers/switches (including vMX, vJunos-switch, vJunos-router).
+		"vjunos-switch": "juniper_junos_ssh",
+		"vjunos-router": "juniper_junos_ssh",
+		"vmx":           "juniper_junos_ssh",
+		"junos":         "juniper_junos_ssh",
 		// Netlab device keys for Cisco IOL/IOS images. Do not rely on auto-detection.
 		"iol":    "cisco_ios_ssh",
 		"ios":    "cisco_ios_ssh",
