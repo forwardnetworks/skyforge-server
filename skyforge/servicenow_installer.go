@@ -41,6 +41,26 @@ type serviceNowDemoTableNames struct {
 	Hop    string
 }
 
+type serviceNowDictionaryFieldSpec struct {
+	TableSelector func(names serviceNowDemoTableNames) string
+	Element       string
+	Label         string
+	InternalType  string
+	MaxLength     int
+	DefaultValue  string
+
+	// Reference is the referenced table name when InternalType == "reference".
+	Reference string
+
+	// Choices are required sys_choice entries when InternalType == "choice".
+	Choices []serviceNowChoiceSpec
+}
+
+type serviceNowChoiceSpec struct {
+	Value string
+	Label string
+}
+
 func (i *serviceNowInstaller) Install(ctx context.Context) error {
 	if i == nil {
 		return fmt.Errorf("installer unavailable")
@@ -70,7 +90,28 @@ func (i *serviceNowInstaller) Install(ctx context.Context) error {
 	if missing, err := i.checkSchema(ctx); err != nil {
 		return err
 	} else if len(missing) > 0 {
-		return fmt.Errorf("servicenow schema not installed; create required tables/fields in ServiceNow and retry (missing: %s)", strings.Join(missing, ", "))
+		// We can't reliably create custom tables via Table API, but we *can* create the custom
+		// columns and choice lists once the tables exist. This keeps the manual setup to the
+		// smallest possible step: create the two tables (ticket + hop).
+		hasMissingTables := false
+		for _, m := range missing {
+			if strings.HasPrefix(m, "table:") {
+				hasMissingTables = true
+				break
+			}
+		}
+		if hasMissingTables {
+			return fmt.Errorf("servicenow schema not installed; create the required tables in ServiceNow and retry (missing: %s)", strings.Join(missing, ", "))
+		}
+		if err := i.ensureSchemaFieldsAndChoices(ctx); err != nil {
+			return err
+		}
+		// Re-check and fail only if something is still missing.
+		if missing2, err := i.checkSchema(ctx); err != nil {
+			return err
+		} else if len(missing2) > 0 {
+			return fmt.Errorf("servicenow schema not installed; create required tables/fields in ServiceNow and retry (missing: %s)", strings.Join(missing2, ", "))
+		}
 	}
 	credID, err := i.ensureForwardBasicAuthCredential(ctx)
 	if err != nil {
@@ -148,54 +189,180 @@ func (i *serviceNowInstaller) checkSchema(ctx context.Context) ([]string, error)
 	}
 
 	// Required fields.
-	requiredFields := []struct {
-		Table   string
-		Element string
-	}{
-		// Ticket flow input
-		{Table: names.Ticket, Element: "u_src_ip"},
-		{Table: names.Ticket, Element: "u_dst_ip"},
-		{Table: names.Ticket, Element: "u_protocol"},
-		{Table: names.Ticket, Element: "u_dst_port"},
-
-		// Forward selection
-		{Table: names.Ticket, Element: "u_forward_network_id"},
-		{Table: names.Ticket, Element: "u_forward_snapshot_id"},
-
-		// Analysis results
-		{Table: names.Ticket, Element: "u_allowed"},
-		{Table: names.Ticket, Element: "u_block_category"},
-		{Table: names.Ticket, Element: "u_block_device"},
-		{Table: names.Ticket, Element: "u_block_interface"},
-		{Table: names.Ticket, Element: "u_block_rule"},
-		{Table: names.Ticket, Element: "u_block_reason"},
-		{Table: names.Ticket, Element: "u_forward_query_url"},
-		{Table: names.Ticket, Element: "u_raw_excerpt"},
-
-		// Analysis state
-		{Table: names.Ticket, Element: "u_analysis_status"},
-		{Table: names.Ticket, Element: "u_analysis_error"},
-
-		// Hop table
-		{Table: names.Hop, Element: "u_ticket"},
-		{Table: names.Hop, Element: "u_hop_index"},
-		{Table: names.Hop, Element: "u_device"},
-		{Table: names.Hop, Element: "u_ingress"},
-		{Table: names.Hop, Element: "u_egress"},
-		{Table: names.Hop, Element: "u_note"},
-	}
-	for _, f := range requiredFields {
-		query := fmt.Sprintf("name=%s^element=%s", f.Table, f.Element)
+	for _, f := range i.requiredSchemaFieldSpecs(names) {
+		query := fmt.Sprintf("name=%s^element=%s", f.TableSelector(names), f.Element)
 		existing, err := i.findByQuery(ctx, "sys_dictionary", query)
 		if err != nil {
-			return nil, fmt.Errorf("schema lookup %s.%s: %w", f.Table, f.Element, err)
+			return nil, fmt.Errorf("schema lookup %s.%s: %w", f.TableSelector(names), f.Element, err)
 		}
 		if existing == nil {
-			missing = append(missing, "field:"+f.Table+"."+f.Element)
+			missing = append(missing, "field:"+f.TableSelector(names)+"."+f.Element)
+		}
+	}
+
+	// Required choices for choice fields.
+	for _, f := range i.requiredSchemaFieldSpecs(names) {
+		if f.InternalType != "choice" {
+			continue
+		}
+		for _, ch := range f.Choices {
+			query := fmt.Sprintf("name=%s^element=%s^value=%s", f.TableSelector(names), f.Element, ch.Value)
+			existing, err := i.findByQuery(ctx, "sys_choice", query)
+			if err != nil {
+				return nil, fmt.Errorf("schema lookup choice %s.%s=%s: %w", f.TableSelector(names), f.Element, ch.Value, err)
+			}
+			if existing == nil {
+				missing = append(missing, "choice:"+f.TableSelector(names)+"."+f.Element+"="+ch.Value)
+			}
 		}
 	}
 
 	return missing, nil
+}
+
+func (i *serviceNowInstaller) requiredSchemaFieldSpecs(names serviceNowDemoTableNames) []serviceNowDictionaryFieldSpec {
+	return []serviceNowDictionaryFieldSpec{
+		// Ticket flow input
+		{TableSelector: func(n serviceNowDemoTableNames) string { return n.Ticket }, Element: "u_src_ip", Label: "Source IP", InternalType: "string", MaxLength: 45},
+		{TableSelector: func(n serviceNowDemoTableNames) string { return n.Ticket }, Element: "u_dst_ip", Label: "Destination IP", InternalType: "string", MaxLength: 45},
+		{
+			TableSelector: func(n serviceNowDemoTableNames) string { return n.Ticket },
+			Element:       "u_protocol",
+			Label:         "Protocol",
+			InternalType:  "choice",
+			DefaultValue:  "TCP",
+			Choices: []serviceNowChoiceSpec{
+				{Value: "TCP", Label: "TCP"},
+				{Value: "UDP", Label: "UDP"},
+			},
+		},
+		{TableSelector: func(n serviceNowDemoTableNames) string { return n.Ticket }, Element: "u_dst_port", Label: "Destination Port", InternalType: "integer"},
+
+		// Forward selection
+		{TableSelector: func(n serviceNowDemoTableNames) string { return n.Ticket }, Element: "u_forward_network_id", Label: "Forward Network ID", InternalType: "string"},
+		{TableSelector: func(n serviceNowDemoTableNames) string { return n.Ticket }, Element: "u_forward_snapshot_id", Label: "Forward Snapshot ID", InternalType: "string"},
+
+		// Analysis results
+		{TableSelector: func(n serviceNowDemoTableNames) string { return n.Ticket }, Element: "u_allowed", Label: "Allowed", InternalType: "boolean"},
+		{
+			TableSelector: func(n serviceNowDemoTableNames) string { return n.Ticket },
+			Element:       "u_block_category",
+			Label:         "Block Category",
+			InternalType:  "choice",
+			Choices: []serviceNowChoiceSpec{
+				{Value: "network", Label: "network"},
+				{Value: "security", Label: "security"},
+				{Value: "unknown", Label: "unknown"},
+			},
+		},
+		{TableSelector: func(n serviceNowDemoTableNames) string { return n.Ticket }, Element: "u_block_device", Label: "Block Device", InternalType: "string"},
+		{TableSelector: func(n serviceNowDemoTableNames) string { return n.Ticket }, Element: "u_block_interface", Label: "Block Interface", InternalType: "string"},
+		{TableSelector: func(n serviceNowDemoTableNames) string { return n.Ticket }, Element: "u_block_rule", Label: "Block Rule", InternalType: "string"},
+		{TableSelector: func(n serviceNowDemoTableNames) string { return n.Ticket }, Element: "u_block_reason", Label: "Block Reason", InternalType: "string"},
+		{TableSelector: func(n serviceNowDemoTableNames) string { return n.Ticket }, Element: "u_forward_query_url", Label: "Forward Query URL", InternalType: "url"},
+		// Debug excerpt
+		{TableSelector: func(n serviceNowDemoTableNames) string { return n.Ticket }, Element: "u_raw_excerpt", Label: "Raw Excerpt", InternalType: "html"},
+
+		// Analysis state
+		{
+			TableSelector: func(n serviceNowDemoTableNames) string { return n.Ticket },
+			Element:       "u_analysis_status",
+			Label:         "Analysis Status",
+			InternalType:  "choice",
+			DefaultValue:  "not_run",
+			Choices: []serviceNowChoiceSpec{
+				{Value: "not_run", Label: "not_run"},
+				{Value: "running", Label: "running"},
+				{Value: "complete", Label: "complete"},
+				{Value: "error", Label: "error"},
+			},
+		},
+		{TableSelector: func(n serviceNowDemoTableNames) string { return n.Ticket }, Element: "u_analysis_error", Label: "Analysis Error", InternalType: "string", MaxLength: 4000},
+
+		// Hop table
+		{
+			TableSelector: func(n serviceNowDemoTableNames) string { return n.Hop },
+			Element:       "u_ticket",
+			Label:         "Ticket",
+			InternalType:  "reference",
+			Reference:     func() string { return strings.TrimSpace(names.Ticket) }(),
+		},
+		{TableSelector: func(n serviceNowDemoTableNames) string { return n.Hop }, Element: "u_hop_index", Label: "Hop Index", InternalType: "integer"},
+		{TableSelector: func(n serviceNowDemoTableNames) string { return n.Hop }, Element: "u_device", Label: "Device", InternalType: "string"},
+		{TableSelector: func(n serviceNowDemoTableNames) string { return n.Hop }, Element: "u_ingress", Label: "Ingress", InternalType: "string"},
+		{TableSelector: func(n serviceNowDemoTableNames) string { return n.Hop }, Element: "u_egress", Label: "Egress", InternalType: "string"},
+		{TableSelector: func(n serviceNowDemoTableNames) string { return n.Hop }, Element: "u_note", Label: "Note", InternalType: "string"},
+	}
+}
+
+func (i *serviceNowInstaller) ensureSchemaFieldsAndChoices(ctx context.Context) error {
+	names, err := i.resolveDemoTableNames(ctx)
+	if err != nil {
+		return err
+	}
+	// Ensure tables exist; we can't create them reliably.
+	for _, t := range []string{names.Ticket, names.Hop} {
+		obj, err := i.findByField(ctx, "sys_db_object", "name", t)
+		if err != nil {
+			return fmt.Errorf("schema lookup %s: %w", t, err)
+		}
+		if obj == nil {
+			return fmt.Errorf("servicenow schema not installed; missing required table %q", t)
+		}
+	}
+
+	for _, f := range i.requiredSchemaFieldSpecs(names) {
+		table := f.TableSelector(names)
+		query := fmt.Sprintf("name=%s^element=%s", table, f.Element)
+		existing, err := i.findByQuery(ctx, "sys_dictionary", query)
+		if err != nil {
+			return fmt.Errorf("schema lookup %s.%s: %w", table, f.Element, err)
+		}
+		if existing == nil {
+			payload := map[string]any{
+				"name":          table,
+				"element":       f.Element,
+				"column_label":  f.Label,
+				"internal_type": f.InternalType,
+				"active":        true,
+			}
+			if f.MaxLength > 0 {
+				payload["max_length"] = f.MaxLength
+			}
+			if strings.TrimSpace(f.DefaultValue) != "" {
+				payload["default_value"] = strings.TrimSpace(f.DefaultValue)
+			}
+			if f.InternalType == "reference" && strings.TrimSpace(f.Reference) != "" {
+				payload["reference"] = strings.TrimSpace(f.Reference)
+			}
+			if _, err := i.create(ctx, "sys_dictionary", payload); err != nil {
+				return fmt.Errorf("servicenow create sys_dictionary %s.%s: %w", table, f.Element, err)
+			}
+		}
+
+		if f.InternalType == "choice" {
+			for _, ch := range f.Choices {
+				q2 := fmt.Sprintf("name=%s^element=%s^value=%s", table, f.Element, ch.Value)
+				existingChoice, err := i.findByQuery(ctx, "sys_choice", q2)
+				if err != nil {
+					return fmt.Errorf("schema lookup choice %s.%s=%s: %w", table, f.Element, ch.Value, err)
+				}
+				if existingChoice == nil {
+					if _, err := i.create(ctx, "sys_choice", map[string]any{
+						"name":    table,
+						"element": f.Element,
+						"value":   ch.Value,
+						"label":   ch.Label,
+						"active":  true,
+					}); err != nil {
+						return fmt.Errorf("servicenow create sys_choice %s.%s=%s: %w", table, f.Element, ch.Value, err)
+					}
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 func (i *serviceNowInstaller) ensureProperties(ctx context.Context, names serviceNowDemoTableNames) error {
@@ -332,16 +499,16 @@ func (i *serviceNowInstaller) ensureEventAndScriptAction(ctx context.Context) er
 
 	// Script Action bound to the event
 	actionName := "AnalyzeTicket"
-	if err := i.upsertTableByKey(ctx, "sys_script_action", "name", actionName, map[string]any{
+	if err := i.upsertTableByKey(ctx, "sysevent_script_action", "name", actionName, map[string]any{
 		"name":       actionName,
 		"active":     true,
 		"event_name": eventName,
 		"script":     i.cfg.Assets.AnalyzeTicketScriptJS,
 	}); err != nil {
-		// Some PDIs (or Table API restrictions) report "Invalid table sys_script_action".
+		// Some PDIs restrict the event script action table.
 		// The demo can run without this record because the Service Portal widget uses
 		// a synchronous analysis path.
-		if strings.Contains(err.Error(), "Invalid table sys_script_action") {
+		if strings.Contains(err.Error(), "Invalid table") {
 			return nil
 		}
 		return fmt.Errorf("script action: %w", err)
