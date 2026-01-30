@@ -43,6 +43,20 @@ type InstallUserServiceNowDemoResponse struct {
 	Message   string `json:"message,omitempty"`
 }
 
+type ServiceNowPDIStatusResponse struct {
+	Status     string `json:"status"`
+	HTTPStatus int    `json:"httpStatus,omitempty"`
+	Detail     string `json:"detail,omitempty"`
+	CheckedAt  string `json:"checkedAt,omitempty"`
+}
+
+type WakeServiceNowPDIResponse struct {
+	Status     string `json:"status"`
+	HTTPStatus int    `json:"httpStatus,omitempty"`
+	Detail     string `json:"detail,omitempty"`
+	CheckedAt  string `json:"checkedAt,omitempty"`
+}
+
 const defaultServiceNowForwardBaseURL = "https://fwd.app/api"
 
 // GetUserServiceNowConfig returns the current user's ServiceNow demo integration settings.
@@ -72,6 +86,97 @@ func (s *Service) GetUserServiceNowConfig(ctx context.Context) (*UserServiceNowC
 		}, nil
 	}
 	return rec.toAPI(), nil
+}
+
+// GetUserServiceNowPDIStatus checks whether the user's ServiceNow PDI is awake (or likely sleeping).
+//
+//encore:api auth method=GET path=/api/user/integrations/servicenow/pdiStatus
+func (s *Service) GetUserServiceNowPDIStatus(ctx context.Context) (*ServiceNowPDIStatusResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	box := newSecretBox(s.cfg.SessionSecret)
+
+	ctxCfg, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	cfg, err := getUserServiceNowConfig(ctxCfg, s.db, box, user.Username)
+	if err != nil || cfg == nil {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("ServiceNow not configured").Err()
+	}
+
+	ctxCheck, cancel := context.WithTimeout(ctx, 12*time.Second)
+	defer cancel()
+	status, httpStatus, detail := checkServiceNowPDI(ctxCheck, cfg.InstanceURL, cfg.AdminUsername, cfg.AdminPassword)
+	return &ServiceNowPDIStatusResponse{
+		Status:     status,
+		HTTPStatus: httpStatus,
+		Detail:     detail,
+		CheckedAt:  time.Now().UTC().Format(time.RFC3339),
+	}, nil
+}
+
+// WakeServiceNowPDI attempts to wake the user's ServiceNow PDI and waits briefly for it to become responsive.
+//
+//encore:api auth method=POST path=/api/user/integrations/servicenow/wake
+func (s *Service) WakeServiceNowPDI(ctx context.Context) (*WakeServiceNowPDIResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	box := newSecretBox(s.cfg.SessionSecret)
+
+	ctxCfg, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	cfg, err := getUserServiceNowConfig(ctxCfg, s.db, box, user.Username)
+	if err != nil || cfg == nil {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("ServiceNow not configured").Err()
+	}
+
+	ctxWake, cancel := context.WithTimeout(ctx, 75*time.Second)
+	defer cancel()
+
+	_ = triggerServiceNowPDIWake(ctxWake, cfg.InstanceURL)
+
+	deadline := time.Now().Add(60 * time.Second)
+	lastStatus := "waking"
+	lastCode := 0
+	lastDetail := ""
+	for time.Now().Before(deadline) {
+		st, code, detail := checkServiceNowPDI(ctxWake, cfg.InstanceURL, cfg.AdminUsername, cfg.AdminPassword)
+		lastStatus, lastCode, lastDetail = st, code, detail
+		if st == "awake" {
+			return &WakeServiceNowPDIResponse{
+				Status:     "awake",
+				HTTPStatus: code,
+				Detail:     detail,
+				CheckedAt:  time.Now().UTC().Format(time.RFC3339),
+			}, nil
+		}
+		select {
+		case <-ctxWake.Done():
+			return &WakeServiceNowPDIResponse{
+				Status:     lastStatus,
+				HTTPStatus: lastCode,
+				Detail:     lastDetail,
+				CheckedAt:  time.Now().UTC().Format(time.RFC3339),
+			}, nil
+		case <-time.After(10 * time.Second):
+		}
+	}
+
+	return &WakeServiceNowPDIResponse{
+		Status:     lastStatus,
+		HTTPStatus: lastCode,
+		Detail:     lastDetail,
+		CheckedAt:  time.Now().UTC().Format(time.RFC3339),
+	}, nil
 }
 
 // PutUserServiceNowConfig stores the current user's ServiceNow demo integration settings.
