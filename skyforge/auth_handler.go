@@ -51,11 +51,11 @@ func (s *Service) AuthHandler(ctx context.Context, p *AuthParams) (auth.UID, *Au
 	}
 
 	user := &AuthUser{
-		Username:      claims.Username,
+		Username:      strings.ToLower(strings.TrimSpace(claims.Username)),
 		DisplayName:   claims.DisplayName,
 		Email:         claims.Email,
 		Groups:        claims.Groups,
-		ActorUsername: claims.ActorUsername,
+		ActorUsername: strings.ToLower(strings.TrimSpace(claims.ActorUsername)),
 		Impersonating: isImpersonating(claims),
 		IsAdmin:       isAdminUser(s.cfg, adminUsernameForClaims(claims)),
 		SelectedRole:  "",
@@ -74,5 +74,5 @@ func (s *Service) AuthHandler(ctx context.Context, p *AuthParams) (auth.UID, *Au
 	}
 	user.SelectedRole = selectedRole
 
-	return auth.UID(claims.Username), user, nil
+	return auth.UID(user.Username), user, nil
 }

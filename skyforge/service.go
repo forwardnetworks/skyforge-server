@@ -2510,8 +2510,12 @@ func (sm *SessionManager) ClearCookie() *http.Cookie {
 func (sm *SessionManager) issueCookie(profile *UserProfile, actor *SessionClaims, secure bool) (*http.Cookie, error) {
 	now := time.Now()
 	expires := now.Add(sm.ttl)
+	// Canonicalize usernames to lowercase for all persisted/session state.
+	// This keeps DB lookups consistent (sf_users and related FK tables) and avoids
+	// case-related mismatches across IdPs.
+	username := strings.ToLower(strings.TrimSpace(profile.Username))
 	claims := SessionClaims{
-		Username:    profile.Username,
+		Username:    username,
 		DisplayName: profile.DisplayName,
 		Email:       profile.Email,
 		Groups:      profile.Groups,
@@ -2521,7 +2525,7 @@ func (sm *SessionManager) issueCookie(profile *UserProfile, actor *SessionClaims
 		},
 	}
 	if actor != nil {
-		claims.ActorUsername = strings.TrimSpace(actor.Username)
+		claims.ActorUsername = strings.ToLower(strings.TrimSpace(actor.Username))
 		claims.ActorDisplayName = strings.TrimSpace(actor.DisplayName)
 		claims.ActorEmail = strings.TrimSpace(actor.Email)
 		claims.ActorGroups = actor.Groups
