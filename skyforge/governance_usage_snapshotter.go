@@ -3,12 +3,11 @@ package skyforge
 import (
 	"context"
 	"database/sql"
-	"fmt"
-	"math"
-	"sort"
+	"net/http"
 	"strings"
 	"time"
 
+	"encore.app/internal/governanceutil"
 	"encore.dev/rlog"
 )
 
@@ -40,6 +39,11 @@ func snapshotGovernanceUsage(ctx context.Context, db *sql.DB) error {
 		rlog.Warn("governance usage: user activity snapshot failed", "err", err)
 	}
 
+	// Kubernetes inventory (pods/namespaces).
+	if err := snapshotK8sInventoryUsage(ctx, db); err != nil {
+		rlog.Warn("governance usage: k8s inventory snapshot failed", "err", err)
+	}
+
 	return nil
 }
 
@@ -53,17 +57,8 @@ func cleanupGovernanceUsage(ctx context.Context, db *sql.DB) error {
 	_, err := db.ExecContext(ctxReq, `
 DELETE FROM sf_usage_snapshots
 WHERE collected_at < now() - ($1::interval)
-`, intervalString(governanceUsageRetention))
+`, governanceutil.IntervalString(governanceUsageRetention))
 	return err
-}
-
-func intervalString(d time.Duration) string {
-	// Postgres interval string. We stick to whole seconds.
-	secs := int64(d.Seconds())
-	if secs <= 0 {
-		return "0 seconds"
-	}
-	return fmt.Sprintf("%d seconds", secs)
 }
 
 func snapshotClusterLoadUsage(ctx context.Context, db *sql.DB) error {
@@ -116,7 +111,7 @@ func snapshotClusterLoadUsage(ctx context.Context, db *sql.DB) error {
 			Provider:    governanceUsageProvider,
 			ScopeType:   "cluster",
 			Metric:      "node.cpu_active.p95",
-			Value:       percentile(cpuVals, 0.95),
+			Value:       governanceutil.Percentile(cpuVals, 0.95),
 			Unit:        "percent",
 			WorkspaceID: "",
 		})
@@ -126,7 +121,7 @@ func snapshotClusterLoadUsage(ctx context.Context, db *sql.DB) error {
 			Provider:    governanceUsageProvider,
 			ScopeType:   "cluster",
 			Metric:      "node.mem_used.p95",
-			Value:       percentile(memVals, 0.95),
+			Value:       governanceutil.Percentile(memVals, 0.95),
 			Unit:        "percent",
 			WorkspaceID: "",
 		})
@@ -136,7 +131,7 @@ func snapshotClusterLoadUsage(ctx context.Context, db *sql.DB) error {
 			Provider:    governanceUsageProvider,
 			ScopeType:   "cluster",
 			Metric:      "node.disk_used.p95",
-			Value:       percentile(diskVals, 0.95),
+			Value:       governanceutil.Percentile(diskVals, 0.95),
 			Unit:        "percent",
 			WorkspaceID: "",
 		})
@@ -162,28 +157,6 @@ func uniqueKeys(m map[string]map[string]nodeMetricSnapshotRow) map[string]struct
 		}
 	}
 	return out
-}
-
-func percentile(values []float64, p float64) float64 {
-	if len(values) == 0 {
-		return 0
-	}
-	sort.Float64s(values)
-	if p <= 0 {
-		return values[0]
-	}
-	if p >= 1 {
-		return values[len(values)-1]
-	}
-	// Using the “nearest-rank” method.
-	rank := int(math.Ceil(p*float64(len(values)))) - 1
-	if rank < 0 {
-		rank = 0
-	}
-	if rank >= len(values) {
-		rank = len(values) - 1
-	}
-	return values[rank]
 }
 
 func listRecentNodeMetricSnapshotsRaw(ctx context.Context, db *sql.DB, since time.Duration, limit int) ([]nodeMetricSnapshotRow, error) {
@@ -244,6 +217,10 @@ func snapshotUserActivityUsage(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		return err
 	}
+	queuedTasks, runningTasks, oldestQueuedAgeSeconds, err := taskQueueSummary(ctx, db)
+	if err != nil {
+		return err
+	}
 
 	allUsers := map[string]struct{}{}
 	for u := range deployTotal {
@@ -296,9 +273,27 @@ func snapshotUserActivityUsage(ctx context.Context, db *sql.DB) error {
 		Provider:  governanceUsageProvider,
 		ScopeType: "cluster",
 		Metric:    "tasks.running",
-		Value:     float64(sumIntMap(runningTasksByUser)),
+		Value:     float64(runningTasks),
 		Unit:      "count",
 	})
+
+	_, _ = insertGovernanceUsage(ctx, db, GovernanceUsageInput{
+		Provider:  governanceUsageProvider,
+		ScopeType: "cluster",
+		Metric:    "tasks.queued",
+		Value:     float64(queuedTasks),
+		Unit:      "count",
+	})
+
+	if oldestQueuedAgeSeconds > 0 {
+		_, _ = insertGovernanceUsage(ctx, db, GovernanceUsageInput{
+			Provider:  governanceUsageProvider,
+			ScopeType: "cluster",
+			Metric:    "tasks.oldest_queued_age_seconds",
+			Value:     float64(oldestQueuedAgeSeconds),
+			Unit:      "seconds",
+		})
+	}
 
 	// Per-user snapshots.
 	for user := range allUsers {
@@ -347,6 +342,65 @@ func snapshotUserActivityUsage(ctx context.Context, db *sql.DB) error {
 			})
 		}
 	}
+	return nil
+}
+
+type kubeInventoryCounts struct {
+	governanceutil.InventoryCounts
+}
+
+func snapshotK8sInventoryUsage(ctx context.Context, db *sql.DB) error {
+	if db == nil {
+		return sql.ErrConnDone
+	}
+
+	client, err := kubeHTTPClient()
+	if err != nil {
+		// Likely not running in-cluster; treat as best-effort.
+		return nil
+	}
+
+	ctxReq, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+
+	counts, err := governanceutil.CollectInventoryCountsWithRequest(
+		ctxReq,
+		client,
+		kubeNamespace(),
+		governanceutil.KubeDefaultAPIBaseURL,
+		func(ctx context.Context, method, u string) (*http.Request, error) {
+			return kubeRequest(ctx, method, u, nil)
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	metrics := []struct {
+		metric string
+		value  int
+		unit   string
+	}{
+		{"k8s.namespaces.total", counts.NamespacesTotal, "count"},
+		{"k8s.namespaces.ws", counts.NamespacesWS, "count"},
+		{"k8s.pods.total", counts.PodsTotal, "count"},
+		{"k8s.pods.pending", counts.PodsPending, "count"},
+		{"k8s.pods.ws.total", counts.PodsWSTotal, "count"},
+		{"k8s.pods.ws.pending", counts.PodsWSPending, "count"},
+		{"k8s.pods.platform.total", counts.PodsPlatformTotal, "count"},
+		{"k8s.pods.platform.pending", counts.PodsPlatformPending, "count"},
+	}
+
+	for _, m := range metrics {
+		_, _ = insertGovernanceUsage(ctxReq, db, GovernanceUsageInput{
+			Provider:  governanceUsageProvider,
+			ScopeType: "cluster",
+			Metric:    m.metric,
+			Value:     float64(m.value),
+			Unit:      m.unit,
+		})
+	}
+
 	return nil
 }
 
