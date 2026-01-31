@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"time"
 
@@ -64,6 +65,32 @@ type UserAIHistoryItem struct {
 
 type UserAIHistoryResponse struct {
 	Items []*UserAIHistoryItem `json:"items"`
+}
+
+type UserAISaveRequest struct {
+	Kind     AITemplateKind `json:"kind"`
+	Content  string         `json:"content"`
+	PathHint string         `json:"pathHint,omitempty"`
+	Message  string         `json:"message,omitempty"`
+}
+
+type UserAISaveResponse struct {
+	WorkspaceID string `json:"workspaceId"`
+	Repo        string `json:"repo"`
+	Branch      string `json:"branch"`
+	Path        string `json:"path"`
+}
+
+type UserAIValidateRequest struct {
+	Kind         AITemplateKind `json:"kind"`
+	Content      string         `json:"content"`
+	Environment  JSONMap        `json:"environment,omitempty"`
+	SetOverrides []string       `json:"setOverrides,omitempty"`
+}
+
+type UserAIValidateResponse struct {
+	WorkspaceID string  `json:"workspaceId"`
+	Task        JSONMap `json:"task"`
 }
 
 // GenerateUserAITemplate generates a single-file template using the user's configured AI provider.
@@ -152,6 +179,158 @@ func (s *Service) GenerateUserAITemplate(ctx context.Context, req *UserAIGenerat
 		Content:   content,
 		Warnings:  warnings,
 		CreatedAt: createdAt.Format(time.RFC3339Nano),
+	}, nil
+}
+
+// SaveUserAITemplate writes generated template content into the user's default workspace repo.
+//
+//encore:api auth method=POST path=/api/user/ai/save
+func (s *Service) SaveUserAITemplate(ctx context.Context, req *UserAISaveRequest) (*UserAISaveResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	if req == nil {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("request required").Err()
+	}
+	if req.Kind != AITemplateKindNetlab && req.Kind != AITemplateKindContainerlab {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid template kind").Err()
+	}
+	content := strings.TrimSpace(req.Content)
+	if content == "" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("content is required").Err()
+	}
+	if len(content) > 256*1024 {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("content too large").Err()
+	}
+	if strings.Contains(content, "\u0000") {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid content").Err()
+	}
+	if countYAMLDocs(content) > 1 {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("content must be a single YAML document").Err()
+	}
+	if err := validateYAML(content); err != nil {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("content is not valid YAML").Err()
+	}
+
+	ws, err := s.ensureDefaultWorkspace(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+	if ws == nil || strings.TrimSpace(ws.ID) == "" {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to resolve workspace").Err()
+	}
+	if strings.TrimSpace(s.cfg.Workspaces.GiteaAPIURL) == "" ||
+		strings.TrimSpace(ws.GiteaOwner) == "" ||
+		strings.TrimSpace(ws.GiteaRepo) == "" {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Gitea is not configured for this workspace").Err()
+	}
+
+	// Ensure repo exists and is set to correct visibility.
+	if strings.TrimSpace(s.cfg.Workspaces.GiteaAPIURL) != "" && strings.TrimSpace(s.cfg.Workspaces.GiteaUsername) != "" {
+		_ = ensureGiteaRepoFromBlueprint(s.cfg, ws.GiteaOwner, ws.GiteaRepo, ws.Blueprint, s.cfg.Workspaces.GiteaRepoPrivate)
+	}
+
+	branch := strings.TrimSpace(ws.DefaultBranch)
+	if branch == "" {
+		branch = "main"
+	}
+
+	pathHint := strings.Trim(strings.TrimSpace(req.PathHint), "/")
+	if pathHint == "" {
+		pathHint = "ai"
+	}
+	if !isSafeRelativePath(pathHint) {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("pathHint must be a safe repo-relative path").Err()
+	}
+
+	ext := ".yml"
+	dir := "blueprints/netlab/" + pathHint
+	if req.Kind == AITemplateKindContainerlab {
+		ext = ".clab.yml"
+		dir = "blueprints/containerlab/" + pathHint
+	}
+
+	slug := uuid.New().String()
+	filePath := path.Join(dir, slug+ext)
+	if !isSafeRelativePath(filePath) {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("generated path is not safe").Err()
+	}
+
+	msg := "ai: add " + string(req.Kind) + " template"
+	if strings.TrimSpace(req.Message) != "" {
+		msg = msg + " (" + strings.TrimSpace(req.Message) + ")"
+	}
+
+	claims := claimsFromAuthUser(user)
+	if err := ensureGiteaFile(s.cfg, ws.GiteaOwner, ws.GiteaRepo, filePath, content, msg, branch, claims); err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to save template").Err()
+	}
+
+	return &UserAISaveResponse{
+		WorkspaceID: ws.ID,
+		Repo:        fmt.Sprintf("%s/%s", ws.GiteaOwner, ws.GiteaRepo),
+		Branch:      branch,
+		Path:        filePath,
+	}, nil
+}
+
+// ValidateUserAITemplate persists a generated netlab template and enqueues a netlab validation task.
+//
+//encore:api auth method=POST path=/api/user/ai/validate
+func (s *Service) ValidateUserAITemplate(ctx context.Context, req *UserAIValidateRequest) (*UserAIValidateResponse, error) {
+	if _, err := requireAuthUser(); err != nil {
+		return nil, err
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	if req == nil {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("request required").Err()
+	}
+	if req.Kind != AITemplateKindNetlab {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("only netlab validation is supported right now").Err()
+	}
+
+	// Save into a deterministic validate folder so we can call the existing validate API by filename.
+	saveResp, err := s.SaveUserAITemplate(ctx, &UserAISaveRequest{
+		Kind:     req.Kind,
+		Content:  req.Content,
+		PathHint: "ai/validate",
+		Message:  "validate",
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	wsID := strings.TrimSpace(saveResp.WorkspaceID)
+	if wsID == "" {
+		return nil, errs.B().Code(errs.Unavailable).Msg("workspace unavailable").Err()
+	}
+
+	templateDir := path.Dir(saveResp.Path)
+	templateFile := path.Base(saveResp.Path)
+
+	run, err := s.ValidateWorkspaceNetlabTemplate(ctx, wsID, &WorkspaceNetlabValidateRequest{
+		Source:       "workspace",
+		Dir:          templateDir,
+		Template:     templateFile,
+		Environment:  req.Environment,
+		SetOverrides: req.SetOverrides,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if run == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to start validation").Err()
+	}
+
+	return &UserAIValidateResponse{
+		WorkspaceID: wsID,
+		Task:        run.Task,
 	}, nil
 }
 

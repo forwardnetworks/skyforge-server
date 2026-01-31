@@ -131,7 +131,7 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 	}
 	geminiModel := strings.TrimSpace(enc.Gemini.Model)
 	if geminiModel == "" {
-		geminiModel = "gemini-2.0-flash-001"
+		geminiModel = "gemini-3-flash-preview"
 	}
 
 	imagePullSecretName := strings.TrimSpace(enc.Kubernetes.ImagePullSecretName)
