@@ -17,6 +17,7 @@ import (
 	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v3"
 
+	"encore.app/internal/containerlabvalidate"
 	"encore.dev/beta/errs"
 )
 
@@ -91,6 +92,22 @@ type UserAIValidateRequest struct {
 type UserAIValidateResponse struct {
 	WorkspaceID string  `json:"workspaceId"`
 	Task        JSONMap `json:"task"`
+}
+
+type UserAIAutofixRequest struct {
+	Kind          AITemplateKind `json:"kind"`
+	Content       string         `json:"content"`
+	MaxIterations int            `json:"maxIterations,omitempty"`
+}
+
+type UserAIAutofixResponse struct {
+	Kind          string   `json:"kind"`
+	Content       string   `json:"content"`
+	Ok            bool     `json:"ok"`
+	Errors        []string `json:"errors,omitempty"`
+	Iterations    int      `json:"iterations"`
+	Warnings      []string `json:"warnings,omitempty"`
+	LastValidated string   `json:"lastValidated"`
 }
 
 // GenerateUserAITemplate generates a single-file template using the user's configured AI provider.
@@ -179,6 +196,135 @@ func (s *Service) GenerateUserAITemplate(ctx context.Context, req *UserAIGenerat
 		Content:   content,
 		Warnings:  warnings,
 		CreatedAt: createdAt.Format(time.RFC3339Nano),
+	}, nil
+}
+
+// AutofixUserAITemplate runs a short validate→regenerate loop for containerlab templates.
+//
+// This is intentionally synchronous and bounded so it can be used from the UI without spawning jobs.
+//
+//encore:api auth method=POST path=/api/user/ai/autofix
+func (s *Service) AutofixUserAITemplate(ctx context.Context, req *UserAIAutofixRequest) (*UserAIAutofixResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	if !s.cfg.AIEnabled {
+		return nil, errs.B().Code(errs.NotFound).Msg("AI is disabled").Err()
+	}
+	if !s.cfg.GeminiEnabled {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Gemini is disabled").Err()
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	if req == nil {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("request required").Err()
+	}
+	if req.Kind != AITemplateKindContainerlab {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("only containerlab autofix is supported right now").Err()
+	}
+
+	content := strings.TrimSpace(req.Content)
+	if content == "" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("content is required").Err()
+	}
+	if len(content) > 256*1024 {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("content too large").Err()
+	}
+	if strings.Contains(content, "\u0000") {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid content").Err()
+	}
+	if countYAMLDocs(content) > 1 {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("content must be a single YAML document").Err()
+	}
+	if err := validateYAML(content); err != nil {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("content is not valid YAML").Err()
+	}
+
+	username := strings.ToLower(strings.TrimSpace(user.Username))
+
+	errsList, err := containerlabvalidate.ValidateYAML(content)
+	if err != nil {
+		return nil, err
+	}
+	if len(errsList) == 0 {
+		return &UserAIAutofixResponse{
+			Kind:          string(req.Kind),
+			Content:       content,
+			Ok:            true,
+			Errors:        []string{},
+			Iterations:    0,
+			Warnings:      []string{},
+			LastValidated: time.Now().UTC().Format(time.RFC3339Nano),
+		}, nil
+	}
+
+	maxIters := req.MaxIterations
+	if maxIters <= 0 {
+		maxIters = 3
+	}
+	if maxIters > 5 {
+		maxIters = 5
+	}
+
+	var allWarnings []string
+	for i := 0; i < maxIters; i++ {
+		trimmedErrs := trimSchemaErrors(errsList, 25, 220)
+		fixPrompt := "Fix the containerlab topology so it passes JSON schema validation. " +
+			"Preserve node names and overall intent. Do not remove required sections. " +
+			"Do not add external file references.\n\n" +
+			"Schema errors:\n- " + strings.Join(trimmedErrs, "\n- ")
+
+		genReq := &UserAIGenerateRequest{
+			Provider:     AITemplateProviderGemini,
+			Kind:         AITemplateKindContainerlab,
+			Prompt:       fixPrompt,
+			SeedTemplate: content,
+			Constraints: []string{
+				"containerlab",
+				"must pass JSON schema validation",
+				"single file",
+			},
+			MaxOutputTokens: 2048,
+			Temperature:     0.2,
+		}
+
+		next, warnings, err := s.generateWithGeminiVertex(ctx, username, genReq)
+		if err != nil {
+			return nil, err
+		}
+		if len(warnings) > 0 {
+			allWarnings = append(allWarnings, warnings...)
+		}
+
+		nextErrs, err := containerlabvalidate.ValidateYAML(next)
+		if err != nil {
+			return nil, err
+		}
+		content = next
+		errsList = nextErrs
+		if len(errsList) == 0 {
+			return &UserAIAutofixResponse{
+				Kind:          string(req.Kind),
+				Content:       content,
+				Ok:            true,
+				Errors:        []string{},
+				Iterations:    i + 1,
+				Warnings:      allWarnings,
+				LastValidated: time.Now().UTC().Format(time.RFC3339Nano),
+			}, nil
+		}
+	}
+
+	return &UserAIAutofixResponse{
+		Kind:          string(req.Kind),
+		Content:       content,
+		Ok:            false,
+		Errors:        trimSchemaErrors(errsList, 50, 400),
+		Iterations:    maxIters,
+		Warnings:      allWarnings,
+		LastValidated: time.Now().UTC().Format(time.RFC3339Nano),
 	}, nil
 }
 
@@ -291,8 +437,27 @@ func (s *Service) ValidateUserAITemplate(ctx context.Context, req *UserAIValidat
 	if req == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("request required").Err()
 	}
-	if req.Kind != AITemplateKindNetlab {
-		return nil, errs.B().Code(errs.FailedPrecondition).Msg("only netlab validation is supported right now").Err()
+	if req.Kind != AITemplateKindNetlab && req.Kind != AITemplateKindContainerlab {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid template kind").Err()
+	}
+
+	if req.Kind == AITemplateKindContainerlab {
+		errsList, err := containerlabvalidate.ValidateYAML(req.Content)
+		if err != nil {
+			return nil, err
+		}
+		task, err := toJSONMap(map[string]any{
+			"kind":   "containerlab",
+			"ok":     len(errsList) == 0,
+			"errors": errsList,
+		})
+		if err != nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to encode validation result").Err()
+		}
+		return &UserAIValidateResponse{
+			WorkspaceID: "",
+			Task:        task,
+		}, nil
 	}
 
 	// Save into a deterministic validate folder so we can call the existing validate API by filename.
@@ -636,4 +801,31 @@ func validateYAML(s string) error {
 		return err
 	}
 	return nil
+}
+
+func trimSchemaErrors(errsIn []string, max int, maxLen int) []string {
+	if max <= 0 {
+		max = 25
+	}
+	if maxLen <= 0 {
+		maxLen = 300
+	}
+	out := make([]string, 0, len(errsIn))
+	for _, e := range errsIn {
+		e = strings.TrimSpace(e)
+		if e == "" {
+			continue
+		}
+		if len(e) > maxLen {
+			e = e[:maxLen] + "…"
+		}
+		out = append(out, e)
+		if len(out) >= max {
+			break
+		}
+	}
+	if len(out) == 0 {
+		return []string{"schema validation failed"}
+	}
+	return out
 }
