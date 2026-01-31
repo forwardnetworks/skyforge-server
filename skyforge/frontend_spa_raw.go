@@ -171,7 +171,7 @@ func (s *Service) FrontendSNMP(w http.ResponseWriter, req *http.Request) {
 //encore:api public raw method=GET path=/docs/*path
 func (s *Service) FrontendDocs(w http.ResponseWriter, req *http.Request) {
 	p := strings.TrimSpace(req.URL.Path)
-	if p == "" {
+	if p == "" || p == "/docs" {
 		p = "/docs/"
 	}
 	// Serve embedded docs pages from /docs/*
@@ -184,7 +184,10 @@ func (s *Service) FrontendDocs(w http.ResponseWriter, req *http.Request) {
 		if serveFrontendFile(w, req, docPath) {
 			return
 		}
-		http.NotFound(w, req)
+		// Docs are generated from the portal build output. If the static file is
+		// missing (e.g. older build output), fall back to the SPA route so the
+		// TanStack /docs router (including .html redirects) can still handle it.
+		s.serveFrontendSPA(w, req)
 		return
 	}
 	http.NotFound(w, req)

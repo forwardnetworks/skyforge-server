@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"encore.app/internal/skyforgecore"
 	"encore.app/internal/taskheartbeats"
 )
 
@@ -92,6 +93,25 @@ func (s *Service) StatusSummary(ctx context.Context) (*StatusSummaryResponse, er
 		Name:   "skyforge-api",
 		Status: "up",
 	})
+
+	if v := skyforgecore.ValidateConfig(s.cfg); len(v.Errors) > 0 {
+		resp.Checks = append(resp.Checks, StatusCheckResponse{
+			Name:   "config",
+			Status: "down",
+			Detail: fmt.Sprintf("%d error(s)", len(v.Errors)),
+		})
+	} else if len(v.Warnings) > 0 {
+		resp.Checks = append(resp.Checks, StatusCheckResponse{
+			Name:   "config",
+			Status: "up",
+			Detail: fmt.Sprintf("%d warning(s)", len(v.Warnings)),
+		})
+	} else {
+		resp.Checks = append(resp.Checks, StatusCheckResponse{
+			Name:   "config",
+			Status: "up",
+		})
+	}
 	if s.db == nil {
 		resp.Checks = append(resp.Checks, StatusCheckResponse{
 			Name:   "postgres",
