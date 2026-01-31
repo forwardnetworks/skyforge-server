@@ -480,9 +480,6 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 				}
 			case "custom", "external":
 				// Allowed only when enabled; URL access still depends on repo visibility.
-				if templateSource == "external" && !pc.workspace.AllowExternalTemplateRepos {
-					return nil, errs.B().Code(errs.FailedPrecondition).Msg("external template repos are disabled for this workspace").Err()
-				}
 				if strings.TrimSpace(req.TemplateRepo) == "" {
 					return nil, errs.B().Code(errs.InvalidArgument).Msg("templateRepo is required for custom/external template source").Err()
 				}

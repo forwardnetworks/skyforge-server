@@ -55,9 +55,6 @@ func (s *Service) resolveNetlabServerConfig(ctx context.Context, pc *workspaceCo
 	}
 
 	if strings.HasPrefix(strings.ToLower(serverRef), userServerRefPrefix) {
-		if !pc.workspace.AllowCustomNetlabServers {
-			return nil, errs.B().Code(errs.FailedPrecondition).Msg("custom netlab servers are disabled for this workspace").Err()
-		}
 		serverID, ok := parseUserServerRef(serverRef)
 		if !ok {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid user netlab server reference (user:...)").Err()
@@ -99,9 +96,6 @@ func (s *Service) resolveContainerlabServerConfig(ctx context.Context, pc *works
 	}
 
 	if strings.HasPrefix(strings.ToLower(serverRef), userServerRefPrefix) {
-		if !pc.workspace.AllowCustomContainerlabServers {
-			return nil, errs.B().Code(errs.FailedPrecondition).Msg("custom containerlab servers are disabled for this workspace").Err()
-		}
 		serverID, ok := parseUserServerRef(serverRef)
 		if !ok {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid user containerlab server reference (user:...)").Err()

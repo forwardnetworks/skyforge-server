@@ -500,9 +500,6 @@ func resolveTemplateRepoForProject(cfg Config, pc *workspaceContext, source stri
 		owner, repo = parts[0], parts[1]
 		branch = ""
 	case "external":
-		if !pc.workspace.AllowExternalTemplateRepos {
-			return templateRepoRef{}, fmt.Errorf("external template repos are not enabled for this workspace")
-		}
 		repoID := strings.TrimSpace(customRepo)
 		if repoID == "" {
 			return templateRepoRef{}, fmt.Errorf("external repo id is required")
@@ -518,9 +515,6 @@ func resolveTemplateRepoForProject(cfg Config, pc *workspaceContext, source stri
 		owner, repo = parts[0], parts[1]
 		branch = strings.TrimSpace(found.DefaultBranch)
 	case "custom":
-		if !pc.workspace.AllowExternalTemplateRepos {
-			return templateRepoRef{}, fmt.Errorf("custom template repos are not enabled for this workspace")
-		}
 		customOwner, customName, err := parseGiteaRepoRef(customRepo)
 		if err != nil {
 			return templateRepoRef{}, err

@@ -474,9 +474,6 @@ func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req 
 				return nil, errs.B().Code(errs.InvalidArgument).Msg("custom repo is required").Err()
 			}
 		case "external":
-			if !pc.workspace.AllowExternalTemplateRepos {
-				return nil, errs.B().Code(errs.FailedPrecondition).Msg("external template repos are disabled for this workspace").Err()
-			}
 			if strings.TrimSpace(templateRepo) == "" {
 				return nil, errs.B().Code(errs.InvalidArgument).Msg("external repo is required").Err()
 			}
@@ -515,9 +512,6 @@ func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req 
 				return nil, errs.B().Code(errs.InvalidArgument).Msg("custom repo is required").Err()
 			}
 		case "external":
-			if !pc.workspace.AllowExternalTemplateRepos {
-				return nil, errs.B().Code(errs.FailedPrecondition).Msg("external template repos are disabled for this workspace").Err()
-			}
 			if strings.TrimSpace(templateRepo) == "" {
 				return nil, errs.B().Code(errs.InvalidArgument).Msg("external repo is required").Err()
 			}
