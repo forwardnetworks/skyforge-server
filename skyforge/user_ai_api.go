@@ -8,12 +8,13 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
-	"gopkg.in/yaml.v3"
 	"golang.org/x/oauth2"
+	"gopkg.in/yaml.v3"
 
 	"encore.dev/beta/errs"
 )
@@ -27,7 +28,7 @@ const (
 type AITemplateKind string
 
 const (
-	AITemplateKindNetlab      AITemplateKind = "netlab"
+	AITemplateKindNetlab       AITemplateKind = "netlab"
 	AITemplateKindContainerlab AITemplateKind = "containerlab"
 )
 
@@ -297,10 +298,10 @@ func (s *Service) generateWithGeminiVertex(ctx context.Context, username string,
 	location := strings.TrimSpace(s.cfg.GeminiLocation)
 	model := strings.TrimSpace(s.cfg.GeminiModel)
 	project := strings.TrimSpace(s.cfg.GeminiProjectID)
-	url := fmt.Sprintf("https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models/%s:generateContent", location, project, location, model)
+	endpointURL := fmt.Sprintf("https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models/%s:generateContent", location, project, location, model)
 
 	b, _ := json.Marshal(body)
-	httpReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
+	httpReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, endpointURL, bytes.NewReader(b))
 	httpReq.Header.Set("Authorization", "Bearer "+strings.TrimSpace(tok.AccessToken))
 	httpReq.Header.Set("Content-Type", "application/json")
 
@@ -312,8 +313,45 @@ func (s *Service) generateWithGeminiVertex(ctx context.Context, username string,
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
 	if resp.StatusCode/100 != 2 {
-		log.Printf("ai gemini http status (%s): %d %s", username, resp.StatusCode, string(respBody))
-		return "", nil, errs.B().Code(errs.Unavailable).Msg("Gemini request failed").Err()
+		bodyStr := strings.TrimSpace(string(respBody))
+		log.Printf("ai gemini http status (%s): %d %s", username, resp.StatusCode, bodyStr)
+
+		enableURL := fmt.Sprintf("https://console.cloud.google.com/apis/library/aiplatform.googleapis.com?project=%s", url.QueryEscape(project))
+
+		// Try to surface actionable errors (common onboarding issues: API disabled, IAM missing, model not found).
+		lower := strings.ToLower(bodyStr)
+		switch resp.StatusCode {
+		case 400:
+			return "", nil, errs.B().Code(errs.InvalidArgument).Msg("Gemini request rejected; check prompt/constraints and try again").Err()
+		case 401:
+			return "", nil, errs.B().Code(errs.Unauthenticated).Msg("Gemini credentials expired; reconnect required").Err()
+		case 403:
+			// If the API is disabled in the shared project, Google typically returns a PERMISSION_DENIED error that
+			// mentions the API not being used/enabled. This is confusing to end users; provide a direct enable link.
+			if strings.Contains(lower, "has not been used in project") ||
+				strings.Contains(lower, "service disabled") ||
+				strings.Contains(lower, "aiplatform.googleapis.com") {
+				return "", nil, errs.B().Code(errs.FailedPrecondition).Msg("Vertex AI API is disabled for the configured project; ask an admin to enable it: " + enableURL).Err()
+			}
+			return "", nil, errs.B().Code(errs.PermissionDenied).Msg("Missing permission to use Vertex AI in the configured project; ask an admin to grant Vertex AI User access").Err()
+		case 404:
+			// Model not found or API not enabled can surface as 404 depending on org setup.
+			if strings.Contains(lower, "not found") || strings.Contains(lower, "models") {
+				return "", nil, errs.B().Code(errs.FailedPrecondition).Msg("Gemini model not available; verify the configured model name and that Vertex AI is enabled for the project").Err()
+			}
+			return "", nil, errs.B().Code(errs.FailedPrecondition).Msg("Vertex AI endpoint not found; verify project/location/model and that the API is enabled: " + enableURL).Err()
+		default:
+			// Preserve the raw response for debugging, but keep it concise.
+			msg := "Gemini request failed"
+			if bodyStr != "" {
+				const max = 400
+				if len(bodyStr) > max {
+					bodyStr = bodyStr[:max] + "…"
+				}
+				msg = msg + ": " + bodyStr
+			}
+			return "", nil, errs.B().Code(errs.Unavailable).Msg(msg).Err()
+		}
 	}
 
 	var out geminiVertexGenerateResponse

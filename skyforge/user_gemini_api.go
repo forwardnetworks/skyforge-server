@@ -256,7 +256,8 @@ func (s *Service) GeminiConnect(w http.ResponseWriter, r *http.Request) {
 	// user interaction.
 	loginHint := strings.TrimSpace(user.Email)
 	hostedDomain := strings.TrimSpace(s.cfg.CorpEmailDomain)
-	authURL := geminiAuthURL(cfg, state, "consent", loginHint, hostedDomain)
+	// Use select_account to reduce accidental selection of non-corp Google accounts when users have multiple sessions.
+	authURL := geminiAuthURL(cfg, state, "consent select_account", loginHint, hostedDomain)
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
@@ -285,7 +286,8 @@ func (s *Service) GeminiCallback(w http.ResponseWriter, r *http.Request) {
 	errSubtype := strings.TrimSpace(r.URL.Query().Get("error_subtype"))
 	c, err := r.Cookie(geminiStateCookie)
 	if err != nil || strings.TrimSpace(c.Value) == "" || c.Value != state {
-		http.Error(w, "invalid state", http.StatusBadRequest)
+		// Most common in practice: cookie blocked / dropped or callback opened in a different browser context.
+		http.Redirect(w, r, "/dashboard/gemini?error=invalid_state", http.StatusFound)
 		return
 	}
 
@@ -293,16 +295,20 @@ func (s *Service) GeminiCallback(w http.ResponseWriter, r *http.Request) {
 		// User denied or Google cannot proceed.
 		// See: https://developers.google.com/identity/protocols/oauth2/web-server#handlingresponse
 		log.Printf("gemini oauth error: error=%q subtype=%q user=%q", errParam, errSubtype, username)
-		if errParam == "access_denied" {
+		switch errParam {
+		case "access_denied":
 			http.Redirect(w, r, "/dashboard/gemini?error=oauth_denied", http.StatusFound)
-		} else {
+		case "immediate_failed":
+			// Google could not perform a silent/fast auth and refused to continue.
+			http.Redirect(w, r, "/dashboard/gemini?error=oauth_immediate_failed", http.StatusFound)
+		default:
 			http.Redirect(w, r, "/dashboard/gemini?error=oauth_failed", http.StatusFound)
 		}
 		return
 	}
 
 	if state == "" || code == "" {
-		http.Error(w, "missing state/code", http.StatusBadRequest)
+		http.Redirect(w, r, "/dashboard/gemini?error=missing_code", http.StatusFound)
 		return
 	}
 
@@ -311,7 +317,7 @@ func (s *Service) GeminiCallback(w http.ResponseWriter, r *http.Request) {
 	tok, err := cfg.Exchange(ctx, code)
 	if err != nil {
 		log.Printf("gemini oauth exchange failed: %v", err)
-		http.Error(w, "oauth exchange failed", http.StatusUnauthorized)
+		http.Redirect(w, r, "/dashboard/gemini?error=exchange_failed", http.StatusFound)
 		return
 	}
 	refresh := strings.TrimSpace(tok.RefreshToken)
@@ -371,7 +377,7 @@ ON CONFLICT (username) DO NOTHING`, username); err != nil {
 			log.Printf("gemini get existing refresh: %v", err)
 		}
 		if existing == nil || strings.TrimSpace(existing.RefreshTokenEnc) == "" {
-			http.Error(w, "missing refresh token (reconnect required)", http.StatusBadRequest)
+			http.Redirect(w, r, "/dashboard/gemini?error=missing_refresh_token", http.StatusFound)
 			return
 		}
 		refresh = strings.TrimSpace(existing.RefreshTokenEnc)
@@ -379,6 +385,10 @@ ON CONFLICT (username) DO NOTHING`, username); err != nil {
 
 	if err := putUserGeminiOAuth(ctxDB, s.db, box, username, email, scopeStr, refresh); err != nil {
 		log.Printf("gemini store failed (%s): %v", username, err)
+		if isMissingDBRelation(err) {
+			http.Redirect(w, r, "/dashboard/gemini?error=db_migrations_pending", http.StatusFound)
+			return
+		}
 		http.Redirect(w, r, "/dashboard/gemini?error=store_failed", http.StatusFound)
 		return
 	}

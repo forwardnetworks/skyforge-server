@@ -69,19 +69,19 @@ DNS: {
 	UserZoneSuffix: "skyforge"
 }
 
-Gemini: {
-	Enabled: false
-	ClientID: ""
-	// When empty, Skyforge derives the callback URL from PublicURL:
-	//   {PublicURL}/api/user/integrations/gemini/callback
-	RedirectURL: ""
-	// Vertex AI settings for Gemini calls (non-secret).
-	ProjectID: ""
-	Location: "us-central1"
-	// Model name for Vertex AI (publisher "google").
-	// Example: "gemini-2.0-flash-001" or "gemini-1.5-flash-002"
-	Model: "gemini-2.0-flash-001"
-}
+	Gemini: {
+		Enabled: false
+		ClientID: ""
+		// When empty, Skyforge derives the callback URL from PublicURL:
+		//   {PublicURL}/api/user/integrations/gemini/callback
+		RedirectURL: ""
+		// Vertex AI settings for Gemini calls (non-secret).
+		ProjectID: ""
+		Location: "us-central1"
+		// Model name for Vertex AI (publisher "google").
+		// Example: "gemini-3-flash-preview" or "gemini-3-pro-preview"
+		Model: "gemini-3-flash-preview"
+	}
 
 AI: {
 	Enabled: false
