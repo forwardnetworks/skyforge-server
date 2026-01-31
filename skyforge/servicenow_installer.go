@@ -139,9 +139,104 @@ func (i *serviceNowInstaller) Install(ctx context.Context) error {
 	if err := i.ensureServicePortalPageAndPlacement(ctx, widgetID); err != nil {
 		return err
 	}
+	// Make the demo discoverable in the ServiceNow app navigator, even if users are not
+	// familiar with Service Portal configuration screens.
+	_ = i.ensureNavigatorApp(ctx)
 
 	// Smoke test: invoke List Networks method via RESTMessage record execution is not directly available,
 	// but we can validate the REST message record exists and the credential is present.
+	return nil
+}
+
+func (i *serviceNowInstaller) ensureNavigatorApp(ctx context.Context) error {
+	// ServiceNow: Application Menu + Module
+	// https://www.servicenow.com/docs/bundle/xanadu-platform-administration/page/administer/navigation-and-modules/concept/c_NavigatingModules.html
+	//
+	// This gives admins an obvious place to find the demo after installation.
+	appTitle := "Forward Connectivity Ticket"
+
+	appSysID, err := i.upsertTableByKeyReturnSysID(ctx, "sys_app_application", "title", appTitle, map[string]any{
+		"title":  appTitle,
+		"active": true,
+		"order":  100,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "Invalid table") {
+			return nil
+		}
+		return fmt.Errorf("servicenow app menu: %w", err)
+	}
+
+	moduleTitle := "Connectivity Ticket"
+	appField, err := i.pickExistingField(ctx, "sys_app_module", []string{"application", "sys_app_application"})
+	if err != nil {
+		return nil // best-effort
+	}
+
+	moduleFields := map[string]any{
+		appField: appSysID,
+		"title":  moduleTitle,
+		"active": true,
+	}
+	if ok, _ := i.hasDictionaryField(ctx, "sys_app_module", "order"); ok {
+		moduleFields["order"] = 100
+	}
+	if ok, _ := i.hasDictionaryField(ctx, "sys_app_module", "link_type"); ok {
+		moduleFields["link_type"] = "url"
+	}
+	if ok, _ := i.hasDictionaryField(ctx, "sys_app_module", "url"); ok {
+		moduleFields["url"] = "/sp?id=connectivity_ticket"
+	}
+	_, err = i.upsertTableByQueryReturnSysID(ctx, "sys_app_module",
+		fmt.Sprintf("%s=%s^title=%s", appField, appSysID, moduleTitle),
+		moduleFields,
+	)
+	if err != nil && !strings.Contains(err.Error(), "Invalid table") {
+		return fmt.Errorf("servicenow app module: %w", err)
+	}
+
+	// Optional: list modules for the underlying tables, helpful for debugging.
+	names, err := i.resolveDemoTableNames(ctx)
+	if err == nil && strings.TrimSpace(names.Ticket) != "" {
+		ticketsFields := map[string]any{
+			appField: appSysID,
+			"title":  "Connectivity Tickets (table)",
+			"active": true,
+		}
+		if ok, _ := i.hasDictionaryField(ctx, "sys_app_module", "order"); ok {
+			ticketsFields["order"] = 110
+		}
+		if ok, _ := i.hasDictionaryField(ctx, "sys_app_module", "link_type"); ok {
+			ticketsFields["link_type"] = "list"
+		}
+		if ok, _ := i.hasDictionaryField(ctx, "sys_app_module", "table"); ok {
+			ticketsFields["table"] = names.Ticket
+		}
+		_, _ = i.upsertTableByQueryReturnSysID(ctx, "sys_app_module",
+			fmt.Sprintf("%s=%s^title=%s", appField, appSysID, "Connectivity Tickets (table)"),
+			ticketsFields,
+		)
+	}
+	if err == nil && strings.TrimSpace(names.Hop) != "" {
+		hopsFields := map[string]any{
+			appField: appSysID,
+			"title":  "Connectivity Hops (table)",
+			"active": true,
+		}
+		if ok, _ := i.hasDictionaryField(ctx, "sys_app_module", "order"); ok {
+			hopsFields["order"] = 120
+		}
+		if ok, _ := i.hasDictionaryField(ctx, "sys_app_module", "link_type"); ok {
+			hopsFields["link_type"] = "list"
+		}
+		if ok, _ := i.hasDictionaryField(ctx, "sys_app_module", "table"); ok {
+			hopsFields["table"] = names.Hop
+		}
+		_, _ = i.upsertTableByQueryReturnSysID(ctx, "sys_app_module",
+			fmt.Sprintf("%s=%s^title=%s", appField, appSysID, "Connectivity Hops (table)"),
+			hopsFields,
+		)
+	}
 	return nil
 }
 
@@ -744,11 +839,20 @@ func (i *serviceNowInstaller) ensureServicePortalPageAndPlacement(ctx context.Co
 	}
 
 	// Create a minimal layout: container -> row -> column -> instance(widget).
-	containerSysID, err := i.upsertTableByQueryReturnSysID(ctx, "sp_container", fmt.Sprintf("page=%s^order=100", pageSysID), map[string]any{
-		"page":   pageSysID,
-		"order":  100,
-		"active": true,
-	})
+	containerPageField, err := i.pickExistingField(ctx, "sp_container", []string{"sp_page", "page"})
+	if err != nil {
+		return err
+	}
+	containerSysID, err := i.upsertTableByQueryReturnSysID(
+		ctx,
+		"sp_container",
+		fmt.Sprintf("%s=%s^order=100", containerPageField, pageSysID),
+		map[string]any{
+			containerPageField: pageSysID,
+			"order":            100,
+			"active":           true,
+		},
+	)
 	if err != nil {
 		return fmt.Errorf("service portal container: %w", err)
 	}

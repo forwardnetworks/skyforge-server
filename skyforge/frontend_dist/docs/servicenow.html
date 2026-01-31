@@ -116,7 +116,8 @@
         <h2>Prerequisites</h2>
         <ul>
           <li>A ServiceNow Personal Developer Instance (PDI).</li>
-          <li>Forward SaaS credentials (for <code>https://fwd.app</code>) via either:
+          <li>
+            Forward SaaS credentials (for <code>https://fwd.app</code>) via either:
             <ul>
               <li>a Skyforge Forward collector (recommended), or</li>
               <li>manual username/password.</li>
@@ -134,17 +135,22 @@
           <li>Select a Forward credential source (collector recommended).</li>
           <li>Click <strong>Save</strong>.</li>
           <li>If your PDI is sleeping, use <strong>PDI status → Wake up</strong>.</li>
-          <li>Create the demo tables (manual step, in ServiceNow UI):
+          <li>
+            Create the demo tables (manual step, in ServiceNow UI):
             <ul>
               <li>Navigate to <code>System Definition → Tables</code> and click <strong>New</strong>.</li>
-              <li>Create the ticket table:
+              <li>
+                Create the ticket table:
                 <ul>
                   <li><strong>Label</strong>: <code>Forward Connectivity Ticket</code></li>
                   <li><strong>Name</strong>: leave blank (ServiceNow auto-creates <code>u_forward_connectivity_ticket</code>)</li>
-                  <li><strong>Extends table</strong>: <code>Task</code> (recommended for <code>number</code>, <code>short_description</code>, <code>assignment_group</code>, <code>work_notes</code>)</li>
+                  <li>
+                    <strong>Extends table</strong>: <code>Task</code> (recommended for <code>number</code>, <code>short_description</code>, <code>assignment_group</code>, <code>work_notes</code>)
+                  </li>
                 </ul>
               </li>
-              <li>Create the hop table:
+              <li>
+                Create the hop table:
                 <ul>
                   <li><strong>Label</strong>: <code>Forward Connectivity Hop</code></li>
                   <li><strong>Name</strong>: leave blank (ServiceNow auto-creates <code>u_forward_connectivity_hop</code>)</li>
@@ -152,10 +158,26 @@
               </li>
             </ul>
           </li>
-          <li>Click <strong>Install demo app</strong> (creates required fields/choices and installs scripts, REST message, portal widget, and a portal page).</li>
-          <li>Open the portal page:
+          <li>
+            Click <strong>Install demo app</strong> (creates required fields/choices and installs scripts, REST message, portal widget, and a portal page).
+          </li>
+          <li>
+            In ServiceNow, use the Application Navigator search for <code>Forward Connectivity Ticket</code>.
+            You should see a module that opens the portal page (plus optional table-list modules for debugging).
+          </li>
+          <li>
+            Open the portal page:
             <ul>
               <li><code>https://&lt;instance&gt;.service-now.com/sp?id=connectivity_ticket</code></li>
+            </ul>
+          </li>
+          <li>
+            If you need to find the installed records directly (admin UI):
+            <ul>
+              <li><code>Service Portal → Widgets</code> (search for <code>Connectivity Ticket Analyzer</code>)</li>
+              <li><code>Service Portal → Pages</code> (search for <code>connectivity_ticket</code>)</li>
+              <li><code>System Web Services → Outbound → REST Message</code> (search for <code>Forward API</code>)</li>
+              <li><code>System Definition → Script Includes</code> (ForwardClient / TicketAnalysis)</li>
             </ul>
           </li>
           <li>(Optional) Click <strong>Configure Forward (ticketing)</strong> to enable Forward’s built-in ServiceNow ticketing integration.</li>

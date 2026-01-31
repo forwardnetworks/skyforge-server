@@ -108,7 +108,9 @@
           <li>Internal credentials are stored as Docker secrets under <code>./secrets/</code> (gitignored).</li>
           <li>Services read secrets from <code>/run/secrets/…</code> inside containers.</li>
           <li>Bootstrap (dev defaults): populate <code>./secrets/</code> with local values (no committed defaults).</li>
-          <li>Terraform/OpenTofu state uses object storage bucket <code>terraform-state</code> with a scoped service account (<code>object_storage_access_key</code>/<code>object_storage_secret_key</code>).</li>
+          <li>
+            Terraform/OpenTofu state uses object storage bucket <code>terraform-state</code> with a scoped service account (<code>object_storage_access_key</code>/<code>object_storage_secret_key</code>).
+          </li>
         </ul>
       </section>
 
@@ -136,7 +138,9 @@
         <ul>
           <li>Set <code>ENCORE_CFG_SKYFORGE</code> fields <code>AdminUsers</code> (comma-separated usernames) and <code>AdminUsername</code> to control the initial admin account and admin list.</li>
           <li>The workspace sync interval is controlled by <code>SKYFORGE_WORKSPACE_SYNC_SECONDS</code>.</li>
-          <li>Admins can impersonate a user for troubleshooting; during impersonation Skyforge sets <code>Remote-User</code> to the impersonated user and adds <code>X-Skyforge-Actor</code> + <code>X-Skyforge-Impersonating</code> headers for audit/debug.</li>
+          <li>
+            Admins can impersonate a user for troubleshooting; during impersonation Skyforge sets <code>Remote-User</code> to the impersonated user and adds <code>X-Skyforge-Actor</code> + <code>X-Skyforge-Impersonating</code> headers for audit/debug.
+          </li>
         </ul>
       </section>
     </main>
