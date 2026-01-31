@@ -752,57 +752,53 @@ func (i *serviceNowInstaller) ensureServicePortalPageAndPlacement(ctx context.Co
 	if err != nil {
 		return fmt.Errorf("service portal container: %w", err)
 	}
-	rowSysID, err := i.upsertTableByQueryReturnSysID(ctx, "sp_row", fmt.Sprintf("sp_container=%s^order=100", containerSysID), map[string]any{
-		"sp_container": containerSysID,
+	rowContainerField, err := i.pickExistingField(ctx, "sp_row", []string{"sp_container", "container"})
+	if err != nil {
+		return err
+	}
+	rowSysID, err := i.upsertTableByQueryReturnSysID(ctx, "sp_row", fmt.Sprintf("%s=%s^order=100", rowContainerField, containerSysID), map[string]any{
+		rowContainerField: containerSysID,
+		"order":           100,
+		"active":          true,
+	})
+	if err != nil {
+		return fmt.Errorf("service portal row: %w", err)
+	}
+
+	columnRowField, err := i.pickExistingField(ctx, "sp_column", []string{"sp_row", "row"})
+	if err != nil {
+		return err
+	}
+	columnFields := map[string]any{
+		columnRowField: rowSysID,
 		"order":        100,
 		"active":       true,
-	})
+	}
+	if ok, _ := i.hasDictionaryField(ctx, "sp_column", "size_md"); ok {
+		columnFields["size_md"] = 12
+	}
+	columnSysID, err := i.upsertTableByQueryReturnSysID(ctx, "sp_column", fmt.Sprintf("%s=%s^order=100", columnRowField, rowSysID), columnFields)
 	if err != nil {
-		// Some instances use "container" instead of "sp_container".
-		rowSysID, err = i.upsertTableByQueryReturnSysID(ctx, "sp_row", fmt.Sprintf("container=%s^order=100", containerSysID), map[string]any{
-			"container": containerSysID,
-			"order":     100,
-			"active":    true,
-		})
-		if err != nil {
-			return fmt.Errorf("service portal row: %w", err)
-		}
+		return fmt.Errorf("service portal column: %w", err)
 	}
 
-	columnSysID, err := i.upsertTableByQueryReturnSysID(ctx, "sp_column", fmt.Sprintf("sp_row=%s^order=100", rowSysID), map[string]any{
-		"sp_row": rowSysID,
-		"order":  100,
-		"active": true,
-	})
+	instanceColumnField, err := i.pickExistingField(ctx, "sp_instance", []string{"sp_column", "column"})
 	if err != nil {
-		// Some instances use "row" instead of "sp_row".
-		columnSysID, err = i.upsertTableByQueryReturnSysID(ctx, "sp_column", fmt.Sprintf("row=%s^order=100", rowSysID), map[string]any{
-			"row":    rowSysID,
-			"order":  100,
-			"active": true,
-		})
-		if err != nil {
-			return fmt.Errorf("service portal column: %w", err)
-		}
+		return err
+	}
+	instanceWidgetField, err := i.pickExistingField(ctx, "sp_instance", []string{"sp_widget", "widget"})
+	if err != nil {
+		return err
 	}
 
-	_, err = i.upsertTableByQueryReturnSysID(ctx, "sp_instance", fmt.Sprintf("sp_column=%s^sp_widget=%s^order=100", columnSysID, widgetSysID), map[string]any{
-		"sp_column": columnSysID,
-		"sp_widget": widgetSysID,
-		"order":     100,
-		"active":    true,
+	_, err = i.upsertTableByQueryReturnSysID(ctx, "sp_instance", fmt.Sprintf("%s=%s^%s=%s^order=100", instanceColumnField, columnSysID, instanceWidgetField, widgetSysID), map[string]any{
+		instanceColumnField: columnSysID,
+		instanceWidgetField: widgetSysID,
+		"order":             100,
+		"active":            true,
 	})
 	if err != nil {
-		// Some instances use "column" and "widget" instead of "sp_column"/"sp_widget".
-		_, err = i.upsertTableByQueryReturnSysID(ctx, "sp_instance", fmt.Sprintf("column=%s^widget=%s^order=100", columnSysID, widgetSysID), map[string]any{
-			"column": columnSysID,
-			"widget": widgetSysID,
-			"order":  100,
-			"active": true,
-		})
-		if err != nil {
-			return fmt.Errorf("service portal instance: %w", err)
-		}
+		return fmt.Errorf("service portal instance: %w", err)
 	}
 
 	return nil
@@ -828,4 +824,31 @@ func (i *serviceNowInstaller) upsertTableByQueryReturnSysID(ctx context.Context,
 		return "", err
 	}
 	return sysID, nil
+}
+
+func (i *serviceNowInstaller) hasDictionaryField(ctx context.Context, table, element string) (bool, error) {
+	table = strings.TrimSpace(table)
+	element = strings.TrimSpace(element)
+	if table == "" || element == "" {
+		return false, fmt.Errorf("table and element required")
+	}
+	query := fmt.Sprintf("name=%s^element=%s", table, element)
+	existing, err := i.findByQuery(ctx, "sys_dictionary", query)
+	if err != nil {
+		return false, err
+	}
+	return existing != nil, nil
+}
+
+func (i *serviceNowInstaller) pickExistingField(ctx context.Context, table string, candidates []string) (string, error) {
+	for _, c := range candidates {
+		ok, err := i.hasDictionaryField(ctx, table, c)
+		if err != nil {
+			return "", err
+		}
+		if ok {
+			return c, nil
+		}
+	}
+	return "", fmt.Errorf("servicenow %s is missing expected fields: %s", table, strings.Join(candidates, ", "))
 }
