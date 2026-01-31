@@ -116,11 +116,22 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 
 	taskWorkerEnabled := enc.TaskWorkerEnabled
 
+	aiEnabled := enc.AI.Enabled
+
 	geminiEnabled := enc.Gemini.Enabled
 	geminiClientID := strings.TrimSpace(enc.Gemini.ClientID)
 	geminiRedirectURL := strings.TrimSpace(enc.Gemini.RedirectURL)
 	if geminiRedirectURL == "" && strings.TrimSpace(enc.PublicURL) != "" {
 		geminiRedirectURL = strings.TrimRight(strings.TrimSpace(enc.PublicURL), "/") + "/api/user/integrations/gemini/callback"
+	}
+	geminiProjectID := strings.TrimSpace(enc.Gemini.ProjectID)
+	geminiLocation := strings.TrimSpace(enc.Gemini.Location)
+	if geminiLocation == "" {
+		geminiLocation = "us-central1"
+	}
+	geminiModel := strings.TrimSpace(enc.Gemini.Model)
+	if geminiModel == "" {
+		geminiModel = "gemini-2.0-flash-001"
 	}
 
 	imagePullSecretName := strings.TrimSpace(enc.Kubernetes.ImagePullSecretName)
@@ -325,10 +336,14 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		DNSURL:                                   dnsURL,
 		DNSAdminUsername:                         dnsAdminUsername,
 		DNSUserZoneSuffix:                        dnsUserZoneSuffix,
+		AIEnabled:                                aiEnabled,
 		GeminiEnabled:                            geminiEnabled,
 		GeminiClientID:                           geminiClientID,
 		GeminiClientSecret:                       strings.TrimSpace(sec.GeminiClientSecret),
 		GeminiRedirectURL:                        geminiRedirectURL,
+		GeminiProjectID:                          geminiProjectID,
+		GeminiLocation:                           geminiLocation,
+		GeminiModel:                              geminiModel,
 		TaskWorkerEnabled:                        taskWorkerEnabled,
 		ImagePullSecretName:                      imagePullSecretName,
 		ImagePullSecretNamespace:                 imagePullSecretNamespace,

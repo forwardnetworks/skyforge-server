@@ -71,7 +71,7 @@ func getUserGeminiOAuth(ctx context.Context, db *sql.DB, box *secretBox, usernam
 	if db == nil || box == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	username = strings.TrimSpace(username)
+	username = strings.ToLower(strings.TrimSpace(username))
 	if username == "" {
 		return nil, fmt.Errorf("username is required")
 	}
@@ -106,7 +106,7 @@ func putUserGeminiOAuth(ctx context.Context, db *sql.DB, box *secretBox, usernam
 	if db == nil || box == nil {
 		return fmt.Errorf("db is not configured")
 	}
-	username = strings.TrimSpace(username)
+	username = strings.ToLower(strings.TrimSpace(username))
 	if username == "" {
 		return fmt.Errorf("username is required")
 	}
@@ -138,7 +138,7 @@ func deleteUserGeminiOAuth(ctx context.Context, db *sql.DB, username string) err
 	if db == nil {
 		return fmt.Errorf("db is not configured")
 	}
-	username = strings.TrimSpace(username)
+	username = strings.ToLower(strings.TrimSpace(username))
 	if username == "" {
 		return fmt.Errorf("username is required")
 	}
@@ -157,6 +157,7 @@ func (s *Service) GetUserGeminiConfig(ctx context.Context) (*UserGeminiConfigRes
 	if err != nil {
 		return nil, err
 	}
+	username := strings.ToLower(strings.TrimSpace(user.Username))
 	if !s.cfg.GeminiEnabled {
 		return &UserGeminiConfigResponse{Enabled: false, Configured: false, HasToken: false}, nil
 	}
@@ -170,7 +171,7 @@ func (s *Service) GetUserGeminiConfig(ctx context.Context) (*UserGeminiConfigRes
 	box := newSecretBox(s.cfg.SessionSecret)
 	ctxDB, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	rec, err := getUserGeminiOAuth(ctxDB, s.db, box, user.Username)
+	rec, err := getUserGeminiOAuth(ctxDB, s.db, box, username)
 	if err != nil {
 		log.Printf("gemini get: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Gemini config").Err()
@@ -218,6 +219,7 @@ func (s *Service) GeminiConnect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	// username intentionally unused in this handler; leave it here for consistency with other handlers.
 	if !s.cfg.GeminiEnabled {
 		http.Error(w, "gemini disabled", http.StatusNotFound)
 		return
@@ -267,6 +269,7 @@ func (s *Service) GeminiCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	username := strings.ToLower(strings.TrimSpace(user.Username))
 	if !s.cfg.GeminiEnabled {
 		http.Error(w, "gemini disabled", http.StatusNotFound)
 		return
@@ -289,7 +292,7 @@ func (s *Service) GeminiCallback(w http.ResponseWriter, r *http.Request) {
 	if errParam != "" {
 		// User denied or Google cannot proceed.
 		// See: https://developers.google.com/identity/protocols/oauth2/web-server#handlingresponse
-		log.Printf("gemini oauth error: error=%q subtype=%q user=%q", errParam, errSubtype, user.Username)
+		log.Printf("gemini oauth error: error=%q subtype=%q user=%q", errParam, errSubtype, username)
 		if errParam == "access_denied" {
 			http.Redirect(w, r, "/dashboard/gemini?error=oauth_denied", http.StatusFound)
 		} else {
@@ -357,13 +360,13 @@ func (s *Service) GeminiCallback(w http.ResponseWriter, r *http.Request) {
 	// Ensure the user exists in sf_users so downstream per-user tables (Gemini, ServiceNow, etc.)
 	// can safely reference it via FK constraints.
 	if _, err := s.db.ExecContext(ctxDB, `INSERT INTO sf_users (username, created_at) VALUES ($1, now())
-ON CONFLICT (username) DO NOTHING`, strings.ToLower(strings.TrimSpace(user.Username))); err != nil {
+ON CONFLICT (username) DO NOTHING`, username); err != nil {
 		log.Printf("gemini ensure sf_users failed: %v", err)
 	}
 	if refresh == "" {
 		// Google may omit refresh_token on some exchanges. If we already have one stored,
 		// keep using it and just update metadata.
-		existing, err := getUserGeminiOAuth(ctxDB, s.db, box, user.Username)
+		existing, err := getUserGeminiOAuth(ctxDB, s.db, box, username)
 		if err != nil {
 			log.Printf("gemini get existing refresh: %v", err)
 		}
@@ -374,8 +377,8 @@ ON CONFLICT (username) DO NOTHING`, strings.ToLower(strings.TrimSpace(user.Usern
 		refresh = strings.TrimSpace(existing.RefreshTokenEnc)
 	}
 
-	if err := putUserGeminiOAuth(ctxDB, s.db, box, user.Username, email, scopeStr, refresh); err != nil {
-		log.Printf("gemini store failed: %v", err)
+	if err := putUserGeminiOAuth(ctxDB, s.db, box, username, email, scopeStr, refresh); err != nil {
+		log.Printf("gemini store failed (%s): %v", username, err)
 		http.Redirect(w, r, "/dashboard/gemini?error=store_failed", http.StatusFound)
 		return
 	}
@@ -401,13 +404,14 @@ func (s *Service) GeminiDisconnect(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	username := strings.ToLower(strings.TrimSpace(user.Username))
 	if s.db == nil {
 		return errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 	ctxDB, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	if err := deleteUserGeminiOAuth(ctxDB, s.db, user.Username); err != nil {
-		log.Printf("gemini disconnect: %v", err)
+	if err := deleteUserGeminiOAuth(ctxDB, s.db, username); err != nil {
+		log.Printf("gemini disconnect (%s): %v", username, err)
 		return errs.B().Code(errs.Unavailable).Msg("failed to delete Gemini config").Err()
 	}
 	return nil

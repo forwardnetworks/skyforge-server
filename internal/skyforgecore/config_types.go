@@ -65,10 +65,14 @@ type Config struct {
 	DNSURL                                   string
 	DNSAdminUsername                         string
 	DNSUserZoneSuffix                        string
+	AIEnabled                                bool
 	GeminiEnabled                            bool
 	GeminiClientID                           string
 	GeminiClientSecret                       string
 	GeminiRedirectURL                        string
+	GeminiProjectID                          string
+	GeminiLocation                           string
+	GeminiModel                              string
 	TaskWorkerEnabled                        bool
 	ImagePullSecretName                      string
 	ImagePullSecretNamespace                 string

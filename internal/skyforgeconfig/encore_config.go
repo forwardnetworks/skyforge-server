@@ -42,6 +42,13 @@ type GeminiDefaultsConfig struct {
 	Enabled     bool
 	ClientID    string
 	RedirectURL string
+	ProjectID   string
+	Location    string
+	Model       string
+}
+
+type AIDefaultsConfig struct {
+	Enabled bool
 }
 
 type ContainerlabDefaultsConfig struct {
@@ -166,6 +173,7 @@ type EncoreConfig struct {
 	LDAP             LDAPDefaultsConfig
 	DNS              DNSDefaultsConfig
 	Gemini           GeminiDefaultsConfig
+	AI               AIDefaultsConfig
 	Containerlab     ContainerlabDefaultsConfig
 	Workspaces       WorkspacesDefaultsConfig
 	ObjectStorage    ObjectStorageDefaultsConfig
