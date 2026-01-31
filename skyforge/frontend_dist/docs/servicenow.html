@@ -134,7 +134,7 @@
           <li>Select a Forward credential source (collector recommended).</li>
           <li>Click <strong>Save</strong>.</li>
           <li>If your PDI is sleeping, use <strong>PDI status → Wake up</strong>.</li>
-          <li>Create the demo schema (manual step, in ServiceNow UI):
+          <li>Create the demo tables (manual step, in ServiceNow UI):
             <ul>
               <li>Navigate to <code>System Definition → Tables</code> and click <strong>New</strong>.</li>
               <li>Create the ticket table:
@@ -150,24 +150,14 @@
                   <li><strong>Name</strong>: leave blank (ServiceNow auto-creates <code>u_forward_connectivity_hop</code>)</li>
                 </ul>
               </li>
-              <li>Add the required columns (dictionary entries). Skyforge lists the exact required fields under <strong>ServiceNow → Schema status</strong>.</li>
-              <li>Fast path: after creating a table, open it and use the <strong>Columns</strong> related list to create the fields.</li>
-              <li>Alternate path: <code>System Definition → Dictionary</code> → <strong>New</strong> and set <code>Table</code> + <code>Column name</code> + <code>Type</code>.</li>
-              <li>Required field types (recommended):
-                <ul>
-                  <li><code>u_src_ip</code>, <code>u_dst_ip</code>: String</li>
-                  <li><code>u_protocol</code>: Choice (TCP/UDP)</li>
-                  <li><code>u_dst_port</code>: Integer</li>
-                  <li><code>u_forward_network_id</code>, <code>u_forward_snapshot_id</code>: String</li>
-                  <li><code>u_allowed</code>: True/False</li>
-                  <li><code>u_analysis_status</code>: Choice (not_run/running/complete/error)</li>
-                  <li><code>u_analysis_error</code>, <code>u_raw_excerpt</code>, <code>u_forward_query_url</code>: String</li>
-                  <li>Hop table: <code>u_ticket</code> Reference → <code>u_forward_connectivity_ticket</code>, and Strings for <code>u_device</code>, <code>u_ingress</code>, <code>u_egress</code>, <code>u_note</code>, plus Integer <code>u_hop_index</code></li>
-                </ul>
-              </li>
             </ul>
           </li>
-          <li>Click <strong>Install demo app</strong> (installs scripts, REST message, portal widget, and properties).</li>
+          <li>Click <strong>Install demo app</strong> (creates required fields/choices and installs scripts, REST message, portal widget, and a portal page).</li>
+          <li>Open the portal page:
+            <ul>
+              <li><code>https://&lt;instance&gt;.service-now.com/sp?id=connectivity_ticket</code></li>
+            </ul>
+          </li>
           <li>(Optional) Click <strong>Configure Forward (ticketing)</strong> to enable Forward’s built-in ServiceNow ticketing integration.</li>
         </ol>
       </div>
@@ -176,7 +166,7 @@
         <h2>Notes</h2>
         <ul>
           <li>ServiceNow calls Forward SaaS directly. Skyforge only installs/configures ServiceNow artifacts.</li>
-          <li>Skyforge installs scripts/widgets/etc via ServiceNow’s Table API, but does <strong>not</strong> create the schema (custom tables/fields).</li>
+          <li>Skyforge can create the required fields/choices once the tables exist, but does <strong>not</strong> create the tables themselves.</li>
           <li>The installer overwrites demo artifact contents by name (scripts, widget, REST message, properties).</li>
         </ul>
       </div>

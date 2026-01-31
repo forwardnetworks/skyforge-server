@@ -132,7 +132,11 @@ func (i *serviceNowInstaller) Install(ctx context.Context) error {
 	if err := i.ensureEventAndScriptAction(ctx); err != nil {
 		return err
 	}
-	if err := i.ensureServicePortalWidget(ctx); err != nil {
+	widgetID, err := i.ensureServicePortalWidget(ctx)
+	if err != nil {
+		return err
+	}
+	if err := i.ensureServicePortalPageAndPlacement(ctx, widgetID); err != nil {
 		return err
 	}
 
@@ -516,19 +520,20 @@ func (i *serviceNowInstaller) ensureEventAndScriptAction(ctx context.Context) er
 	return nil
 }
 
-func (i *serviceNowInstaller) ensureServicePortalWidget(ctx context.Context) error {
+func (i *serviceNowInstaller) ensureServicePortalWidget(ctx context.Context) (string, error) {
 	name := "Connectivity Ticket Analyzer"
-	if err := i.upsertTableByKey(ctx, "sp_widget", "name", name, map[string]any{
+	sysID, err := i.upsertTableByKeyReturnSysID(ctx, "sp_widget", "name", name, map[string]any{
 		"name":          name,
 		"active":        true,
 		"client_script": i.cfg.Assets.WidgetClientJS,
 		"server_script": i.cfg.Assets.WidgetServerJS,
 		"template":      i.cfg.Assets.WidgetTemplateHTML,
 		"css":           i.cfg.Assets.WidgetStyleCSS,
-	}); err != nil {
-		return fmt.Errorf("service portal widget: %w", err)
+	})
+	if err != nil {
+		return "", fmt.Errorf("service portal widget: %w", err)
 	}
-	return nil
+	return sysID, nil
 }
 
 func (i *serviceNowInstaller) tableURL(table string) (string, error) {
@@ -712,4 +717,115 @@ func (i *serviceNowInstaller) updateBySysID(ctx context.Context, table, sysID st
 func (i *serviceNowInstaller) addAuth(req *http.Request) {
 	req.SetBasicAuth(i.cfg.AdminUsername, i.cfg.AdminPassword)
 	req.Header.Set("Accept", "application/json")
+}
+
+func (i *serviceNowInstaller) ensureServicePortalPageAndPlacement(ctx context.Context, widgetSysID string) error {
+	widgetSysID = strings.TrimSpace(widgetSysID)
+	if widgetSysID == "" {
+		return fmt.Errorf("service portal widget sys_id required")
+	}
+
+	// Create a stable, bookmarkable portal page that hosts the widget so users don't need
+	// to navigate ServiceNow configuration menus (which can vary by UI version/roles).
+	//
+	// The URL is typically:
+	//   https://<instance>.service-now.com/sp?id=connectivity_ticket
+	pageID := "connectivity_ticket"
+	pageSysID, err := i.upsertTableByKeyReturnSysID(ctx, "sp_page", "id", pageID, map[string]any{
+		"id":     pageID,
+		"title":  "Connectivity Ticket",
+		"active": true,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "Invalid table") {
+			return fmt.Errorf("Service Portal is not available on this instance (missing sp_page table)")
+		}
+		return fmt.Errorf("service portal page: %w", err)
+	}
+
+	// Create a minimal layout: container -> row -> column -> instance(widget).
+	containerSysID, err := i.upsertTableByQueryReturnSysID(ctx, "sp_container", fmt.Sprintf("page=%s^order=100", pageSysID), map[string]any{
+		"page":   pageSysID,
+		"order":  100,
+		"active": true,
+	})
+	if err != nil {
+		return fmt.Errorf("service portal container: %w", err)
+	}
+	rowSysID, err := i.upsertTableByQueryReturnSysID(ctx, "sp_row", fmt.Sprintf("sp_container=%s^order=100", containerSysID), map[string]any{
+		"sp_container": containerSysID,
+		"order":        100,
+		"active":       true,
+	})
+	if err != nil {
+		// Some instances use "container" instead of "sp_container".
+		rowSysID, err = i.upsertTableByQueryReturnSysID(ctx, "sp_row", fmt.Sprintf("container=%s^order=100", containerSysID), map[string]any{
+			"container": containerSysID,
+			"order":     100,
+			"active":    true,
+		})
+		if err != nil {
+			return fmt.Errorf("service portal row: %w", err)
+		}
+	}
+
+	columnSysID, err := i.upsertTableByQueryReturnSysID(ctx, "sp_column", fmt.Sprintf("sp_row=%s^order=100", rowSysID), map[string]any{
+		"sp_row": rowSysID,
+		"order":  100,
+		"active": true,
+	})
+	if err != nil {
+		// Some instances use "row" instead of "sp_row".
+		columnSysID, err = i.upsertTableByQueryReturnSysID(ctx, "sp_column", fmt.Sprintf("row=%s^order=100", rowSysID), map[string]any{
+			"row":    rowSysID,
+			"order":  100,
+			"active": true,
+		})
+		if err != nil {
+			return fmt.Errorf("service portal column: %w", err)
+		}
+	}
+
+	_, err = i.upsertTableByQueryReturnSysID(ctx, "sp_instance", fmt.Sprintf("sp_column=%s^sp_widget=%s^order=100", columnSysID, widgetSysID), map[string]any{
+		"sp_column": columnSysID,
+		"sp_widget": widgetSysID,
+		"order":     100,
+		"active":    true,
+	})
+	if err != nil {
+		// Some instances use "column" and "widget" instead of "sp_column"/"sp_widget".
+		_, err = i.upsertTableByQueryReturnSysID(ctx, "sp_instance", fmt.Sprintf("column=%s^widget=%s^order=100", columnSysID, widgetSysID), map[string]any{
+			"column": columnSysID,
+			"widget": widgetSysID,
+			"order":  100,
+			"active": true,
+		})
+		if err != nil {
+			return fmt.Errorf("service portal instance: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (i *serviceNowInstaller) upsertTableByQueryReturnSysID(ctx context.Context, table, query string, fields map[string]any) (string, error) {
+	existing, err := i.findByQuery(ctx, table, query)
+	if err != nil {
+		return "", err
+	}
+	if existing != nil {
+		sysID, _ := existing["sys_id"].(string)
+		if strings.TrimSpace(sysID) == "" {
+			return "", fmt.Errorf("missing sys_id")
+		}
+		if err := i.updateBySysID(ctx, table, sysID, fields); err != nil {
+			return "", err
+		}
+		return sysID, nil
+	}
+	sysID, err := i.create(ctx, table, fields)
+	if err != nil {
+		return "", err
+	}
+	return sysID, nil
 }
