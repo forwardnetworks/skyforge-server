@@ -100,7 +100,7 @@ func (s *Service) getContainerlabDeploymentTopology(ctx context.Context, pc *wor
 	if netlabServer == "" {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
 	}
-	server, err := s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, netlabServer)
+	server, err := s.resolveContainerlabServerConfig(ctx, pc, netlabServer)
 	if err != nil {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
 	}

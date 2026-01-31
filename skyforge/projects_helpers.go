@@ -1,8 +1,11 @@
 package skyforge
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 
 	"encore.dev/beta/errs"
 )
@@ -27,11 +30,12 @@ func (s *Service) loadWorkspaceByKey(workspaceKey string) ([]SkyforgeWorkspace, 
 }
 
 type workspaceContext struct {
-	workspaces []SkyforgeWorkspace
-	idx        int
-	workspace  SkyforgeWorkspace
-	access     string
-	claims     *SessionClaims
+	workspaces   []SkyforgeWorkspace
+	idx          int
+	workspace    SkyforgeWorkspace
+	access       string
+	claims       *SessionClaims
+	userSettings *UserSettingsResponse
 }
 
 func (s *Service) workspaceContextForUser(user *AuthUser, workspaceKey string) (*workspaceContext, error) {
@@ -53,11 +57,33 @@ func (s *Service) workspaceContextForUser(user *AuthUser, workspaceKey string) (
 	if access == "none" {
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
+	var userSettings *UserSettingsResponse
+	if s != nil && s.db != nil {
+		ctxSettings, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		if rec, err := getUserSettings(ctxSettings, s.db, claims.Username); err == nil && rec != nil {
+			var env []UserEnvVar
+			if strings.TrimSpace(rec.DefaultEnvJSON) != "" {
+				_ = json.Unmarshal([]byte(rec.DefaultEnvJSON), &env)
+			}
+			var repos []ExternalTemplateRepo
+			if strings.TrimSpace(rec.ExternalTemplateReposJSON) != "" {
+				_ = json.Unmarshal([]byte(rec.ExternalTemplateReposJSON), &repos)
+			}
+			userSettings = &UserSettingsResponse{
+				DefaultForwardCollectorConfigID: strings.TrimSpace(rec.DefaultForwardCollectorConfig),
+				DefaultEnv:                      env,
+				ExternalTemplateRepos:           repos,
+				UpdatedAt:                       rec.UpdatedAt.UTC().Format(time.RFC3339),
+			}
+		}
+	}
 	return &workspaceContext{
-		workspaces: workspaces,
-		idx:        idx,
-		workspace:  workspace,
-		access:     access,
-		claims:     claims,
+		workspaces:   workspaces,
+		idx:          idx,
+		workspace:    workspace,
+		access:       access,
+		claims:       claims,
+		userSettings: userSettings,
 	}, nil
 }

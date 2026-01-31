@@ -15,9 +15,9 @@ type AdminEffectiveConfig struct {
 	} `json:"flags"`
 
 	NetlabGenerator struct {
-		Mode          string `json:"mode"`
+		Mode           string `json:"mode"`
 		GeneratorImage string `json:"generatorImage"`
-		PullPolicy    string `json:"pullPolicy"`
+		PullPolicy     string `json:"pullPolicy"`
 	} `json:"netlabGenerator"`
 
 	ObjectStorage struct {
@@ -33,11 +33,11 @@ type AdminEffectiveConfig struct {
 	} `json:"integrations"`
 
 	ForwardCollector struct {
-		Image                   string `json:"image"`
-		PullPolicy              string `json:"pullPolicy"`
-		ImagePullSecretName     string `json:"imagePullSecretName"`
+		Image                    string `json:"image"`
+		PullPolicy               string `json:"pullPolicy"`
+		ImagePullSecretName      string `json:"imagePullSecretName"`
 		ImagePullSecretNamespace string `json:"imagePullSecretNamespace"`
-		HeapSizeGB              int    `json:"heapSizeGb"`
+		HeapSizeGB               int    `json:"heapSizeGb"`
 	} `json:"forwardCollector"`
 
 	Missing []string `json:"missing,omitempty"`

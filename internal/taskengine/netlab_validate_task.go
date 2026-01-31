@@ -155,9 +155,9 @@ func (e *Engine) runNetlabValidateTask(ctx context.Context, spec netlabValidateR
 		}
 	}
 	genEnv := map[string]string{
-		"SKYFORGE_VALIDATE_ONLY":          "1",
-		"SKYFORGE_NETLAB_BUNDLE_PATH":     "/input/bundle.b64",
-		"SKYFORGE_NETLAB_TOPOLOGY_PATH":   "topology.yml",
+		"SKYFORGE_VALIDATE_ONLY":        "1",
+		"SKYFORGE_NETLAB_BUNDLE_PATH":   "/input/bundle.b64",
+		"SKYFORGE_NETLAB_TOPOLOGY_PATH": "topology.yml",
 	}
 	if len(setOverrides) > 0 {
 		genEnv["SKYFORGE_NETLAB_SET_OVERRIDES"] = strings.Join(setOverrides, "\n")
@@ -203,7 +203,7 @@ func (e *Engine) runNetlabValidateTask(ctx context.Context, spec netlabValidateR
 							"name":            "validator",
 							"image":           image,
 							"imagePullPolicy": pullPolicy,
-							"env": kubeEnvList(genEnv),
+							"env":             kubeEnvList(genEnv),
 							"volumeMounts": []map[string]any{
 								{"name": "input", "mountPath": "/input", "readOnly": true},
 								{"name": "work", "mountPath": "/work"},

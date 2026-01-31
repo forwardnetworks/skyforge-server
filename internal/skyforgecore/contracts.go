@@ -15,14 +15,14 @@ const (
 	TaskTypeUserBootstrap      = "user-bootstrap"
 	TaskTypeWorkspaceBootstrap = "workspace-bootstrap"
 
-	TaskTypeNetlabRun     = "netlab-run"
-	TaskTypeNetlabC9sRun  = "netlab-c9s-run"
+	TaskTypeNetlabRun      = "netlab-run"
+	TaskTypeNetlabC9sRun   = "netlab-c9s-run"
 	TaskTypeNetlabValidate = "netlab-validate"
-	TaskTypeContainerlab  = "containerlab-run"
-	TaskTypeClabernetes   = "clabernetes-run"
-	TaskTypeForwardInit   = "forward-init"
-	TaskTypeForwardSync   = "forward-sync"
-	TaskTypeTerraformPref = "terraform-"
+	TaskTypeContainerlab   = "containerlab-run"
+	TaskTypeClabernetes    = "clabernetes-run"
+	TaskTypeForwardInit    = "forward-init"
+	TaskTypeForwardSync    = "forward-sync"
+	TaskTypeTerraformPref  = "terraform-"
 )
 
 const (

@@ -74,7 +74,7 @@ func (s *Service) GetWorkspaceContainerlabTemplates(ctx context.Context, id stri
 		if req == nil || strings.TrimSpace(req.Repo) == "" {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("external repo id is required").Err()
 		}
-		found := externalTemplateRepoByID(&pc.workspace, strings.TrimSpace(req.Repo))
+		found := externalTemplateRepoByIDForContext(pc, strings.TrimSpace(req.Repo))
 		if found == nil {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown external repo").Err()
 		}

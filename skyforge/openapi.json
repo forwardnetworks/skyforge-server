@@ -579,6 +579,27 @@
         ],
         "type": "object"
       },
+      "skyforge.GovernancePolicy": {
+        "description": "All limits are optional. A value of 0 means \"unlimited/disabled\".\n",
+        "properties": {
+          "maxCollectorsPerUser": {
+            "format": "int64",
+            "title": "MaxCollectorsPerUser caps the number of in-cluster Forward collectors a user can\ncreate.\n",
+            "type": "integer"
+          },
+          "maxDeploymentsPerUser": {
+            "format": "int64",
+            "title": "MaxDeploymentsPerUser caps the number of deployment definitions a user can\ncreate across all workspaces.\n",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "maxDeploymentsPerUser",
+          "maxCollectorsPerUser"
+        ],
+        "title": "GovernancePolicy is a lightweight guardrail layer (admin-configurable).\n",
+        "type": "object"
+      },
       "skyforge.GovernanceResource": {
         "properties": {
           "accountId": {
@@ -1230,6 +1251,9 @@
       "skyforge.SkyforgeWorkspace": {
         "description": "NOTE: This type must live in the service package (not a type alias to an internal package) to satisfy Encore's API schema rules.\n",
         "properties": {
+          "allowCustomContainerlabServers": {
+            "type": "boolean"
+          },
           "allowCustomEveServers": {
             "title": "LabPP requires an EVE-NG endpoint. This flag enables configuring a per-workspace\nEVE server.\n",
             "type": "boolean"
@@ -1384,6 +1408,7 @@
           "allowExternalTemplateRepos",
           "allowCustomEveServers",
           "allowCustomNetlabServers",
+          "allowCustomContainerlabServers",
           "externalTemplateRepos",
           "terraformStateKey",
           "terraformInitTemplateId",
@@ -1661,6 +1686,115 @@
         ],
         "type": "object"
       },
+      "skyforge.UserContainerlabServerConfig": {
+        "properties": {
+          "apiInsecure": {
+            "type": "boolean"
+          },
+          "apiPassword": {
+            "type": "string"
+          },
+          "apiToken": {
+            "type": "string"
+          },
+          "apiUrl": {
+            "type": "string"
+          },
+          "apiUser": {
+            "type": "string"
+          },
+          "hasPassword": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "apiUrl",
+          "apiInsecure",
+          "apiUser",
+          "apiPassword",
+          "apiToken",
+          "hasPassword"
+        ],
+        "type": "object"
+      },
+      "skyforge.UserEnvVar": {
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "value"
+        ],
+        "type": "object"
+      },
+      "skyforge.UserEveServerConfig": {
+        "properties": {
+          "apiPassword": {
+            "type": "string"
+          },
+          "apiUrl": {
+            "type": "string"
+          },
+          "apiUser": {
+            "type": "string"
+          },
+          "hasPassword": {
+            "type": "boolean"
+          },
+          "hasSshKey": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "skipTlsVerify": {
+            "type": "boolean"
+          },
+          "sshHost": {
+            "type": "string"
+          },
+          "sshKey": {
+            "type": "string"
+          },
+          "sshUser": {
+            "type": "string"
+          },
+          "webUrl": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "apiUrl",
+          "webUrl",
+          "skipTlsVerify",
+          "apiUser",
+          "apiPassword",
+          "hasPassword",
+          "sshHost",
+          "sshUser",
+          "sshKey",
+          "hasSshKey"
+        ],
+        "type": "object"
+      },
       "skyforge.UserForwardCollectorConfigSummary": {
         "properties": {
           "baseUrl": {
@@ -1713,6 +1847,45 @@
           "runtime",
           "forwardCollector",
           "decryptionFailed"
+        ],
+        "type": "object"
+      },
+      "skyforge.UserNetlabServerConfig": {
+        "properties": {
+          "apiInsecure": {
+            "type": "boolean"
+          },
+          "apiPassword": {
+            "type": "string"
+          },
+          "apiToken": {
+            "type": "string"
+          },
+          "apiUrl": {
+            "type": "string"
+          },
+          "apiUser": {
+            "type": "string"
+          },
+          "hasPassword": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "apiUrl",
+          "apiInsecure",
+          "apiUser",
+          "apiPassword",
+          "apiToken",
+          "hasPassword"
         ],
         "type": "object"
       },
@@ -2211,6 +2384,9 @@
           "dnsEnabled": {
             "type": "boolean"
           },
+          "forwardEnabled": {
+            "type": "boolean"
+          },
           "giteaEnabled": {
             "type": "boolean"
           },
@@ -2237,6 +2413,7 @@
           "coderEnabled",
           "yaadeEnabled",
           "swaggerUIEnabled",
+          "forwardEnabled",
           "netboxEnabled",
           "nautobotEnabled",
           "dnsEnabled"
@@ -2598,6 +2775,91 @@
           }
         },
         "summary": "IngestGovernanceCosts ingests cost snapshots (admin only).\n"
+      }
+    },
+    "/api/admin/governance/policy": {
+      "get": {
+        "operationId": "GET:skyforge.GetGovernancePolicy",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "policy": {
+                      "$ref": "#/components/schemas/skyforge.GovernancePolicy"
+                    },
+                    "retrievedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "policy",
+                    "retrievedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetGovernancePolicy returns the current governance policy (admin only).\n"
+      },
+      "put": {
+        "operationId": "PUT:skyforge.UpdateGovernancePolicy",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "policy": {
+                    "$ref": "#/components/schemas/skyforge.GovernancePolicy"
+                  }
+                },
+                "required": [
+                  "policy"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "policy": {
+                      "$ref": "#/components/schemas/skyforge.GovernancePolicy"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "policy",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "UpdateGovernancePolicy updates the governance policy (admin only).\n"
       }
     },
     "/api/admin/governance/resources": {
@@ -7132,6 +7394,965 @@
         "summary": "GetUIConfig returns UI configuration values.\n"
       }
     },
+    "/api/user/cloud/aws-sso": {
+      "delete": {
+        "operationId": "DELETE:skyforge.DeleteUserAWSSSOCredentials",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "DeleteUserAWSSSOCredentials deletes AWS SSO configuration for the current user.\n"
+      },
+      "get": {
+        "operationId": "GET:skyforge.GetUserAWSSSOCredentials",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "accountId": {
+                      "type": "string"
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "region": {
+                      "type": "string"
+                    },
+                    "roleName": {
+                      "type": "string"
+                    },
+                    "startUrl": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "configured",
+                    "startUrl",
+                    "region",
+                    "accountId",
+                    "roleName",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetUserAWSSSOCredentials returns the current user's AWS SSO configuration\n(non-token).\n"
+      },
+      "put": {
+        "operationId": "PUT:skyforge.PutUserAWSSSOCredentials",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "accountId": {
+                    "type": "string"
+                  },
+                  "region": {
+                    "type": "string"
+                  },
+                  "roleName": {
+                    "type": "string"
+                  },
+                  "startUrl": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "startUrl",
+                  "region",
+                  "accountId",
+                  "roleName"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "accountId": {
+                      "type": "string"
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "region": {
+                      "type": "string"
+                    },
+                    "roleName": {
+                      "type": "string"
+                    },
+                    "startUrl": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "configured",
+                    "startUrl",
+                    "region",
+                    "accountId",
+                    "roleName",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "PutUserAWSSSOCredentials saves AWS SSO configuration (non-token) for the current\nuser.\n"
+      }
+    },
+    "/api/user/cloud/aws-static": {
+      "delete": {
+        "operationId": "DELETE:skyforge.DeleteUserAWSStaticCredentials",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "DeleteUserAWSStaticCredentials deletes AWS static credentials for the current\nuser.\n"
+      },
+      "get": {
+        "operationId": "GET:skyforge.GetUserAWSStaticCredentials",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "accessKeyLast4": {
+                      "type": "string"
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "configured",
+                    "accessKeyLast4",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetUserAWSStaticCredentials returns the current user's AWS static credential\nstatus.\n"
+      },
+      "put": {
+        "operationId": "PUT:skyforge.PutUserAWSStaticCredentials",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "accessKeyId": {
+                    "type": "string"
+                  },
+                  "secretAccessKey": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "accessKeyId",
+                  "secretAccessKey"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "accessKeyLast4": {
+                      "type": "string"
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "configured",
+                    "accessKeyLast4",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "PutUserAWSStaticCredentials saves AWS static credentials for the current user.\n"
+      }
+    },
+    "/api/user/cloud/azure": {
+      "delete": {
+        "operationId": "DELETE:skyforge.DeleteUserAzureCredentials",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "DeleteUserAzureCredentials deletes Azure credentials for the current user.\n"
+      },
+      "get": {
+        "operationId": "GET:skyforge.GetUserAzureCredentials",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "clientId": {
+                      "type": "string"
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "hasClientSecret": {
+                      "type": "boolean"
+                    },
+                    "subscriptionId": {
+                      "type": "string"
+                    },
+                    "tenantId": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "configured",
+                    "tenantId",
+                    "clientId",
+                    "subscriptionId",
+                    "updatedAt",
+                    "hasClientSecret"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetUserAzureCredentials returns the current user's Azure credential status.\n"
+      },
+      "put": {
+        "operationId": "PUT:skyforge.PutUserAzureCredentials",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "clientId": {
+                    "type": "string"
+                  },
+                  "clientSecret": {
+                    "type": "string"
+                  },
+                  "subscriptionId": {
+                    "type": "string"
+                  },
+                  "tenantId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "tenantId",
+                  "clientId",
+                  "clientSecret",
+                  "subscriptionId"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "clientId": {
+                      "type": "string"
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "hasClientSecret": {
+                      "type": "boolean"
+                    },
+                    "subscriptionId": {
+                      "type": "string"
+                    },
+                    "tenantId": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "configured",
+                    "tenantId",
+                    "clientId",
+                    "subscriptionId",
+                    "updatedAt",
+                    "hasClientSecret"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "PutUserAzureCredentials saves Azure credentials for the current user.\n"
+      }
+    },
+    "/api/user/cloud/gcp": {
+      "delete": {
+        "operationId": "DELETE:skyforge.DeleteUserGCPCredentials",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "DeleteUserGCPCredentials deletes GCP credentials for the current user.\n"
+      },
+      "get": {
+        "operationId": "GET:skyforge.GetUserGCPCredentials",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "hasServiceAccountJson": {
+                      "type": "boolean"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "configured",
+                    "hasServiceAccountJson",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetUserGCPCredentials returns the current user's GCP credential status.\n"
+      },
+      "put": {
+        "operationId": "PUT:skyforge.PutUserGCPCredentials",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "projectIdOverride": {
+                    "type": "string"
+                  },
+                  "serviceAccountJson": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "serviceAccountJson",
+                  "projectIdOverride"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "hasServiceAccountJson": {
+                      "type": "boolean"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "configured",
+                    "hasServiceAccountJson",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "PutUserGCPCredentials saves GCP credentials for the current user.\n"
+      }
+    },
+    "/api/user/cloud/ibm": {
+      "delete": {
+        "operationId": "DELETE:skyforge.DeleteUserIBMCredentials",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "DeleteUserIBMCredentials deletes IBM Cloud credentials for the current user.\n"
+      },
+      "get": {
+        "operationId": "GET:skyforge.GetUserIBMCredentials",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "hasApiKey": {
+                      "type": "boolean"
+                    },
+                    "region": {
+                      "type": "string"
+                    },
+                    "resourceGroupId": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "configured",
+                    "region",
+                    "resourceGroupId",
+                    "hasApiKey",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetUserIBMCredentials returns the current user's IBM Cloud credential status.\n"
+      },
+      "put": {
+        "operationId": "PUT:skyforge.PutUserIBMCredentials",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "apiKey": {
+                    "type": "string"
+                  },
+                  "region": {
+                    "type": "string"
+                  },
+                  "resourceGroupId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "apiKey",
+                  "region",
+                  "resourceGroupId"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "hasApiKey": {
+                      "type": "boolean"
+                    },
+                    "region": {
+                      "type": "string"
+                    },
+                    "resourceGroupId": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "configured",
+                    "region",
+                    "resourceGroupId",
+                    "hasApiKey",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "PutUserIBMCredentials saves IBM Cloud credentials for the current user.\n"
+      }
+    },
+    "/api/user/containerlab/servers": {
+      "get": {
+        "operationId": "GET:skyforge.ListUserContainerlabServers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "servers": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.UserContainerlabServerConfig"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "servers"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ListUserContainerlabServers returns the current user's configured Containerlab\nBYOL endpoints.\n"
+      },
+      "put": {
+        "operationId": "PUT:skyforge.UpsertUserContainerlabServer",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "apiInsecure": {
+                    "type": "boolean"
+                  },
+                  "apiPassword": {
+                    "type": "string"
+                  },
+                  "apiToken": {
+                    "type": "string"
+                  },
+                  "apiUrl": {
+                    "type": "string"
+                  },
+                  "apiUser": {
+                    "type": "string"
+                  },
+                  "hasPassword": {
+                    "type": "boolean"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "apiUrl",
+                  "apiInsecure",
+                  "apiUser",
+                  "apiPassword",
+                  "apiToken",
+                  "hasPassword"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "apiInsecure": {
+                      "type": "boolean"
+                    },
+                    "apiPassword": {
+                      "type": "string"
+                    },
+                    "apiToken": {
+                      "type": "string"
+                    },
+                    "apiUrl": {
+                      "type": "string"
+                    },
+                    "apiUser": {
+                      "type": "string"
+                    },
+                    "hasPassword": {
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "apiUrl",
+                    "apiInsecure",
+                    "apiUser",
+                    "apiPassword",
+                    "apiToken",
+                    "hasPassword"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "UpsertUserContainerlabServer creates or updates a user-scoped Containerlab\nendpoint.\n"
+      }
+    },
+    "/api/user/containerlab/servers/{serverID}": {
+      "delete": {
+        "operationId": "DELETE:skyforge.DeleteUserContainerlabServer",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "serverID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "DeleteUserContainerlabServer deletes a user-scoped Containerlab server.\n"
+      }
+    },
+    "/api/user/eve/servers": {
+      "get": {
+        "operationId": "GET:skyforge.ListUserEveServers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "servers": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.UserEveServerConfig"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "servers"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ListUserEveServers returns the current user's configured EVE-NG API endpoints.\n"
+      },
+      "put": {
+        "operationId": "PUT:skyforge.UpsertUserEveServer",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "apiPassword": {
+                    "type": "string"
+                  },
+                  "apiUrl": {
+                    "type": "string"
+                  },
+                  "apiUser": {
+                    "type": "string"
+                  },
+                  "hasPassword": {
+                    "type": "boolean"
+                  },
+                  "hasSshKey": {
+                    "type": "boolean"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "skipTlsVerify": {
+                    "type": "boolean"
+                  },
+                  "sshHost": {
+                    "type": "string"
+                  },
+                  "sshKey": {
+                    "type": "string"
+                  },
+                  "sshUser": {
+                    "type": "string"
+                  },
+                  "webUrl": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "apiUrl",
+                  "webUrl",
+                  "skipTlsVerify",
+                  "apiUser",
+                  "apiPassword",
+                  "hasPassword",
+                  "sshHost",
+                  "sshUser",
+                  "sshKey",
+                  "hasSshKey"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "apiPassword": {
+                      "type": "string"
+                    },
+                    "apiUrl": {
+                      "type": "string"
+                    },
+                    "apiUser": {
+                      "type": "string"
+                    },
+                    "hasPassword": {
+                      "type": "boolean"
+                    },
+                    "hasSshKey": {
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "skipTlsVerify": {
+                      "type": "boolean"
+                    },
+                    "sshHost": {
+                      "type": "string"
+                    },
+                    "sshKey": {
+                      "type": "string"
+                    },
+                    "sshUser": {
+                      "type": "string"
+                    },
+                    "webUrl": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "apiUrl",
+                    "webUrl",
+                    "skipTlsVerify",
+                    "apiUser",
+                    "apiPassword",
+                    "hasPassword",
+                    "sshHost",
+                    "sshUser",
+                    "sshKey",
+                    "hasSshKey"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "UpsertUserEveServer creates or updates a user-scoped EVE-NG server.\n"
+      }
+    },
+    "/api/user/eve/servers/{serverID}": {
+      "delete": {
+        "operationId": "DELETE:skyforge.DeleteUserEveServer",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "serverID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "DeleteUserEveServer deletes a user-scoped EVE server.\n"
+      }
+    },
     "/api/user/git-credentials": {
       "get": {
         "operationId": "GET:skyforge.GetUserGitCredentials",
@@ -7288,6 +8509,768 @@
           }
         },
         "summary": "RotateUserGitDeployKey rotates the user's SSH deploy key.\n"
+      }
+    },
+    "/api/user/integrations/gemini": {
+      "get": {
+        "operationId": "GET:skyforge.GetUserGeminiConfig",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "email": {
+                      "type": "string"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "hasToken": {
+                      "type": "boolean"
+                    },
+                    "redirectUrl": {
+                      "type": "string"
+                    },
+                    "scopes": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "enabled",
+                    "configured",
+                    "email",
+                    "scopes",
+                    "hasToken",
+                    "updatedAt",
+                    "redirectUrl"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetUserGeminiConfig returns the current user's Gemini integration status.\n"
+      }
+    },
+    "/api/user/integrations/gemini/callback": {
+      "get": {
+        "operationId": "GET:skyforge.GeminiCallback",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GeminiCallback completes the OAuth flow and stores the refresh token for the\ncurrent user.\n"
+      }
+    },
+    "/api/user/integrations/gemini/connect": {
+      "get": {
+        "operationId": "GET:skyforge.GeminiConnect",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GeminiConnect redirects the user to Google's OAuth consent screen and stores\nCSRF state in a cookie.\n"
+      }
+    },
+    "/api/user/integrations/gemini/disconnect": {
+      "post": {
+        "operationId": "POST:skyforge.GeminiDisconnect",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GeminiDisconnect deletes the stored tokens for the current user.\n"
+      }
+    },
+    "/api/user/integrations/servicenow": {
+      "get": {
+        "operationId": "GET:skyforge.GetUserServiceNowConfig",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "adminUsername": {
+                      "type": "string"
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "forwardCollectorConfigId": {
+                      "type": "string"
+                    },
+                    "forwardUsername": {
+                      "title": "custom username (if using custom creds)\n",
+                      "type": "string"
+                    },
+                    "hasAdminPassword": {
+                      "type": "boolean"
+                    },
+                    "hasForwardPassword": {
+                      "title": "true if a custom password is stored\n",
+                      "type": "boolean"
+                    },
+                    "instanceUrl": {
+                      "type": "string"
+                    },
+                    "lastInstallError": {
+                      "type": "string"
+                    },
+                    "lastInstallFinishedAt": {
+                      "type": "string"
+                    },
+                    "lastInstallStartedAt": {
+                      "type": "string"
+                    },
+                    "lastInstallStatus": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "configured",
+                    "instanceUrl",
+                    "adminUsername",
+                    "hasAdminPassword",
+                    "forwardCollectorConfigId",
+                    "forwardUsername",
+                    "hasForwardPassword",
+                    "updatedAt",
+                    "lastInstallStatus",
+                    "lastInstallError",
+                    "lastInstallStartedAt",
+                    "lastInstallFinishedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetUserServiceNowConfig returns the current user's ServiceNow demo integration\nsettings.\n"
+      },
+      "put": {
+        "operationId": "PUT:skyforge.PutUserServiceNowConfig",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "adminPassword": {
+                    "type": "string"
+                  },
+                  "adminUsername": {
+                    "type": "string"
+                  },
+                  "forwardCollectorConfigId": {
+                    "type": "string"
+                  },
+                  "forwardPassword": {
+                    "type": "string"
+                  },
+                  "forwardUsername": {
+                    "type": "string"
+                  },
+                  "instanceUrl": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "instanceUrl",
+                  "adminUsername",
+                  "adminPassword",
+                  "forwardCollectorConfigId",
+                  "forwardUsername",
+                  "forwardPassword"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "adminUsername": {
+                      "type": "string"
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "forwardCollectorConfigId": {
+                      "type": "string"
+                    },
+                    "forwardUsername": {
+                      "title": "custom username (if using custom creds)\n",
+                      "type": "string"
+                    },
+                    "hasAdminPassword": {
+                      "type": "boolean"
+                    },
+                    "hasForwardPassword": {
+                      "title": "true if a custom password is stored\n",
+                      "type": "boolean"
+                    },
+                    "instanceUrl": {
+                      "type": "string"
+                    },
+                    "lastInstallError": {
+                      "type": "string"
+                    },
+                    "lastInstallFinishedAt": {
+                      "type": "string"
+                    },
+                    "lastInstallStartedAt": {
+                      "type": "string"
+                    },
+                    "lastInstallStatus": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "configured",
+                    "instanceUrl",
+                    "adminUsername",
+                    "hasAdminPassword",
+                    "forwardCollectorConfigId",
+                    "forwardUsername",
+                    "hasForwardPassword",
+                    "updatedAt",
+                    "lastInstallStatus",
+                    "lastInstallError",
+                    "lastInstallStartedAt",
+                    "lastInstallFinishedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "PutUserServiceNowConfig stores the current user's ServiceNow demo integration\nsettings.\n"
+      }
+    },
+    "/api/user/integrations/servicenow/configureForwardTicketing": {
+      "post": {
+        "description": "This does not configure ServiceNow CMDB integration (that is per-network and handled elsewhere).\n",
+        "operationId": "POST:skyforge.ConfigureForwardServiceNowTicketing",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "configured",
+                    "message"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ConfigureForwardServiceNowTicketing configures Forward SaaS to\nauto-create/update incidents in ServiceNow.\n"
+      }
+    },
+    "/api/user/integrations/servicenow/install": {
+      "post": {
+        "operationId": "POST:skyforge.InstallUserServiceNowDemo",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "installed": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "installed",
+                    "status",
+                    "message"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "InstallUserServiceNowDemo installs/configures the ServiceNow Connectivity Ticket\ndemo into the user's ServiceNow instance.\n"
+      }
+    },
+    "/api/user/integrations/servicenow/pdiStatus": {
+      "get": {
+        "operationId": "GET:skyforge.GetUserServiceNowPDIStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "checkedAt": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "httpStatus": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "httpStatus",
+                    "detail",
+                    "checkedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetUserServiceNowPDIStatus checks whether the user's ServiceNow PDI is awake (or\nlikely sleeping).\n"
+      }
+    },
+    "/api/user/integrations/servicenow/schemaStatus": {
+      "get": {
+        "operationId": "GET:skyforge.GetUserServiceNowSchemaStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "checkedAt": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "missing": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "status": {
+                      "title": "ok | missing | error\n",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "missing",
+                    "detail",
+                    "checkedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetUserServiceNowSchemaStatus checks whether the ServiceNow demo schema is\ninstalled.\n"
+      }
+    },
+    "/api/user/integrations/servicenow/wake": {
+      "post": {
+        "operationId": "POST:skyforge.WakeServiceNowPDI",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "checkedAt": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "httpStatus": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "httpStatus",
+                    "detail",
+                    "checkedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "WakeServiceNowPDI attempts to wake the user's ServiceNow PDI and waits briefly\nfor it to become responsive.\n"
+      }
+    },
+    "/api/user/netlab/servers": {
+      "get": {
+        "operationId": "GET:skyforge.ListUserNetlabServers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "servers": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.UserNetlabServerConfig"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "servers"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ListUserNetlabServers returns the current user's configured Netlab API\nendpoints.\n"
+      },
+      "put": {
+        "operationId": "PUT:skyforge.UpsertUserNetlabServer",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "apiInsecure": {
+                    "type": "boolean"
+                  },
+                  "apiPassword": {
+                    "type": "string"
+                  },
+                  "apiToken": {
+                    "type": "string"
+                  },
+                  "apiUrl": {
+                    "type": "string"
+                  },
+                  "apiUser": {
+                    "type": "string"
+                  },
+                  "hasPassword": {
+                    "type": "boolean"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "apiUrl",
+                  "apiInsecure",
+                  "apiUser",
+                  "apiPassword",
+                  "apiToken",
+                  "hasPassword"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "apiInsecure": {
+                      "type": "boolean"
+                    },
+                    "apiPassword": {
+                      "type": "string"
+                    },
+                    "apiToken": {
+                      "type": "string"
+                    },
+                    "apiUrl": {
+                      "type": "string"
+                    },
+                    "apiUser": {
+                      "type": "string"
+                    },
+                    "hasPassword": {
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "apiUrl",
+                    "apiInsecure",
+                    "apiUser",
+                    "apiPassword",
+                    "apiToken",
+                    "hasPassword"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "UpsertUserNetlabServer creates or updates a user-scoped Netlab API endpoint.\n"
+      }
+    },
+    "/api/user/netlab/servers/{serverID}": {
+      "delete": {
+        "operationId": "DELETE:skyforge.DeleteUserNetlabServer",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "serverID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "DeleteUserNetlabServer deletes a user-scoped Netlab server.\n"
+      }
+    },
+    "/api/user/settings": {
+      "get": {
+        "operationId": "GET:skyforge.GetUserSettings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "defaultEnv": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.UserEnvVar"
+                      },
+                      "type": "array"
+                    },
+                    "defaultForwardCollectorConfigId": {
+                      "type": "string"
+                    },
+                    "externalTemplateRepos": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.ExternalTemplateRepo"
+                      },
+                      "type": "array"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "defaultForwardCollectorConfigId",
+                    "defaultEnv",
+                    "externalTemplateRepos",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetUserSettings returns the current user's saved defaults used to pre-fill forms\n(deployments, etc).\n"
+      },
+      "put": {
+        "operationId": "PUT:skyforge.PutUserSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "defaultEnv": {
+                    "items": {
+                      "$ref": "#/components/schemas/skyforge.UserEnvVar"
+                    },
+                    "type": "array"
+                  },
+                  "defaultForwardCollectorConfigId": {
+                    "type": "string"
+                  },
+                  "externalTemplateRepos": {
+                    "items": {
+                      "$ref": "#/components/schemas/skyforge.ExternalTemplateRepo"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "defaultForwardCollectorConfigId",
+                  "defaultEnv",
+                  "externalTemplateRepos"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "defaultEnv": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.UserEnvVar"
+                      },
+                      "type": "array"
+                    },
+                    "defaultForwardCollectorConfigId": {
+                      "type": "string"
+                    },
+                    "externalTemplateRepos": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.ExternalTemplateRepo"
+                      },
+                      "type": "array"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "defaultForwardCollectorConfigId",
+                    "defaultEnv",
+                    "externalTemplateRepos",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "PutUserSettings upserts the current user's saved defaults used to pre-fill forms\n(deployments, etc).\n"
       }
     },
     "/api/webhooks/events": {
@@ -7563,6 +9546,9 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "allowCustomContainerlabServers": {
+                      "type": "boolean"
+                    },
                     "allowCustomEveServers": {
                       "title": "LabPP requires an EVE-NG endpoint. This flag enables configuring a per-workspace\nEVE server.\n",
                       "type": "boolean"
@@ -7717,6 +9703,7 @@
                     "allowExternalTemplateRepos",
                     "allowCustomEveServers",
                     "allowCustomNetlabServers",
+                    "allowCustomContainerlabServers",
                     "externalTemplateRepos",
                     "terraformStateKey",
                     "terraformInitTemplateId",
@@ -12688,6 +14675,9 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "allowCustomContainerlabServers": {
+                      "type": "boolean"
+                    },
                     "allowCustomEveServers": {
                       "title": "LabPP requires an EVE-NG endpoint. This flag enables configuring a per-workspace\nEVE server.\n",
                       "type": "boolean"
@@ -12842,6 +14832,7 @@
                     "allowExternalTemplateRepos",
                     "allowCustomEveServers",
                     "allowCustomNetlabServers",
+                    "allowCustomContainerlabServers",
                     "externalTemplateRepos",
                     "terraformStateKey",
                     "terraformInitTemplateId",
@@ -12963,6 +14954,9 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "allowCustomContainerlabServers": {
+                      "type": "boolean"
+                    },
                     "allowCustomEveServers": {
                       "title": "LabPP requires an EVE-NG endpoint. This flag enables configuring a per-workspace\nEVE server.\n",
                       "type": "boolean"
@@ -13117,6 +15111,7 @@
                     "allowExternalTemplateRepos",
                     "allowCustomEveServers",
                     "allowCustomNetlabServers",
+                    "allowCustomContainerlabServers",
                     "externalTemplateRepos",
                     "terraformStateKey",
                     "terraformInitTemplateId",
@@ -14236,6 +16231,9 @@
             "application/json": {
               "schema": {
                 "properties": {
+                  "allowCustomContainerlabServers": {
+                    "type": "boolean"
+                  },
                   "allowCustomEveServers": {
                     "type": "boolean"
                   },
@@ -14256,6 +16254,7 @@
                   "allowExternalTemplateRepos",
                   "allowCustomEveServers",
                   "allowCustomNetlabServers",
+                  "allowCustomContainerlabServers",
                   "externalTemplateRepos"
                 ],
                 "type": "object"
@@ -15500,6 +17499,32 @@
     "/internal/cron/cloud/checks": {
       "post": {
         "operationId": "POST:worker.CronCloudCredentialChecks",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        }
+      }
+    },
+    "/internal/cron/governance/usage/cleanup": {
+      "post": {
+        "operationId": "POST:skyforge.CronCleanupGovernanceUsage",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        }
+      }
+    },
+    "/internal/cron/governance/usage/snapshot": {
+      "post": {
+        "operationId": "POST:skyforge.CronSnapshotGovernanceUsage",
         "responses": {
           "200": {
             "description": "Success response"

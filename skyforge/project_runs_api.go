@@ -411,7 +411,7 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 	if serverRef == "" {
 		serverRef = strings.TrimSpace(pc.workspace.NetlabServer)
 	}
-	server, err := s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, serverRef)
+	server, err := s.resolveNetlabServerConfig(ctx, pc, serverRef)
 	if err != nil {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
 	}
@@ -622,7 +622,7 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 	if serverRef == "" {
 		serverRef = strings.TrimSpace(pc.workspace.NetlabServer)
 	}
-	server, err := s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, serverRef)
+	server, err := s.resolveContainerlabServerConfig(ctx, pc, serverRef)
 	if err != nil {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
 	}
@@ -678,7 +678,7 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 
 		// External repos can be either a Gitea owner/repo or a full git URL.
 		if templateSource == "external" {
-			found := externalTemplateRepoByID(&pc.workspace, strings.TrimSpace(req.TemplateRepo))
+			found := externalTemplateRepoByIDForContext(pc, strings.TrimSpace(req.TemplateRepo))
 			if found == nil {
 				return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown external repo").Err()
 			}

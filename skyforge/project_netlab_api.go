@@ -262,11 +262,11 @@ func (s *Service) ValidateWorkspaceNetlabTemplate(ctx context.Context, id string
 	}
 
 	meta, err := toJSONMap(map[string]any{
-		"source":      source,
-		"repo":        templateRepo,
-		"dir":         dir,
-		"template":    template,
-		"environment": env,
+		"source":       source,
+		"repo":         templateRepo,
+		"dir":          dir,
+		"template":     template,
+		"environment":  env,
 		"setOverrides": setOverrides,
 		"dedupeKey": fmt.Sprintf(
 			"netlab-validate:%s:%s:%s:%s:%s:%s",

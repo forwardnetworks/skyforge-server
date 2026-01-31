@@ -507,13 +507,7 @@ func resolveTemplateRepoForProject(cfg Config, pc *workspaceContext, source stri
 		if repoID == "" {
 			return templateRepoRef{}, fmt.Errorf("external repo id is required")
 		}
-		var found *ExternalTemplateRepo
-		for i := range pc.workspace.ExternalTemplateRepos {
-			if strings.TrimSpace(pc.workspace.ExternalTemplateRepos[i].ID) == repoID {
-				found = &pc.workspace.ExternalTemplateRepos[i]
-				break
-			}
-		}
+		found := externalTemplateRepoByIDForContext(pc, repoID)
 		if found == nil {
 			return templateRepoRef{}, fmt.Errorf("unknown external template repo")
 		}

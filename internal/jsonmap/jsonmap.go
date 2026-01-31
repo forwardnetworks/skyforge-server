@@ -101,4 +101,3 @@ func GetInt(value JSONMap, key string) int {
 	}
 	return 0
 }
-

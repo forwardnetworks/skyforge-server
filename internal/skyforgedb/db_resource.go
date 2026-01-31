@@ -8,4 +8,3 @@ import "encore.dev/storage/sqldb"
 var SkyforgeDB = sqldb.NewDatabase("skyforge_server", sqldb.DatabaseConfig{
 	Migrations: "./migrations",
 })
-

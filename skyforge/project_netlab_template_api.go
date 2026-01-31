@@ -87,7 +87,7 @@ func (s *Service) GetWorkspaceNetlabTemplate(ctx context.Context, id string, req
 		if strings.TrimSpace(req.Repo) == "" {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("external repo id is required").Err()
 		}
-		found := externalTemplateRepoByID(&pc.workspace, strings.TrimSpace(req.Repo))
+		found := externalTemplateRepoByIDForContext(pc, strings.TrimSpace(req.Repo))
 		if found == nil {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown external repo").Err()
 		}
@@ -182,4 +182,3 @@ func (s *Service) GetWorkspaceNetlabTemplate(ctx context.Context, id string, req
 		YAML:     yamlText,
 	}, nil
 }
-

@@ -183,12 +183,12 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 							"imagePullPolicy": pullPolicy,
 							"env": func() []map[string]any {
 								genEnv := map[string]string{
-								"SKYFORGE_NETLAB_BUNDLE_PATH":   "/input/bundle.b64",
-								"SKYFORGE_NETLAB_TOPOLOGY_PATH": strings.TrimSpace(topologyPath),
-								"SKYFORGE_C9S_NAMESPACE":        ns,
-								"SKYFORGE_C9S_TOPOLOGY_NAME":    topologyName,
-								"SKYFORGE_C9S_LAB_NAME":         strings.TrimSpace(spec.LabName),
-								"SKYFORGE_C9S_MANIFEST_CM":      manifestCM,
+									"SKYFORGE_NETLAB_BUNDLE_PATH":   "/input/bundle.b64",
+									"SKYFORGE_NETLAB_TOPOLOGY_PATH": strings.TrimSpace(topologyPath),
+									"SKYFORGE_C9S_NAMESPACE":        ns,
+									"SKYFORGE_C9S_TOPOLOGY_NAME":    topologyName,
+									"SKYFORGE_C9S_LAB_NAME":         strings.TrimSpace(spec.LabName),
+									"SKYFORGE_C9S_MANIFEST_CM":      manifestCM,
 								}
 								if len(spec.SetOverrides) > 0 {
 									genEnv["SKYFORGE_NETLAB_SET_OVERRIDES"] = strings.Join(spec.SetOverrides, "\n")

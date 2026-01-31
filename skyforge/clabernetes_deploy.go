@@ -82,7 +82,7 @@ func (s *Service) runClabernetesDeploymentAction(
 		var body []byte
 		// External repos can be either a Gitea owner/repo or a full git URL.
 		if strings.ToLower(strings.TrimSpace(templateSource)) == "external" {
-			found := externalTemplateRepoByID(&pc.workspace, strings.TrimSpace(templateRepo))
+			found := externalTemplateRepoByIDForContext(pc, strings.TrimSpace(templateRepo))
 			if found == nil {
 				return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown external repo").Err()
 			}

@@ -480,7 +480,7 @@ func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req 
 			if strings.TrimSpace(templateRepo) == "" {
 				return nil, errs.B().Code(errs.InvalidArgument).Msg("external repo is required").Err()
 			}
-			if externalTemplateRepoByID(&pc.workspace, templateRepo) == nil {
+			if externalTemplateRepoByIDForContext(pc, templateRepo) == nil {
 				return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown external repo").Err()
 			}
 		}
@@ -521,7 +521,7 @@ func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req 
 			if strings.TrimSpace(templateRepo) == "" {
 				return nil, errs.B().Code(errs.InvalidArgument).Msg("external repo is required").Err()
 			}
-			if externalTemplateRepoByID(&pc.workspace, templateRepo) == nil {
+			if externalTemplateRepoByIDForContext(pc, templateRepo) == nil {
 				return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown external repo").Err()
 			}
 		}
@@ -1259,7 +1259,7 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
 		}
 
-		server, err := s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, netlabServer)
+		server, err := s.resolveNetlabServerConfig(ctx, pc, netlabServer)
 		if err != nil {
 			return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
 		}
@@ -1375,7 +1375,7 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 		if netlabServer == "" {
 			return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
 		}
-		server, err := s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, netlabServer)
+		server, err := s.resolveContainerlabServerConfig(ctx, pc, netlabServer)
 		if err != nil {
 			return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
 		}
@@ -1535,7 +1535,7 @@ func (s *Service) NetlabConnect(ctx context.Context, id, deploymentID string, re
 	if netlabServer == "" {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
 	}
-	server, err := s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, netlabServer)
+	server, err := s.resolveNetlabServerConfig(ctx, pc, netlabServer)
 	if err != nil {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
 	}
@@ -1637,7 +1637,7 @@ func (s *Service) GetWorkspaceDeploymentNetlabGraph(ctx context.Context, id, dep
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
 	}
 
-	server, err := s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, netlabServer)
+	server, err := s.resolveNetlabServerConfig(ctx, pc, netlabServer)
 	if err != nil {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
 	}

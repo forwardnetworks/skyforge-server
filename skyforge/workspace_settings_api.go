@@ -9,10 +9,11 @@ import (
 )
 
 type WorkspaceSettingsRequest struct {
-	AllowExternalTemplateRepos bool                   `json:"allowExternalTemplateRepos,omitempty"`
-	AllowCustomEveServers      bool                   `json:"allowCustomEveServers,omitempty"`
-	AllowCustomNetlabServers   bool                   `json:"allowCustomNetlabServers,omitempty"`
-	ExternalTemplateRepos      []ExternalTemplateRepo `json:"externalTemplateRepos,omitempty"`
+	AllowExternalTemplateRepos     bool                   `json:"allowExternalTemplateRepos,omitempty"`
+	AllowCustomEveServers          bool                   `json:"allowCustomEveServers,omitempty"`
+	AllowCustomNetlabServers       bool                   `json:"allowCustomNetlabServers,omitempty"`
+	AllowCustomContainerlabServers bool                   `json:"allowCustomContainerlabServers,omitempty"`
+	ExternalTemplateRepos          []ExternalTemplateRepo `json:"externalTemplateRepos,omitempty"`
 }
 
 type WorkspaceSettingsResponse struct {
@@ -101,16 +102,15 @@ func (s *Service) UpdateWorkspaceSettings(ctx context.Context, id string, req *W
 		if workspaces[i].ID != pc.workspace.ID {
 			continue
 		}
-		// External template repos are enabled when at least one repo is configured.
 		validated, err := validateExternalTemplateRepos(req.ExternalTemplateRepos)
 		if err != nil {
 			return nil, err
 		}
 		workspaces[i].ExternalTemplateRepos = validated
-		workspaces[i].AllowExternalTemplateRepos = len(validated) > 0
-		// Keep legacy flags for back-compat (UI no longer uses them).
+		workspaces[i].AllowExternalTemplateRepos = req.AllowExternalTemplateRepos
 		workspaces[i].AllowCustomEveServers = req.AllowCustomEveServers
 		workspaces[i].AllowCustomNetlabServers = req.AllowCustomNetlabServers
+		workspaces[i].AllowCustomContainerlabServers = req.AllowCustomContainerlabServers
 		pc.workspace = workspaces[i]
 		updated = true
 		break

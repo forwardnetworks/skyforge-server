@@ -103,6 +103,24 @@ func externalTemplateRepoByID(ws *SkyforgeWorkspace, id string) *ExternalTemplat
 	return nil
 }
 
+func externalTemplateRepoByIDForContext(pc *workspaceContext, id string) *ExternalTemplateRepo {
+	if pc == nil {
+		return nil
+	}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil
+	}
+	if pc.userSettings != nil {
+		for i := range pc.userSettings.ExternalTemplateRepos {
+			if strings.EqualFold(strings.TrimSpace(pc.userSettings.ExternalTemplateRepos[i].ID), id) {
+				return &pc.userSettings.ExternalTemplateRepos[i]
+			}
+		}
+	}
+	return externalTemplateRepoByID(&pc.workspace, id)
+}
+
 type LabSummary struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
@@ -1086,7 +1104,7 @@ func (s *pgWorkspacesStore) load() ([]SkyforgeWorkspace, error) {
 	rows, err := s.db.Query(`SELECT id, slug, name, description, created_at, created_by,
 		blueprint, default_branch, terraform_state_key, terraform_init_template_id, terraform_plan_template_id, terraform_apply_template_id, ansible_run_template_id, netlab_run_template_id, labpp_run_template_id, containerlab_run_template_id,
 		aws_account_id, aws_role_name, aws_region, aws_auth_method, artifacts_bucket, is_public,
-		eve_server, netlab_server, allow_external_template_repos, allow_custom_eve_servers, allow_custom_netlab_servers, external_template_repos, gitea_owner, gitea_repo
+		eve_server, netlab_server, allow_external_template_repos, allow_custom_eve_servers, allow_custom_netlab_servers, allow_custom_containerlab_servers, external_template_repos, gitea_owner, gitea_repo
 	FROM sf_workspaces ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
@@ -1109,6 +1127,7 @@ func (s *pgWorkspacesStore) load() ([]SkyforgeWorkspace, error) {
 			allowExternalTemplateRepos                                                                     bool
 			allowCustomEveServers                                                                          bool
 			allowCustomNetlabServers                                                                       bool
+			allowCustomContainerlabServers                                                                 bool
 			externalTemplateReposJSON                                                                      []byte
 			createdAt                                                                                      time.Time
 			giteaOwner, giteaRepo                                                                          string
@@ -1116,7 +1135,7 @@ func (s *pgWorkspacesStore) load() ([]SkyforgeWorkspace, error) {
 		if err := rows.Scan(&id, &slug, &name, &description, &createdAt, &createdBy,
 			&blueprint, &defaultBranch, &terraformStateKey, &terraformInit, &terraformPlan, &terraformApply, &ansibleRun, &netlabRun, &labppRun, &containerlabRun,
 			&awsAccountID, &awsRoleName, &awsRegion, &awsAuthMethod, &artifactsBucket, &isPublic,
-			&eveServer, &netlabServer, &allowExternalTemplateRepos, &allowCustomEveServers, &allowCustomNetlabServers, &externalTemplateReposJSON, &giteaOwner, &giteaRepo,
+			&eveServer, &netlabServer, &allowExternalTemplateRepos, &allowCustomEveServers, &allowCustomNetlabServers, &allowCustomContainerlabServers, &externalTemplateReposJSON, &giteaOwner, &giteaRepo,
 		); err != nil {
 			return nil, err
 		}
@@ -1125,36 +1144,37 @@ func (s *pgWorkspacesStore) load() ([]SkyforgeWorkspace, error) {
 			_ = json.Unmarshal(externalTemplateReposJSON, &externalTemplateRepos)
 		}
 		p := SkyforgeWorkspace{
-			ID:                         id,
-			Slug:                       slug,
-			Name:                       name,
-			Description:                description.String,
-			CreatedAt:                  createdAt,
-			CreatedBy:                  createdBy,
-			Blueprint:                  blueprint.String,
-			DefaultBranch:              defaultBranch.String,
-			TerraformStateKey:          terraformStateKey.String,
-			TerraformInitTemplateID:    int(terraformInit.Int64),
-			TerraformPlanTemplateID:    int(terraformPlan.Int64),
-			TerraformApplyTemplateID:   int(terraformApply.Int64),
-			AnsibleRunTemplateID:       int(ansibleRun.Int64),
-			NetlabRunTemplateID:        int(netlabRun.Int64),
-			LabppRunTemplateID:         int(labppRun.Int64),
-			ContainerlabRunTemplateID:  int(containerlabRun.Int64),
-			AWSAccountID:               awsAccountID.String,
-			AWSRoleName:                awsRoleName.String,
-			AWSRegion:                  awsRegion.String,
-			AWSAuthMethod:              awsAuthMethod.String,
-			ArtifactsBucket:            artifactsBucket.String,
-			IsPublic:                   isPublic,
-			EveServer:                  eveServer.String,
-			NetlabServer:               netlabServer.String,
-			AllowExternalTemplateRepos: allowExternalTemplateRepos,
-			AllowCustomEveServers:      allowCustomEveServers,
-			AllowCustomNetlabServers:   allowCustomNetlabServers,
-			ExternalTemplateRepos:      externalTemplateRepos,
-			GiteaOwner:                 giteaOwner,
-			GiteaRepo:                  giteaRepo,
+			ID:                             id,
+			Slug:                           slug,
+			Name:                           name,
+			Description:                    description.String,
+			CreatedAt:                      createdAt,
+			CreatedBy:                      createdBy,
+			Blueprint:                      blueprint.String,
+			DefaultBranch:                  defaultBranch.String,
+			TerraformStateKey:              terraformStateKey.String,
+			TerraformInitTemplateID:        int(terraformInit.Int64),
+			TerraformPlanTemplateID:        int(terraformPlan.Int64),
+			TerraformApplyTemplateID:       int(terraformApply.Int64),
+			AnsibleRunTemplateID:           int(ansibleRun.Int64),
+			NetlabRunTemplateID:            int(netlabRun.Int64),
+			LabppRunTemplateID:             int(labppRun.Int64),
+			ContainerlabRunTemplateID:      int(containerlabRun.Int64),
+			AWSAccountID:                   awsAccountID.String,
+			AWSRoleName:                    awsRoleName.String,
+			AWSRegion:                      awsRegion.String,
+			AWSAuthMethod:                  awsAuthMethod.String,
+			ArtifactsBucket:                artifactsBucket.String,
+			IsPublic:                       isPublic,
+			EveServer:                      eveServer.String,
+			NetlabServer:                   netlabServer.String,
+			AllowExternalTemplateRepos:     allowExternalTemplateRepos,
+			AllowCustomEveServers:          allowCustomEveServers,
+			AllowCustomNetlabServers:       allowCustomNetlabServers,
+			AllowCustomContainerlabServers: allowCustomContainerlabServers,
+			ExternalTemplateRepos:          externalTemplateRepos,
+			GiteaOwner:                     giteaOwner,
+			GiteaRepo:                      giteaRepo,
 		}
 		workspaces = append(workspaces, p)
 		workspaceByID[id] = &workspaces[len(workspaces)-1]
@@ -1266,11 +1286,11 @@ func (s *pgWorkspacesStore) upsert(workspace SkyforgeWorkspace) error {
 	}
 	if _, err := tx.Exec(`INSERT INTO sf_workspaces (
 		  id, slug, name, description, created_at, created_by,
-		  allow_external_template_repos, allow_custom_eve_servers, allow_custom_netlab_servers, external_template_repos,
+		  allow_external_template_repos, allow_custom_eve_servers, allow_custom_netlab_servers, allow_custom_containerlab_servers, external_template_repos,
 		  blueprint, default_branch, terraform_state_key, terraform_init_template_id, terraform_plan_template_id, terraform_apply_template_id, ansible_run_template_id, netlab_run_template_id, labpp_run_template_id, containerlab_run_template_id,
 		  aws_account_id, aws_role_name, aws_region, aws_auth_method, artifacts_bucket, is_public,
 		  eve_server, netlab_server, gitea_owner, gitea_repo, updated_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,now())
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,now())
 		ON CONFLICT (id) DO UPDATE SET
 		  slug=excluded.slug,
 		  name=excluded.name,
@@ -1278,6 +1298,7 @@ func (s *pgWorkspacesStore) upsert(workspace SkyforgeWorkspace) error {
 		  allow_external_template_repos=excluded.allow_external_template_repos,
 		  allow_custom_eve_servers=excluded.allow_custom_eve_servers,
 		  allow_custom_netlab_servers=excluded.allow_custom_netlab_servers,
+		  allow_custom_containerlab_servers=excluded.allow_custom_containerlab_servers,
 		  external_template_repos=excluded.external_template_repos,
 		  blueprint=excluded.blueprint,
 		  default_branch=excluded.default_branch,
@@ -1301,7 +1322,7 @@ func (s *pgWorkspacesStore) upsert(workspace SkyforgeWorkspace) error {
 		  gitea_repo=excluded.gitea_repo,
 		  updated_at=now()`,
 		id, slug, strings.TrimSpace(workspace.Name), nullIfEmpty(strings.TrimSpace(workspace.Description)), workspace.CreatedAt.UTC(), createdBy,
-		workspace.AllowExternalTemplateRepos, workspace.AllowCustomEveServers, workspace.AllowCustomNetlabServers, string(externalTemplateReposJSON),
+		workspace.AllowExternalTemplateRepos, workspace.AllowCustomEveServers, workspace.AllowCustomNetlabServers, workspace.AllowCustomContainerlabServers, string(externalTemplateReposJSON),
 		nullIfEmpty(strings.TrimSpace(workspace.Blueprint)), nullIfEmpty(strings.TrimSpace(workspace.DefaultBranch)),
 		nullIfEmpty(strings.TrimSpace(workspace.TerraformStateKey)), workspace.TerraformInitTemplateID, workspace.TerraformPlanTemplateID, workspace.TerraformApplyTemplateID, workspace.AnsibleRunTemplateID, workspace.NetlabRunTemplateID, workspace.LabppRunTemplateID, workspace.ContainerlabRunTemplateID,
 		nullIfEmpty(strings.TrimSpace(workspace.AWSAccountID)), nullIfEmpty(strings.TrimSpace(workspace.AWSRoleName)), nullIfEmpty(strings.TrimSpace(workspace.AWSRegion)),
@@ -1453,11 +1474,11 @@ func (s *pgWorkspacesStore) replaceAll(workspaces []SkyforgeWorkspace) error {
 		}
 		if _, err := tx.Exec(`INSERT INTO sf_workspaces (
 			  id, slug, name, description, created_at, created_by,
-			  allow_external_template_repos, allow_custom_eve_servers, allow_custom_netlab_servers, external_template_repos,
+			  allow_external_template_repos, allow_custom_eve_servers, allow_custom_netlab_servers, allow_custom_containerlab_servers, external_template_repos,
 			  blueprint, default_branch, terraform_state_key, terraform_init_template_id, terraform_plan_template_id, terraform_apply_template_id, ansible_run_template_id, netlab_run_template_id, labpp_run_template_id, containerlab_run_template_id,
 			  aws_account_id, aws_role_name, aws_region, aws_auth_method, artifacts_bucket, is_public,
 			  eve_server, netlab_server, gitea_owner, gitea_repo, updated_at
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,now())
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,now())
 			ON CONFLICT (id) DO UPDATE SET
 			  slug=excluded.slug,
 			  name=excluded.name,
@@ -1465,6 +1486,7 @@ func (s *pgWorkspacesStore) replaceAll(workspaces []SkyforgeWorkspace) error {
 			  allow_external_template_repos=excluded.allow_external_template_repos,
 			  allow_custom_eve_servers=excluded.allow_custom_eve_servers,
 			  allow_custom_netlab_servers=excluded.allow_custom_netlab_servers,
+			  allow_custom_containerlab_servers=excluded.allow_custom_containerlab_servers,
 			  external_template_repos=excluded.external_template_repos,
 			  blueprint=excluded.blueprint,
 			  default_branch=excluded.default_branch,
@@ -1488,7 +1510,7 @@ func (s *pgWorkspacesStore) replaceAll(workspaces []SkyforgeWorkspace) error {
 			  gitea_repo=excluded.gitea_repo,
 			  updated_at=now()`,
 			id, slug, strings.TrimSpace(p.Name), nullIfEmpty(strings.TrimSpace(p.Description)), p.CreatedAt.UTC(), createdBy,
-			p.AllowExternalTemplateRepos, p.AllowCustomEveServers, p.AllowCustomNetlabServers, string(externalTemplateReposJSON),
+			p.AllowExternalTemplateRepos, p.AllowCustomEveServers, p.AllowCustomNetlabServers, p.AllowCustomContainerlabServers, string(externalTemplateReposJSON),
 			nullIfEmpty(strings.TrimSpace(p.Blueprint)), nullIfEmpty(strings.TrimSpace(p.DefaultBranch)),
 			nullIfEmpty(strings.TrimSpace(p.TerraformStateKey)), p.TerraformInitTemplateID, p.TerraformPlanTemplateID, p.TerraformApplyTemplateID, p.AnsibleRunTemplateID, p.NetlabRunTemplateID, p.LabppRunTemplateID, p.ContainerlabRunTemplateID,
 			nullIfEmpty(strings.TrimSpace(p.AWSAccountID)), nullIfEmpty(strings.TrimSpace(p.AWSRoleName)), nullIfEmpty(strings.TrimSpace(p.AWSRegion)),

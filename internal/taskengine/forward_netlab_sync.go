@@ -55,16 +55,16 @@ func (e *Engine) forwardDeviceTypes(ctx context.Context) map[string]string {
 		// Do not rely on Forward auto-detection here.
 		"ios": "cisco_ios_ssh",
 		// Some netlab outputs use IOS-XE-ish labels even when the device is IOL.
-		"ios_xe": "cisco_ios_ssh",
-		"ios-xe": "cisco_ios_ssh",
-		"iosv":   "cisco_ios_ssh",
-		"iosvl2": "cisco_ios_ssh",
-		"csr":    "cisco_ios_xe_ssh",
+		"ios_xe":   "cisco_ios_ssh",
+		"ios-xe":   "cisco_ios_ssh",
+		"iosv":     "cisco_ios_ssh",
+		"iosvl2":   "cisco_ios_ssh",
+		"csr":      "cisco_ios_xe_ssh",
 		"cat8000v": "cisco_ios_xe_ssh",
-		"asav":   "cisco_asa_ssh",
-		"fortios": "fortinet_ssh",
-		"nxos":   "cisco_nxos_ssh",
-		"iosxr":  "cisco_ios_xr_ssh",
+		"asav":     "cisco_asa_ssh",
+		"fortios":  "fortinet_ssh",
+		"nxos":     "cisco_nxos_ssh",
+		"iosxr":    "cisco_ios_xr_ssh",
 		// Juniper routers/switches (including vMX, vJunos-switch, vJunos-router).
 		"vjunos-switch": "juniper_junos_ssh",
 		"vjunos-router": "juniper_junos_ssh",
@@ -287,12 +287,12 @@ func (e *Engine) getUserForwardCredentials(ctx context.Context, username string,
 
 	collectorConfigID = strings.TrimSpace(collectorConfigID)
 	type row struct {
-		baseURL        sql.NullString
-		fwdUser        sql.NullString
-		fwdPass        sql.NullString
-		collectorUser  sql.NullString
-		authKey        sql.NullString
-		skipTLSVerify  sql.NullBool
+		baseURL       sql.NullString
+		fwdUser       sql.NullString
+		fwdPass       sql.NullString
+		collectorUser sql.NullString
+		authKey       sql.NullString
+		skipTLSVerify sql.NullBool
 	}
 	var r row
 	if collectorConfigID != "" {

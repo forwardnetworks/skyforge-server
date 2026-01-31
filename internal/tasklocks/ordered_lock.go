@@ -123,4 +123,3 @@ func AcquireOrderedTaskLock(ctx context.Context, db *sql.DB, task *taskstore.Tas
 		return unlock, nil
 	}
 }
-

@@ -31,4 +31,3 @@ func kubeCollectorNodeForUser(ctx context.Context, username string) (string, err
 	}
 	return "", nil
 }
-

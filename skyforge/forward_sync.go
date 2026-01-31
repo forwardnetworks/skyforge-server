@@ -51,8 +51,8 @@ var netlabDefaults = loadNetlabDeviceDefaults()
 
 func (s *Service) forwardDeviceTypes(ctx context.Context) map[string]string {
 	out := map[string]string{
-		"linux": "linux_os_ssh",
-		"eos":   "arista_eos_ssh",
+		"linux":   "linux_os_ssh",
+		"eos":     "arista_eos_ssh",
 		"fortios": "fortinet_ssh",
 		// Juniper routers/switches (including vMX, vJunos-switch, vJunos-router).
 		"vjunos-switch": "juniper_junos_ssh",
@@ -682,18 +682,18 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *
 		}
 		if deviceKey == "linux" {
 			endpoint := forwardEndpoint{
-				Type:          "CLI",
-				Name:          name,
-				Host:          mgmt,
-				Protocol:      "SSH",
-				CredentialID:  cliCredentialID,
-				ProfileID:     endpointProfileID,
-				JumpServerID:  jumpServerID,
-				Collect:       true,
-				LargeRTT:      false,
-				FullCollect:   false,
-				Note:          "",
-				Port:          22,
+				Type:         "CLI",
+				Name:         name,
+				Host:         mgmt,
+				Protocol:     "SSH",
+				CredentialID: cliCredentialID,
+				ProfileID:    endpointProfileID,
+				JumpServerID: jumpServerID,
+				Collect:      true,
+				LargeRTT:     false,
+				FullCollect:  false,
+				Note:         "",
+				Port:         22,
 			}
 			linuxEndpoints = append(linuxEndpoints, endpoint)
 			continue

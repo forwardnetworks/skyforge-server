@@ -15,4 +15,3 @@ func kubeServiceFQDN(serviceName, namespace string) string {
 	}
 	return fmt.Sprintf("%s.%s.%s", serviceName, namespace, kubeDefaultClusterDomain)
 }
-

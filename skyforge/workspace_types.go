@@ -24,15 +24,16 @@ type SkyforgeWorkspace struct {
 	DefaultBranch              string    `json:"defaultBranch,omitempty"`
 	AllowExternalTemplateRepos bool      `json:"allowExternalTemplateRepos,omitempty"`
 	// LabPP requires an EVE-NG endpoint. This flag enables configuring a per-workspace EVE server.
-	AllowCustomEveServers    bool                   `json:"allowCustomEveServers,omitempty"`
-	AllowCustomNetlabServers bool                   `json:"allowCustomNetlabServers,omitempty"`
-	ExternalTemplateRepos    []ExternalTemplateRepo `json:"externalTemplateRepos,omitempty"`
-	TerraformStateKey        string                 `json:"terraformStateKey,omitempty"`
-	TerraformInitTemplateID  int                    `json:"terraformInitTemplateId,omitempty"`
-	TerraformPlanTemplateID  int                    `json:"terraformPlanTemplateId,omitempty"`
-	TerraformApplyTemplateID int                    `json:"terraformApplyTemplateId,omitempty"`
-	AnsibleRunTemplateID     int                    `json:"ansibleRunTemplateId,omitempty"`
-	NetlabRunTemplateID      int                    `json:"netlabRunTemplateId,omitempty"`
+	AllowCustomEveServers          bool                   `json:"allowCustomEveServers,omitempty"`
+	AllowCustomNetlabServers       bool                   `json:"allowCustomNetlabServers,omitempty"`
+	AllowCustomContainerlabServers bool                   `json:"allowCustomContainerlabServers,omitempty"`
+	ExternalTemplateRepos          []ExternalTemplateRepo `json:"externalTemplateRepos,omitempty"`
+	TerraformStateKey              string                 `json:"terraformStateKey,omitempty"`
+	TerraformInitTemplateID        int                    `json:"terraformInitTemplateId,omitempty"`
+	TerraformPlanTemplateID        int                    `json:"terraformPlanTemplateId,omitempty"`
+	TerraformApplyTemplateID       int                    `json:"terraformApplyTemplateId,omitempty"`
+	AnsibleRunTemplateID           int                    `json:"ansibleRunTemplateId,omitempty"`
+	NetlabRunTemplateID            int                    `json:"netlabRunTemplateId,omitempty"`
 	// Deprecated: LabPP tasks were retired; retained for DB/back-compat.
 	LabppRunTemplateID        int    `json:"-"`
 	ContainerlabRunTemplateID int    `json:"containerlabRunTemplateId,omitempty"`

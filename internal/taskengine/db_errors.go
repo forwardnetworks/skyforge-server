@@ -19,4 +19,3 @@ func isMissingDBRelation(err error) bool {
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "relation") && strings.Contains(msg, "does not exist")
 }
-

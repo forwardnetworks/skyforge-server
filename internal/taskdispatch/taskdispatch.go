@@ -66,4 +66,3 @@ func WithTaskStep(ctx context.Context, db *sql.DB, taskID int, stepKey string, f
 	})
 	return nil
 }
-
