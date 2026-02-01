@@ -1,6 +1,10 @@
 package skyforge
 
-import "encore.app/internal/skyforgecore"
+import (
+	"os"
+
+	"encore.app/internal/skyforgecore"
+)
 
 // secrets defines the Encore-managed secrets for the application.
 var secrets struct {
@@ -28,9 +32,9 @@ var secrets struct {
 
 func getSecrets() skyforgecore.Secrets {
 	return skyforgecore.Secrets{
-		SessionSecret:          secrets.SKYFORGE_SESSION_SECRET,
+		SessionSecret:          coalesceSecret(secrets.SKYFORGE_SESSION_SECRET, "SKYFORGE_SESSION_SECRET"),
 		AdminPassword:          secrets.SKYFORGE_ADMIN_PASSWORD,
-		E2EAdminToken:          secrets.SKYFORGE_E2E_ADMIN_TOKEN,
+		E2EAdminToken:          coalesceSecret(secrets.SKYFORGE_E2E_ADMIN_TOKEN, "SKYFORGE_E2E_ADMIN_TOKEN"),
 		OIDCClientID:           secrets.SKYFORGE_OIDC_CLIENT_ID,
 		OIDCClientSecret:       secrets.SKYFORGE_OIDC_CLIENT_SECRET,
 		GeminiClientSecret:     secrets.SKYFORGE_GEMINI_OAUTH_CLIENT_SECRET,
@@ -49,4 +53,11 @@ func getSecrets() skyforgecore.Secrets {
 		SSHCAKey:               secrets.SKYFORGE_SSH_CA_KEY,
 		YaadeAdminPassword:     secrets.YAADE_ADMIN_PASSWORD,
 	}
+}
+
+func coalesceSecret(value string, env string) string {
+	if value != "" {
+		return value
+	}
+	return os.Getenv(env)
 }
