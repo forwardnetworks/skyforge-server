@@ -667,7 +667,15 @@ func waitForSSHProbeAPI(ctx context.Context, client *http.Client, baseURL, cooki
 	}
 	url := baseURL + "/api/admin/e2e/sshprobe"
 
-	resp, body, err := doJSON(client, http.MethodPost, url, req, map[string]string{"Cookie": cookie})
+	// The probe endpoint is synchronous and may legitimately take minutes.
+	// Use a dedicated client with a timeout that covers the whole probe window.
+	probeClient := &http.Client{
+		Transport:     client.Transport,
+		CheckRedirect: client.CheckRedirect,
+		Jar:           client.Jar,
+		Timeout:       timeout + 60*time.Second,
+	}
+	resp, body, err := doJSON(probeClient, http.MethodPost, url, req, map[string]string{"Cookie": cookie})
 	if err != nil {
 		return err
 	}
