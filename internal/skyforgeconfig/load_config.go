@@ -251,6 +251,11 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 			workspacesCfg.GiteaUsername = "skyforge"
 		}
 	}
+	if strings.TrimSpace(workspacesCfg.GiteaPassword) == "" {
+		if v := strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_PASSWORD")); v != "" {
+			workspacesCfg.GiteaPassword = v
+		}
+	}
 	if strings.TrimSpace(workspacesCfg.DeleteMode) == "" {
 		workspacesCfg.DeleteMode = "live"
 	}
@@ -402,8 +407,26 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 	if strings.TrimSpace(workspacesCfg.DataDir) == "" {
 		workspacesCfg.DataDir = "/var/lib/skyforge"
 	}
+	// Back-compat + robustness: allow the SKYFORGE_* env vars (injected by Helm configmaps)
+	// to fill gaps if ENCORE_CFG is missing or partially configured.
+	if strings.TrimSpace(workspacesCfg.GiteaAPIURL) == "" {
+		if v := strings.TrimRight(strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_API_URL")), "/"); v != "" {
+			workspacesCfg.GiteaAPIURL = v
+		} else if base := strings.TrimRight(strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_URL")), "/"); base != "" {
+			workspacesCfg.GiteaAPIURL = base + "/api/v1"
+		}
+	}
 	if strings.TrimSpace(workspacesCfg.GiteaUsername) == "" {
-		workspacesCfg.GiteaUsername = "skyforge"
+		if v := strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_USERNAME")); v != "" {
+			workspacesCfg.GiteaUsername = v
+		} else {
+			workspacesCfg.GiteaUsername = "skyforge"
+		}
+	}
+	if strings.TrimSpace(workspacesCfg.GiteaPassword) == "" {
+		if v := strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_PASSWORD")); v != "" {
+			workspacesCfg.GiteaPassword = v
+		}
 	}
 	if strings.TrimSpace(workspacesCfg.DeleteMode) == "" {
 		workspacesCfg.DeleteMode = "live"
