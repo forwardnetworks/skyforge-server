@@ -359,6 +359,62 @@
         ],
         "type": "object"
       },
+      "skyforge.EveFolderInfo": {
+        "properties": {
+          "mtime": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path",
+          "mtime"
+        ],
+        "type": "object"
+      },
+      "skyforge.EveLabSummary": {
+        "properties": {
+          "folder": {
+            "type": "string"
+          },
+          "lock": {
+            "type": "boolean"
+          },
+          "mtime": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "shared": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "umtime": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "path",
+          "folder",
+          "mtime",
+          "umtime",
+          "shared",
+          "lock"
+        ],
+        "type": "object"
+      },
       "skyforge.ExternalTemplateRepo": {
         "properties": {
           "defaultBranch": {
@@ -1282,7 +1338,7 @@
             "type": "boolean"
           },
           "allowCustomEveServers": {
-            "title": "LabPP requires an EVE-NG endpoint. This flag enables configuring a per-workspace\nEVE server.\n",
+            "title": "EVE-NG deployments require an endpoint. This flag enables configuring a\nper-workspace EVE server.\n",
             "type": "boolean"
           },
           "allowCustomNetlabServers": {
@@ -1341,6 +1397,10 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "eveNgRunTemplateId": {
+            "format": "int64",
+            "type": "integer"
           },
           "eveServer": {
             "type": "string"
@@ -1443,6 +1503,7 @@
           "terraformApplyTemplateId",
           "ansibleRunTemplateId",
           "netlabRunTemplateId",
+          "eveNgRunTemplateId",
           "containerlabRunTemplateId",
           "awsAccountId",
           "awsRoleName",
@@ -1982,6 +2043,29 @@
           "isAdmin",
           "actorUsername",
           "impersonating"
+        ],
+        "type": "object"
+      },
+      "skyforge.UserVariableGroup": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "variables": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "variables"
         ],
         "type": "object"
       },
@@ -9683,6 +9767,224 @@
         "summary": "PutUserSettings upserts the current user's saved defaults used to pre-fill forms\n(deployments, etc).\n"
       }
     },
+    "/api/user/variable-groups": {
+      "get": {
+        "operationId": "GET:skyforge.ListUserVariableGroups",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "groups": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.UserVariableGroup"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "groups"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ListUserVariableGroups lists variable groups for the current user.\n"
+      },
+      "post": {
+        "operationId": "POST:skyforge.CreateUserVariableGroup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "variables": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "name",
+                  "variables"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "id": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "variables": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "variables"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "CreateUserVariableGroup creates a variable group for the current user.\n"
+      }
+    },
+    "/api/user/variable-groups/{groupID}": {
+      "delete": {
+        "operationId": "DELETE:skyforge.DeleteUserVariableGroup",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "groupID",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "groups": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.UserVariableGroup"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "groups"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "DeleteUserVariableGroup deletes a variable group for the current user.\n"
+      },
+      "put": {
+        "operationId": "PUT:skyforge.UpdateUserVariableGroup",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "groupID",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "variables": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "name",
+                  "variables"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "id": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "variables": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "variables"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "UpdateUserVariableGroup updates a variable group for the current user.\n"
+      }
+    },
     "/api/webhooks/events": {
       "get": {
         "operationId": "GET:skyforge.ListWebhookEvents",
@@ -9960,7 +10262,7 @@
                       "type": "boolean"
                     },
                     "allowCustomEveServers": {
-                      "title": "LabPP requires an EVE-NG endpoint. This flag enables configuring a per-workspace\nEVE server.\n",
+                      "title": "EVE-NG deployments require an endpoint. This flag enables configuring a\nper-workspace EVE server.\n",
                       "type": "boolean"
                     },
                     "allowCustomNetlabServers": {
@@ -10019,6 +10321,10 @@
                         "type": "string"
                       },
                       "type": "array"
+                    },
+                    "eveNgRunTemplateId": {
+                      "format": "int64",
+                      "type": "integer"
                     },
                     "eveServer": {
                       "type": "string"
@@ -10121,6 +10427,7 @@
                     "terraformApplyTemplateId",
                     "ansibleRunTemplateId",
                     "netlabRunTemplateId",
+                    "eveNgRunTemplateId",
                     "containerlabRunTemplateId",
                     "awsAccountId",
                     "awsRoleName",
@@ -14245,6 +14552,321 @@
         "summary": "DeploymentUIEventsStream streams deployment UI events as SSE.\n"
       }
     },
+    "/api/workspaces/{id}/eve/convert": {
+      "post": {
+        "operationId": "POST:skyforge.ConvertWorkspaceEveLab",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "containerlabServer": {
+                    "type": "string"
+                  },
+                  "createDeployment": {
+                    "type": "boolean"
+                  },
+                  "labPath": {
+                    "type": "string"
+                  },
+                  "outputDir": {
+                    "type": "string"
+                  },
+                  "outputFile": {
+                    "type": "string"
+                  },
+                  "server": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "server",
+                  "labPath",
+                  "outputDir",
+                  "outputFile",
+                  "createDeployment",
+                  "containerlabServer"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "deployment": {
+                      "$ref": "#/components/schemas/skyforge.WorkspaceDeployment"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "workspaceId",
+                    "path",
+                    "deployment",
+                    "warnings"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ConvertWorkspaceEveLab exports an EVE-NG lab into a Containerlab template.\n"
+      }
+    },
+    "/api/workspaces/{id}/eve/import": {
+      "post": {
+        "operationId": "POST:skyforge.ImportWorkspaceEveLab",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "deploymentName": {
+                    "type": "string"
+                  },
+                  "labPath": {
+                    "type": "string"
+                  },
+                  "server": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "server",
+                  "labPath",
+                  "deploymentName"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "activeTaskId": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "activeTaskStatus": {
+                      "type": "string"
+                    },
+                    "config": {
+                      "$ref": "#/components/schemas/skyforge.JSONMap"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "createdBy": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "lastFinishedAt": {
+                      "type": "string"
+                    },
+                    "lastStartedAt": {
+                      "type": "string"
+                    },
+                    "lastStatus": {
+                      "type": "string"
+                    },
+                    "lastTaskId": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "lastTaskWorkspaceId": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "queueDepth": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "type": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "workspaceId",
+                    "name",
+                    "type",
+                    "config",
+                    "createdBy",
+                    "createdAt",
+                    "updatedAt",
+                    "lastTaskWorkspaceId",
+                    "lastTaskId",
+                    "lastStatus",
+                    "lastStartedAt",
+                    "lastFinishedAt",
+                    "activeTaskId",
+                    "activeTaskStatus",
+                    "queueDepth"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ImportWorkspaceEveLab registers an existing EVE-NG lab as a deployment.\n"
+      }
+    },
+    "/api/workspaces/{id}/eve/labs": {
+      "get": {
+        "operationId": "GET:skyforge.ListWorkspaceEveLabs",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "server",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "path",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "recursive",
+            "schema": {
+              "type": "boolean"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "folders": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.EveFolderInfo"
+                      },
+                      "type": "array"
+                    },
+                    "labs": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.EveLabSummary"
+                      },
+                      "type": "array"
+                    },
+                    "server": {
+                      "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "workspaceId",
+                    "server",
+                    "labs",
+                    "folders"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ListWorkspaceEveLabs returns EVE-NG labs for import.\n"
+      }
+    },
     "/api/workspaces/{id}/eve/servers": {
       "get": {
         "operationId": "GET:skyforge.ListWorkspaceEveServers",
@@ -14898,112 +15520,6 @@
         "summary": "CreateWorkspaceForwardCollector creates a Forward collector for the workspace.\n"
       }
     },
-    "/api/workspaces/{id}/labpp/templates": {
-      "get": {
-        "description": "Templates are expected to live under a repo directory (default: blueprints/labpp) where each template is a subdirectory (e.g. blueprints/labpp/junos-example/...).\n",
-        "operationId": "GET:skyforge.GetWorkspaceLabppTemplates",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": true,
-            "in": "query",
-            "name": "dir",
-            "schema": {
-              "type": "string"
-            },
-            "style": "form"
-          },
-          {
-            "allowEmptyValue": true,
-            "description": "workspace (default), blueprints, external, custom\n",
-            "explode": true,
-            "in": "query",
-            "name": "source",
-            "schema": {
-              "type": "string"
-            },
-            "style": "form"
-          },
-          {
-            "allowEmptyValue": true,
-            "description": "external repo id (external) or owner/repo url (custom)\n",
-            "explode": true,
-            "in": "query",
-            "name": "repo",
-            "schema": {
-              "type": "string"
-            },
-            "style": "form"
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "branch": {
-                      "type": "string"
-                    },
-                    "cached": {
-                      "type": "boolean"
-                    },
-                    "dir": {
-                      "type": "string"
-                    },
-                    "headSha": {
-                      "type": "string"
-                    },
-                    "repo": {
-                      "type": "string"
-                    },
-                    "templates": {
-                      "items": {
-                        "type": "string"
-                      },
-                      "type": "array"
-                    },
-                    "updatedAt": {
-                      "type": "string"
-                    },
-                    "workspaceId": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "workspaceId",
-                    "repo",
-                    "branch",
-                    "dir",
-                    "templates",
-                    "headSha",
-                    "cached",
-                    "updatedAt"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GetWorkspaceLabppTemplates lists LabPP templates for a workspace.\n"
-      }
-    },
     "/api/workspaces/{id}/members": {
       "put": {
         "operationId": "PUT:skyforge.UpdateWorkspaceMembers",
@@ -15089,7 +15605,7 @@
                       "type": "boolean"
                     },
                     "allowCustomEveServers": {
-                      "title": "LabPP requires an EVE-NG endpoint. This flag enables configuring a per-workspace\nEVE server.\n",
+                      "title": "EVE-NG deployments require an endpoint. This flag enables configuring a\nper-workspace EVE server.\n",
                       "type": "boolean"
                     },
                     "allowCustomNetlabServers": {
@@ -15148,6 +15664,10 @@
                         "type": "string"
                       },
                       "type": "array"
+                    },
+                    "eveNgRunTemplateId": {
+                      "format": "int64",
+                      "type": "integer"
                     },
                     "eveServer": {
                       "type": "string"
@@ -15250,6 +15770,7 @@
                     "terraformApplyTemplateId",
                     "ansibleRunTemplateId",
                     "netlabRunTemplateId",
+                    "eveNgRunTemplateId",
                     "containerlabRunTemplateId",
                     "awsAccountId",
                     "awsRoleName",
@@ -15368,7 +15889,7 @@
                       "type": "boolean"
                     },
                     "allowCustomEveServers": {
-                      "title": "LabPP requires an EVE-NG endpoint. This flag enables configuring a per-workspace\nEVE server.\n",
+                      "title": "EVE-NG deployments require an endpoint. This flag enables configuring a\nper-workspace EVE server.\n",
                       "type": "boolean"
                     },
                     "allowCustomNetlabServers": {
@@ -15427,6 +15948,10 @@
                         "type": "string"
                       },
                       "type": "array"
+                    },
+                    "eveNgRunTemplateId": {
+                      "format": "int64",
+                      "type": "integer"
                     },
                     "eveServer": {
                       "type": "string"
@@ -15529,6 +16054,7 @@
                     "terraformApplyTemplateId",
                     "ansibleRunTemplateId",
                     "netlabRunTemplateId",
+                    "eveNgRunTemplateId",
                     "containerlabRunTemplateId",
                     "awsAccountId",
                     "awsRoleName",
@@ -16291,6 +16817,115 @@
           }
         },
         "summary": "RunWorkspaceContainerlab triggers a Containerlab run for a workspace.\n"
+      }
+    },
+    "/api/workspaces/{id}/runs/eve-ng-run": {
+      "post": {
+        "operationId": "POST:skyforge.RunWorkspaceEveNg",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "action": {
+                    "title": "create, start, stop, destroy\n",
+                    "type": "string"
+                  },
+                  "deployment": {
+                    "title": "deployment name for lab naming\n",
+                    "type": "string"
+                  },
+                  "deploymentId": {
+                    "type": "string"
+                  },
+                  "eveServer": {
+                    "type": "string"
+                  },
+                  "labPath": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "template": {
+                    "title": "directory name under templates dir\n",
+                    "type": "string"
+                  },
+                  "templateRepo": {
+                    "title": "owner/repo or URL (custom only)\n",
+                    "type": "string"
+                  },
+                  "templateSource": {
+                    "title": "workspace (default), blueprints, or custom\n",
+                    "type": "string"
+                  },
+                  "templatesDir": {
+                    "title": "repo-relative directory (default: blueprints/eve-ng)\n",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "message",
+                  "action",
+                  "eveServer",
+                  "templateSource",
+                  "templateRepo",
+                  "templatesDir",
+                  "template",
+                  "deployment",
+                  "deploymentId",
+                  "labPath"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "task": {
+                      "$ref": "#/components/schemas/skyforge.JSONMap"
+                    },
+                    "user": {
+                      "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "workspaceId",
+                    "task",
+                    "user"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "RunWorkspaceEveNg triggers an EVE-NG lab run for a workspace.\n"
       }
     },
     "/api/workspaces/{id}/runs/netlab-run": {

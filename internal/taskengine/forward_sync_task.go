@@ -75,7 +75,7 @@ func (e *Engine) runForwardSyncTask(ctx context.Context, pc *workspaceContext, d
 	}
 
 	// Find the most recent topology artifact key and sync its mgmt IPs into Forward.
-	taskTypes := []string{"netlab-c9s-run", "clabernetes-run", "containerlab-run"}
+	taskTypes := []string{"netlab-c9s-run", "clabernetes-run", "containerlab-run", "eve-ng-run"}
 	var topoKey string
 	for _, t := range taskTypes {
 		ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)

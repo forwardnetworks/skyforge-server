@@ -11,8 +11,7 @@ ALTER TABLE sf_deployments
     'terraform'::text,
     'netlab'::text,
     'netlab-c9s'::text,
-    'labpp'::text,
+    'eve_ng'::text,
     'containerlab'::text,
     'clabernetes'::text
   ])));
-

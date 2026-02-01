@@ -82,10 +82,31 @@ func defaultContainerlabTemplatesDir(source string) string {
 	}
 }
 
+func defaultEveNgTemplatesDir(source string) string {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "blueprints", "blueprint", "external":
+		return "eve-ng"
+	default:
+		return "blueprints/eve-ng"
+	}
+}
+
 func normalizeContainerlabTemplatesDir(source, dir string) string {
 	dir = strings.Trim(strings.TrimSpace(dir), "/")
 	if dir == "" {
 		dir = defaultContainerlabTemplatesDir(source)
+	}
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "blueprints", "blueprint", "external":
+		dir = strings.TrimPrefix(dir, "blueprints/")
+	}
+	return strings.Trim(strings.TrimSpace(dir), "/")
+}
+
+func normalizeEveNgTemplatesDir(source, dir string) string {
+	dir = strings.Trim(strings.TrimSpace(dir), "/")
+	if dir == "" {
+		dir = defaultEveNgTemplatesDir(source)
 	}
 	switch strings.ToLower(strings.TrimSpace(source)) {
 	case "blueprints", "blueprint", "external":

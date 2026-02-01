@@ -891,7 +891,7 @@ func (s *Service) RunWorkspaceEveNg(ctx context.Context, id string, req *Workspa
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("templatesDir must be a safe repo-relative path").Err()
 	}
 	template := strings.TrimSpace(req.Template)
-	if template == "" && action != "destroy" && action != "stop" {
+	if template == "" && action != "destroy" && action != "stop" && strings.TrimSpace(req.LabPath) == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("template is required").Err()
 	}
 

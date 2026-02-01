@@ -61,6 +61,8 @@ func (s *Service) GetWorkspaceDeploymentInventory(ctx context.Context, id, deplo
 		taskType = "netlab-c9s-run"
 	case "clabernetes":
 		taskType = "clabernetes-run"
+	case "eve_ng":
+		taskType = "eve-ng-run"
 	default:
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("inventory is not available for this deployment type").Err()
 	}

@@ -67,6 +67,8 @@ func (s *Service) GetWorkspaceDeploymentTopology(ctx context.Context, id, deploy
 		return s.getDeploymentTopologyFromLatestTaskArtifact(ctx, pc, dep, "netlab-c9s-run")
 	case "clabernetes":
 		return s.getDeploymentTopologyFromLatestTaskArtifact(ctx, pc, dep, "clabernetes-run")
+	case "eve_ng":
+		return s.getDeploymentTopologyFromLatestTaskArtifact(ctx, pc, dep, "eve-ng-run")
 	default:
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("topology is not available for this deployment type").Err()
 	}

@@ -23,7 +23,7 @@ type SkyforgeWorkspace struct {
 	Blueprint                  string    `json:"blueprint,omitempty"`
 	DefaultBranch              string    `json:"defaultBranch,omitempty"`
 	AllowExternalTemplateRepos bool      `json:"allowExternalTemplateRepos,omitempty"`
-	// LabPP requires an EVE-NG endpoint. This flag enables configuring a per-workspace EVE server.
+	// EVE-NG deployments require an endpoint. This flag enables configuring a per-workspace EVE server.
 	AllowCustomEveServers          bool                   `json:"allowCustomEveServers,omitempty"`
 	AllowCustomNetlabServers       bool                   `json:"allowCustomNetlabServers,omitempty"`
 	AllowCustomContainerlabServers bool                   `json:"allowCustomContainerlabServers,omitempty"`
@@ -34,18 +34,17 @@ type SkyforgeWorkspace struct {
 	TerraformApplyTemplateID       int                    `json:"terraformApplyTemplateId,omitempty"`
 	AnsibleRunTemplateID           int                    `json:"ansibleRunTemplateId,omitempty"`
 	NetlabRunTemplateID            int                    `json:"netlabRunTemplateId,omitempty"`
-	// Deprecated: LabPP tasks were retired; retained for DB/back-compat.
-	LabppRunTemplateID        int    `json:"-"`
-	ContainerlabRunTemplateID int    `json:"containerlabRunTemplateId,omitempty"`
-	AWSAccountID              string `json:"awsAccountId,omitempty"`
-	AWSRoleName               string `json:"awsRoleName,omitempty"`
-	AWSRegion                 string `json:"awsRegion,omitempty"`
-	AWSAuthMethod             string `json:"awsAuthMethod,omitempty"`
-	ArtifactsBucket           string `json:"artifactsBucket,omitempty"`
-	EveServer                 string `json:"eveServer,omitempty"`
-	NetlabServer              string `json:"netlabServer,omitempty"`
-	GiteaOwner                string `json:"giteaOwner"`
-	GiteaRepo                 string `json:"giteaRepo"`
+	EveNgRunTemplateID             int                    `json:"eveNgRunTemplateId,omitempty"`
+	ContainerlabRunTemplateID      int                    `json:"containerlabRunTemplateId,omitempty"`
+	AWSAccountID                   string                 `json:"awsAccountId,omitempty"`
+	AWSRoleName                    string                 `json:"awsRoleName,omitempty"`
+	AWSRegion                      string                 `json:"awsRegion,omitempty"`
+	AWSAuthMethod                  string                 `json:"awsAuthMethod,omitempty"`
+	ArtifactsBucket                string                 `json:"artifactsBucket,omitempty"`
+	EveServer                      string                 `json:"eveServer,omitempty"`
+	NetlabServer                   string                 `json:"netlabServer,omitempty"`
+	GiteaOwner                     string                 `json:"giteaOwner"`
+	GiteaRepo                      string                 `json:"giteaRepo"`
 }
 
 type ExternalTemplateRepo struct {

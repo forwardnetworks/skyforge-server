@@ -205,7 +205,7 @@ type SkyforgeWorkspace struct {
 	TerraformApplyTemplateID   int                    `json:"terraformApplyTemplateId,omitempty"`
 	AnsibleRunTemplateID       int                    `json:"ansibleRunTemplateId,omitempty"`
 	NetlabRunTemplateID        int                    `json:"netlabRunTemplateId,omitempty"`
-	LabppRunTemplateID         int                    `json:"labppRunTemplateId,omitempty"`
+	EveNgRunTemplateID         int                    `json:"eveNgRunTemplateId,omitempty"`
 	ContainerlabRunTemplateID  int                    `json:"containerlabRunTemplateId,omitempty"`
 	AWSAccountID               string                 `json:"awsAccountId,omitempty"`
 	AWSRoleName                string                 `json:"awsRoleName,omitempty"`

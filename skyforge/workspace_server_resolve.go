@@ -145,6 +145,67 @@ func (s *Service) resolveContainerlabServerConfig(ctx context.Context, pc *works
 	return nil, errs.B().Code(errs.InvalidArgument).Msg("containerlab server must be a workspace reference (ws:...) or user reference (user:...)").Err()
 }
 
+func (s *Service) resolveEveServerConfig(ctx context.Context, pc *workspaceContext, serverRef string) (*EveServerConfig, error) {
+	if pc == nil || pc.claims == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("workspace context unavailable").Err()
+	}
+	serverRef = strings.TrimSpace(serverRef)
+	if serverRef == "" {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("eve-ng server is required").Err()
+	}
+
+	if strings.HasPrefix(strings.ToLower(serverRef), userServerRefPrefix) {
+		serverID, ok := parseUserServerRef(serverRef)
+		if !ok {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid user eve-ng server reference (user:...)").Err()
+		}
+		if s == nil || s.db == nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+		}
+		rec, err := getUserEveServerByID(ctx, s.db, s.box, pc.claims.Username, serverID)
+		if err != nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to load user eve-ng server").Err()
+		}
+		if rec == nil {
+			return nil, errs.B().Code(errs.NotFound).Msg("user eve-ng server not found").Err()
+		}
+		return &EveServerConfig{
+			Name:          strings.TrimSpace(rec.Name),
+			APIURL:        strings.TrimSpace(rec.APIURL),
+			WebURL:        strings.TrimSpace(rec.WebURL),
+			SkipTLSVerify: rec.SkipTLSVerify,
+			APIUser:       strings.TrimSpace(rec.APIUser),
+			APIPassword:   strings.TrimSpace(rec.APIPassword),
+			SSHHost:       strings.TrimSpace(rec.SSHHost),
+			SSHUser:       strings.TrimSpace(rec.SSHUser),
+			SSHKey:        strings.TrimSpace(rec.SSHKey),
+		}, nil
+	}
+
+	if serverID, ok := parseWorkspaceServerRef(serverRef); ok {
+		rec, err := getWorkspaceEveServerByID(ctx, s.db, s.box, pc.workspace.ID, serverID)
+		if err != nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to load workspace eve-ng server").Err()
+		}
+		if rec == nil {
+			return nil, errs.B().Code(errs.NotFound).Msg("workspace eve-ng server not found").Err()
+		}
+		return &EveServerConfig{
+			Name:          strings.TrimSpace(rec.Name),
+			APIURL:        strings.TrimSpace(rec.APIURL),
+			WebURL:        strings.TrimSpace(rec.WebURL),
+			SkipTLSVerify: rec.SkipTLSVerify,
+			APIUser:       strings.TrimSpace(rec.APIUser),
+			APIPassword:   strings.TrimSpace(rec.APIPassword),
+			SSHHost:       strings.TrimSpace(rec.SSHHost),
+			SSHUser:       strings.TrimSpace(rec.SSHUser),
+			SSHKey:        strings.TrimSpace(rec.SSHKey),
+		}, nil
+	}
+
+	return nil, errs.B().Code(errs.InvalidArgument).Msg("eve-ng server must be a workspace reference (ws:...) or user reference (user:...)").Err()
+}
+
 func (s *Service) checkWorkspaceNetlabHealth(ctx context.Context, workspaceID string, serverRef string) error {
 	server, err := s.resolveWorkspaceNetlabServerConfig(ctx, workspaceID, serverRef)
 	if err != nil {
