@@ -3,6 +3,7 @@ package taskexec
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"strings"
 	"time"
 
@@ -40,7 +41,16 @@ func ProcessQueuedTask(ctx context.Context, db *sql.DB, taskID int, deps Deps, l
 	}
 
 	task, err := taskstore.GetTask(ctx, db, taskID)
-	if err != nil || task == nil {
+	if err != nil {
+		// Stale pubsub message (task already deleted). Treat as ack to avoid
+		// endlessly retrying and starving real work.
+		if errors.Is(err, sql.ErrNoRows) {
+			log.Infof("dropping stale queued task message for task_id=%d (task not found)", taskID)
+			return nil
+		}
+		return err
+	}
+	if task == nil {
 		return err
 	}
 	if !strings.EqualFold(strings.TrimSpace(task.Status), "queued") {
