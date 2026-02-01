@@ -2,7 +2,8 @@ package skyforge
 
 import (
 	"context"
-	"fmt"
+	"database/sql"
+	"errors"
 	"strings"
 
 	"encore.app/internal/taskqueue"
@@ -22,10 +23,16 @@ func (s *Service) handleTaskStatus(ctx context.Context, msg *taskqueue.TaskStatu
 	}
 	task, err := getTask(ctx, s.db, msg.TaskID)
 	if err != nil {
+		// Stale status event for a task that no longer exists (for example: user
+		// deleted the deployment while work was queued). Treat as ack to avoid
+		// retry loops that can starve other subscriptions.
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
 		return err
 	}
 	if task == nil {
-		return fmt.Errorf("task not found")
+		return nil
 	}
 	status := strings.TrimSpace(msg.Status)
 	errMsg := strings.TrimSpace(msg.Error)
