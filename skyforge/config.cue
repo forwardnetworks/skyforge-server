@@ -182,6 +182,6 @@ NetlabGenerator: {
 
 	// Default to the public generator image so netlab validation works out-of-the-box
 	// in local/dev setups even if ENCORE_CFG_SKYFORGE isn't wired up yet.
-	GeneratorImage:    "ghcr.io/forwardnetworks/skyforge-netlab-generator:latest"
+	GeneratorImage:    "ghcr.io/forwardnetworks/skyforge-netlab-generator:20260127-b8947318"
 	PullPolicy:        "IfNotPresent"
 }
