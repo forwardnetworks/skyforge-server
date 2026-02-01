@@ -232,7 +232,7 @@ func main() {
 	tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
 	client := &http.Client{Timeout: timeout, Transport: tr}
 
-	healthURL := baseURL + "/api/skyforge/api/health"
+	healthURL := baseURL + "/healthz"
 	resp, body, err := doJSON(client, http.MethodGet, healthURL, nil, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "health request failed: %v\n", err)
@@ -244,7 +244,7 @@ func main() {
 	}
 	fmt.Printf("OK health: %s\n", healthURL)
 
-	loginURL := baseURL + "/api/skyforge/api/login"
+	loginURL := baseURL + "/api/login"
 	resp, body, err = doJSON(client, http.MethodPost, loginURL, loginRequest{Username: username, Password: password}, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "login request failed: %v\n", err)
@@ -262,7 +262,7 @@ func main() {
 	fmt.Printf("OK login: %s\n", username)
 
 	wsName := fmt.Sprintf("e2e-%s", time.Now().UTC().Format("20060102-150405"))
-	createURL := baseURL + "/api/skyforge/api/workspaces"
+	createURL := baseURL + "/api/workspaces"
 	resp, body, err = doJSON(client, http.MethodPost, createURL, workspaceCreateRequest{Name: wsName}, map[string]string{"Cookie": cookie})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "workspace create request failed: %v\n", err)
@@ -284,7 +284,7 @@ func main() {
 	fmt.Printf("OK workspace create: %s (%s)\n", ws.Name, ws.ID)
 
 	defer func() {
-		deleteURL := baseURL + "/api/skyforge/api/workspaces/" + ws.ID + "?confirm=" + ws.Slug
+		deleteURL := baseURL + "/api/workspaces/" + ws.ID + "?confirm=" + ws.Slug
 		resp, body, err := doJSON(client, http.MethodDelete, deleteURL, nil, map[string]string{"Cookie": cookie})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "workspace delete request failed: %v\n", err)
@@ -345,7 +345,7 @@ func main() {
 					wait = parsed
 				}
 			}
-			url := fmt.Sprintf("%s/api/skyforge/api/workspaces/%s/netlab/validate", baseURL, ws.ID)
+			url := fmt.Sprintf("%s/api/workspaces/%s/netlab/validate", baseURL, ws.ID)
 			resp, body, err := doJSON(client, http.MethodPost, url, reqIn, map[string]string{"Cookie": cookie})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "test %q: request failed: %v\n", name, err)
