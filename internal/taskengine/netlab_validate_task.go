@@ -32,6 +32,8 @@ type netlabValidateRunSpec struct {
 	SetOverrides   []string
 }
 
+const defaultNetlabGeneratorImage = "ghcr.io/forwardnetworks/skyforge-netlab-generator:latest"
+
 func (e *Engine) dispatchNetlabValidateTask(ctx context.Context, task *taskstore.TaskRecord, log Logger) error {
 	if task == nil {
 		return nil
@@ -103,7 +105,8 @@ func (e *Engine) runNetlabValidateTask(ctx context.Context, spec netlabValidateR
 
 	image := strings.TrimSpace(e.cfg.NetlabGeneratorImage)
 	if image == "" {
-		return fmt.Errorf("netlab generator image is not configured (set ENCORE_CFG_SKYFORGE.NetlabGenerator.GeneratorImage)")
+		image = defaultNetlabGeneratorImage
+		log.Infof("Netlab generator image not configured; defaulting to %s", image)
 	}
 	pullPolicy := strings.TrimSpace(e.cfg.NetlabGeneratorPullPolicy)
 	if pullPolicy == "" {

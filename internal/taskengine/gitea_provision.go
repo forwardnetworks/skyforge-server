@@ -136,6 +136,66 @@ topology:
     - endpoints: ["r1:eth1", "r2:eth1"]
 `) + "\n"
 	_ = ensureGiteaFile(cfg, owner, repo, "containerlab/smoke.clab.yml", smoke, "chore: add containerlab smoke topology", "main", nil)
+
+	netlabMinimal := strings.TrimSpace(`name: e2e-minimal
+
+module: []
+
+defaults:
+  device: eos
+  provider: clab
+
+nodes:
+  r1: {}
+
+links: []
+`) + "\n"
+	_ = ensureGiteaFile(cfg, owner, repo, "netlab/_e2e/minimal/topology.yml", netlabMinimal, "test: add netlab minimal e2e topology", "main", nil)
+
+	netlabOspf := strings.TrimSpace(`name: e2e-ospf
+
+module: [ospf]
+
+defaults:
+  device: eos
+  provider: clab
+
+nodes:
+  r1: {}
+  r2: {}
+
+links:
+  - r1-r2
+`) + "\n"
+	_ = ensureGiteaFile(cfg, owner, repo, "netlab/_e2e/routing-ospf/topology.yml", netlabOspf, "test: add netlab ospf e2e topology", "main", nil)
+
+	// Use explicit IPv4 p2p pool to avoid devices that can't do EBGP over IPv6 LLAs.
+	netlabBgp := strings.TrimSpace(`name: e2e-bgp
+
+module: [bgp]
+
+defaults:
+  device: eos
+  provider: clab
+  bgp:
+    as: 65000
+
+addressing:
+  p2p:
+    ipv4: 198.18.0.0/16
+
+nodes:
+  r1:
+    bgp:
+      as: 65100
+  r2:
+    bgp:
+      as: 65200
+
+links:
+  - r1-r2
+`) + "\n"
+	_ = ensureGiteaFile(cfg, owner, repo, "netlab/_e2e/routing-bgp/topology.yml", netlabBgp, "test: add netlab bgp e2e topology", "main", nil)
 	return nil
 }
 

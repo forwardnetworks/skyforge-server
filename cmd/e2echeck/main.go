@@ -144,6 +144,16 @@ type matrixTest struct {
 		SSHTimeout   string            `yaml:"sshTimeout"`
 		Cleanup      bool              `yaml:"cleanup"`
 	} `yaml:"netlab_deploy,omitempty"`
+
+	ContainerlabDeploy *struct {
+		Source      string            `yaml:"source"`
+		Repo        string            `yaml:"repo"`
+		Dir         string            `yaml:"dir"`
+		Template    string            `yaml:"template"`
+		Environment map[string]string `yaml:"environment"`
+		Timeout     string            `yaml:"timeout"`
+		Cleanup     bool              `yaml:"cleanup"`
+	} `yaml:"containerlab_deploy,omitempty"`
 }
 
 type netlabDeviceDefaultsCatalog struct {
@@ -153,11 +163,36 @@ type netlabDeviceDefaultsCatalog struct {
 	} `json:"sets"`
 }
 
+type workspaceNetlabServerConfig struct {
+	ID          string `json:"id,omitempty"`
+	Name        string `json:"name,omitempty"`
+	APIURL      string `json:"apiUrl"`
+	APIInsecure bool   `json:"apiInsecure,omitempty"`
+	APIUser     string `json:"apiUser,omitempty"`
+	APIPassword string `json:"apiPassword,omitempty"`
+	APIToken    string `json:"apiToken,omitempty"`
+}
+
 func getenv(key, fallback string) string {
 	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 		return v
 	}
 	return fallback
+}
+
+func getenvBool(key string, fallback bool) bool {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	switch strings.ToLower(raw) {
+	case "1", "true", "yes", "y", "on":
+		return true
+	case "0", "false", "no", "n", "off":
+		return false
+	default:
+		return fallback
+	}
 }
 
 func mustEnv(key string) string {
@@ -220,6 +255,42 @@ func splitCSVEnv(name string) map[string]struct{} {
 	return out
 }
 
+func ensureWorkspaceNetlabServer(client *http.Client, baseURL, cookie, workspaceID string) (string, error) {
+	apiURL := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_BYOS_NETLAB_API_URL"))
+	if apiURL == "" {
+		return "", fmt.Errorf("SKYFORGE_E2E_BYOS_NETLAB_API_URL is not set")
+	}
+	apiToken := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_BYOS_NETLAB_API_TOKEN"))
+	apiUser := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_BYOS_NETLAB_API_USER"))
+	apiPassword := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_BYOS_NETLAB_API_PASSWORD"))
+	apiInsecure := getenvBool("SKYFORGE_E2E_BYOS_NETLAB_API_INSECURE", false)
+
+	payload := workspaceNetlabServerConfig{
+		Name:        "",
+		APIURL:      apiURL,
+		APIInsecure: apiInsecure,
+		APIUser:     apiUser,
+		APIPassword: apiPassword,
+		APIToken:    apiToken,
+	}
+	url := fmt.Sprintf("%s/api/workspaces/%s/netlab/servers", strings.TrimRight(strings.TrimSpace(baseURL), "/"), strings.TrimSpace(workspaceID))
+	resp, body, err := doJSON(client, http.MethodPut, url, payload, map[string]string{"Cookie": cookie})
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("upsert workspace netlab server failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var out workspaceNetlabServerConfig
+	if err := json.Unmarshal(body, &out); err != nil {
+		return "", fmt.Errorf("upsert workspace netlab server parse failed: %w", err)
+	}
+	if strings.TrimSpace(out.ID) == "" {
+		return "", fmt.Errorf("upsert workspace netlab server returned empty id")
+	}
+	return "ws:" + strings.TrimSpace(out.ID), nil
+}
+
 type e2eTemplate struct {
 	Name       string
 	Source     string
@@ -228,47 +299,91 @@ type e2eTemplate struct {
 	Deployable bool
 }
 
-var e2eTemplates = []e2eTemplate{
+var e2eTemplatesBase = []e2eTemplate{
 	{Name: "minimal", Source: "blueprints", Dir: "netlab/_e2e/minimal", Template: "topology.yml", Deployable: true},
+}
+
+var e2eTemplatesAdvanced = []e2eTemplate{
+	// Advanced routing templates (opt-in via SKYFORGE_E2E_ADVANCED=true).
 	{Name: "routing-ospf", Source: "blueprints", Dir: "netlab/_e2e/routing-ospf", Template: "topology.yml", Deployable: true},
 	{Name: "routing-bgp", Source: "blueprints", Dir: "netlab/_e2e/routing-bgp", Template: "topology.yml", Deployable: true},
 }
 
+var e2eContainerlabTemplate = struct {
+	Source   string
+	Dir      string
+	Template string
+}{
+	Source:   "blueprints",
+	Dir:      "containerlab",
+	Template: "smoke.clab.yml",
+}
+
 func allowedTemplatesForDevice(device string) map[string]struct{} {
 	device = strings.TrimSpace(device)
-	// Conservative defaults:
-	// - Firewalls and L2-only variants run minimal only unless explicitly extended.
-	switch device {
-	case "asav", "fortios":
-		return map[string]struct{}{"minimal": {}}
-	case "ioll2", "iosvl2":
-		return map[string]struct{}{"minimal": {}}
-	}
-
-	// Router-ish platforms we actively run in Skyforge.
-	switch device {
-	case "eos", "iol", "iosv", "csr", "nxos", "cumulus", "sros":
-		return map[string]struct{}{"minimal": {}, "routing-ospf": {}, "routing-bgp": {}}
-	default:
-		return map[string]struct{}{"minimal": {}}
-	}
+	// For the default E2E suite we only care about "does this device type come up and accept SSH?"
+	// Keep it minimal and fast. Advanced routing templates are opt-in and filtered separately.
+	return map[string]struct{}{"minimal": {}}
 }
 
 func deployableInSkyforge(device string) bool {
 	switch strings.TrimSpace(device) {
-	case "eos", "iol", "iosv", "csr", "nxos", "cumulus", "sros", "asav", "fortios":
+	// These are the device types Skyforge currently exposes as "available"/"onboarded"
+	// for in-cluster (clabernetes) netlab deployments.
+	//
+	// NOTE: Exclude vsrx (out of scope) even if the upstream netlab catalog includes it.
+	case "eos", "iol", "iosv", "iosvl2", "csr", "nxos", "cumulus", "sros", "asav", "fortios", "vmx", "vjunos-router", "vjunos-switch", "linux":
 		return true
 	default:
 		return false
 	}
 }
 
-func generateMatrixFromCatalog(catalogPath string) (matrixFile, error) {
-	devices, err := loadNetlabDeviceCatalog(catalogPath)
-	if err != nil {
-		return matrixFile{}, err
+func onboardedNetlabDevices() []string {
+	// Keep this list aligned with what we expose in the UI (Netlab device presets) and what
+	// we actually build/push images for. This is intentionally not "every netlab device".
+	return []string{
+		"eos",
+		"iol",
+		"iosv",
+		"iosvl2",
+		"csr",
+		"nxos",
+		"cumulus",
+		"sros",
+		"asav",
+		"fortios",
+		"vmx",
+		"vjunos-router",
+		"vjunos-switch",
+		"linux",
 	}
+}
 
+func e2eTemplates() []e2eTemplate {
+	out := make([]e2eTemplate, 0, len(e2eTemplatesBase)+len(e2eTemplatesAdvanced))
+	out = append(out, e2eTemplatesBase...)
+	if getenvBool("SKYFORGE_E2E_ADVANCED", false) {
+		out = append(out, e2eTemplatesAdvanced...)
+	}
+	return out
+}
+
+func generateMatrixFromCatalog(catalogPath string) (matrixFile, error) {
+	devices := map[string]struct{}{}
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("SKYFORGE_E2E_DEVICE_SET")), "all") {
+		catalogDevices, err := loadNetlabDeviceCatalog(catalogPath)
+		if err != nil {
+			return matrixFile{}, err
+		}
+		for d := range catalogDevices {
+			devices[d] = struct{}{}
+		}
+	} else {
+		for _, d := range onboardedNetlabDevices() {
+			devices[d] = struct{}{}
+		}
+	}
 	// Always include eos even if the catalog ever changes (Skyforge default).
 	devices["eos"] = struct{}{}
 	// Explicitly out-of-scope.
@@ -276,10 +391,8 @@ func generateMatrixFromCatalog(catalogPath string) (matrixFile, error) {
 
 	deviceFilter := splitCSVEnv("SKYFORGE_E2E_DEVICES")
 	templateFilter := splitCSVEnv("SKYFORGE_E2E_TEMPLATES")
-	deployEnabled := true
-	if v := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_DEPLOY")); v != "" {
-		deployEnabled = strings.EqualFold(v, "true") || v == "1" || strings.EqualFold(v, "yes")
-	}
+	deployEnabled := getenvBool("SKYFORGE_E2E_DEPLOY", false)
+	deployDeviceFilter := splitCSVEnv("SKYFORGE_E2E_DEPLOY_DEVICES")
 
 	deviceList := make([]string, 0, len(devices))
 	for d := range devices {
@@ -295,7 +408,7 @@ func generateMatrixFromCatalog(catalogPath string) (matrixFile, error) {
 	tests := []matrixTest{}
 	for _, d := range deviceList {
 		allowed := allowedTemplatesForDevice(d)
-		for _, tmpl := range e2eTemplates {
+		for _, tmpl := range e2eTemplates() {
 			if _, ok := allowed[tmpl.Name]; !ok {
 				continue
 			}
@@ -334,6 +447,11 @@ func generateMatrixFromCatalog(catalogPath string) (matrixFile, error) {
 				if !deployableInSkyforge(d) {
 					continue
 				}
+				if deployDeviceFilter != nil {
+					if _, ok := deployDeviceFilter[d]; !ok {
+						continue
+					}
+				}
 				deployName := fmt.Sprintf("netlab-deploy-%s-%s", d, tmpl.Name)
 				tests = append(tests, matrixTest{
 					Name: deployName,
@@ -370,6 +488,74 @@ func generateMatrixFromCatalog(catalogPath string) (matrixFile, error) {
 		}
 	}
 
+	if getenvBool("SKYFORGE_E2E_BYOS", false) {
+		byosDevices := splitCSVEnv("SKYFORGE_E2E_BYOS_DEVICES")
+		if byosDevices == nil {
+			// Default to a single lightweight BYOS smoke test.
+			byosDevices = map[string]struct{}{"eos": {}}
+		}
+
+		for _, d := range deviceList {
+			if _, ok := byosDevices[d]; !ok {
+				continue
+			}
+			tmpl := e2eTemplatesBase[0] // minimal
+			tests = append(tests, matrixTest{
+				Name: fmt.Sprintf("netlab-byos-deploy-%s-%s", d, tmpl.Name),
+				Kind: "netlab_byos_deploy",
+				NetlabDeploy: &struct {
+					Type         string            `yaml:"type"`
+					Source       string            `yaml:"source"`
+					Repo         string            `yaml:"repo"`
+					Dir          string            `yaml:"dir"`
+					Template     string            `yaml:"template"`
+					Environment  map[string]string `yaml:"environment"`
+					SetOverrides []string          `yaml:"setOverrides"`
+					Timeout      string            `yaml:"timeout"`
+					SSHBanners   bool              `yaml:"sshBanners"`
+					SSHTimeout   string            `yaml:"sshTimeout"`
+					Cleanup      bool              `yaml:"cleanup"`
+				}{
+					Type:     "netlab",
+					Source:   tmpl.Source,
+					Repo:     "",
+					Dir:      tmpl.Dir,
+					Template: tmpl.Template,
+					Environment: map[string]string{
+						"NETLAB_DEVICE": d,
+					},
+					SetOverrides: nil,
+					Timeout:      "35m",
+					SSHBanners:   false,
+					SSHTimeout:   "",
+					Cleanup:      true,
+				},
+			})
+		}
+
+		tests = append(tests, matrixTest{
+			Name: "containerlab-byos-deploy-smoke",
+			Kind: "containerlab_byos_deploy",
+			ContainerlabDeploy: &struct {
+				Source      string            `yaml:"source"`
+				Repo        string            `yaml:"repo"`
+				Dir         string            `yaml:"dir"`
+				Template    string            `yaml:"template"`
+				Environment map[string]string `yaml:"environment"`
+				Timeout     string            `yaml:"timeout"`
+				Cleanup     bool              `yaml:"cleanup"`
+			}{
+				Source:      e2eContainerlabTemplate.Source,
+				Repo:        "",
+				Dir:         e2eContainerlabTemplate.Dir,
+				Template:    e2eContainerlabTemplate.Template,
+				Environment: map[string]string{},
+				Timeout:     "25m",
+				Cleanup:     true,
+			},
+		})
+	}
+
 	return matrixFile{Tests: tests}, nil
 }
 
@@ -395,6 +581,145 @@ func kubectlAvailable(ctx context.Context) error {
 		return fmt.Errorf("kubectl not available: %s", strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+func kubectlApplyYAML(ctx context.Context, yaml string) error {
+	ctx2, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx2, "kubectl", "apply", "-f", "-")
+	cmd.Env = kubectlEnv()
+	cmd.Stdin = strings.NewReader(yaml)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("kubectl apply failed: %s", strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func kubectlDeleteName(ctx context.Context, kind, namespace, name string) {
+	kind = strings.TrimSpace(kind)
+	namespace = strings.TrimSpace(namespace)
+	name = strings.TrimSpace(name)
+	if kind == "" || name == "" {
+		return
+	}
+	args := []string{}
+	if namespace != "" {
+		args = append(args, "-n", namespace)
+	}
+	args = append(args, "delete", kind, name, "--ignore-not-found=true", "--wait=false")
+	ctx2, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx2, "kubectl", args...)
+	cmd.Env = kubectlEnv()
+	_, _ = cmd.CombinedOutput()
+}
+
+func sshProbeMode() string {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("SKYFORGE_E2E_SSH_PROBE_MODE"))) {
+	case "collector_exec":
+		return "collector_exec"
+	default:
+		return "job"
+	}
+}
+
+func waitForSSHProbeJob(ctx context.Context, namespace string, hosts []string, timeout time.Duration) error {
+	if err := kubectlAvailable(ctx); err != nil {
+		return err
+	}
+	if len(hosts) == 0 {
+		return fmt.Errorf("no hosts")
+	}
+	namespace = strings.TrimSpace(namespace)
+	if namespace == "" {
+		namespace = "skyforge"
+	}
+	if timeout <= 0 {
+		timeout = 10 * time.Minute
+	}
+
+	hostArgs := []string{}
+	for _, h := range hosts {
+		h = strings.TrimSpace(h)
+		if h != "" {
+			hostArgs = append(hostArgs, h)
+		}
+	}
+	if len(hostArgs) == 0 {
+		return fmt.Errorf("no hosts")
+	}
+
+	jobName := fmt.Sprintf("e2e-sshprobe-%d", time.Now().Unix()%1_000_000)
+	activeDeadline := int64(timeout.Seconds()) + 120
+	if activeDeadline < 60 {
+		activeDeadline = 60
+	}
+
+	script := `import os, socket, sys, time
+hosts = [h for h in os.environ.get("HOSTS","").split() if h.strip()]
+per_host_timeout = int(os.environ.get("TIMEOUT_SECONDS","300") or "300")
+def probe(host):
+  deadline = time.time() + per_host_timeout
+  last = None
+  while time.time() < deadline:
+    try:
+      s = socket.create_connection((host, 22), timeout=3)
+      s.settimeout(3)
+      data = s.recv(4)
+      s.close()
+      if data == b"SSH-":
+        return True, None
+      last = f"bad_banner:{data!r}"
+    except Exception as e:
+      last = str(e)
+    time.sleep(2)
+  return False, last
+for h in hosts:
+  ok, err = probe(h)
+  if not ok:
+    sys.stderr.write(f"{h}: {err}\n")
+    sys.exit(2)
+print("ok")
+`
+
+	manifest := fmt.Sprintf(`apiVersion: batch/v1
+kind: Job
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: %d
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: probe
+        image: python:3.12-alpine
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: HOSTS
+          value: %q
+        - name: TIMEOUT_SECONDS
+          value: %q
+        command: ["python","-c",%q]
+`, jobName, namespace, activeDeadline, strings.Join(hostArgs, " "), fmt.Sprintf("%d", int(timeout.Seconds())), script)
+
+	if err := kubectlApplyYAML(ctx, manifest); err != nil {
+		return err
+	}
+	defer kubectlDeleteName(context.Background(), "job", namespace, jobName)
+
+	ctx2, cancel := context.WithTimeout(ctx, timeout+2*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx2, "kubectl", "-n", namespace, "wait", "--for=condition=complete", "job/"+jobName, "--timeout="+fmt.Sprintf("%ds", int(timeout.Seconds()+120)))
+	cmd.Env = kubectlEnv()
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("ssh probe job %s failed: %s", jobName, strings.TrimSpace(string(out)))
 }
 
 func doJSON(client *http.Client, method, url string, body any, headers map[string]string) (*http.Response, []byte, error) {
@@ -956,7 +1281,7 @@ func run() int {
 		password = loaded
 	}
 
-	timeout := 30 * time.Second
+	timeout := 2 * time.Minute
 	if v := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_HTTP_TIMEOUT")); v != "" {
 		if parsed, err := time.ParseDuration(v); err == nil && parsed > 0 {
 			timeout = parsed
@@ -1324,12 +1649,29 @@ func run() int {
 							fmt.Fprintf(os.Stderr, "test %q: no mgmt IPs in topology\n", name)
 							exitCode = 1
 							testFailed = true
-						} else if err := waitForCollectorSSH(context.Background(), collectorNS, collectorPod, hosts, sshWait); err != nil {
-							fmt.Fprintf(os.Stderr, "test %q: collector ssh banner failed: %v\n", name, err)
-							exitCode = 1
-							testFailed = true
 						} else {
-							fmt.Printf("OK %s: collector ssh banner ok (hosts=%d)\n", name, len(hosts))
+							switch sshProbeMode() {
+							case "collector_exec":
+								if err := waitForCollectorSSH(context.Background(), collectorNS, collectorPod, hosts, sshWait); err != nil {
+									fmt.Fprintf(os.Stderr, "test %q: collector ssh banner failed: %v\n", name, err)
+									exitCode = 1
+									testFailed = true
+								} else {
+									fmt.Printf("OK %s: collector ssh banner ok (hosts=%d)\n", name, len(hosts))
+								}
+							default:
+								probeNS := strings.TrimSpace(collectorNS)
+								if probeNS == "" {
+									probeNS = "skyforge"
+								}
+								if err := waitForSSHProbeJob(context.Background(), probeNS, hosts, sshWait); err != nil {
+									fmt.Fprintf(os.Stderr, "test %q: ssh probe job failed: %v\n", name, err)
+									exitCode = 1
+									testFailed = true
+								} else {
+									fmt.Printf("OK %s: ssh probe ok (namespace=%s hosts=%d)\n", name, probeNS, len(hosts))
+								}
+							}
 						}
 					}
 				}
@@ -1351,6 +1693,196 @@ func run() int {
 
 			if !testFailed {
 				fmt.Printf("OK %s: succeeded\n", name)
+			}
+		case "netlab_byos_deploy":
+			if t.NetlabDeploy == nil {
+				fmt.Fprintf(os.Stderr, "test %q: missing netlab_deploy section\n", name)
+				return 2
+			}
+
+			deployType := strings.ToLower(strings.TrimSpace(t.NetlabDeploy.Type))
+			if deployType == "" {
+				deployType = "netlab"
+			}
+			if deployType != "netlab" {
+				fmt.Fprintf(os.Stderr, "test %q: unsupported byos deploy type %q\n", name, deployType)
+				return 2
+			}
+
+			wait := 35 * time.Minute
+			if timeoutStr := strings.TrimSpace(t.NetlabDeploy.Timeout); timeoutStr != "" {
+				if parsed, err := time.ParseDuration(timeoutStr); err == nil && parsed > 0 {
+					wait = parsed
+				}
+			}
+
+			serverRef, err := ensureWorkspaceNetlabServer(client, baseURL, cookie, ws.ID)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "test %q: byos netlab server not configured: %v\n", name, err)
+				return 1
+			}
+
+			cfg := map[string]any{
+				"netlabServer":       serverRef,
+				"templateSource":     strings.TrimSpace(t.NetlabDeploy.Source),
+				"templateRepo":       strings.TrimSpace(t.NetlabDeploy.Repo),
+				"templatesDir":       strings.TrimSpace(t.NetlabDeploy.Dir),
+				"template":           strings.TrimSpace(t.NetlabDeploy.Template),
+				"environment":        t.NetlabDeploy.Environment,
+				"netlabSetOverrides": t.NetlabDeploy.SetOverrides,
+			}
+			if cfg["environment"] == nil {
+				cfg["environment"] = map[string]string{}
+			}
+
+			createDepURL := fmt.Sprintf("%s/api/workspaces/%s/deployments", baseURL, ws.ID)
+			resp, body, err := doJSON(client, http.MethodPost, createDepURL, deploymentCreateRequest{
+				Name:   strings.TrimSpace(name),
+				Type:   "netlab",
+				Config: cfg,
+			}, map[string]string{"Cookie": cookie})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "test %q: create deployment request failed: %v\n", name, err)
+				return 1
+			}
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				fmt.Fprintf(os.Stderr, "test %q: create deployment failed (%d): %s\n", name, resp.StatusCode, strings.TrimSpace(string(body)))
+				return 1
+			}
+			var dep deploymentResponse
+			if err := json.Unmarshal(body, &dep); err != nil {
+				fmt.Fprintf(os.Stderr, "test %q: create deployment parse failed: %v\n", name, err)
+				return 1
+			}
+			if strings.TrimSpace(dep.ID) == "" {
+				fmt.Fprintf(os.Stderr, "test %q: create deployment returned empty id\n", name)
+				return 1
+			}
+
+			startURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/start", baseURL, ws.ID, dep.ID)
+			resp, body, err = doJSON(client, http.MethodPost, startURL, map[string]any{}, map[string]string{"Cookie": cookie})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "test %q: start deployment request failed: %v\n", name, err)
+				return 1
+			}
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				fmt.Fprintf(os.Stderr, "test %q: start deployment failed (%d): %s\n", name, resp.StatusCode, strings.TrimSpace(string(body)))
+				return 1
+			}
+			var out deploymentActionResponse
+			if err := json.Unmarshal(body, &out); err != nil {
+				fmt.Fprintf(os.Stderr, "test %q: start response parse failed: %v\n", name, err)
+				return 1
+			}
+			taskID := parseTaskID(out.Run)
+			if taskID <= 0 {
+				fmt.Fprintf(os.Stderr, "test %q: start returned missing task id\n", name)
+				return 1
+			}
+			fmt.Printf("OK %s: task=%d (waiting)\n", name, taskID)
+
+			sseClient := &http.Client{Transport: tr}
+			status, errMsg, err := waitForTaskFinished(sseClient, baseURL, cookie, ws.ID, taskID, wait)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "test %q: wait failed: %v\n", name, err)
+				return 1
+			}
+			switch strings.ToLower(strings.TrimSpace(status)) {
+			case "succeeded", "success":
+				fmt.Printf("OK %s: succeeded\n", name)
+			default:
+				fmt.Fprintf(os.Stderr, "test %q: byos deployment task finished with status=%q error=%q\n", name, status, errMsg)
+				if output, err := fetchRunOutput(client, baseURL, cookie, ws.ID, taskID); err == nil && strings.TrimSpace(output) != "" {
+					fmt.Fprintf(os.Stderr, "--- task %d output ---\n%s\n--- end output ---\n", taskID, output)
+				}
+				exitCode = 1
+			}
+		case "containerlab_byos_deploy":
+			if t.ContainerlabDeploy == nil {
+				fmt.Fprintf(os.Stderr, "test %q: missing containerlab_deploy section\n", name)
+				return 2
+			}
+			wait := 25 * time.Minute
+			if timeoutStr := strings.TrimSpace(t.ContainerlabDeploy.Timeout); timeoutStr != "" {
+				if parsed, err := time.ParseDuration(timeoutStr); err == nil && parsed > 0 {
+					wait = parsed
+				}
+			}
+			serverRef, err := ensureWorkspaceNetlabServer(client, baseURL, cookie, ws.ID)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "test %q: byos netlab server not configured: %v\n", name, err)
+				return 1
+			}
+			cfg := map[string]any{
+				"netlabServer":   serverRef,
+				"templateSource": strings.TrimSpace(t.ContainerlabDeploy.Source),
+				"templateRepo":   strings.TrimSpace(t.ContainerlabDeploy.Repo),
+				"templatesDir":   strings.TrimSpace(t.ContainerlabDeploy.Dir),
+				"template":       strings.TrimSpace(t.ContainerlabDeploy.Template),
+				"environment":    t.ContainerlabDeploy.Environment,
+			}
+			if cfg["environment"] == nil {
+				cfg["environment"] = map[string]string{}
+			}
+			createDepURL := fmt.Sprintf("%s/api/workspaces/%s/deployments", baseURL, ws.ID)
+			resp, body, err := doJSON(client, http.MethodPost, createDepURL, deploymentCreateRequest{
+				Name:   strings.TrimSpace(name),
+				Type:   "containerlab",
+				Config: cfg,
+			}, map[string]string{"Cookie": cookie})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "test %q: create deployment request failed: %v\n", name, err)
+				return 1
+			}
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				fmt.Fprintf(os.Stderr, "test %q: create deployment failed (%d): %s\n", name, resp.StatusCode, strings.TrimSpace(string(body)))
+				return 1
+			}
+			var dep deploymentResponse
+			if err := json.Unmarshal(body, &dep); err != nil {
+				fmt.Fprintf(os.Stderr, "test %q: create deployment parse failed: %v\n", name, err)
+				return 1
+			}
+			if strings.TrimSpace(dep.ID) == "" {
+				fmt.Fprintf(os.Stderr, "test %q: create deployment returned empty id\n", name)
+				return 1
+			}
+			startURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/start", baseURL, ws.ID, dep.ID)
+			resp, body, err = doJSON(client, http.MethodPost, startURL, map[string]any{}, map[string]string{"Cookie": cookie})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "test %q: start deployment request failed: %v\n", name, err)
+				return 1
+			}
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				fmt.Fprintf(os.Stderr, "test %q: start deployment failed (%d): %s\n", name, resp.StatusCode, strings.TrimSpace(string(body)))
+				return 1
+			}
+			var out deploymentActionResponse
+			if err := json.Unmarshal(body, &out); err != nil {
+				fmt.Fprintf(os.Stderr, "test %q: start response parse failed: %v\n", name, err)
+				return 1
+			}
+			taskID := parseTaskID(out.Run)
+			if taskID <= 0 {
+				fmt.Fprintf(os.Stderr, "test %q: start returned missing task id\n", name)
+				return 1
+			}
+			fmt.Printf("OK %s: task=%d (waiting)\n", name, taskID)
+			sseClient := &http.Client{Transport: tr}
+			status, errMsg, err := waitForTaskFinished(sseClient, baseURL, cookie, ws.ID, taskID, wait)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "test %q: wait failed: %v\n", name, err)
+				return 1
+			}
+			switch strings.ToLower(strings.TrimSpace(status)) {
+			case "succeeded", "success":
+				fmt.Printf("OK %s: succeeded\n", name)
+			default:
+				fmt.Fprintf(os.Stderr, "test %q: containerlab task finished with status=%q error=%q\n", name, status, errMsg)
+				if output, err := fetchRunOutput(client, baseURL, cookie, ws.ID, taskID); err == nil && strings.TrimSpace(output) != "" {
+					fmt.Fprintf(os.Stderr, "--- task %d output ---\n%s\n--- end output ---\n", taskID, output)
+				}
+				exitCode = 1
 			}
 		default:
 			fmt.Fprintf(os.Stderr, "unknown test kind %q (%s)\n", kind, name)

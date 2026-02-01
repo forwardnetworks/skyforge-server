@@ -35,6 +35,8 @@ type netlabC9sManifest struct {
 	} `json:"startupConfigs,omitempty"`
 }
 
+const defaultNetlabC9sGeneratorImage = "ghcr.io/forwardnetworks/skyforge-netlab-generator:latest"
+
 // runNetlabC9sTaskK8sGenerator runs a netlab generator job inside the workspace namespace,
 // waits for it to complete, then reads the generated manifest/configmaps.
 //
@@ -57,7 +59,8 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 
 	image := strings.TrimSpace(e.cfg.NetlabGeneratorImage)
 	if image == "" {
-		return nil, nil, fmt.Errorf("netlab-c9s generator mode is k8s but NetlabGeneratorImage is not configured (set ENCORE_CFG_SKYFORGE.NetlabGenerator.GeneratorImage)")
+		image = defaultNetlabC9sGeneratorImage
+		log.Infof("Netlab generator image not configured; defaulting to %s", image)
 	}
 	pullPolicy := strings.TrimSpace(e.cfg.NetlabGeneratorPullPolicy)
 	if pullPolicy == "" {

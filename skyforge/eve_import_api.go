@@ -176,10 +176,13 @@ func (s *Service) ImportWorkspaceEveLab(ctx context.Context, id string, req *Wor
 		return nil, err
 	}
 
-	cfg := JSONMap{
+	cfg, err := toJSONMap(map[string]any{
 		"eveServer": serverRef,
 		"labPath":   labPath,
 		"imported":  true,
+	})
+	if err != nil {
+		return nil, errs.B().Code(errs.Internal).Msg("failed to encode deployment config").Err()
 	}
 	return s.CreateWorkspaceDeployment(ctx, id, &WorkspaceDeploymentCreateRequest{
 		Name:   name,
@@ -314,15 +317,19 @@ func (s *Service) ConvertWorkspaceEveLab(ctx context.Context, id string, req *Wo
 		if err != nil {
 			return nil, err
 		}
+		depCfg, err := toJSONMap(map[string]any{
+			"netlabServer":   containerlabServer,
+			"templateSource": "workspace",
+			"templatesDir":   outputDir,
+			"template":       outputFile,
+		})
+		if err != nil {
+			return nil, errs.B().Code(errs.Internal).Msg("failed to encode deployment config").Err()
+		}
 		dep, err := s.CreateWorkspaceDeployment(ctx, id, &WorkspaceDeploymentCreateRequest{
-			Name: depName,
-			Type: "containerlab",
-			Config: JSONMap{
-				"netlabServer":   containerlabServer,
-				"templateSource": "workspace",
-				"templatesDir":   outputDir,
-				"template":       outputFile,
-			},
+			Name:   depName,
+			Type:   "containerlab",
+			Config: depCfg,
 		})
 		if err != nil {
 			return nil, err
