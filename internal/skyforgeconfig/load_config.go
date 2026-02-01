@@ -58,6 +58,8 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 	adminUsers := parseUserList(enc.AdminUsers)
 	adminUsername := strings.TrimSpace(enc.AdminUsername)
 	adminPassword := strings.TrimSpace(sec.AdminPassword)
+	e2eAdminEnabled := enc.E2EAdminEnabled
+	e2eAdminToken := strings.TrimSpace(sec.E2EAdminToken)
 	corpEmailDomain := strings.TrimSpace(enc.CorpEmailDomain)
 	if adminUsername == "" {
 		adminUsername = "skyforge"
@@ -301,6 +303,8 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		AdminUsers:              adminUsers,
 		AdminUsername:           adminUsername,
 		AdminPassword:           adminPassword,
+		E2EAdminEnabled:         e2eAdminEnabled,
+		E2EAdminToken:           e2eAdminToken,
 		UI:                      uiCfg,
 		NotificationsEnabled:    notificationsEnabled,
 		NotificationsInterval:   notificationsInterval,

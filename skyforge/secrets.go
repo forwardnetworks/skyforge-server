@@ -6,6 +6,7 @@ import "encore.app/internal/skyforgecore"
 var secrets struct {
 	SKYFORGE_SESSION_SECRET             string `secret:"SKYFORGE_SESSION_SECRET"`
 	SKYFORGE_ADMIN_PASSWORD             string `secret:"SKYFORGE_ADMIN_PASSWORD"`
+	SKYFORGE_E2E_ADMIN_TOKEN            string `secret:"SKYFORGE_E2E_ADMIN_TOKEN"`
 	SKYFORGE_OIDC_CLIENT_ID             string `secret:"SKYFORGE_OIDC_CLIENT_ID"`
 	SKYFORGE_OIDC_CLIENT_SECRET         string `secret:"SKYFORGE_OIDC_CLIENT_SECRET"`
 	SKYFORGE_GEMINI_OAUTH_CLIENT_SECRET string `secret:"SKYFORGE_GEMINI_OAUTH_CLIENT_SECRET"`
@@ -29,6 +30,7 @@ func getSecrets() skyforgecore.Secrets {
 	return skyforgecore.Secrets{
 		SessionSecret:          secrets.SKYFORGE_SESSION_SECRET,
 		AdminPassword:          secrets.SKYFORGE_ADMIN_PASSWORD,
+		E2EAdminToken:          secrets.SKYFORGE_E2E_ADMIN_TOKEN,
 		OIDCClientID:           secrets.SKYFORGE_OIDC_CLIENT_ID,
 		OIDCClientSecret:       secrets.SKYFORGE_OIDC_CLIENT_SECRET,
 		GeminiClientSecret:     secrets.SKYFORGE_GEMINI_OAUTH_CLIENT_SECRET,

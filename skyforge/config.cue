@@ -8,6 +8,7 @@ NotificationsEnabled: true
 StaticRoot: "/opt/skyforge/static"
 AdminUsers: ""
 AdminUsername: "skyforge"
+E2EAdminEnabled: false
 CorpEmailDomain: ""
 ListenAddr: ":8085"
 SessionCookie: "skyforge_session"

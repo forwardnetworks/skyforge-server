@@ -56,6 +56,10 @@ func ValidateConfig(cfg Config) ConfigValidation {
 		v.addWarning("Forward is enabled but in-cluster collector image is not configured")
 	}
 
+	if cfg.E2EAdminEnabled && strings.TrimSpace(cfg.E2EAdminToken) == "" {
+		v.addError("E2E admin API is enabled but E2E admin token is empty")
+	}
+
 	if cfg.AIEnabled && cfg.GeminiEnabled {
 		if strings.TrimSpace(cfg.GeminiProjectID) == "" {
 			v.addWarning("Gemini is enabled but ProjectID is empty (user auth may still work, but Vertex calls will fail)")

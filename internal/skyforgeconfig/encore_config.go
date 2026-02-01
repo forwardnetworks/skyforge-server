@@ -148,6 +148,8 @@ type EncoreConfig struct {
 	AdminUsername   string
 	CorpEmailDomain string
 
+	E2EAdminEnabled bool
+
 	PublicURL string
 
 	ListenAddr    string

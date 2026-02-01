@@ -20,6 +20,8 @@ type Config struct {
 	AdminUsers                []string
 	AdminUsername             string
 	AdminPassword             string
+	E2EAdminEnabled           bool
+	E2EAdminToken             string
 	UI                        UIConfig
 	PublicURL                 string
 	NotificationsEnabled      bool
@@ -228,6 +230,7 @@ type ExternalTemplateRepo struct {
 type Secrets struct {
 	SessionSecret          string
 	AdminPassword          string
+	E2EAdminToken          string
 	OIDCClientID           string
 	OIDCClientSecret       string
 	LDAPURL                string
