@@ -893,14 +893,14 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 					continue
 				}
 				img, _ := cfg["image"].(string)
-				if pinned, ok := rewritePinnedVrnetlabImage(img); ok {
-					cfg["image"] = pinned
+				if rewritten, ok := rewriteVrnetlabImageForCluster(img); ok {
+					cfg["image"] = rewritten
 					nodes[node] = cfg
 					changed++
 				}
 			}
 			if changed > 0 {
-				log.Infof("c9s: pinned vrnetlab image tag(s): nodes=%d", changed)
+				log.Infof("c9s: rewritten vrnetlab image(s): nodes=%d", changed)
 				topology["nodes"] = nodes
 				topo["topology"] = topology
 			}

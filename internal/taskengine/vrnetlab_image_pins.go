@@ -26,3 +26,34 @@ func rewritePinnedVrnetlabImage(image string) (string, bool) {
 	}
 	return image, false
 }
+
+// rewriteVrnetlabImageForCluster rewrites "vrnetlab/*" (dockerhub-style) images
+// into our GHCR namespace so clabernetes can pull consistently.
+//
+// Netlab templates typically reference upstream tags like "vrnetlab/juniper_vmx:18.2R1.9".
+// For Skyforge we mirror those images in GHCR as "ghcr.io/forwardnetworks/vrnetlab/<name>:<tag>".
+//
+// This function also applies the pinned image overrides (for known-problematic tags).
+func rewriteVrnetlabImageForCluster(image string) (string, bool) {
+	image = strings.TrimSpace(image)
+	if image == "" {
+		return "", false
+	}
+
+	// First apply deterministic pinning (may also change registry).
+	if pinned, ok := rewritePinnedVrnetlabImage(image); ok {
+		return pinned, true
+	}
+
+	// Normalize explicit docker.io registry references.
+	if strings.HasPrefix(image, "docker.io/vrnetlab/") {
+		return "ghcr.io/forwardnetworks/vrnetlab/" + strings.TrimPrefix(image, "docker.io/vrnetlab/"), true
+	}
+
+	// Normalize bare "vrnetlab/..." images.
+	if strings.HasPrefix(image, "vrnetlab/") {
+		return "ghcr.io/forwardnetworks/" + image, true
+	}
+
+	return image, false
+}
