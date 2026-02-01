@@ -1,0 +1,26 @@
+# Example E2E matrix for `go run ./cmd/e2echeck`.
+#
+# Usage:
+#   cd skyforge-private/server
+#   export SKYFORGE_BASE_URL=https://skyforge.local.forwardnetworks.com
+#   export SKYFORGE_E2E_USERNAME=skyforge
+#   export SKYFORGE_E2E_PASSWORD=... (or set SKYFORGE_SECRETS_FILE)
+#   export SKYFORGE_E2E_MATRIX_FILE=./cmd/e2echeck/matrix.example.yaml
+#   go run ./cmd/e2echeck
+#
+# Notes:
+# - `source/repo/dir/template` must match where your templates live in Gitea.
+# - `repo` may be empty for `source: workspace` templates.
+tests:
+  - name: validate-netlab-template
+    kind: netlab_validate
+    netlab_validate:
+      source: workspace
+      repo: ""
+      dir: blueprints/netlab/ai/validate
+      template: example.yml
+      environment:
+        NETLAB_DEVICE: eos
+      setOverrides: []
+      timeout: 10m
+

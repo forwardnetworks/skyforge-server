@@ -180,6 +180,8 @@ NetlabGenerator: {
 	// "k8s": run a netlab generator Job in-cluster (scaffolding; not fully implemented yet).
 	C9sGeneratorMode: "k8s"
 
-	GeneratorImage:    ""
+	// Default to the public generator image so netlab validation works out-of-the-box
+	// in local/dev setups even if ENCORE_CFG_SKYFORGE isn't wired up yet.
+	GeneratorImage:    "ghcr.io/forwardnetworks/skyforge-netlab-generator:latest"
 	PullPolicy:        "IfNotPresent"
 }

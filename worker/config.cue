@@ -66,6 +66,8 @@ Kubernetes: {
 // Netlab-on-C9s (netlab-c9s) defaults.
 NetlabGenerator: {
 	C9sGeneratorMode: "k8s"
-	GeneratorImage:   ""
+	// Default to the public generator image so netlab validation works out-of-the-box
+	// in local/dev setups even if ENCORE_CFG_WORKER isn't wired up yet.
+	GeneratorImage:   "ghcr.io/forwardnetworks/skyforge-netlab-generator:latest"
 	PullPolicy:       "IfNotPresent"
 }
