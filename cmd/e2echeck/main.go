@@ -39,6 +39,11 @@ type workspaceResponse struct {
 	Name string `json:"name"`
 }
 
+type listWorkspacesResponse struct {
+	User       string              `json:"user"`
+	Workspaces []workspaceResponse `json:"workspaces"`
+}
+
 type netlabValidateRequest struct {
 	Source       string            `json:"source"`
 	Repo         string            `json:"repo"`
@@ -111,6 +116,13 @@ type listCollectorsResponse struct {
 		IsDefault bool                    `json:"isDefault"`
 		Runtime   *collectorRuntimeStatus `json:"runtime,omitempty"`
 	} `json:"collectors"`
+}
+
+type putUserForwardCollectorRequest struct {
+	BaseURL       string `json:"baseUrl"`
+	SkipTLSVerify bool   `json:"skipTlsVerify"`
+	Username      string `json:"username"`
+	Password      string `json:"password"`
 }
 
 type matrixFile struct {
@@ -253,6 +265,22 @@ func splitCSVEnv(name string) map[string]struct{} {
 		}
 	}
 	return out
+}
+
+func containsSetCI(set map[string]struct{}, v string) bool {
+	if len(set) == 0 {
+		return false
+	}
+	v = strings.ToLower(strings.TrimSpace(v))
+	if v == "" {
+		return false
+	}
+	for k := range set {
+		if strings.ToLower(strings.TrimSpace(k)) == v {
+			return true
+		}
+	}
+	return false
 }
 
 func ensureWorkspaceNetlabServer(client *http.Client, baseURL, cookie, workspaceID string) (string, error) {
@@ -599,16 +627,34 @@ func kubectlAvailable(ctx context.Context) error {
 }
 
 func kubectlApplyYAML(ctx context.Context, yaml string) error {
-	ctx2, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx2, "kubectl", "apply", "-f", "-")
-	cmd.Env = kubectlEnv()
-	cmd.Stdin = strings.NewReader(yaml)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("kubectl apply failed: %s", strings.TrimSpace(string(out)))
+	// kubectl -> API server can transiently fail under load (etcd timeouts, etc).
+	// Retrying makes long E2E runs far less flaky.
+	var last string
+	backoff := 2 * time.Second
+	for attempt := 1; attempt <= 6; attempt++ {
+		ctx2, cancel := context.WithTimeout(ctx, 90*time.Second)
+		cmd := exec.CommandContext(ctx2, "kubectl", "apply", "-f", "-")
+		cmd.Env = kubectlEnv()
+		cmd.Stdin = strings.NewReader(yaml)
+		out, err := cmd.CombinedOutput()
+		cancel()
+		if err == nil {
+			return nil
+		}
+		last = strings.TrimSpace(string(out))
+		if attempt < 6 {
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("kubectl apply canceled: %s", last)
+			case <-time.After(backoff):
+			}
+			if backoff < 15*time.Second {
+				backoff *= 2
+			}
+			continue
+		}
 	}
-	return nil
+	return fmt.Errorf("kubectl apply failed: %s", last)
 }
 
 func kubectlDeleteName(ctx context.Context, kind, namespace, name string) {
@@ -805,10 +851,12 @@ spec:
   activeDeadlineSeconds: %d
   template:
     spec:
+      imagePullSecrets:
+      - name: ghcr-pull
       restartPolicy: Never
       containers:
       - name: probe
-        image: python:3.12-alpine
+        image: %s
         imagePullPolicy: IfNotPresent
         env:
         - name: HOSTS
@@ -816,7 +864,7 @@ spec:
         - name: TIMEOUT_SECONDS
           value: %q
         command: ["python","-c",%q]
-`, jobName, namespace, activeDeadline, strings.Join(hostArgs, " "), fmt.Sprintf("%d", int(timeout.Seconds())), script)
+`, jobName, namespace, activeDeadline, getenv("SKYFORGE_E2E_SSH_PROBE_IMAGE", "ghcr.io/forwardnetworks/skyforge-netlab-generator:latest"), strings.Join(hostArgs, " "), fmt.Sprintf("%d", int(timeout.Seconds())), script)
 
 	if err := kubectlApplyYAML(ctx, manifest); err != nil {
 		return err
@@ -1185,6 +1233,42 @@ func resolveDefaultCollectorPod(client *http.Client, baseURL string, cookie stri
 		return "", "", "", fmt.Errorf("collector runtime parse failed: %v", err)
 	}
 	if decoded.Runtime == nil || !decoded.Runtime.Ready || strings.TrimSpace(decoded.Runtime.PodName) == "" {
+		// If we want to probe SSH from within the Forward collector pod, bootstrap the user's
+		// Forward collector settings (which also ensures the in-cluster collector exists).
+		//
+		// This keeps E2E self-contained even if the admin user hasn't configured Forward yet.
+		if getenvBool("SKYFORGE_E2E_BOOTSTRAP_COLLECTOR", true) && strings.EqualFold(sshProbeMode(), "collector_exec") {
+			fwdUser := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_FORWARD_USERNAME"))
+			fwdPass := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_FORWARD_PASSWORD"))
+			if fwdUser == "" || fwdPass == "" {
+				return "", "", "", fmt.Errorf("collector not ready (set SKYFORGE_E2E_FORWARD_USERNAME/SKYFORGE_E2E_FORWARD_PASSWORD to auto-bootstrap)")
+			}
+			fwdBase := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_FORWARD_BASE_URL"))
+			if fwdBase == "" {
+				fwdBase = "https://fwd.app"
+			}
+
+			_, _, _ = doJSON(client, http.MethodPut, baseURL+"/api/forward/collector", putUserForwardCollectorRequest{
+				BaseURL:       fwdBase,
+				SkipTLSVerify: getenvBool("SKYFORGE_E2E_FORWARD_SKIP_TLS_VERIFY", false),
+				Username:      fwdUser,
+				Password:      fwdPass,
+			}, map[string]string{"Cookie": cookie})
+
+			// Wait for the runtime to become ready.
+			deadline := time.Now().Add(10 * time.Minute)
+			for time.Now().Before(deadline) {
+				resp2, body2, err2 := doJSON(client, http.MethodGet, baseURL+"/api/forward/collector/runtime", nil, map[string]string{"Cookie": cookie})
+				if err2 == nil && resp2.StatusCode >= 200 && resp2.StatusCode < 300 {
+					var rr userCollectorRuntimeResponse
+					if json.Unmarshal(body2, &rr) == nil && rr.Runtime != nil && rr.Runtime.Ready && strings.TrimSpace(rr.Runtime.PodName) != "" {
+						return "", strings.TrimSpace(rr.Runtime.Namespace), strings.TrimSpace(rr.Runtime.PodName), nil
+					}
+				}
+				time.Sleep(5 * time.Second)
+			}
+			return "", "", "", fmt.Errorf("collector not ready after bootstrap wait")
+		}
 		return "", "", "", fmt.Errorf("collector not ready")
 	}
 	return "", strings.TrimSpace(decoded.Runtime.Namespace), strings.TrimSpace(decoded.Runtime.PodName), nil
@@ -1434,33 +1518,71 @@ func run() int {
 	}
 	fmt.Printf("OK login: %s\n", username)
 
-	wsName := fmt.Sprintf("e2e-%s", time.Now().UTC().Format("20060102-150405"))
-	createURL := baseURL + "/api/workspaces"
-	resp, body, err = doJSON(client, http.MethodPost, createURL, workspaceCreateRequest{Name: wsName}, map[string]string{"Cookie": cookie})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "workspace create request failed: %v\n", err)
-		return 1
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		fmt.Fprintf(os.Stderr, "workspace create failed (%d): %s\n", resp.StatusCode, strings.TrimSpace(string(body)))
-		return 1
-	}
+	wsReuseID := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_WORKSPACE_ID"))
 	var ws workspaceResponse
-	if err := json.Unmarshal(body, &ws); err != nil {
-		fmt.Fprintf(os.Stderr, "workspace create parse failed: %v\n", err)
-		return 1
+	if wsReuseID != "" {
+		resp, body, err := doJSON(client, http.MethodGet, baseURL+"/api/workspaces", nil, map[string]string{"Cookie": cookie})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "workspace list request failed: %v\n", err)
+			return 1
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			fmt.Fprintf(os.Stderr, "workspace list failed (%d): %s\n", resp.StatusCode, strings.TrimSpace(string(body)))
+			return 1
+		}
+		var lr listWorkspacesResponse
+		if err := json.Unmarshal(body, &lr); err != nil {
+			fmt.Fprintf(os.Stderr, "workspace list parse failed: %v\n", err)
+			return 1
+		}
+		found := false
+		for _, w := range lr.Workspaces {
+			if strings.TrimSpace(w.ID) == wsReuseID {
+				ws = w
+				found = true
+				break
+			}
+		}
+		if !found || strings.TrimSpace(ws.ID) == "" {
+			fmt.Fprintf(os.Stderr, "workspace %q not found; set SKYFORGE_E2E_WORKSPACE_ID to an existing workspace id\n", wsReuseID)
+			return 1
+		}
+		fmt.Printf("OK workspace reuse: %s (%s)\n", ws.Name, ws.ID)
+	} else {
+		wsName := fmt.Sprintf("e2e-%s", time.Now().UTC().Format("20060102-150405"))
+		createURL := baseURL + "/api/workspaces"
+		resp, body, err = doJSON(client, http.MethodPost, createURL, workspaceCreateRequest{Name: wsName}, map[string]string{"Cookie": cookie})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "workspace create request failed: %v\n", err)
+			return 1
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			fmt.Fprintf(os.Stderr, "workspace create failed (%d): %s\n", resp.StatusCode, strings.TrimSpace(string(body)))
+			return 1
+		}
+		if err := json.Unmarshal(body, &ws); err != nil {
+			fmt.Fprintf(os.Stderr, "workspace create parse failed: %v\n", err)
+			return 1
+		}
+		if strings.TrimSpace(ws.ID) == "" {
+			fmt.Fprintf(os.Stderr, "workspace create returned empty id: %s\n", strings.TrimSpace(string(body)))
+			return 1
+		}
+		fmt.Printf("OK workspace create: %s (%s)\n", ws.Name, ws.ID)
 	}
-	if strings.TrimSpace(ws.ID) == "" {
-		fmt.Fprintf(os.Stderr, "workspace create returned empty id: %s\n", strings.TrimSpace(string(body)))
-		return 1
-	}
-	fmt.Printf("OK workspace create: %s (%s)\n", ws.Name, ws.ID)
 
 	var statusRec *e2eStatusRecorder
+	var runLog *e2eRunLogger
 	if getenvBool("SKYFORGE_E2E_STATUS_ENABLED", true) {
 		statusDir := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_STATUS_DIR"))
 		if statusDir == "" {
 			statusDir = "../docs"
+		}
+		rl, err := newE2ERunLogger(filepath.Join(statusDir, "e2e-runlog.jsonl"))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to init e2e run logger: %v\n", err)
+		} else {
+			runLog = rl
 		}
 		rec, err := newE2EStatusRecorder(
 			filepath.Join(statusDir, "e2e-reachability-status.json"),
@@ -1484,19 +1606,21 @@ func run() int {
 		}()
 	}
 
-	defer func() {
-		deleteURL := baseURL + "/api/workspaces/" + ws.ID + "?confirm=" + ws.Slug
-		resp, body, err := doJSON(client, http.MethodDelete, deleteURL, nil, map[string]string{"Cookie": cookie})
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "workspace delete request failed: %v\n", err)
-			return
-		}
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			fmt.Fprintf(os.Stderr, "workspace delete failed (%d): %s\n", resp.StatusCode, strings.TrimSpace(string(body)))
-			return
-		}
-		fmt.Printf("OK workspace delete: %s\n", ws.ID)
-	}()
+	if wsReuseID == "" {
+		defer func() {
+			deleteURL := baseURL + "/api/workspaces/" + ws.ID + "?confirm=" + ws.Slug
+			resp, body, err := doJSON(client, http.MethodDelete, deleteURL, nil, map[string]string{"Cookie": cookie})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "workspace delete request failed: %v\n", err)
+				return
+			}
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				fmt.Fprintf(os.Stderr, "workspace delete failed (%d): %s\n", resp.StatusCode, strings.TrimSpace(string(body)))
+				return
+			}
+			fmt.Printf("OK workspace delete: %s\n", ws.ID)
+		}()
+	}
 
 	var m matrixFile
 	if *flagRunGenerated {
@@ -1527,6 +1651,15 @@ func run() int {
 		}
 	}
 
+	// Even when running a static matrix file, allow the caller to:
+	// - Select a subset of device types (SKYFORGE_E2E_DEVICES)
+	// - Gate deploy tests separately (SKYFORGE_E2E_DEPLOY)
+	// - Further restrict deploy tests (SKYFORGE_E2E_DEPLOY_DEVICES)
+	deviceFilter := splitCSVEnv("SKYFORGE_E2E_DEVICES")
+	deployEnabled := getenvBool("SKYFORGE_E2E_DEPLOY", false)
+	deployDeviceFilter := splitCSVEnv("SKYFORGE_E2E_DEPLOY_DEVICES")
+	verbose := getenvBool("SKYFORGE_E2E_VERBOSE", false)
+
 	exitCode := 0
 	for _, t := range m.Tests {
 		name := strings.TrimSpace(t.Name)
@@ -1534,6 +1667,59 @@ func run() int {
 		if name == "" {
 			name = kind
 		}
+
+		// Extract device type from the test's environment, if present.
+		// This is used for selective runs and for the persistent status file.
+		device := ""
+		switch kind {
+		case "netlab_validate":
+			if t.NetlabValidate != nil && t.NetlabValidate.Environment != nil {
+				device = strings.TrimSpace(t.NetlabValidate.Environment["NETLAB_DEVICE"])
+			}
+		case "netlab_deploy", "netlab_byos_deploy":
+			if t.NetlabDeploy != nil && t.NetlabDeploy.Environment != nil {
+				device = strings.TrimSpace(t.NetlabDeploy.Environment["NETLAB_DEVICE"])
+			}
+		case "containerlab_byos_deploy":
+			if t.ContainerlabDeploy != nil && t.ContainerlabDeploy.Environment != nil {
+				device = strings.TrimSpace(t.ContainerlabDeploy.Environment["NETLAB_DEVICE"])
+			}
+		}
+
+		if len(deviceFilter) > 0 {
+			if device == "" || !containsSetCI(deviceFilter, device) {
+				if verbose {
+					fmt.Printf("SKIP %s: device=%q filtered by SKYFORGE_E2E_DEVICES\n", name, device)
+				}
+				if statusRec != nil && device != "" {
+					statusRec.update(device, "skip", "", "", 0, "", "skipped by SKYFORGE_E2E_DEVICES filter")
+				}
+				continue
+			}
+		}
+
+		switch kind {
+		case "netlab_deploy", "netlab_byos_deploy", "containerlab_byos_deploy":
+			if !deployEnabled {
+				if verbose {
+					fmt.Printf("SKIP %s: deploy disabled (set SKYFORGE_E2E_DEPLOY=true)\n", name)
+				}
+				if statusRec != nil && device != "" {
+					statusRec.update(device, "skip", "", "", 0, "", "deploy disabled (SKYFORGE_E2E_DEPLOY=false)")
+				}
+				continue
+			}
+			if len(deployDeviceFilter) > 0 && device != "" && !containsSetCI(deployDeviceFilter, device) {
+				if verbose {
+					fmt.Printf("SKIP %s: deploy device=%q filtered by SKYFORGE_E2E_DEPLOY_DEVICES\n", name, device)
+				}
+				if statusRec != nil && device != "" {
+					statusRec.update(device, "skip", "", "", 0, "", "skipped by SKYFORGE_E2E_DEPLOY_DEVICES filter")
+				}
+				continue
+			}
+		}
+
 		switch kind {
 		case "netlab_validate":
 			if t.NetlabValidate == nil {
@@ -1664,6 +1850,14 @@ func run() int {
 				depName = strings.ToLower(strings.ReplaceAll(name, "_", "-"))
 			}
 			depName = strings.Trim(depName, "-")
+			// When reusing a workspace across runs, avoid deployment name collisions by default.
+			deploySuffix := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_DEPLOY_SUFFIX"))
+			if deploySuffix == "" && strings.TrimSpace(os.Getenv("SKYFORGE_E2E_WORKSPACE_ID")) != "" {
+				deploySuffix = fmt.Sprintf("r%d", time.Now().Unix()%100000)
+			}
+			if deploySuffix != "" {
+				depName = strings.Trim(depName+"-"+deploySuffix, "-")
+			}
 			if len(depName) > 40 {
 				depName = depName[:40]
 				depName = strings.Trim(depName, "-")
@@ -1766,6 +1960,22 @@ func run() int {
 					statusRec.update(device, "fail", templateName, deployType, taskID, errMsg, "deployment failed")
 					_ = statusRec.flush()
 				}
+				if runLog != nil {
+					runLog.append(e2eRunLogEntry{
+						BaseURL:     baseURL,
+						Workspace:   ws.Name,
+						WorkspaceID: ws.ID,
+						Test:        name,
+						Kind:        kind,
+						Device:      device,
+						Template:    templateName,
+						DeployType:  deployType,
+						TaskID:      taskID,
+						Status:      "fail",
+						Error:       errMsg,
+						Notes:       "deployment failed",
+					})
+				}
 				if output, err := fetchRunOutput(client, baseURL, cookie, ws.ID, taskID); err == nil && strings.TrimSpace(output) != "" {
 					fmt.Fprintf(os.Stderr, "--- task %d output ---\n%s\n--- end output ---\n", taskID, output)
 				}
@@ -1806,10 +2016,49 @@ func run() int {
 							case "collector_exec":
 								if err := waitForCollectorSSH(context.Background(), collectorNS, collectorPod, hosts, sshWait); err != nil {
 									fmt.Fprintf(os.Stderr, "test %q: collector ssh banner failed: %v\n", name, err)
+									if statusRec != nil && device != "" {
+										statusRec.update(device, "fail", templateName, deployType, taskID, err.Error(), "collector ssh probe failed")
+										_ = statusRec.flush()
+									}
+									if runLog != nil {
+										runLog.append(e2eRunLogEntry{
+											BaseURL:     baseURL,
+											Workspace:   ws.Name,
+											WorkspaceID: ws.ID,
+											Test:        name,
+											Kind:        kind,
+											Device:      device,
+											Template:    templateName,
+											DeployType:  deployType,
+											TaskID:      taskID,
+											Status:      "fail",
+											Error:       err.Error(),
+											Notes:       "collector ssh probe failed",
+										})
+									}
 									exitCode = 1
 									testFailed = true
 								} else {
 									fmt.Printf("OK %s: collector ssh ok (hosts=%d)\n", name, len(hosts))
+									if statusRec != nil && device != "" {
+										statusRec.update(device, "pass", templateName, deployType, taskID, "", "deploy+collector-ssh ok")
+										_ = statusRec.flush()
+									}
+									if runLog != nil {
+										runLog.append(e2eRunLogEntry{
+											BaseURL:     baseURL,
+											Workspace:   ws.Name,
+											WorkspaceID: ws.ID,
+											Test:        name,
+											Kind:        kind,
+											Device:      device,
+											Template:    templateName,
+											DeployType:  deployType,
+											TaskID:      taskID,
+											Status:      "pass",
+											Notes:       "deploy+collector-ssh ok",
+										})
+									}
 								}
 							case "job":
 								probeNS := strings.TrimSpace(collectorNS)
@@ -1818,10 +2067,49 @@ func run() int {
 								}
 								if err := waitForSSHProbeJob(context.Background(), probeNS, hosts, sshWait); err != nil {
 									fmt.Fprintf(os.Stderr, "test %q: ssh probe job failed: %v\n", name, err)
+									if statusRec != nil && device != "" {
+										statusRec.update(device, "fail", templateName, deployType, taskID, err.Error(), "ssh probe job failed")
+										_ = statusRec.flush()
+									}
+									if runLog != nil {
+										runLog.append(e2eRunLogEntry{
+											BaseURL:     baseURL,
+											Workspace:   ws.Name,
+											WorkspaceID: ws.ID,
+											Test:        name,
+											Kind:        kind,
+											Device:      device,
+											Template:    templateName,
+											DeployType:  deployType,
+											TaskID:      taskID,
+											Status:      "fail",
+											Error:       err.Error(),
+											Notes:       "ssh probe job failed",
+										})
+									}
 									exitCode = 1
 									testFailed = true
 								} else {
 									fmt.Printf("OK %s: ssh probe ok (namespace=%s hosts=%d)\n", name, probeNS, len(hosts))
+									if statusRec != nil && device != "" {
+										statusRec.update(device, "pass", templateName, deployType, taskID, "", "deploy+ssh probe job ok")
+										_ = statusRec.flush()
+									}
+									if runLog != nil {
+										runLog.append(e2eRunLogEntry{
+											BaseURL:     baseURL,
+											Workspace:   ws.Name,
+											WorkspaceID: ws.ID,
+											Test:        name,
+											Kind:        kind,
+											Device:      device,
+											Template:    templateName,
+											DeployType:  deployType,
+											TaskID:      taskID,
+											Status:      "pass",
+											Notes:       "deploy+ssh probe job ok",
+										})
+									}
 								}
 							default:
 								if err := waitForSSHProbeAPI(context.Background(), client, baseURL, cookie, hosts, sshWait); err != nil {
@@ -1830,6 +2118,22 @@ func run() int {
 										statusRec.update(device, "fail", templateName, deployType, taskID, err.Error(), "ssh probe failed")
 										_ = statusRec.flush()
 									}
+									if runLog != nil {
+										runLog.append(e2eRunLogEntry{
+											BaseURL:     baseURL,
+											Workspace:   ws.Name,
+											WorkspaceID: ws.ID,
+											Test:        name,
+											Kind:        kind,
+											Device:      device,
+											Template:    templateName,
+											DeployType:  deployType,
+											TaskID:      taskID,
+											Status:      "fail",
+											Error:       err.Error(),
+											Notes:       "ssh probe api failed",
+										})
+									}
 									exitCode = 1
 									testFailed = true
 								} else {
@@ -1837,6 +2141,21 @@ func run() int {
 									if statusRec != nil && device != "" {
 										statusRec.update(device, "pass", templateName, deployType, taskID, "", "deploy+ssh ok")
 										_ = statusRec.flush()
+									}
+									if runLog != nil {
+										runLog.append(e2eRunLogEntry{
+											BaseURL:     baseURL,
+											Workspace:   ws.Name,
+											WorkspaceID: ws.ID,
+											Test:        name,
+											Kind:        kind,
+											Device:      device,
+											Template:    templateName,
+											DeployType:  deployType,
+											TaskID:      taskID,
+											Status:      "pass",
+											Notes:       "deploy+ssh ok",
+										})
 									}
 								}
 							}

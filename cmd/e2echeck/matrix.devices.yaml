@@ -98,6 +98,34 @@ tests:
       sshTimeout: 12m
       cleanup: true
 
+  - name: netlab-validate-iosvl2
+    kind: netlab_validate
+    netlab_validate:
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: iosvl2
+      setOverrides: []
+      timeout: 10m
+
+  - name: netlab-deploy-iosvl2
+    kind: netlab_deploy
+    netlab_deploy:
+      type: netlab-c9s
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: iosvl2
+      setOverrides: []
+      timeout: 25m
+      sshBanners: true
+      sshTimeout: 12m
+      cleanup: true
+
   - name: netlab-validate-csr
     kind: netlab_validate
     netlab_validate:
