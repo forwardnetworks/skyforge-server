@@ -118,7 +118,7 @@ func (s *Service) RunWorkspaceTerraformPlan(ctx context.Context, id string) (*Wo
 		cloud = "aws"
 	}
 
-	deploymentEnv, err := s.mergeDeploymentEnvironment(ctx, pc.workspace.ID, cfgAny)
+	deploymentEnv, err := s.mergeDeploymentEnvironment(ctx, pc.workspace.ID, user.Username, cfgAny)
 	if err != nil {
 		return nil, err
 	}
@@ -275,7 +275,7 @@ func (s *Service) RunWorkspaceTerraformApply(ctx context.Context, id string, par
 			return nil, err
 		}
 		cfgAny, _ := fromJSONMap(dep.Config)
-		deploymentEnv, err := s.mergeDeploymentEnvironment(ctx, pc.workspace.ID, cfgAny)
+		deploymentEnv, err := s.mergeDeploymentEnvironment(ctx, pc.workspace.ID, user.Username, cfgAny)
 		if err != nil {
 			return nil, err
 		}
@@ -379,6 +379,19 @@ type WorkspaceContainerlabRunRequest struct {
 	Template       string  `json:"template,omitempty"`       // filename (e.g. lab.yml)
 	Deployment     string  `json:"deployment,omitempty"`     // deployment name for lab naming
 	Reconfigure    bool    `json:"reconfigure,omitempty"`
+}
+
+type WorkspaceEveNgRunRequest struct {
+	Message        string `json:"message,omitempty"`
+	Action         string `json:"action,omitempty"` // create, start, stop, destroy
+	EveServer      string `json:"eveServer,omitempty"`
+	TemplateSource string `json:"templateSource,omitempty"` // workspace (default), blueprints, or custom
+	TemplateRepo   string `json:"templateRepo,omitempty"`   // owner/repo or URL (custom only)
+	TemplatesDir   string `json:"templatesDir,omitempty"`   // repo-relative directory (default: blueprints/eve-ng)
+	Template       string `json:"template,omitempty"`       // directory name under templates dir
+	Deployment     string `json:"deployment,omitempty"`     // deployment name for lab naming
+	DeploymentID   string `json:"deploymentId,omitempty"`
+	LabPath        string `json:"labPath,omitempty"`
 }
 
 // RunWorkspaceNetlab triggers a netlab run for a workspace.
@@ -819,6 +832,139 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 	taskJSON, err := toJSONMap(taskToRunInfo(*task))
 	if err != nil {
 		log.Printf("containerlab task encode: %v", err)
+		return nil, errs.B().Code(errs.Internal).Msg("failed to encode run").Err()
+	}
+	return &WorkspaceRunResponse{
+		WorkspaceID: pc.workspace.ID,
+		Task:        taskJSON,
+		User:        pc.claims.Username,
+	}, nil
+}
+
+// RunWorkspaceEveNg triggers an EVE-NG lab run for a workspace.
+//
+//encore:api auth method=POST path=/api/workspaces/:id/runs/eve-ng-run
+func (s *Service) RunWorkspaceEveNg(ctx context.Context, id string, req *WorkspaceEveNgRunRequest) (*WorkspaceRunResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	pc, err := s.workspaceContextForUser(user, id)
+	if err != nil {
+		return nil, err
+	}
+	if pc.access == "viewer" {
+		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	if req == nil {
+		req = &WorkspaceEveNgRunRequest{}
+	}
+
+	serverRef := strings.TrimSpace(req.EveServer)
+	if serverRef == "" {
+		serverRef = strings.TrimSpace(pc.workspace.EveServer)
+	}
+	server, err := s.resolveEveServerConfig(ctx, pc, serverRef)
+	if err != nil {
+		return nil, err
+	}
+
+	action := strings.ToLower(strings.TrimSpace(req.Action))
+	if action == "" {
+		action = "start"
+	}
+	switch action {
+	case "create", "start", "stop", "destroy":
+	default:
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid eve-ng action (use create, start, stop, or destroy)").Err()
+	}
+
+	templateSource := strings.ToLower(strings.TrimSpace(req.TemplateSource))
+	if templateSource == "" {
+		templateSource = "blueprints"
+	}
+	templatesDir := normalizeEveNgTemplatesDir(templateSource, req.TemplatesDir)
+	if !isSafeRelativePath(templatesDir) {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("templatesDir must be a safe repo-relative path").Err()
+	}
+	template := strings.TrimSpace(req.Template)
+	if template == "" && action != "destroy" && action != "stop" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("template is required").Err()
+	}
+
+	deploymentName := strings.TrimSpace(req.Deployment)
+	if deploymentName == "" {
+		deploymentName = strings.TrimSpace(template)
+	}
+	labPath := strings.TrimSpace(req.LabPath)
+	if labPath == "" {
+		labPath = path.Join("skyforge", pc.workspace.Slug, deploymentName+".unl")
+	}
+
+	message := strings.TrimSpace(req.Message)
+	if message == "" {
+		message = fmt.Sprintf("Skyforge eve-ng run (%s)", pc.claims.Username)
+	}
+	{
+		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+		defer cancel()
+		actor, actorIsAdmin, impersonated := auditActor(s.cfg, pc.claims)
+		writeAuditEvent(
+			ctx,
+			s.db,
+			actor,
+			actorIsAdmin,
+			impersonated,
+			"workspace.run.eve-ng",
+			pc.workspace.ID,
+			fmt.Sprintf("action=%s server=%s", action, strings.TrimSpace(server.Name)),
+		)
+	}
+
+	meta, err := toJSONMap(map[string]any{
+		"action":    action,
+		"server":    strings.TrimSpace(server.Name),
+		"serverRef": serverRef,
+		"labPath":   labPath,
+		"template":  template,
+		"priority":  taskPriorityInteractive,
+		"dedupeKey": fmt.Sprintf("eve-ng:%s:%s:%s", pc.workspace.ID, action, labPath),
+		"spec": map[string]any{
+			"action":         action,
+			"server":         serverRef,
+			"serverLabel":    strings.TrimSpace(server.Name),
+			"deployment":     deploymentName,
+			"deploymentId":   strings.TrimSpace(req.DeploymentID),
+			"templateSource": templateSource,
+			"templateRepo":   strings.TrimSpace(req.TemplateRepo),
+			"templatesDir":   templatesDir,
+			"template":       template,
+			"labPath":        labPath,
+		},
+	})
+	if err != nil {
+		log.Printf("eve-ng meta encode: %v", err)
+		return nil, errs.B().Code(errs.Internal).Msg("failed to encode metadata").Err()
+	}
+
+	allowActive := action == "stop" || action == "destroy"
+	var task *TaskRecord
+	if allowActive {
+		task, err = createTaskAllowActive(ctx, s.db, pc.workspace.ID, nil, "eve-ng-run", message, pc.claims.Username, meta)
+	} else {
+		task, err = createTask(ctx, s.db, pc.workspace.ID, nil, "eve-ng-run", message, pc.claims.Username, meta)
+	}
+	if err != nil {
+		return nil, err
+	}
+	s.queueTask(task)
+
+	taskJSON, err := toJSONMap(taskToRunInfo(*task))
+	if err != nil {
+		log.Printf("eve-ng task encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode run").Err()
 	}
 	return &WorkspaceRunResponse{

@@ -17,15 +17,20 @@ import (
 
 var envKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-func (s *Service) mergeDeploymentEnvironment(ctx context.Context, workspaceID string, cfgAny map[string]any) (map[string]string, error) {
+func (s *Service) mergeDeploymentEnvironment(ctx context.Context, workspaceID, username string, cfgAny map[string]any) (map[string]string, error) {
 	if s.db == nil {
 		return map[string]string{}, nil
 	}
 	groupIDs := parseEnvGroupIDs(cfgAny["envGroupIds"])
+	scope := parseEnvGroupScope(cfgAny["envGroupScope"])
 	groupEnv := map[string]string{}
 	if len(groupIDs) > 0 {
 		var err error
-		groupEnv, err = loadWorkspaceVariableGroupsByID(ctx, s.db, workspaceID, groupIDs)
+		if scope == "user" {
+			groupEnv, err = loadUserVariableGroupsByID(ctx, s.db, username, groupIDs)
+		} else {
+			groupEnv, err = loadWorkspaceVariableGroupsByID(ctx, s.db, workspaceID, groupIDs)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -41,6 +46,16 @@ func (s *Service) mergeDeploymentEnvironment(ctx context.Context, workspaceID st
 		env[k] = v
 	}
 	return env, nil
+}
+
+func parseEnvGroupScope(raw any) string {
+	if v, ok := raw.(string); ok {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "user":
+			return "user"
+		}
+	}
+	return "workspace"
 }
 
 func parseEnvGroupIDs(raw any) []int {
@@ -131,6 +146,56 @@ func loadWorkspaceVariableGroupsByID(ctx context.Context, db *sql.DB, workspaceI
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		log.Printf("variable group env list: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load variable groups").Err()
+	}
+	defer rows.Close()
+
+	groups := map[int]map[string]string{}
+	for rows.Next() {
+		var (
+			id       int
+			rawBytes []byte
+		)
+		if err := rows.Scan(&id, &rawBytes); err != nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to decode variable groups").Err()
+		}
+		var parsed map[string]string
+		if err := json.Unmarshal(rawBytes, &parsed); err != nil {
+			continue
+		}
+		groups[id] = parsed
+	}
+	out := map[string]string{}
+	for _, id := range groupIDs {
+		if vars, ok := groups[id]; ok {
+			for k, v := range vars {
+				if key := normalizeEnvOverrideKey(k); key != "" {
+					out[key] = v
+				}
+			}
+		}
+	}
+	return out, nil
+}
+
+func loadUserVariableGroupsByID(ctx context.Context, db *sql.DB, username string, groupIDs []int) (map[string]string, error) {
+	if len(groupIDs) == 0 {
+		return map[string]string{}, nil
+	}
+	placeholders := make([]string, 0, len(groupIDs))
+	args := make([]any, 0, len(groupIDs)+1)
+	args = append(args, username)
+	for i, id := range groupIDs {
+		placeholders = append(placeholders, fmt.Sprintf("$%d", i+2))
+		args = append(args, id)
+	}
+	query := fmt.Sprintf(`SELECT id, variables FROM sf_user_variable_groups WHERE username=$1 AND id IN (%s)`, strings.Join(placeholders, ","))
+
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		log.Printf("user variable group env list: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load variable groups").Err()
 	}
 	defer rows.Close()

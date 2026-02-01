@@ -141,10 +141,10 @@ func normalizeDeploymentName(name string) (string, error) {
 func normalizeDeploymentType(raw string) (string, error) {
 	t := strings.ToLower(strings.TrimSpace(raw))
 	switch t {
-	case "terraform", "netlab", "netlab-c9s", "containerlab", "clabernetes", "labpp":
+	case "terraform", "netlab", "netlab-c9s", "containerlab", "clabernetes", "eve-ng":
 		return t, nil
 	default:
-		return "", errs.B().Code(errs.InvalidArgument).Msg("deployment type must be terraform, netlab, netlab-c9s, labpp, containerlab, or clabernetes").Err()
+		return "", errs.B().Code(errs.InvalidArgument).Msg("deployment type must be terraform, netlab, netlab-c9s, eve-ng, containerlab, or clabernetes").Err()
 	}
 }
 
@@ -457,6 +457,35 @@ func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req 
 		cfgAny["templatesDir"] = templatesDir
 		cfgAny["template"] = template
 		cfgAny["labName"] = containerlabLabName(pc.workspace.Slug, name)
+	case "eve-ng":
+		eveServer := strings.TrimSpace(getString("eveServer"))
+		if eveServer == "" {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("eveServer is required").Err()
+		}
+		template := strings.TrimSpace(getString("template"))
+		if template == "" {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("template is required").Err()
+		}
+		templateSource := strings.ToLower(getString("templateSource"))
+		if templateSource == "" {
+			templateSource = "blueprints"
+		}
+		templateRepo := strings.TrimSpace(getString("templateRepo"))
+		templatesDir := strings.Trim(getString("templatesDir"), "/")
+		if templateSource == "custom" && templateRepo == "" {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("custom repo is required").Err()
+		}
+		templatesDir = normalizeEveNgTemplatesDir(templateSource, templatesDir)
+		if !isSafeRelativePath(templatesDir) {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("templatesDir must be a safe repo-relative path").Err()
+		}
+		cfgAny["eveServer"] = eveServer
+		cfgAny["templateSource"] = templateSource
+		if templateRepo != "" {
+			cfgAny["templateRepo"] = templateRepo
+		}
+		cfgAny["templatesDir"] = templatesDir
+		cfgAny["template"] = template
 	case "clabernetes":
 		template := strings.TrimSpace(getString("template"))
 		if template == "" {
@@ -716,7 +745,7 @@ WHERE workspace_id=$1 AND deployment_id=$2 AND status IN ('queued','running')`, 
 			}
 		}
 	}
-	if existing.Type == "netlab-c9s" || existing.Type == "clabernetes" {
+	if existing.Type == "netlab-c9s" || existing.Type == "clabernetes" || existing.Type == "eve-ng" {
 		_, err := s.RunWorkspaceDeploymentAction(ctx, id, deploymentID, &WorkspaceDeploymentOpRequest{Action: "destroy"})
 		if err != nil {
 			log.Printf("deployments delete c9s cleanup (ignored): %v", err)
@@ -805,7 +834,7 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 	if cfgAny == nil {
 		cfgAny = map[string]any{}
 	}
-	envMap, err := s.mergeDeploymentEnvironment(ctx, pc.workspace.ID, cfgAny)
+	envMap, err := s.mergeDeploymentEnvironment(ctx, pc.workspace.ID, user.Username, cfgAny)
 	if err != nil {
 		return nil, err
 	}
@@ -1000,6 +1029,51 @@ func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deployme
 			strings.TrimSpace(k8sNamespace),
 			setOverrides,
 		)
+		if err != nil {
+			return nil, err
+		}
+	case "eve-ng":
+		eveServer, _ := cfgAny["eveServer"].(string)
+		templateSource, _ := cfgAny["templateSource"].(string)
+		templateRepo, _ := cfgAny["templateRepo"].(string)
+		templatesDir, _ := cfgAny["templatesDir"].(string)
+		template, _ := cfgAny["template"].(string)
+		labPath, _ := cfgAny["labPath"].(string)
+
+		eveServer = strings.TrimSpace(eveServer)
+		if eveServer == "" {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("eve-ng server selection is required").Err()
+		}
+		if strings.TrimSpace(template) == "" && op != "destroy" && op != "stop" {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("eve-ng template is required").Err()
+		}
+
+		eveAction := op
+		switch op {
+		case "create":
+			eveAction = "create"
+		case "start":
+			eveAction = "start"
+		case "stop":
+			eveAction = "stop"
+		case "destroy":
+			eveAction = "destroy"
+		default:
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("unsupported eve-ng action").Err()
+		}
+
+		run, err = s.RunWorkspaceEveNg(ctx, id, &WorkspaceEveNgRunRequest{
+			Message:        strings.TrimSpace(fmt.Sprintf("Skyforge eve-ng run (%s)", pc.claims.Username)),
+			Action:         eveAction,
+			EveServer:      eveServer,
+			TemplateSource: strings.TrimSpace(templateSource),
+			TemplateRepo:   strings.TrimSpace(templateRepo),
+			TemplatesDir:   strings.TrimSpace(templatesDir),
+			Template:       strings.TrimSpace(template),
+			Deployment:     strings.TrimSpace(dep.Name),
+			DeploymentID:   strings.TrimSpace(dep.ID),
+			LabPath:        strings.TrimSpace(labPath),
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -1823,7 +1897,7 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 	if cfgAny == nil {
 		cfgAny = map[string]any{}
 	}
-	envMap, err := s.mergeDeploymentEnvironment(ctx, pc.workspace.ID, cfgAny)
+	envMap, err := s.mergeDeploymentEnvironment(ctx, pc.workspace.ID, user.Username, cfgAny)
 	if err != nil {
 		return nil, err
 	}
