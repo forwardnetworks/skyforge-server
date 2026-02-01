@@ -860,7 +860,18 @@ func (s *Service) generateWithGeminiVertex(ctx context.Context, username string,
 	}
 
 	if err := validateYAML(text); err != nil {
-		return "", nil, errs.B().Code(errs.InvalidArgument).Msg("generated output is not valid YAML").Err()
+		raw := text
+		truncated := false
+		const maxRaw = 16 * 1024
+		if len(raw) > maxRaw {
+			raw = raw[:maxRaw]
+			truncated = true
+		}
+		builder := errs.B().Code(errs.InvalidArgument).Msg("generated output is not valid YAML").Meta("rawOutput", raw)
+		if truncated {
+			builder = builder.Meta("rawOutputTruncated", true)
+		}
+		return "", nil, builder.Err()
 	}
 
 	return text, nil, nil
