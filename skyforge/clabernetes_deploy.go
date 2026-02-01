@@ -47,6 +47,7 @@ func (s *Service) runClabernetesDeploymentAction(
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
+	policy, _ := loadGovernancePolicy(ctx, s.db)
 
 	action = strings.ToLower(strings.TrimSpace(action))
 	switch action {
@@ -106,7 +107,7 @@ func (s *Service) runClabernetesDeploymentAction(
 				}
 				body = got
 			} else {
-				ref, err := resolveTemplateRepoForProject(s.cfg, pc, templateSource, templateRepo)
+				ref, err := resolveTemplateRepoForProject(s.cfg, pc, policy, templateSource, templateRepo)
 				if err != nil {
 					return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 				}
@@ -118,7 +119,7 @@ func (s *Service) runClabernetesDeploymentAction(
 				body = got
 			}
 		} else {
-			ref, err := resolveTemplateRepoForProject(s.cfg, pc, templateSource, templateRepo)
+			ref, err := resolveTemplateRepoForProject(s.cfg, pc, policy, templateSource, templateRepo)
 			if err != nil {
 				return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 			}

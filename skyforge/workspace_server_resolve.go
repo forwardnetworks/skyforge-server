@@ -55,6 +55,15 @@ func (s *Service) resolveNetlabServerConfig(ctx context.Context, pc *workspaceCo
 	}
 
 	if strings.HasPrefix(strings.ToLower(serverRef), userServerRefPrefix) {
+		if !isAdminUser(s.cfg, pc.claims.Username) {
+			policy, err := loadGovernancePolicy(ctx, s.db)
+			if err != nil {
+				return nil, errs.B().Code(errs.Unavailable).Msg("failed to evaluate governance policy").Err()
+			}
+			if !policy.AllowUserByosNetlabServers {
+				return nil, errs.B().Code(errs.FailedPrecondition).Msg("user-scoped Netlab BYOS servers are not enabled by governance policy").Err()
+			}
+		}
 		serverID, ok := parseUserServerRef(serverRef)
 		if !ok {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid user netlab server reference (user:...)").Err()
@@ -96,6 +105,15 @@ func (s *Service) resolveContainerlabServerConfig(ctx context.Context, pc *works
 	}
 
 	if strings.HasPrefix(strings.ToLower(serverRef), userServerRefPrefix) {
+		if !isAdminUser(s.cfg, pc.claims.Username) {
+			policy, err := loadGovernancePolicy(ctx, s.db)
+			if err != nil {
+				return nil, errs.B().Code(errs.Unavailable).Msg("failed to evaluate governance policy").Err()
+			}
+			if !policy.AllowUserByosContainerlabServers {
+				return nil, errs.B().Code(errs.FailedPrecondition).Msg("user-scoped Containerlab BYOS servers are not enabled by governance policy").Err()
+			}
+		}
 		serverID, ok := parseUserServerRef(serverRef)
 		if !ok {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid user containerlab server reference (user:...)").Err()

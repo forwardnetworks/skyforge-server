@@ -145,7 +145,8 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 	if !isSafeRelativePath(templatesDir) {
 		return "", fmt.Errorf("templatesDir must be a safe repo-relative path")
 	}
-	ref, err := resolveTemplateRepoForProject(s.cfg, pc, templateSource, templateRepo)
+	policy, _ := loadGovernancePolicy(ctx, s.db)
+	ref, err := resolveTemplateRepoForProject(s.cfg, pc, policy, templateSource, templateRepo)
 	if err != nil {
 		return "", err
 	}
@@ -369,7 +370,8 @@ func (s *Service) buildNetlabTopologyBundleB64(ctx context.Context, pc *workspac
 	if !isSafeRelativePath(templatesDir) {
 		return "", fmt.Errorf("templatesDir must be a safe repo-relative path")
 	}
-	ref, err := resolveTemplateRepoForProject(s.cfg, pc, templateSource, templateRepo)
+	policy, _ := loadGovernancePolicy(ctx, s.db)
+	ref, err := resolveTemplateRepoForProject(s.cfg, pc, policy, templateSource, templateRepo)
 	if err != nil {
 		return "", err
 	}
@@ -475,10 +477,11 @@ func (s *Service) buildNetlabTopologyBundleB64(ctx context.Context, pc *workspac
 	return out, nil
 }
 
-func resolveTemplateRepoForProject(cfg Config, pc *workspaceContext, source string, customRepo string) (templateRepoRef, error) {
+func resolveTemplateRepoForProject(cfg Config, pc *workspaceContext, policy GovernancePolicy, source string, customRepo string) (templateRepoRef, error) {
 	owner := pc.workspace.GiteaOwner
 	repo := pc.workspace.GiteaRepo
 	branch := strings.TrimSpace(pc.workspace.DefaultBranch)
+	isAdmin := isAdminUser(cfg, pc.claims.Username)
 
 	switch strings.ToLower(strings.TrimSpace(source)) {
 	case "", "workspace":
@@ -500,6 +503,9 @@ func resolveTemplateRepoForProject(cfg Config, pc *workspaceContext, source stri
 		owner, repo = parts[0], parts[1]
 		branch = ""
 	case "external":
+		if !isAdmin && !policy.AllowUserExternalTemplateRepos {
+			return templateRepoRef{}, fmt.Errorf("external template repos are not enabled by governance policy")
+		}
 		repoID := strings.TrimSpace(customRepo)
 		if repoID == "" {
 			return templateRepoRef{}, fmt.Errorf("external repo id is required")
@@ -515,11 +521,14 @@ func resolveTemplateRepoForProject(cfg Config, pc *workspaceContext, source stri
 		owner, repo = parts[0], parts[1]
 		branch = strings.TrimSpace(found.DefaultBranch)
 	case "custom":
+		if !isAdmin && !policy.AllowCustomTemplateRepos {
+			return templateRepoRef{}, fmt.Errorf("custom template repos are not enabled by governance policy")
+		}
 		customOwner, customName, err := parseGiteaRepoRef(customRepo)
 		if err != nil {
 			return templateRepoRef{}, err
 		}
-		if !isAdminUser(cfg, pc.claims.Username) && customOwner != pc.workspace.GiteaOwner && customOwner != "skyforge" {
+		if !isAdmin && customOwner != pc.workspace.GiteaOwner && customOwner != "skyforge" {
 			return templateRepoRef{}, fmt.Errorf("custom repo not allowed")
 		}
 		owner, repo = customOwner, customName

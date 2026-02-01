@@ -456,6 +456,7 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 			owner := pc.workspace.GiteaOwner
 			repo := pc.workspace.GiteaRepo
 			branch := strings.TrimSpace(pc.workspace.DefaultBranch)
+			policy, _ := loadGovernancePolicy(ctx, s.db)
 
 			switch templateSource {
 			case "blueprints", "blueprint":
@@ -483,7 +484,7 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 				if strings.TrimSpace(req.TemplateRepo) == "" {
 					return nil, errs.B().Code(errs.InvalidArgument).Msg("templateRepo is required for custom/external template source").Err()
 				}
-				ref, err := resolveTemplateRepoForProject(s.cfg, pc, templateSource, strings.TrimSpace(req.TemplateRepo))
+				ref, err := resolveTemplateRepoForProject(s.cfg, pc, policy, templateSource, strings.TrimSpace(req.TemplateRepo))
 				if err != nil {
 					if strings.Contains(strings.ToLower(err.Error()), "not enabled") {
 						return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
@@ -713,14 +714,16 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 				}
 				topologyJSON = string(topologyBytes)
 			} else {
-				ref, err := resolveTemplateRepoForProject(s.cfg, pc, req.TemplateSource, req.TemplateRepo)
+				policy, _ := loadGovernancePolicy(ctx, s.db)
+				ref, err := resolveTemplateRepoForProject(s.cfg, pc, policy, req.TemplateSource, req.TemplateRepo)
 				if err != nil {
 					return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 				}
 				topologySourceURL = giteaRawFileURL(s.cfg, ref.Owner, ref.Repo, ref.Branch, filePath)
 			}
 		} else {
-			ref, err := resolveTemplateRepoForProject(s.cfg, pc, req.TemplateSource, req.TemplateRepo)
+			policy, _ := loadGovernancePolicy(ctx, s.db)
+			ref, err := resolveTemplateRepoForProject(s.cfg, pc, policy, req.TemplateSource, req.TemplateRepo)
 			if err != nil {
 				return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 			}

@@ -47,6 +47,7 @@ func (s *Service) GetWorkspaceTerraformTemplates(ctx context.Context, id string,
 	owner := pc.workspace.GiteaOwner
 	repo := pc.workspace.GiteaRepo
 	branch := strings.TrimSpace(pc.workspace.DefaultBranch)
+	policy, _ := loadGovernancePolicy(ctx, s.db)
 
 	switch source {
 	case "blueprints", "blueprint":
@@ -70,7 +71,7 @@ func (s *Service) GetWorkspaceTerraformTemplates(ctx context.Context, id string,
 		if req == nil || strings.TrimSpace(req.Repo) == "" {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("external repo id is required").Err()
 		}
-		ref, err := resolveTemplateRepoForProject(s.cfg, pc, "external", strings.TrimSpace(req.Repo))
+		ref, err := resolveTemplateRepoForProject(s.cfg, pc, policy, "external", strings.TrimSpace(req.Repo))
 		if err != nil {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 		}
@@ -79,7 +80,7 @@ func (s *Service) GetWorkspaceTerraformTemplates(ctx context.Context, id string,
 		if req == nil || strings.TrimSpace(req.Repo) == "" {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("custom repo is required").Err()
 		}
-		ref, err := resolveTemplateRepoForProject(s.cfg, pc, "custom", strings.TrimSpace(req.Repo))
+		ref, err := resolveTemplateRepoForProject(s.cfg, pc, policy, "custom", strings.TrimSpace(req.Repo))
 		if err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "not enabled") {
 				return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()

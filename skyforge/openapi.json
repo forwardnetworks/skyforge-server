@@ -35,6 +35,12 @@
       }
     },
     "schemas": {
+      "skyforge.AITemplateKind": {
+        "type": "string"
+      },
+      "skyforge.AITemplateProvider": {
+        "type": "string"
+      },
       "skyforge.AssignableUser": {
         "properties": {
           "display": {
@@ -582,6 +588,23 @@
       "skyforge.GovernancePolicy": {
         "description": "All limits are optional. A value of 0 means \"unlimited/disabled\".\n",
         "properties": {
+          "allowCustomTemplateRepos": {
+            "description": "This is distinct from \"external\" because \"custom\" can reference arbitrary repos and is therefore riskier.\n",
+            "title": "AllowCustomTemplateRepos controls whether non-admin users may use template\nsource = custom.\n",
+            "type": "boolean"
+          },
+          "allowUserByosContainerlabServers": {
+            "title": "AllowUserByosContainerlabServers controls whether non-admin users may use\nuser-scoped Containerlab BYOS servers (user:... refs).\n",
+            "type": "boolean"
+          },
+          "allowUserByosNetlabServers": {
+            "title": "AllowUserByosNetlabServers controls whether non-admin users may use user-scoped\nNetlab BYOS servers (user:... refs).\n",
+            "type": "boolean"
+          },
+          "allowUserExternalTemplateRepos": {
+            "title": "AllowUserExternalTemplateRepos controls whether non-admin users may use template\nsource = external (user-scoped external repos).\n",
+            "type": "boolean"
+          },
           "maxCollectorsPerUser": {
             "format": "int64",
             "title": "MaxCollectorsPerUser caps the number of in-cluster Forward collectors a user can\ncreate.\n",
@@ -595,7 +618,11 @@
         },
         "required": [
           "maxDeploymentsPerUser",
-          "maxCollectorsPerUser"
+          "maxCollectorsPerUser",
+          "allowUserByosNetlabServers",
+          "allowUserByosContainerlabServers",
+          "allowUserExternalTemplateRepos",
+          "allowCustomTemplateRepos"
         ],
         "title": "GovernancePolicy is a lightweight guardrail layer (admin-configurable).\n",
         "type": "object"
@@ -1683,6 +1710,33 @@
           "kind",
           "mgmtIp",
           "status"
+        ],
+        "type": "object"
+      },
+      "skyforge.UserAIHistoryItem": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "kind",
+          "filename",
+          "createdAt"
         ],
         "type": "object"
       },
@@ -7392,6 +7446,362 @@
           }
         },
         "summary": "GetUIConfig returns UI configuration values.\n"
+      }
+    },
+    "/api/user/ai/autofix": {
+      "post": {
+        "description": "This is intentionally synchronous and bounded so it can be used from the UI without spawning jobs.\n",
+        "operationId": "POST:skyforge.AutofixUserAITemplate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "$ref": "#/components/schemas/skyforge.AITemplateKind"
+                  },
+                  "maxIterations": {
+                    "format": "int64",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "content",
+                  "maxIterations"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "content": {
+                      "type": "string"
+                    },
+                    "errors": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "iterations": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "lastValidated": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "content",
+                    "ok",
+                    "errors",
+                    "iterations",
+                    "warnings",
+                    "lastValidated"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "AutofixUserAITemplate runs a short validate→regenerate loop for containerlab\ntemplates.\n"
+      }
+    },
+    "/api/user/ai/generate": {
+      "post": {
+        "operationId": "POST:skyforge.GenerateUserAITemplate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "constraints": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "kind": {
+                    "$ref": "#/components/schemas/skyforge.AITemplateKind"
+                  },
+                  "maxOutputTokens": {
+                    "format": "int64",
+                    "title": "Optional model controls.\n",
+                    "type": "integer"
+                  },
+                  "prompt": {
+                    "type": "string"
+                  },
+                  "provider": {
+                    "$ref": "#/components/schemas/skyforge.AITemplateProvider"
+                  },
+                  "seedTemplate": {
+                    "type": "string"
+                  },
+                  "temperature": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "provider",
+                  "kind",
+                  "prompt",
+                  "constraints",
+                  "seedTemplate",
+                  "maxOutputTokens",
+                  "temperature"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "content": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "filename": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "provider": {
+                      "type": "string"
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "provider",
+                    "kind",
+                    "filename",
+                    "content",
+                    "warnings",
+                    "createdAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GenerateUserAITemplate generates a single-file template using the user's\nconfigured AI provider.\n"
+      }
+    },
+    "/api/user/ai/history": {
+      "get": {
+        "operationId": "GET:skyforge.GetUserAITemplateHistory",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.UserAIHistoryItem"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetUserAITemplateHistory lists recent AI generations for the current user.\n"
+      }
+    },
+    "/api/user/ai/save": {
+      "post": {
+        "operationId": "POST:skyforge.SaveUserAITemplate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "$ref": "#/components/schemas/skyforge.AITemplateKind"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "pathHint": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "content",
+                  "pathHint",
+                  "message"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "branch": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "repo": {
+                      "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "workspaceId",
+                    "repo",
+                    "branch",
+                    "path"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "SaveUserAITemplate writes generated template content into the user's default\nworkspace repo.\n"
+      }
+    },
+    "/api/user/ai/validate": {
+      "post": {
+        "operationId": "POST:skyforge.ValidateUserAITemplate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "environment": {
+                    "$ref": "#/components/schemas/skyforge.JSONMap"
+                  },
+                  "kind": {
+                    "$ref": "#/components/schemas/skyforge.AITemplateKind"
+                  },
+                  "setOverrides": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "content",
+                  "environment",
+                  "setOverrides"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "task": {
+                      "$ref": "#/components/schemas/skyforge.JSONMap"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "workspaceId",
+                    "task"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ValidateUserAITemplate persists a generated netlab template and enqueues a\nnetlab validation task.\n"
       }
     },
     "/api/user/cloud/aws-sso": {
