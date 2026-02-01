@@ -619,9 +619,98 @@ func sshProbeMode() string {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("SKYFORGE_E2E_SSH_PROBE_MODE"))) {
 	case "collector_exec":
 		return "collector_exec"
-	default:
+	case "job":
 		return "job"
+	default:
+		// Prefer the in-cluster API probe; it does not require local kubectl access.
+		return "api"
 	}
+}
+
+type adminSSHProbeRequest struct {
+	Hosts          []string `json:"hosts"`
+	Port           int      `json:"port,omitempty"`
+	TimeoutSeconds int      `json:"timeoutSeconds,omitempty"`
+}
+
+type adminSSHProbeResult struct {
+	OK       bool   `json:"ok"`
+	Error    string `json:"error,omitempty"`
+	Attempts int    `json:"attempts,omitempty"`
+}
+
+type adminSSHProbeResponse struct {
+	OK      bool                           `json:"ok"`
+	Results map[string]adminSSHProbeResult `json:"results,omitempty"`
+}
+
+func waitForSSHProbeAPI(ctx context.Context, client *http.Client, baseURL, cookie string, hosts []string, timeout time.Duration) error {
+	if len(hosts) == 0 {
+		return fmt.Errorf("no hosts")
+	}
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		return fmt.Errorf("baseURL missing")
+	}
+	if timeout <= 0 {
+		timeout = 10 * time.Minute
+	}
+	timeoutSeconds := int(timeout.Seconds())
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = 600
+	}
+
+	req := adminSSHProbeRequest{
+		Hosts:          hosts,
+		Port:           22,
+		TimeoutSeconds: timeoutSeconds,
+	}
+	url := baseURL + "/api/admin/e2e/sshprobe"
+
+	resp, body, err := doJSON(client, http.MethodPost, url, req, map[string]string{"Cookie": cookie})
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("ssh probe api failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var out adminSSHProbeResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return fmt.Errorf("ssh probe api parse failed: %v", err)
+	}
+	if out.OK {
+		return nil
+	}
+	if len(out.Results) == 0 {
+		return fmt.Errorf("ssh probe failed (no results)")
+	}
+
+	type item struct {
+		host string
+		res  adminSSHProbeResult
+	}
+	items := make([]item, 0, len(out.Results))
+	for h, r := range out.Results {
+		items = append(items, item{host: h, res: r})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].host < items[j].host })
+
+	var b strings.Builder
+	for _, it := range items {
+		if it.res.OK {
+			continue
+		}
+		if it.res.Error != "" {
+			fmt.Fprintf(&b, "%s: %s\n", it.host, it.res.Error)
+		} else {
+			fmt.Fprintf(&b, "%s: failed\n", it.host)
+		}
+	}
+	msg := strings.TrimSpace(b.String())
+	if msg == "" {
+		msg = "ssh probe failed"
+	}
+	return fmt.Errorf("%s", msg)
 }
 
 func waitForSSHProbeJob(ctx context.Context, namespace string, hosts []string, timeout time.Duration) error {
@@ -1063,21 +1152,17 @@ func resolveDefaultCollectorPod(client *http.Client, baseURL string, cookie stri
 
 	resp, body, err = doJSON(client, http.MethodGet, baseURL+"/api/forward/collector/runtime", nil, map[string]string{"Cookie": cookie})
 	if err != nil {
-		// Fall back to kubectl.
-		return findAnyCollectorPodViaKubectl(context.Background())
+		return "", "", "", fmt.Errorf("collector runtime lookup failed: %v", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		// Fall back to kubectl.
-		return findAnyCollectorPodViaKubectl(context.Background())
+		return "", "", "", fmt.Errorf("collector runtime lookup failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	var decoded userCollectorRuntimeResponse
 	if err := json.Unmarshal(body, &decoded); err != nil {
-		// Fall back to kubectl.
-		return findAnyCollectorPodViaKubectl(context.Background())
+		return "", "", "", fmt.Errorf("collector runtime parse failed: %v", err)
 	}
 	if decoded.Runtime == nil || !decoded.Runtime.Ready || strings.TrimSpace(decoded.Runtime.PodName) == "" {
-		// Fall back to kubectl (some users may not have a collector configured).
-		return findAnyCollectorPodViaKubectl(context.Background())
+		return "", "", "", fmt.Errorf("collector not ready")
 	}
 	return "", strings.TrimSpace(decoded.Runtime.Namespace), strings.TrimSpace(decoded.Runtime.PodName), nil
 }
@@ -1551,22 +1636,25 @@ func run() int {
 				return 1
 			}
 
-			collectorConfigID, collectorNS, collectorPod, err := resolveDefaultCollectorPod(client, baseURL, cookie)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "test %q: collector resolve failed: %v\n", name, err)
-				return 1
-			}
-
-			if t.NetlabDeploy.SSHBanners {
-				if err := kubectlAvailable(context.Background()); err != nil {
-					fmt.Fprintf(os.Stderr, "test %q: kubectl is required for ssh banner checks but is not working.\n%s\n", name, err)
-					fmt.Fprintf(os.Stderr, "Hint: if you're using the repo kubeconfig, start the tunnel:\n  ssh -N -L 6443:127.0.0.1:6443 skyforge.local.forwardnetworks.com\n")
+			needCollector := sshProbeMode() == "collector_exec" || getenvBool("SKYFORGE_E2E_FORWARD", false)
+			collectorConfigID, collectorNS, collectorPod := "", "", ""
+			if needCollector {
+				var err error
+				collectorConfigID, collectorNS, collectorPod, err = resolveDefaultCollectorPod(client, baseURL, cookie)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "test %q: collector resolve failed: %v\n", name, err)
 					return 1
+				}
+				if sshProbeMode() == "collector_exec" {
+					if err := kubectlAvailable(context.Background()); err != nil {
+						fmt.Fprintf(os.Stderr, "test %q: kubectl is required for collector_exec ssh probe but is not working.\n%s\n", name, err)
+						return 1
+					}
 				}
 			}
 
 			// Best-effort: enable Forward on this deployment so we also exercise Forward sync plumbing.
-			if strings.TrimSpace(collectorConfigID) != "" {
+			if getenvBool("SKYFORGE_E2E_FORWARD", false) && strings.TrimSpace(collectorConfigID) != "" {
 				fwdCfgURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/forward", baseURL, ws.ID, dep.ID)
 				resp, body, err = doJSON(client, http.MethodPut, fwdCfgURL, deploymentForwardConfigRequest{
 					Enabled:           true,
@@ -1621,7 +1709,7 @@ func run() int {
 				testFailed = true
 			}
 
-			if !testFailed && t.NetlabDeploy.SSHBanners {
+			if !testFailed && sshWait > 0 && getenvBool("SKYFORGE_E2E_SSH_PROBE", true) {
 				topURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/topology", baseURL, ws.ID, dep.ID)
 				resp, body, err = doJSON(client, http.MethodGet, topURL, nil, map[string]string{"Cookie": cookie})
 				if err != nil {
@@ -1657,9 +1745,9 @@ func run() int {
 									exitCode = 1
 									testFailed = true
 								} else {
-									fmt.Printf("OK %s: collector ssh banner ok (hosts=%d)\n", name, len(hosts))
+									fmt.Printf("OK %s: collector ssh ok (hosts=%d)\n", name, len(hosts))
 								}
-							default:
+							case "job":
 								probeNS := strings.TrimSpace(collectorNS)
 								if probeNS == "" {
 									probeNS = "skyforge"
@@ -1670,6 +1758,14 @@ func run() int {
 									testFailed = true
 								} else {
 									fmt.Printf("OK %s: ssh probe ok (namespace=%s hosts=%d)\n", name, probeNS, len(hosts))
+								}
+							default:
+								if err := waitForSSHProbeAPI(context.Background(), client, baseURL, cookie, hosts, sshWait); err != nil {
+									fmt.Fprintf(os.Stderr, "test %q: ssh probe api failed: %v\n", name, err)
+									exitCode = 1
+									testFailed = true
+								} else {
+									fmt.Printf("OK %s: ssh probe ok (api hosts=%d)\n", name, len(hosts))
 								}
 							}
 						}
