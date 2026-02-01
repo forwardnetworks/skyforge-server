@@ -326,13 +326,23 @@ func allowedTemplatesForDevice(device string) map[string]struct{} {
 	return map[string]struct{}{"minimal": {}}
 }
 
+func deployTimeoutsForDevice(device string) (deployTimeout string, sshTimeout string) {
+	switch strings.TrimSpace(device) {
+	// QEMU-heavy / slow-boot devices.
+	case "vmx", "vjunosevolved", "cat8000v", "nxos", "sros":
+		return "50m", "30m"
+	default:
+		return "25m", "12m"
+	}
+}
+
 func deployableInSkyforge(device string) bool {
 	switch strings.TrimSpace(device) {
 	// These are the device types Skyforge currently exposes as "available"/"onboarded"
 	// for in-cluster (clabernetes) netlab deployments.
 	//
 	// NOTE: Exclude vsrx (out of scope) even if the upstream netlab catalog includes it.
-	case "eos", "iol", "iosv", "iosvl2", "csr", "nxos", "cumulus", "sros", "asav", "fortios", "vmx", "vjunos-router", "vjunos-switch", "linux":
+	case "eos", "iol", "iosv", "iosvl2", "csr", "nxos", "cumulus", "sros", "asav", "fortios", "vmx", "vjunos-router", "vjunos-switch", "cat8000v", "arubacx", "dellos10", "vjunosevolved", "linux":
 		return true
 	default:
 		return false
@@ -356,6 +366,10 @@ func onboardedNetlabDevices() []string {
 		"vmx",
 		"vjunos-router",
 		"vjunos-switch",
+		"cat8000v",
+		"arubacx",
+		"dellos10",
+		"vjunosevolved",
 		"linux",
 	}
 }
@@ -453,6 +467,7 @@ func generateMatrixFromCatalog(catalogPath string) (matrixFile, error) {
 					}
 				}
 				deployName := fmt.Sprintf("netlab-deploy-%s-%s", d, tmpl.Name)
+				deployTimeout, sshTimeout := deployTimeoutsForDevice(d)
 				tests = append(tests, matrixTest{
 					Name: deployName,
 					Kind: "netlab_deploy",
@@ -478,9 +493,9 @@ func generateMatrixFromCatalog(catalogPath string) (matrixFile, error) {
 							"NETLAB_DEVICE": d,
 						},
 						SetOverrides: nil,
-						Timeout:      "25m",
+						Timeout:      deployTimeout,
 						SSHBanners:   true,
-						SSHTimeout:   "12m",
+						SSHTimeout:   sshTimeout,
 						Cleanup:      true,
 					},
 				})
@@ -1441,6 +1456,30 @@ func run() int {
 	}
 	fmt.Printf("OK workspace create: %s (%s)\n", ws.Name, ws.ID)
 
+	var statusRec *e2eStatusRecorder
+	if getenvBool("SKYFORGE_E2E_STATUS_ENABLED", true) {
+		statusDir := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_STATUS_DIR"))
+		if statusDir == "" {
+			statusDir = "../docs"
+		}
+		rec, err := newE2EStatusRecorder(
+			filepath.Join(statusDir, "e2e-reachability-status.json"),
+			filepath.Join(statusDir, "e2e-reachability-status.md"),
+		)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to init e2e status recorder: %v\n", err)
+		} else {
+			statusRec = rec
+		}
+	}
+	if statusRec != nil {
+		defer func() {
+			if err := statusRec.flush(); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to write e2e status: %v\n", err)
+			}
+		}()
+	}
+
 	defer func() {
 		deleteURL := baseURL + "/api/workspaces/" + ws.ID + "?confirm=" + ws.Slug
 		resp, body, err := doJSON(client, http.MethodDelete, deleteURL, nil, map[string]string{"Cookie": cookie})
@@ -1564,6 +1603,10 @@ func run() int {
 				return 2
 			}
 			testFailed := false
+			device := ""
+			if t.NetlabDeploy.Environment != nil {
+				device = strings.TrimSpace(t.NetlabDeploy.Environment["NETLAB_DEVICE"])
+			}
 
 			deployType := strings.ToLower(strings.TrimSpace(t.NetlabDeploy.Type))
 			if deployType == "" {
@@ -1605,6 +1648,11 @@ func run() int {
 			}
 			if len(t.NetlabDeploy.SetOverrides) > 0 {
 				cfg["netlabSetOverrides"] = t.NetlabDeploy.SetOverrides
+			}
+
+			templateName := strings.TrimSpace(t.NetlabDeploy.Dir)
+			if templateName == "" {
+				templateName = "netlab/_e2e/minimal"
 			}
 
 			depName := strings.TrimPrefix(strings.ToLower(name), "netlab-deploy-")
@@ -1710,6 +1758,10 @@ func run() int {
 			case "succeeded", "success":
 			default:
 				fmt.Fprintf(os.Stderr, "test %q: deployment task finished with status=%q error=%q\n", name, status, errMsg)
+				if statusRec != nil && device != "" {
+					statusRec.update(device, "fail", templateName, deployType, taskID, errMsg, "deployment failed")
+					_ = statusRec.flush()
+				}
 				if output, err := fetchRunOutput(client, baseURL, cookie, ws.ID, taskID); err == nil && strings.TrimSpace(output) != "" {
 					fmt.Fprintf(os.Stderr, "--- task %d output ---\n%s\n--- end output ---\n", taskID, output)
 				}
@@ -1770,10 +1822,18 @@ func run() int {
 							default:
 								if err := waitForSSHProbeAPI(context.Background(), client, baseURL, cookie, hosts, sshWait); err != nil {
 									fmt.Fprintf(os.Stderr, "test %q: ssh probe api failed: %v\n", name, err)
+									if statusRec != nil && device != "" {
+										statusRec.update(device, "fail", templateName, deployType, taskID, err.Error(), "ssh probe failed")
+										_ = statusRec.flush()
+									}
 									exitCode = 1
 									testFailed = true
 								} else {
 									fmt.Printf("OK %s: ssh probe ok (api hosts=%d)\n", name, len(hosts))
+									if statusRec != nil && device != "" {
+										statusRec.update(device, "pass", templateName, deployType, taskID, "", "deploy+ssh ok")
+										_ = statusRec.flush()
+									}
 								}
 							}
 						}

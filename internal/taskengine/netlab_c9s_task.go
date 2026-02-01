@@ -880,6 +880,33 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 		topo["name"] = labName
 	}
 
+	// Defensive: pin known-problematic vrnetlab images to immutable tags.
+	// Netlab defaults are the primary source of truth, but we have observed cases
+	// where generator output can still contain legacy tags; rewriting here keeps
+	// clabernetes deployments deterministic and avoids flaky SSH readiness.
+	if topology, ok := topo["topology"].(map[string]any); ok {
+		if nodes, ok := topology["nodes"].(map[string]any); ok {
+			changed := 0
+			for node, nodeAny := range nodes {
+				cfg, ok := nodeAny.(map[string]any)
+				if !ok || cfg == nil {
+					continue
+				}
+				img, _ := cfg["image"].(string)
+				if pinned, ok := rewritePinnedVrnetlabImage(img); ok {
+					cfg["image"] = pinned
+					nodes[node] = cfg
+					changed++
+				}
+			}
+			if changed > 0 {
+				log.Infof("c9s: pinned vrnetlab image tag(s): nodes=%d", changed)
+				topology["nodes"] = nodes
+				topo["topology"] = topology
+			}
+		}
+	}
+
 	// Rewrite bind sources to the mounted file paths (only for node_files paths).
 	mountRoot := path.Join("/tmp/skyforge-c9s", topologyName)
 	if topology, ok := topo["topology"].(map[string]any); ok {
