@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -105,9 +106,9 @@ type userCollectorRuntimeResponse struct {
 
 type listCollectorsResponse struct {
 	Collectors []struct {
-		ID        string                `json:"id"`
-		Name      string                `json:"name"`
-		IsDefault bool                  `json:"isDefault"`
+		ID        string                  `json:"id"`
+		Name      string                  `json:"name"`
+		IsDefault bool                    `json:"isDefault"`
 		Runtime   *collectorRuntimeStatus `json:"runtime,omitempty"`
 	} `json:"collectors"`
 }
@@ -128,7 +129,7 @@ type matrixTest struct {
 		Environment  map[string]string `yaml:"environment"`
 		SetOverrides []string          `yaml:"setOverrides"`
 		Timeout      string            `yaml:"timeout"`
-	} `yaml:"netlab_validate"`
+	} `yaml:"netlab_validate,omitempty"`
 
 	NetlabDeploy *struct {
 		Type         string            `yaml:"type"` // netlab-c9s (recommended)
@@ -142,7 +143,14 @@ type matrixTest struct {
 		SSHBanners   bool              `yaml:"sshBanners"`
 		SSHTimeout   string            `yaml:"sshTimeout"`
 		Cleanup      bool              `yaml:"cleanup"`
-	} `yaml:"netlab_deploy"`
+	} `yaml:"netlab_deploy,omitempty"`
+}
+
+type netlabDeviceDefaultsCatalog struct {
+	Sets []struct {
+		Device      string `json:"device"`
+		ImagePrefix string `json:"image_prefix"`
+	} `json:"sets"`
 }
 
 func getenv(key, fallback string) string {
@@ -179,6 +187,192 @@ func loadPasswordFromSecretsFile(path string) (string, error) {
 	return password, nil
 }
 
+func loadNetlabDeviceCatalog(path string) (map[string]struct{}, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var decoded netlabDeviceDefaultsCatalog
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return nil, err
+	}
+	out := map[string]struct{}{}
+	for _, s := range decoded.Sets {
+		if d := strings.TrimSpace(s.Device); d != "" {
+			out[d] = struct{}{}
+		}
+	}
+	return out, nil
+}
+
+func splitCSVEnv(name string) map[string]struct{} {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return nil
+	}
+	out := map[string]struct{}{}
+	for _, part := range strings.Split(raw, ",") {
+		p := strings.TrimSpace(part)
+		if p != "" {
+			out[p] = struct{}{}
+		}
+	}
+	return out
+}
+
+type e2eTemplate struct {
+	Name       string
+	Source     string
+	Dir        string
+	Template   string
+	Deployable bool
+}
+
+var e2eTemplates = []e2eTemplate{
+	{Name: "minimal", Source: "blueprints", Dir: "netlab/_e2e/minimal", Template: "topology.yml", Deployable: true},
+	{Name: "routing-ospf", Source: "blueprints", Dir: "netlab/_e2e/routing-ospf", Template: "topology.yml", Deployable: true},
+	{Name: "routing-bgp", Source: "blueprints", Dir: "netlab/_e2e/routing-bgp", Template: "topology.yml", Deployable: true},
+}
+
+func allowedTemplatesForDevice(device string) map[string]struct{} {
+	device = strings.TrimSpace(device)
+	// Conservative defaults:
+	// - Firewalls and L2-only variants run minimal only unless explicitly extended.
+	switch device {
+	case "asav", "fortios":
+		return map[string]struct{}{"minimal": {}}
+	case "ioll2", "iosvl2":
+		return map[string]struct{}{"minimal": {}}
+	}
+
+	// Router-ish platforms we actively run in Skyforge.
+	switch device {
+	case "eos", "iol", "iosv", "csr", "nxos", "cumulus", "sros":
+		return map[string]struct{}{"minimal": {}, "routing-ospf": {}, "routing-bgp": {}}
+	default:
+		return map[string]struct{}{"minimal": {}}
+	}
+}
+
+func deployableInSkyforge(device string) bool {
+	switch strings.TrimSpace(device) {
+	case "eos", "iol", "iosv", "csr", "nxos", "cumulus", "sros", "asav", "fortios":
+		return true
+	default:
+		return false
+	}
+}
+
+func generateMatrixFromCatalog(catalogPath string) (matrixFile, error) {
+	devices, err := loadNetlabDeviceCatalog(catalogPath)
+	if err != nil {
+		return matrixFile{}, err
+	}
+
+	// Always include eos even if the catalog ever changes (Skyforge default).
+	devices["eos"] = struct{}{}
+	// Explicitly out-of-scope.
+	delete(devices, "vsrx")
+
+	deviceFilter := splitCSVEnv("SKYFORGE_E2E_DEVICES")
+	templateFilter := splitCSVEnv("SKYFORGE_E2E_TEMPLATES")
+	deployEnabled := true
+	if v := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_DEPLOY")); v != "" {
+		deployEnabled = strings.EqualFold(v, "true") || v == "1" || strings.EqualFold(v, "yes")
+	}
+
+	deviceList := make([]string, 0, len(devices))
+	for d := range devices {
+		if deviceFilter != nil {
+			if _, ok := deviceFilter[d]; !ok {
+				continue
+			}
+		}
+		deviceList = append(deviceList, d)
+	}
+	sort.Strings(deviceList)
+
+	tests := []matrixTest{}
+	for _, d := range deviceList {
+		allowed := allowedTemplatesForDevice(d)
+		for _, tmpl := range e2eTemplates {
+			if _, ok := allowed[tmpl.Name]; !ok {
+				continue
+			}
+			if templateFilter != nil {
+				if _, ok := templateFilter[tmpl.Name]; !ok {
+					continue
+				}
+			}
+
+			validateName := fmt.Sprintf("netlab-validate-%s-%s", d, tmpl.Name)
+			tests = append(tests, matrixTest{
+				Name: validateName,
+				Kind: "netlab_validate",
+				NetlabValidate: &struct {
+					Source       string            `yaml:"source"`
+					Repo         string            `yaml:"repo"`
+					Dir          string            `yaml:"dir"`
+					Template     string            `yaml:"template"`
+					Environment  map[string]string `yaml:"environment"`
+					SetOverrides []string          `yaml:"setOverrides"`
+					Timeout      string            `yaml:"timeout"`
+				}{
+					Source:   tmpl.Source,
+					Repo:     "",
+					Dir:      tmpl.Dir,
+					Template: tmpl.Template,
+					Environment: map[string]string{
+						"NETLAB_DEVICE": d,
+					},
+					SetOverrides: nil,
+					Timeout:      "10m",
+				},
+			})
+
+			if deployEnabled && tmpl.Deployable {
+				if !deployableInSkyforge(d) {
+					continue
+				}
+				deployName := fmt.Sprintf("netlab-deploy-%s-%s", d, tmpl.Name)
+				tests = append(tests, matrixTest{
+					Name: deployName,
+					Kind: "netlab_deploy",
+					NetlabDeploy: &struct {
+						Type         string            `yaml:"type"`
+						Source       string            `yaml:"source"`
+						Repo         string            `yaml:"repo"`
+						Dir          string            `yaml:"dir"`
+						Template     string            `yaml:"template"`
+						Environment  map[string]string `yaml:"environment"`
+						SetOverrides []string          `yaml:"setOverrides"`
+						Timeout      string            `yaml:"timeout"`
+						SSHBanners   bool              `yaml:"sshBanners"`
+						SSHTimeout   string            `yaml:"sshTimeout"`
+						Cleanup      bool              `yaml:"cleanup"`
+					}{
+						Type:     "netlab-c9s",
+						Source:   tmpl.Source,
+						Repo:     "",
+						Dir:      tmpl.Dir,
+						Template: tmpl.Template,
+						Environment: map[string]string{
+							"NETLAB_DEVICE": d,
+						},
+						SetOverrides: nil,
+						Timeout:      "25m",
+						SSHBanners:   true,
+						SSHTimeout:   "12m",
+						Cleanup:      true,
+					},
+				})
+			}
+		}
+	}
+
+	return matrixFile{Tests: tests}, nil
+}
+
 func kubectlEnv() []string {
 	kcfg := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_KUBECONFIG"))
 	if kcfg == "" {
@@ -194,7 +388,7 @@ func kubectlEnv() []string {
 func kubectlAvailable(ctx context.Context) error {
 	ctx2, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx2, "kubectl", "version", "--short")
+	cmd := exec.CommandContext(ctx2, "kubectl", "version", "--client=true", "-o", "json")
 	cmd.Env = kubectlEnv()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -238,10 +432,29 @@ type dnsCacheDialer struct {
 }
 
 func newDNSCacheDialer() *dnsCacheDialer {
-	return &dnsCacheDialer{
+	d := &dnsCacheDialer{
 		dialer: &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second},
 		cache:  map[string]string{},
 	}
+	// Optional: seed overrides for environments where DNS is flaky or not configured
+	// (e.g., local `.local` domains). Format:
+	//   SKYFORGE_E2E_DNS_OVERRIDES=host1=1.2.3.4,host2=5.6.7.8
+	if raw := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_DNS_OVERRIDES")); raw != "" {
+		for _, part := range strings.Split(raw, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			host, ip, ok := strings.Cut(part, "=")
+			host = strings.TrimSpace(host)
+			ip = strings.TrimSpace(ip)
+			if !ok || host == "" || ip == "" {
+				continue
+			}
+			d.cache[host] = ip
+		}
+	}
+	return d
 }
 
 func (d *dnsCacheDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -319,58 +532,83 @@ func waitForTaskFinished(client *http.Client, baseURL string, cookie string, wor
 	}
 	defer resp.Body.Close()
 
-	deadline := time.Now().Add(timeout)
-	nextPoll := time.Now()
-	sc := bufio.NewScanner(resp.Body)
-	sc.Buffer(make([]byte, 0, 64*1024), 2*1024*1024)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	lineCh := make(chan string, 128)
+	errCh := make(chan error, 1)
+	go func() {
+		sc := bufio.NewScanner(resp.Body)
+		sc.Buffer(make([]byte, 0, 64*1024), 2*1024*1024)
+		for sc.Scan() {
+			lineCh <- strings.TrimRight(sc.Text(), "\r")
+		}
+		if err := sc.Err(); err != nil {
+			errCh <- err
+			return
+		}
+		close(lineCh)
+	}()
+
+	pollEvery := 5 * time.Second
+	ticker := time.NewTicker(pollEvery)
+	defer ticker.Stop()
 
 	var currentData strings.Builder
-	for sc.Scan() {
-		if time.Now().After(deadline) {
+	for {
+		select {
+		case <-ctx.Done():
 			return "", "", fmt.Errorf("timeout waiting for task %d", taskID)
-		}
-		if !nextPoll.After(time.Now()) && strings.TrimSpace(workspaceID) != "" {
-			nextPoll = time.Now().Add(5 * time.Second)
-			if st, er, ok := pollTaskStatus(client, baseURL, cookie, workspaceID, taskID); ok {
-				return st, er, nil
+		case err := <-errCh:
+			if err != nil {
+				return "", "", err
 			}
-		}
-		line := strings.TrimRight(sc.Text(), "\r")
-		if line == "" {
-			// end of event
-			if currentData.Len() > 0 {
-				// The SSE stream uses event name `lifecycle` with a payload like:
-				// {"cursor":123,"entries":[{"type":"task.started",...},{"type":"task.finished","payload":{"status":"succeeded"}}]}
-				var envelope struct {
-					Cursor  int64 `json:"cursor"`
-					Entries []struct {
-						Type    string         `json:"type"`
-						Time    string         `json:"time"`
-						Payload map[string]any `json:"payload"`
-					} `json:"entries"`
+		case <-ticker.C:
+			if strings.TrimSpace(workspaceID) != "" {
+				if st, er, ok := pollTaskStatus(client, baseURL, cookie, workspaceID, taskID); ok {
+					return st, er, nil
 				}
-				_ = json.Unmarshal([]byte(currentData.String()), &envelope)
-				currentData.Reset()
-				for _, evt := range envelope.Entries {
-					if strings.TrimSpace(evt.Type) != "task.finished" {
-						continue
+			}
+		case line, ok := <-lineCh:
+			if !ok {
+				// Stream ended; fall back to a final poll.
+				if st, er, ok := pollTaskStatus(client, baseURL, cookie, workspaceID, taskID); ok {
+					return st, er, nil
+				}
+				return "", "", fmt.Errorf("task lifecycle stream ended before task.finished")
+			}
+			if line == "" {
+				// end of event
+				if currentData.Len() > 0 {
+					// The SSE stream uses event name `lifecycle` with a payload like:
+					// {"cursor":123,"entries":[{"type":"task.started",...},{"type":"task.finished","payload":{"status":"succeeded"}}]}
+					var envelope struct {
+						Cursor  int64 `json:"cursor"`
+						Entries []struct {
+							Type    string         `json:"type"`
+							Time    string         `json:"time"`
+							Payload map[string]any `json:"payload"`
+						} `json:"entries"`
 					}
-					st, _ := evt.Payload["status"].(string)
-					er, _ := evt.Payload["error"].(string)
-					return strings.TrimSpace(st), strings.TrimSpace(er), nil
+					_ = json.Unmarshal([]byte(currentData.String()), &envelope)
+					currentData.Reset()
+					for _, evt := range envelope.Entries {
+						if strings.TrimSpace(evt.Type) != "task.finished" {
+							continue
+						}
+						st, _ := evt.Payload["status"].(string)
+						er, _ := evt.Payload["error"].(string)
+						return strings.TrimSpace(st), strings.TrimSpace(er), nil
+					}
 				}
+				continue
 			}
-			continue
-		}
-		if strings.HasPrefix(line, "data:") {
-			currentData.WriteString(strings.TrimSpace(strings.TrimPrefix(line, "data:")))
-			continue
+			if strings.HasPrefix(line, "data:") {
+				currentData.WriteString(strings.TrimSpace(strings.TrimPrefix(line, "data:")))
+				continue
+			}
 		}
 	}
-	if err := sc.Err(); err != nil {
-		return "", "", err
-	}
-	return "", "", fmt.Errorf("task lifecycle stream ended before task.finished")
 }
 
 func pollTaskStatus(client *http.Client, baseURL string, cookie string, workspaceID string, taskID int) (status string, errMsg string, ok bool) {
@@ -413,7 +651,12 @@ func pollTaskStatus(client *http.Client, baseURL string, cookie string, workspac
 			continue
 		}
 		st, _ := t["status"].(string)
-		if strings.EqualFold(strings.TrimSpace(st), "succeeded") || strings.EqualFold(strings.TrimSpace(st), "failed") || strings.EqualFold(strings.TrimSpace(st), "canceled") {
+		if strings.EqualFold(strings.TrimSpace(st), "succeeded") ||
+			strings.EqualFold(strings.TrimSpace(st), "success") ||
+			strings.EqualFold(strings.TrimSpace(st), "failed") ||
+			strings.EqualFold(strings.TrimSpace(st), "failure") ||
+			strings.EqualFold(strings.TrimSpace(st), "error") ||
+			strings.EqualFold(strings.TrimSpace(st), "canceled") {
 			er, _ := t["error"].(string)
 			return strings.TrimSpace(st), strings.TrimSpace(er), true
 		}
@@ -572,6 +815,22 @@ func waitForCollectorSSH(ctx context.Context, namespace string, pod string, host
 		}
 	}
 
+	verbose := false
+	if v := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_VERBOSE")); v != "" {
+		verbose = strings.EqualFold(v, "true") || v == "1" || strings.EqualFold(v, "yes")
+	}
+
+	maxParallel := 8
+	if v := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_SSH_PARALLEL")); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 && parsed <= 64 {
+			maxParallel = parsed
+		}
+	}
+	if maxParallel > len(pending) && len(pending) > 0 {
+		maxParallel = len(pending)
+	}
+
+	lastProgress := time.Time{}
 	for len(pending) > 0 {
 		if time.Now().After(deadline) {
 			rest := make([]string, 0, len(pending))
@@ -589,15 +848,42 @@ func waitForCollectorSSH(ctx context.Context, namespace string, pod string, host
 			}
 			return fmt.Errorf("timeout waiting for ssh banner (remaining=%v)\n%s", rest, strings.Join(lines, "\n"))
 		}
+		if verbose && (lastProgress.IsZero() || time.Since(lastProgress) > 15*time.Second) {
+			fmt.Printf("waitForCollectorSSH: remaining=%d (parallel=%d)\n", len(pending), maxParallel)
+			lastProgress = time.Now()
+		}
+
+		type probeResult struct {
+			host string
+			ok   bool
+			err  error
+		}
+		results := make(chan probeResult, len(pending))
+		sem := make(chan struct{}, maxParallel)
+		var wg sync.WaitGroup
+
 		for host := range pending {
-			ok, err := collectorSSHBannerOnce(ctx, namespace, pod, host)
-			if ok {
-				delete(pending, host)
-				delete(lastErr, host)
+			host := host
+			wg.Add(1)
+			sem <- struct{}{}
+			go func() {
+				defer wg.Done()
+				defer func() { <-sem }()
+				ok, err := collectorSSHBannerOnce(ctx, namespace, pod, host)
+				results <- probeResult{host: host, ok: ok, err: err}
+			}()
+		}
+
+		wg.Wait()
+		close(results)
+		for r := range results {
+			if r.ok {
+				delete(pending, r.host)
+				delete(lastErr, r.host)
 				continue
 			}
-			if err != nil {
-				lastErr[host] = err.Error()
+			if r.err != nil {
+				lastErr[r.host] = r.err.Error()
 			}
 		}
 		time.Sleep(2 * time.Second)
@@ -608,15 +894,17 @@ func waitForCollectorSSH(ctx context.Context, namespace string, pod string, host
 func collectorSSHBannerOnce(ctx context.Context, namespace string, pod string, host string) (bool, error) {
 	script := `set -euo pipefail
 host="$1"
-exec 3<>/dev/tcp/${host}/22
-out="$(timeout 15 dd bs=1 count=4 <&3 2>/dev/null || true)"
-if [ "$out" = "SSH-" ]; then
+set +e
+out="$(timeout 10 bash -c 'exec 3<>/dev/tcp/${1}/22; dd bs=1 count=4 <&3 2>/dev/null' _ "$host" 2>&1)"
+rc="$?"
+set -e
+if [ "$rc" = "0" ] && [ "$out" = "SSH-" ]; then
   exit 0
 fi
-echo "bad_banner:${out}" 1>&2
-exit 1
+echo "ssh_probe_failed rc=${rc} out=${out}" 1>&2
+exit 2
 `
-	ctx2, cancel := context.WithTimeout(ctx, 20*time.Second)
+	ctx2, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx2, "kubectl", "-n", namespace, "exec", pod, "--", "bash", "-lc", script, "--", host)
 	cmd.Env = kubectlEnv()
@@ -628,6 +916,29 @@ exit 1
 }
 
 func run() int {
+	var (
+		flagGenerateMatrix = flag.Bool("generate-matrix", false, "Print a generated E2E matrix to stdout (does not run tests)")
+		flagRunGenerated   = flag.Bool("run-generated", false, "Generate an E2E matrix from the Skyforge netlab device catalog and run it")
+	)
+	flag.Parse()
+
+	if *flagGenerateMatrix {
+		catalogPath := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_NETLAB_DEVICE_DEFAULTS_FILE"))
+		if catalogPath == "" {
+			catalogPath = "internal/taskengine/netlab_device_defaults.json"
+		}
+		gen, err := generateMatrixFromCatalog(catalogPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to generate matrix from %s: %v\n", catalogPath, err)
+			return 2
+		}
+		enc := yaml.NewEncoder(os.Stdout)
+		enc.SetIndent(2)
+		_ = enc.Encode(gen)
+		_ = enc.Close()
+		return 0
+	}
+
 	baseURL := strings.TrimRight(getenv("SKYFORGE_BASE_URL", "https://skyforge.local.forwardnetworks.com"), "/")
 	username := getenv("SKYFORGE_E2E_USERNAME", getenv("SKYFORGE_SMOKE_USERNAME", "skyforge"))
 	password := mustEnv("SKYFORGE_E2E_PASSWORD")
@@ -726,21 +1037,35 @@ func run() int {
 		fmt.Printf("OK workspace delete: %s\n", ws.ID)
 	}()
 
-	matrixPath := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_MATRIX_FILE"))
-	if matrixPath == "" {
-		fmt.Println("OK e2echeck: no SKYFORGE_E2E_MATRIX_FILE set (skipping template validation)")
-		return 0
-	}
-	raw, err := os.ReadFile(matrixPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to read matrix file %s: %v\n", matrixPath, err)
-		return 2
-	}
 	var m matrixFile
-	if err := yaml.Unmarshal(raw, &m); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to parse matrix file %s: %v\n", matrixPath, err)
-		return 2
+	if *flagRunGenerated {
+		catalogPath := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_NETLAB_DEVICE_DEFAULTS_FILE"))
+		if catalogPath == "" {
+			catalogPath = "internal/taskengine/netlab_device_defaults.json"
+		}
+		gen, err := generateMatrixFromCatalog(catalogPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to generate matrix from %s: %v\n", catalogPath, err)
+			return 2
+		}
+		m = gen
+	} else {
+		matrixPath := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_MATRIX_FILE"))
+		if matrixPath == "" {
+			fmt.Println("OK e2echeck: no SKYFORGE_E2E_MATRIX_FILE set (skipping template validation)")
+			return 0
+		}
+		raw, err := os.ReadFile(matrixPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to read matrix file %s: %v\n", matrixPath, err)
+			return 2
+		}
+		if err := yaml.Unmarshal(raw, &m); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to parse matrix file %s: %v\n", matrixPath, err)
+			return 2
+		}
 	}
+
 	exitCode := 0
 	for _, t := range m.Tests {
 		name := strings.TrimSpace(t.Name)
