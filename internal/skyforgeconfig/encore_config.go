@@ -45,6 +45,9 @@ type GeminiDefaultsConfig struct {
 	ProjectID   string
 	Location    string
 	Model       string
+	// FallbackModel is used when Model is unavailable in the configured
+	// project/location (e.g. preview model not enabled).
+	FallbackModel string
 }
 
 type AIDefaultsConfig struct {

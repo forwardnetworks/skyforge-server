@@ -594,6 +594,39 @@ func geminiVertexEndpointURL(project, location, model string) string {
 	)
 }
 
+type geminiVertexAttempt struct {
+	Location string
+	Model    string
+}
+
+func geminiModelAliases(model string) []string {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return nil
+	}
+	out := []string{model}
+	// Accept common "3.0" aliases (some docs/UI surfaces include the ".0", while
+	// the Vertex publisher model IDs may omit it).
+	if strings.Contains(model, "gemini-3.0-") {
+		out = append(out, strings.Replace(model, "gemini-3.0-", "gemini-3-", 1))
+	}
+	// Deduplicate.
+	seen := map[string]struct{}{}
+	uniq := make([]string, 0, len(out))
+	for _, m := range out {
+		m = strings.TrimSpace(m)
+		if m == "" {
+			continue
+		}
+		if _, ok := seen[m]; ok {
+			continue
+		}
+		seen[m] = struct{}{}
+		uniq = append(uniq, m)
+	}
+	return uniq
+}
+
 func isGeminiModelNotAvailableError(body string) bool {
 	lower := strings.ToLower(strings.TrimSpace(body))
 	if lower == "" {
@@ -678,10 +711,11 @@ func (s *Service) generateWithGeminiVertex(ctx context.Context, username string,
 
 	location := strings.TrimSpace(s.cfg.GeminiLocation)
 	model := strings.TrimSpace(s.cfg.GeminiModel)
+	fallbackModel := strings.TrimSpace(s.cfg.GeminiFallbackModel)
 	project := strings.TrimSpace(s.cfg.GeminiProjectID)
 
 	b, _ := json.Marshal(body)
-	doRequest := func(location string) (*http.Response, []byte, error) {
+	doRequest := func(location, model string) (*http.Response, []byte, error) {
 		endpointURL := geminiVertexEndpointURL(project, location, model)
 		httpReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, endpointURL, bytes.NewReader(b))
 		httpReq.Header.Set("Authorization", "Bearer "+strings.TrimSpace(tok.AccessToken))
@@ -695,23 +729,59 @@ func (s *Service) generateWithGeminiVertex(ctx context.Context, username string,
 		return resp, respBody, nil
 	}
 
-	resp, respBody, err := doRequest(location)
-	if err != nil {
-		log.Printf("ai gemini http (%s): %v", username, err)
-		return "", nil, errs.B().Code(errs.Unavailable).Msg("failed to call Gemini").Err()
+	// Try primary model first, then fallback if configured. For each model, try
+	// the configured location first and retry once against the global endpoint if
+	// we get a "model not available" style error.
+	//
+	// This avoids a common pitfall where users can access a model in Vertex AI
+	// Studio but the regional API endpoint returns an availability error, and it
+	// also lets us gracefully fall back from a "pro" model to a "flash" model.
+	modelCandidates := []string{}
+	modelCandidates = append(modelCandidates, geminiModelAliases(model)...)
+	if fallbackModel != "" && fallbackModel != model {
+		modelCandidates = append(modelCandidates, geminiModelAliases(fallbackModel)...)
+	}
+	// Final dedupe (across primary+fallback+aliases).
+	seenModels := map[string]struct{}{}
+	uniqModels := make([]string, 0, len(modelCandidates))
+	for _, m := range modelCandidates {
+		m = strings.TrimSpace(m)
+		if m == "" {
+			continue
+		}
+		if _, ok := seenModels[m]; ok {
+			continue
+		}
+		seenModels[m] = struct{}{}
+		uniqModels = append(uniqModels, m)
 	}
 
-	// If the model isn't available in the configured region, retry once against the global endpoint.
-	// This avoids a common pitfall where users can access a model in Vertex AI Studio but the regional
-	// API endpoint returns a "model not available" style error.
-	if resp.StatusCode/100 != 2 && !strings.EqualFold(location, "global") {
+	attempts := []geminiVertexAttempt{}
+	for _, m := range uniqModels {
+		attempts = append(attempts, geminiVertexAttempt{Location: location, Model: m})
+		if !strings.EqualFold(location, "global") {
+			attempts = append(attempts, geminiVertexAttempt{Location: "global", Model: m})
+		}
+	}
+
+	var resp *http.Response
+	var respBody []byte
+	for _, a := range attempts {
+		resp, respBody, err = doRequest(a.Location, a.Model)
+		if err != nil {
+			log.Printf("ai gemini http (%s): %v", username, err)
+			return "", nil, errs.B().Code(errs.Unavailable).Msg("failed to call Gemini").Err()
+		}
+		if resp.StatusCode/100 == 2 {
+			break
+		}
 		bodyStr := strings.TrimSpace(string(respBody))
 		if (resp.StatusCode == 400 || resp.StatusCode == 404) && isGeminiModelNotAvailableError(bodyStr) {
-			if retryResp, retryBody, retryErr := doRequest("global"); retryErr == nil {
-				resp = retryResp
-				respBody = retryBody
-			}
+			// Try next attempt.
+			continue
 		}
+		// Non-availability errors are handled below with the latest response.
+		break
 	}
 
 	if resp.StatusCode/100 != 2 {
@@ -725,7 +795,13 @@ func (s *Service) generateWithGeminiVertex(ctx context.Context, username string,
 		switch resp.StatusCode {
 		case 400:
 			if isGeminiModelNotAvailableError(bodyStr) {
-				return "", nil, errs.B().Code(errs.FailedPrecondition).Msg("Gemini model not available; verify the configured model name and that it is enabled for the configured project/location").Err()
+				msg := "Gemini model not available; verify the configured model name(s) and that they are enabled for the configured project/location"
+				if fallbackModel != "" && fallbackModel != model {
+					msg = msg + fmt.Sprintf(" (tried %q then %q)", model, fallbackModel)
+				} else if model != "" {
+					msg = msg + fmt.Sprintf(" (tried %q)", model)
+				}
+				return "", nil, errs.B().Code(errs.FailedPrecondition).Msg(msg).Err()
 			}
 			return "", nil, errs.B().Code(errs.InvalidArgument).Msg("Gemini request rejected; check prompt/constraints and try again").Err()
 		case 401:

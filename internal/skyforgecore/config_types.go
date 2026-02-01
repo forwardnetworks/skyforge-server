@@ -73,6 +73,7 @@ type Config struct {
 	GeminiProjectID                          string
 	GeminiLocation                           string
 	GeminiModel                              string
+	GeminiFallbackModel                      string
 	TaskWorkerEnabled                        bool
 	ImagePullSecretName                      string
 	ImagePullSecretNamespace                 string

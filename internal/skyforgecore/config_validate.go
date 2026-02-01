@@ -63,6 +63,9 @@ func ValidateConfig(cfg Config) ConfigValidation {
 		if strings.TrimSpace(cfg.GeminiModel) == "" {
 			v.addWarning("Gemini is enabled but Model is empty")
 		}
+		if strings.TrimSpace(cfg.GeminiFallbackModel) == "" {
+			v.addWarning("Gemini is enabled but FallbackModel is empty")
+		}
 	}
 
 	return v

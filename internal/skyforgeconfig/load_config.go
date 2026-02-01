@@ -130,8 +130,12 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		geminiLocation = "us-central1"
 	}
 	geminiModel := strings.TrimSpace(enc.Gemini.Model)
+	geminiFallbackModel := strings.TrimSpace(enc.Gemini.FallbackModel)
 	if geminiModel == "" {
-		geminiModel = "gemini-3-flash-preview"
+		geminiModel = "gemini-3-pro-preview"
+	}
+	if geminiFallbackModel == "" {
+		geminiFallbackModel = "gemini-3-flash-preview"
 	}
 
 	imagePullSecretName := strings.TrimSpace(enc.Kubernetes.ImagePullSecretName)
@@ -344,6 +348,7 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		GeminiProjectID:                          geminiProjectID,
 		GeminiLocation:                           geminiLocation,
 		GeminiModel:                              geminiModel,
+		GeminiFallbackModel:                      geminiFallbackModel,
 		TaskWorkerEnabled:                        taskWorkerEnabled,
 		ImagePullSecretName:                      imagePullSecretName,
 		ImagePullSecretNamespace:                 imagePullSecretNamespace,
