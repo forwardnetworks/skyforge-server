@@ -3,15 +3,20 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -48,6 +53,65 @@ type netlabValidateResponse struct {
 	Task        map[string]any `json:"task"`
 }
 
+type deploymentCreateRequest struct {
+	Name   string         `json:"name"`
+	Type   string         `json:"type"`
+	Config map[string]any `json:"config,omitempty"`
+}
+
+type deploymentResponse struct {
+	ID          string         `json:"id"`
+	WorkspaceID string         `json:"workspaceId"`
+	Name        string         `json:"name"`
+	Type        string         `json:"type"`
+	Config      map[string]any `json:"config,omitempty"`
+}
+
+type deploymentActionResponse struct {
+	WorkspaceID string             `json:"workspaceId"`
+	Deployment  deploymentResponse `json:"deployment"`
+	Run         map[string]any     `json:"run,omitempty"`
+}
+
+type deploymentForwardConfigRequest struct {
+	Enabled           bool   `json:"enabled"`
+	CollectorConfigID string `json:"collectorConfigId,omitempty"`
+}
+
+type deploymentTopologyResponse struct {
+	GeneratedAt string `json:"generatedAt"`
+	Source      string `json:"source"`
+	Nodes       []struct {
+		ID     string `json:"id"`
+		Label  string `json:"label"`
+		Kind   string `json:"kind,omitempty"`
+		MgmtIP string `json:"mgmtIp,omitempty"`
+		Status string `json:"status,omitempty"`
+	} `json:"nodes"`
+}
+
+type collectorRuntimeStatus struct {
+	Namespace      string `json:"namespace"`
+	DeploymentName string `json:"deploymentName"`
+	PodName        string `json:"podName,omitempty"`
+	PodPhase       string `json:"podPhase,omitempty"`
+	Ready          bool   `json:"ready"`
+	Image          string `json:"image,omitempty"`
+}
+
+type userCollectorRuntimeResponse struct {
+	Runtime *collectorRuntimeStatus `json:"runtime,omitempty"`
+}
+
+type listCollectorsResponse struct {
+	Collectors []struct {
+		ID        string                `json:"id"`
+		Name      string                `json:"name"`
+		IsDefault bool                  `json:"isDefault"`
+		Runtime   *collectorRuntimeStatus `json:"runtime,omitempty"`
+	} `json:"collectors"`
+}
+
 type matrixFile struct {
 	Tests []matrixTest `yaml:"tests"`
 }
@@ -65,6 +129,20 @@ type matrixTest struct {
 		SetOverrides []string          `yaml:"setOverrides"`
 		Timeout      string            `yaml:"timeout"`
 	} `yaml:"netlab_validate"`
+
+	NetlabDeploy *struct {
+		Type         string            `yaml:"type"` // netlab-c9s (recommended)
+		Source       string            `yaml:"source"`
+		Repo         string            `yaml:"repo"`
+		Dir          string            `yaml:"dir"`
+		Template     string            `yaml:"template"`
+		Environment  map[string]string `yaml:"environment"`
+		SetOverrides []string          `yaml:"setOverrides"`
+		Timeout      string            `yaml:"timeout"`
+		SSHBanners   bool              `yaml:"sshBanners"`
+		SSHTimeout   string            `yaml:"sshTimeout"`
+		Cleanup      bool              `yaml:"cleanup"`
+	} `yaml:"netlab_deploy"`
 }
 
 func getenv(key, fallback string) string {
@@ -101,6 +179,30 @@ func loadPasswordFromSecretsFile(path string) (string, error) {
 	return password, nil
 }
 
+func kubectlEnv() []string {
+	kcfg := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_KUBECONFIG"))
+	if kcfg == "" {
+		// Default to the repo kubeconfig (used for prod/dev cluster access via tunnel).
+		kcfg = "../.kubeconfig-skyforge"
+	}
+	if abs, err := filepath.Abs(kcfg); err == nil && strings.TrimSpace(abs) != "" {
+		kcfg = abs
+	}
+	return append(os.Environ(), "KUBECONFIG="+kcfg)
+}
+
+func kubectlAvailable(ctx context.Context) error {
+	ctx2, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx2, "kubectl", "version", "--short")
+	cmd.Env = kubectlEnv()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("kubectl not available: %s", strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 func doJSON(client *http.Client, method, url string, body any, headers map[string]string) (*http.Response, []byte, error) {
 	var r io.Reader
 	if body != nil {
@@ -127,6 +229,52 @@ func doJSON(client *http.Client, method, url string, body any, headers map[strin
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
 	return resp, b, nil
+}
+
+type dnsCacheDialer struct {
+	dialer *net.Dialer
+	mu     sync.Mutex
+	cache  map[string]string // host -> ip
+}
+
+func newDNSCacheDialer() *dnsCacheDialer {
+	return &dnsCacheDialer{
+		dialer: &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second},
+		cache:  map[string]string{},
+	}
+}
+
+func (d *dnsCacheDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return d.dialer.DialContext(ctx, network, addr)
+	}
+
+	d.mu.Lock()
+	cachedIP := d.cache[host]
+	d.mu.Unlock()
+
+	// Resolve and cache on first dial. If resolution fails but we have a cached
+	// IP, keep going; this makes long E2E runs resilient to transient DNS issues.
+	if cachedIP == "" {
+		ips, _ := net.DefaultResolver.LookupIPAddr(ctx, host)
+		for _, ip := range ips {
+			if s := strings.TrimSpace(ip.IP.String()); s != "" {
+				cachedIP = s
+				break
+			}
+		}
+		if cachedIP != "" {
+			d.mu.Lock()
+			d.cache[host] = cachedIP
+			d.mu.Unlock()
+		}
+	}
+
+	if cachedIP != "" {
+		return d.dialer.DialContext(ctx, network, net.JoinHostPort(cachedIP, port))
+	}
+	return d.dialer.DialContext(ctx, network, addr)
 }
 
 func parseTaskID(task map[string]any) int {
@@ -312,6 +460,173 @@ func fetchRunOutput(client *http.Client, baseURL string, cookie string, workspac
 	return strings.Join(lines, "\n"), nil
 }
 
+func resolveDefaultCollectorPod(client *http.Client, baseURL string, cookie string) (collectorConfigID string, namespace string, podName string, err error) {
+	// Explicit override (useful when running e2e as a user that doesn't have a collector configured).
+	if pod := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_COLLECTOR_POD")); pod != "" {
+		ns := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_COLLECTOR_NAMESPACE"))
+		if ns == "" {
+			ns = "skyforge"
+		}
+		return "", ns, pod, nil
+	}
+
+	resp, body, err := doJSON(client, http.MethodGet, baseURL+"/api/forward/collector-configs", nil, map[string]string{"Cookie": cookie})
+	if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		var decoded listCollectorsResponse
+		if json.Unmarshal(body, &decoded) == nil {
+			var bestID string
+			var bestRuntime *collectorRuntimeStatus
+			bestDefault := false
+			for _, c := range decoded.Collectors {
+				if c.Runtime == nil || !c.Runtime.Ready || strings.TrimSpace(c.Runtime.PodName) == "" {
+					continue
+				}
+				if bestRuntime == nil || (c.IsDefault && !bestDefault) {
+					bestID = strings.TrimSpace(c.ID)
+					bestRuntime = c.Runtime
+					bestDefault = c.IsDefault
+				}
+			}
+			if bestRuntime != nil {
+				return bestID, strings.TrimSpace(bestRuntime.Namespace), strings.TrimSpace(bestRuntime.PodName), nil
+			}
+		}
+	}
+
+	resp, body, err = doJSON(client, http.MethodGet, baseURL+"/api/forward/collector/runtime", nil, map[string]string{"Cookie": cookie})
+	if err != nil {
+		// Fall back to kubectl.
+		return findAnyCollectorPodViaKubectl(context.Background())
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		// Fall back to kubectl.
+		return findAnyCollectorPodViaKubectl(context.Background())
+	}
+	var decoded userCollectorRuntimeResponse
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		// Fall back to kubectl.
+		return findAnyCollectorPodViaKubectl(context.Background())
+	}
+	if decoded.Runtime == nil || !decoded.Runtime.Ready || strings.TrimSpace(decoded.Runtime.PodName) == "" {
+		// Fall back to kubectl (some users may not have a collector configured).
+		return findAnyCollectorPodViaKubectl(context.Background())
+	}
+	return "", strings.TrimSpace(decoded.Runtime.Namespace), strings.TrimSpace(decoded.Runtime.PodName), nil
+}
+
+func findAnyCollectorPodViaKubectl(ctx context.Context) (collectorConfigID string, namespace string, podName string, err error) {
+	type podList struct {
+		Items []struct {
+			Metadata struct {
+				Name      string `json:"name"`
+				Namespace string `json:"namespace"`
+			} `json:"metadata"`
+			Status struct {
+				Phase string `json:"phase"`
+			} `json:"status"`
+		} `json:"items"`
+	}
+
+	ctx2, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx2, "kubectl", "get", "pods", "-A", "-l", "app.kubernetes.io/component=collector", "-o", "json")
+	cmd.Env = kubectlEnv()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", "", "", fmt.Errorf("kubectl get collector pods failed: %s", strings.TrimSpace(string(out)))
+	}
+	var decoded podList
+	if err := json.Unmarshal(out, &decoded); err != nil {
+		return "", "", "", fmt.Errorf("kubectl pods json parse failed: %v", err)
+	}
+	for _, item := range decoded.Items {
+		if strings.EqualFold(strings.TrimSpace(item.Status.Phase), "running") &&
+			strings.TrimSpace(item.Metadata.Name) != "" &&
+			strings.TrimSpace(item.Metadata.Namespace) != "" {
+			return "", strings.TrimSpace(item.Metadata.Namespace), strings.TrimSpace(item.Metadata.Name), nil
+		}
+	}
+	return "", "", "", fmt.Errorf("no collector pods found in cluster")
+}
+
+func waitForCollectorSSH(ctx context.Context, namespace string, pod string, hosts []string, timeout time.Duration) error {
+	if len(hosts) == 0 {
+		return fmt.Errorf("no hosts")
+	}
+	namespace = strings.TrimSpace(namespace)
+	pod = strings.TrimSpace(pod)
+	if namespace == "" || pod == "" {
+		return fmt.Errorf("collector namespace/pod missing")
+	}
+	if timeout <= 0 {
+		timeout = 5 * time.Minute
+	}
+	deadline := time.Now().Add(timeout)
+
+	pending := map[string]struct{}{}
+	lastErr := map[string]string{}
+	for _, h := range hosts {
+		h = strings.TrimSpace(h)
+		if h != "" {
+			pending[h] = struct{}{}
+		}
+	}
+
+	for len(pending) > 0 {
+		if time.Now().After(deadline) {
+			rest := make([]string, 0, len(pending))
+			for h := range pending {
+				rest = append(rest, h)
+			}
+			sort.Strings(rest)
+			lines := make([]string, 0, len(rest))
+			for _, h := range rest {
+				if e := strings.TrimSpace(lastErr[h]); e != "" {
+					lines = append(lines, fmt.Sprintf("%s: %s", h, e))
+				} else {
+					lines = append(lines, fmt.Sprintf("%s: (no error captured)", h))
+				}
+			}
+			return fmt.Errorf("timeout waiting for ssh banner (remaining=%v)\n%s", rest, strings.Join(lines, "\n"))
+		}
+		for host := range pending {
+			ok, err := collectorSSHBannerOnce(ctx, namespace, pod, host)
+			if ok {
+				delete(pending, host)
+				delete(lastErr, host)
+				continue
+			}
+			if err != nil {
+				lastErr[host] = err.Error()
+			}
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return nil
+}
+
+func collectorSSHBannerOnce(ctx context.Context, namespace string, pod string, host string) (bool, error) {
+	script := `set -euo pipefail
+host="$1"
+exec 3<>/dev/tcp/${host}/22
+out="$(timeout 15 dd bs=1 count=4 <&3 2>/dev/null || true)"
+if [ "$out" = "SSH-" ]; then
+  exit 0
+fi
+echo "bad_banner:${out}" 1>&2
+exit 1
+`
+	ctx2, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx2, "kubectl", "-n", namespace, "exec", pod, "--", "bash", "-lc", script, "--", host)
+	cmd.Env = kubectlEnv()
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return true, nil
+	}
+	return false, fmt.Errorf("%s", strings.TrimSpace(string(out)))
+}
+
 func run() int {
 	baseURL := strings.TrimRight(getenv("SKYFORGE_BASE_URL", "https://skyforge.local.forwardnetworks.com"), "/")
 	username := getenv("SKYFORGE_E2E_USERNAME", getenv("SKYFORGE_SMOKE_USERNAME", "skyforge"))
@@ -331,7 +646,19 @@ func run() int {
 	}
 
 	timeout := 30 * time.Second
-	tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+	if v := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_HTTP_TIMEOUT")); v != "" {
+		if parsed, err := time.ParseDuration(v); err == nil && parsed > 0 {
+			timeout = parsed
+		}
+	}
+	if timeout < 30*time.Second {
+		timeout = 30 * time.Second
+	}
+	dialer := newDNSCacheDialer()
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		DialContext:     dialer.DialContext,
+	}
 	client := &http.Client{Timeout: timeout, Transport: tr}
 
 	healthURL := baseURL + "/healthz"
@@ -488,6 +815,218 @@ func run() int {
 				continue
 			}
 			fmt.Printf("OK %s: succeeded\n", name)
+		case "netlab_deploy":
+			if t.NetlabDeploy == nil {
+				fmt.Fprintf(os.Stderr, "test %q: missing netlab_deploy section\n", name)
+				return 2
+			}
+			testFailed := false
+
+			deployType := strings.ToLower(strings.TrimSpace(t.NetlabDeploy.Type))
+			if deployType == "" {
+				deployType = "netlab-c9s"
+			}
+			if deployType != "netlab-c9s" {
+				fmt.Fprintf(os.Stderr, "test %q: unsupported deploy type %q\n", name, deployType)
+				return 2
+			}
+
+			wait := 25 * time.Minute
+			if timeoutStr := strings.TrimSpace(t.NetlabDeploy.Timeout); timeoutStr != "" {
+				if parsed, err := time.ParseDuration(timeoutStr); err == nil && parsed > 0 {
+					wait = parsed
+				}
+			}
+			sshWait := 10 * time.Minute
+			if timeoutStr := strings.TrimSpace(t.NetlabDeploy.SSHTimeout); timeoutStr != "" {
+				if parsed, err := time.ParseDuration(timeoutStr); err == nil && parsed > 0 {
+					sshWait = parsed
+				}
+			}
+
+			cfg := map[string]any{
+				"templateSource": strings.TrimSpace(t.NetlabDeploy.Source),
+				"templateRepo":   strings.TrimSpace(t.NetlabDeploy.Repo),
+				"templatesDir":   strings.TrimSpace(t.NetlabDeploy.Dir),
+				"template":       strings.TrimSpace(t.NetlabDeploy.Template),
+				"environment":    t.NetlabDeploy.Environment,
+			}
+			if cfg["templateSource"] == "" {
+				cfg["templateSource"] = "blueprints"
+			}
+			if cfg["templatesDir"] == "" {
+				cfg["templatesDir"] = "netlab/_e2e/minimal"
+			}
+			if cfg["template"] == "" {
+				cfg["template"] = "topology.yml"
+			}
+			if len(t.NetlabDeploy.SetOverrides) > 0 {
+				cfg["netlabSetOverrides"] = t.NetlabDeploy.SetOverrides
+			}
+
+			depName := strings.TrimPrefix(strings.ToLower(name), "netlab-deploy-")
+			if depName == "" {
+				depName = strings.ToLower(strings.ReplaceAll(name, "_", "-"))
+			}
+			depName = strings.Trim(depName, "-")
+			if len(depName) > 40 {
+				depName = depName[:40]
+				depName = strings.Trim(depName, "-")
+			}
+			if depName == "" {
+				depName = "e2e"
+			}
+
+			createDepURL := fmt.Sprintf("%s/api/workspaces/%s/deployments", baseURL, ws.ID)
+			resp, body, err := doJSON(client, http.MethodPost, createDepURL, deploymentCreateRequest{
+				Name:   depName,
+				Type:   deployType,
+				Config: cfg,
+			}, map[string]string{"Cookie": cookie})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "test %q: create deployment request failed: %v\n", name, err)
+				return 1
+			}
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				fmt.Fprintf(os.Stderr, "test %q: create deployment failed (%d): %s\n", name, resp.StatusCode, strings.TrimSpace(string(body)))
+				return 1
+			}
+			var dep deploymentResponse
+			if err := json.Unmarshal(body, &dep); err != nil {
+				fmt.Fprintf(os.Stderr, "test %q: create deployment parse failed: %v\n", name, err)
+				return 1
+			}
+			if strings.TrimSpace(dep.ID) == "" {
+				fmt.Fprintf(os.Stderr, "test %q: create deployment returned empty id\n", name)
+				return 1
+			}
+
+			collectorConfigID, collectorNS, collectorPod, err := resolveDefaultCollectorPod(client, baseURL, cookie)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "test %q: collector resolve failed: %v\n", name, err)
+				return 1
+			}
+
+			if t.NetlabDeploy.SSHBanners {
+				if err := kubectlAvailable(context.Background()); err != nil {
+					fmt.Fprintf(os.Stderr, "test %q: kubectl is required for ssh banner checks but is not working.\n%s\n", name, err)
+					fmt.Fprintf(os.Stderr, "Hint: if you're using the repo kubeconfig, start the tunnel:\n  ssh -N -L 6443:127.0.0.1:6443 skyforge.local.forwardnetworks.com\n")
+					return 1
+				}
+			}
+
+			// Best-effort: enable Forward on this deployment so we also exercise Forward sync plumbing.
+			if strings.TrimSpace(collectorConfigID) != "" {
+				fwdCfgURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/forward", baseURL, ws.ID, dep.ID)
+				resp, body, err = doJSON(client, http.MethodPut, fwdCfgURL, deploymentForwardConfigRequest{
+					Enabled:           true,
+					CollectorConfigID: collectorConfigID,
+				}, map[string]string{"Cookie": cookie})
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "test %q: forward config request failed: %v\n", name, err)
+					return 1
+				}
+				if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+					fmt.Fprintf(os.Stderr, "test %q: forward config failed (%d): %s\n", name, resp.StatusCode, strings.TrimSpace(string(body)))
+					return 1
+				}
+			}
+
+			startURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/start", baseURL, ws.ID, dep.ID)
+			resp, body, err = doJSON(client, http.MethodPost, startURL, map[string]any{}, map[string]string{"Cookie": cookie})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "test %q: start deployment request failed: %v\n", name, err)
+				return 1
+			}
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				fmt.Fprintf(os.Stderr, "test %q: start deployment failed (%d): %s\n", name, resp.StatusCode, strings.TrimSpace(string(body)))
+				return 1
+			}
+			var out deploymentActionResponse
+			if err := json.Unmarshal(body, &out); err != nil {
+				fmt.Fprintf(os.Stderr, "test %q: start response parse failed: %v\n", name, err)
+				return 1
+			}
+			taskID := parseTaskID(out.Run)
+			if taskID <= 0 {
+				fmt.Fprintf(os.Stderr, "test %q: start returned missing task id\n", name)
+				return 1
+			}
+			fmt.Printf("OK %s: task=%d (waiting)\n", name, taskID)
+
+			sseClient := &http.Client{Transport: tr}
+			status, errMsg, err := waitForTaskFinished(sseClient, baseURL, cookie, ws.ID, taskID, wait)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "test %q: wait failed: %v\n", name, err)
+				return 1
+			}
+			switch strings.ToLower(strings.TrimSpace(status)) {
+			case "succeeded", "success":
+			default:
+				fmt.Fprintf(os.Stderr, "test %q: deployment task finished with status=%q error=%q\n", name, status, errMsg)
+				if output, err := fetchRunOutput(client, baseURL, cookie, ws.ID, taskID); err == nil && strings.TrimSpace(output) != "" {
+					fmt.Fprintf(os.Stderr, "--- task %d output ---\n%s\n--- end output ---\n", taskID, output)
+				}
+				exitCode = 1
+				testFailed = true
+			}
+
+			if !testFailed && t.NetlabDeploy.SSHBanners {
+				topURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/topology", baseURL, ws.ID, dep.ID)
+				resp, body, err = doJSON(client, http.MethodGet, topURL, nil, map[string]string{"Cookie": cookie})
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "test %q: topology request failed: %v\n", name, err)
+					exitCode = 1
+					testFailed = true
+				} else if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+					fmt.Fprintf(os.Stderr, "test %q: topology failed (%d): %s\n", name, resp.StatusCode, strings.TrimSpace(string(body)))
+					exitCode = 1
+					testFailed = true
+				} else {
+					var topo deploymentTopologyResponse
+					if err := json.Unmarshal(body, &topo); err != nil {
+						fmt.Fprintf(os.Stderr, "test %q: topology parse failed: %v\n", name, err)
+						exitCode = 1
+						testFailed = true
+					} else {
+						hosts := []string{}
+						for _, n := range topo.Nodes {
+							if ip := strings.TrimSpace(n.MgmtIP); ip != "" {
+								hosts = append(hosts, ip)
+							}
+						}
+						if len(hosts) == 0 {
+							fmt.Fprintf(os.Stderr, "test %q: no mgmt IPs in topology\n", name)
+							exitCode = 1
+							testFailed = true
+						} else if err := waitForCollectorSSH(context.Background(), collectorNS, collectorPod, hosts, sshWait); err != nil {
+							fmt.Fprintf(os.Stderr, "test %q: collector ssh banner failed: %v\n", name, err)
+							exitCode = 1
+							testFailed = true
+						} else {
+							fmt.Printf("OK %s: collector ssh banner ok (hosts=%d)\n", name, len(hosts))
+						}
+					}
+				}
+			}
+
+			if t.NetlabDeploy.Cleanup {
+				destroyURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/destroy", baseURL, ws.ID, dep.ID)
+				resp, body, err = doJSON(client, http.MethodPost, destroyURL, map[string]any{}, map[string]string{"Cookie": cookie})
+				if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+					var destroyed deploymentActionResponse
+					if json.Unmarshal(body, &destroyed) == nil {
+						destroyTask := parseTaskID(destroyed.Run)
+						if destroyTask > 0 {
+							_, _, _ = waitForTaskFinished(&http.Client{Transport: tr}, baseURL, cookie, ws.ID, destroyTask, wait)
+						}
+					}
+				}
+			}
+
+			if !testFailed {
+				fmt.Printf("OK %s: succeeded\n", name)
+			}
 		default:
 			fmt.Fprintf(os.Stderr, "unknown test kind %q (%s)\n", kind, name)
 			return 2
