@@ -1473,6 +1473,10 @@ func run() int {
 		}
 	}
 	if statusRec != nil {
+		// Keep the status file aligned with the device types Skyforge exposes.
+		// This also prunes stale/renamed device keys from earlier runs.
+		statusRec.syncDeviceSet(onboardedNetlabDevices())
+
 		defer func() {
 			if err := statusRec.flush(); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: failed to write e2e status: %v\n", err)

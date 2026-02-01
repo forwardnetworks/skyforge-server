@@ -10,6 +10,11 @@ import (
 	"time"
 )
 
+func midnightUTC(t time.Time) time.Time {
+	t = t.UTC()
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+}
+
 type e2eStatusFile struct {
 	UpdatedAt string                   `json:"updatedAt"`
 	Devices   map[string]e2eDeviceStat `json:"devices"`
@@ -76,6 +81,45 @@ func (r *e2eStatusRecorder) update(device string, status string, template string
 	}
 }
 
+func (r *e2eStatusRecorder) syncDeviceSet(devices []string) {
+	if r == nil {
+		return
+	}
+	set := map[string]struct{}{}
+	for _, d := range devices {
+		d = strings.TrimSpace(d)
+		if d == "" {
+			continue
+		}
+		set[d] = struct{}{}
+	}
+	if len(set) == 0 {
+		return
+	}
+	if r.state.Devices == nil {
+		r.state.Devices = map[string]e2eDeviceStat{}
+	}
+
+	for d := range r.state.Devices {
+		if _, ok := set[d]; !ok {
+			delete(r.state.Devices, d)
+		}
+	}
+
+	notYetRunAt := midnightUTC(time.Now()).Format(time.RFC3339)
+	for d := range set {
+		if _, ok := r.state.Devices[d]; ok {
+			continue
+		}
+		r.state.Devices[d] = e2eDeviceStat{
+			Device:    d,
+			Status:    "unknown",
+			UpdatedAt: notYetRunAt,
+			Notes:     "not yet run",
+		}
+	}
+}
+
 func (r *e2eStatusRecorder) flush() error {
 	if r == nil {
 		return nil
@@ -138,4 +182,3 @@ func renderE2EStatusMarkdown(s e2eStatusFile) string {
 
 	return strings.Join(lines, "\n")
 }
-

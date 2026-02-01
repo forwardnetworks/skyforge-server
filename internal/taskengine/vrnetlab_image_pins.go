@@ -14,6 +14,11 @@ var vrnetlabPinnedImages = map[string]string{
 	"ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2":   "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-20260201-ssh3",
 	"vrnetlab/cisco_vios:15.9.3":                           "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-20260201-ssh3",
 	"vrnetlab/cisco_viosl2:15.2":                           "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-20260201-ssh3",
+
+	// Dell OS10 (FTOSv) is very large and can be present on nodes with an older cached digest.
+	// Pin to the expected digest to ensure fresh pulls when the tag is updated.
+	"ghcr.io/forwardnetworks/vrnetlab/vr-ftosv:10.6.1.0.24V": "ghcr.io/forwardnetworks/vrnetlab/vr-ftosv@sha256:1cde7dd305c5ebead38ecaba4d0ec694cb4ad4bb835dc8d11dcc46fee1279968",
+	"vrnetlab/vr-ftosv:10.6.1.0.24V":                         "ghcr.io/forwardnetworks/vrnetlab/vr-ftosv@sha256:1cde7dd305c5ebead38ecaba4d0ec694cb4ad4bb835dc8d11dcc46fee1279968",
 }
 
 func rewritePinnedVrnetlabImage(image string) (string, bool) {
