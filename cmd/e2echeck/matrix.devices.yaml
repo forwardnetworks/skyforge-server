@@ -1,0 +1,123 @@
+# E2E validation matrix for Skyforge "netlab validate" jobs.
+#
+# This file is intended to be used in CI/CD (or manually) to ensure Skyforge's
+# in-cluster netlab generator can successfully parse + validate topologies for
+# the device types Skyforge expects to support.
+#
+# Usage:
+#   cd skyforge-private/server
+#   export SKYFORGE_E2E_MATRIX_FILE=./cmd/e2echeck/matrix.devices.yaml
+#   go run ./cmd/e2echeck
+#
+# Notes:
+# - The topology referenced below lives in the blueprints repo (source=blueprints).
+# - Each test overrides the device with NETLAB_DEVICE so we can validate each
+#   platform using the same minimal topology.
+tests:
+  - name: netlab-validate-eos
+    kind: netlab_validate
+    netlab_validate:
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: eos
+      setOverrides: []
+      timeout: 10m
+
+  - name: netlab-validate-iol
+    kind: netlab_validate
+    netlab_validate:
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: iol
+      setOverrides: []
+      timeout: 10m
+
+  - name: netlab-validate-iosv
+    kind: netlab_validate
+    netlab_validate:
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: iosv
+      setOverrides: []
+      timeout: 10m
+
+  - name: netlab-validate-csr
+    kind: netlab_validate
+    netlab_validate:
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: csr
+      setOverrides: []
+      timeout: 10m
+
+  - name: netlab-validate-nxos
+    kind: netlab_validate
+    netlab_validate:
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: nxos
+      setOverrides: []
+      timeout: 10m
+
+  - name: netlab-validate-cumulus
+    kind: netlab_validate
+    netlab_validate:
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: cumulus
+      setOverrides: []
+      timeout: 10m
+
+  - name: netlab-validate-sros
+    kind: netlab_validate
+    netlab_validate:
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: sros
+      setOverrides: []
+      timeout: 10m
+
+  - name: netlab-validate-asav
+    kind: netlab_validate
+    netlab_validate:
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: asav
+      setOverrides: []
+      timeout: 10m
+
+  - name: netlab-validate-fortios
+    kind: netlab_validate
+    netlab_validate:
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: fortios
+      setOverrides: []
+      timeout: 10m
