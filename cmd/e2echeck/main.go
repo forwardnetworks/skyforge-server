@@ -154,7 +154,7 @@ func waitForTaskFinished(client *http.Client, baseURL string, cookie string, tas
 	if timeout <= 0 {
 		timeout = 10 * time.Minute
 	}
-	url := fmt.Sprintf("%s/api/skyforge/api/runs/%d/lifecycle", strings.TrimRight(baseURL, "/"), taskID)
+	url := fmt.Sprintf("%s/api/runs/%d/lifecycle", strings.TrimRight(baseURL, "/"), taskID)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return "", "", err
