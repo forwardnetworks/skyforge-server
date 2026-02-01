@@ -3,13 +3,16 @@ package skyforge
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 )
 
@@ -41,6 +44,8 @@ type pgNotifyHub struct {
 var globalPGNotifyHub = &pgNotifyHub{
 	subs: make(map[chan pgNotification]struct{}),
 }
+
+var errPGNotifyUnsupportedDriver = errors.New("pg notify hub unsupported db driver")
 
 func ensurePGNotifyHub(db *sql.DB) *pgNotifyHub {
 	if db != nil {
@@ -119,53 +124,93 @@ func (h *pgNotifyHub) listenOnce(ctx context.Context) error {
 	}
 	defer sqlConn.Close()
 
-	return sqlConn.Raw(func(dc any) error {
+	err = sqlConn.Raw(func(dc any) error {
 		c, ok := dc.(*stdlib.Conn)
 		if !ok || c == nil {
-			return fmt.Errorf("unexpected db driver conn type: %T", dc)
+			return fmt.Errorf("%w: %T", errPGNotifyUnsupportedDriver, dc)
 		}
 		conn := c.Conn()
 		if conn == nil {
 			return fmt.Errorf("missing pgx conn")
 		}
 
-		// LISTEN uses an implicit transaction; keep it simple with direct Exec.
-		if _, err := conn.Exec(ctx, "LISTEN "+pgNotifyTasksChannel); err != nil {
-			return err
-		}
-		if _, err := conn.Exec(ctx, "LISTEN "+pgNotifyDashboardChannel); err != nil {
-			return err
-		}
-		if _, err := conn.Exec(ctx, "LISTEN "+pgNotifyNotificationsChannel); err != nil {
-			return err
-		}
-		if _, err := conn.Exec(ctx, "LISTEN "+pgNotifyWebhooksChannel); err != nil {
-			return err
-		}
-		if _, err := conn.Exec(ctx, "LISTEN "+pgNotifySyslogChannel); err != nil {
-			return err
-		}
-		if _, err := conn.Exec(ctx, "LISTEN "+pgNotifySnmpChannel); err != nil {
-			return err
-		}
-		if _, err := conn.Exec(ctx, "LISTEN "+pgNotifyWorkspacesChannel); err != nil {
-			return err
-		}
-		if _, err := conn.Exec(ctx, "LISTEN "+pgNotifyDeploymentEventsChan); err != nil {
-			return err
-		}
-
-		for {
-			n, err := conn.WaitForNotification(ctx)
-			if err != nil {
-				return err
-			}
-			if n == nil {
-				continue
-			}
-			h.broadcast(pgNotification{Channel: n.Channel, Payload: n.Payload})
-		}
+		return h.listenOnPGX(ctx, conn)
 	})
+	if errors.Is(err, errPGNotifyUnsupportedDriver) {
+		// Encore's stdlib driver wraps the underlying connection; fall back to an explicit pgx connection
+		// using the same SKYFORGE_DB_* environment variables used by the app.
+		connStr, err2 := pgConnStringFromEnv()
+		if err2 != nil {
+			return fmt.Errorf("pg notify hub cannot build db conn string: %w", err2)
+		}
+		conn, err2 := pgx.Connect(ctx, connStr)
+		if err2 != nil {
+			return err2
+		}
+		defer conn.Close(ctx)
+		return h.listenOnPGX(ctx, conn)
+	}
+	return err
+}
+
+func pgConnStringFromEnv() (string, error) {
+	host := strings.TrimSpace(os.Getenv("SKYFORGE_DB_HOST"))
+	port := strings.TrimSpace(os.Getenv("SKYFORGE_DB_PORT"))
+	name := strings.TrimSpace(os.Getenv("SKYFORGE_DB_NAME"))
+	user := strings.TrimSpace(os.Getenv("SKYFORGE_DB_USER"))
+	pass := os.Getenv("SKYFORGE_DB_PASSWORD")
+	sslmode := strings.TrimSpace(os.Getenv("SKYFORGE_DB_SSLMODE"))
+	if sslmode == "" {
+		sslmode = "disable"
+	}
+	if host == "" || port == "" || name == "" || user == "" || strings.TrimSpace(pass) == "" {
+		return "", fmt.Errorf("missing SKYFORGE_DB_* env vars")
+	}
+	// NOTE: do not log this string (contains password).
+	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s", host, port, user, pass, name, sslmode), nil
+}
+
+func (h *pgNotifyHub) listenOnPGX(ctx context.Context, conn *pgx.Conn) error {
+	if conn == nil {
+		return fmt.Errorf("missing pgx conn")
+	}
+
+	// LISTEN uses an implicit transaction; keep it simple with direct Exec.
+	if _, err := conn.Exec(ctx, "LISTEN "+pgNotifyTasksChannel); err != nil {
+		return err
+	}
+	if _, err := conn.Exec(ctx, "LISTEN "+pgNotifyDashboardChannel); err != nil {
+		return err
+	}
+	if _, err := conn.Exec(ctx, "LISTEN "+pgNotifyNotificationsChannel); err != nil {
+		return err
+	}
+	if _, err := conn.Exec(ctx, "LISTEN "+pgNotifyWebhooksChannel); err != nil {
+		return err
+	}
+	if _, err := conn.Exec(ctx, "LISTEN "+pgNotifySyslogChannel); err != nil {
+		return err
+	}
+	if _, err := conn.Exec(ctx, "LISTEN "+pgNotifySnmpChannel); err != nil {
+		return err
+	}
+	if _, err := conn.Exec(ctx, "LISTEN "+pgNotifyWorkspacesChannel); err != nil {
+		return err
+	}
+	if _, err := conn.Exec(ctx, "LISTEN "+pgNotifyDeploymentEventsChan); err != nil {
+		return err
+	}
+
+	for {
+		n, err := conn.WaitForNotification(ctx)
+		if err != nil {
+			return err
+		}
+		if n == nil {
+			continue
+		}
+		h.broadcast(pgNotification{Channel: n.Channel, Payload: n.Payload})
+	}
 }
 
 func notifyTaskUpdatePG(ctx context.Context, db *sql.DB, taskID int) error {

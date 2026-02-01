@@ -147,7 +147,7 @@ func parseTaskID(task map[string]any) int {
 	return 0
 }
 
-func waitForTaskFinished(client *http.Client, baseURL string, cookie string, taskID int, timeout time.Duration) (status string, errMsg string, err error) {
+func waitForTaskFinished(client *http.Client, baseURL string, cookie string, workspaceID string, taskID int, timeout time.Duration) (status string, errMsg string, err error) {
 	if taskID <= 0 {
 		return "", "", fmt.Errorf("invalid task id")
 	}
@@ -172,6 +172,7 @@ func waitForTaskFinished(client *http.Client, baseURL string, cookie string, tas
 	defer resp.Body.Close()
 
 	deadline := time.Now().Add(timeout)
+	nextPoll := time.Now()
 	sc := bufio.NewScanner(resp.Body)
 	sc.Buffer(make([]byte, 0, 64*1024), 2*1024*1024)
 
@@ -180,18 +181,32 @@ func waitForTaskFinished(client *http.Client, baseURL string, cookie string, tas
 		if time.Now().After(deadline) {
 			return "", "", fmt.Errorf("timeout waiting for task %d", taskID)
 		}
+		if !nextPoll.After(time.Now()) && strings.TrimSpace(workspaceID) != "" {
+			nextPoll = time.Now().Add(5 * time.Second)
+			if st, er, ok := pollTaskStatus(client, baseURL, cookie, workspaceID, taskID); ok {
+				return st, er, nil
+			}
+		}
 		line := strings.TrimRight(sc.Text(), "\r")
 		if line == "" {
 			// end of event
 			if currentData.Len() > 0 {
-				var evt struct {
-					Type    string         `json:"type"`
-					Time    string         `json:"time"`
-					Payload map[string]any `json:"payload"`
+				// The SSE stream uses event name `lifecycle` with a payload like:
+				// {"cursor":123,"entries":[{"type":"task.started",...},{"type":"task.finished","payload":{"status":"succeeded"}}]}
+				var envelope struct {
+					Cursor  int64 `json:"cursor"`
+					Entries []struct {
+						Type    string         `json:"type"`
+						Time    string         `json:"time"`
+						Payload map[string]any `json:"payload"`
+					} `json:"entries"`
 				}
-				_ = json.Unmarshal([]byte(currentData.String()), &evt)
+				_ = json.Unmarshal([]byte(currentData.String()), &envelope)
 				currentData.Reset()
-				if strings.TrimSpace(evt.Type) == "task.finished" {
+				for _, evt := range envelope.Entries {
+					if strings.TrimSpace(evt.Type) != "task.finished" {
+						continue
+					}
 					st, _ := evt.Payload["status"].(string)
 					er, _ := evt.Payload["error"].(string)
 					return strings.TrimSpace(st), strings.TrimSpace(er), nil
@@ -210,7 +225,94 @@ func waitForTaskFinished(client *http.Client, baseURL string, cookie string, tas
 	return "", "", fmt.Errorf("task lifecycle stream ended before task.finished")
 }
 
-func main() {
+func pollTaskStatus(client *http.Client, baseURL string, cookie string, workspaceID string, taskID int) (status string, errMsg string, ok bool) {
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" || taskID <= 0 {
+		return "", "", false
+	}
+	url := fmt.Sprintf("%s/api/runs?workspace_id=%s&limit=25", strings.TrimRight(baseURL, "/"), workspaceID)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return "", "", false
+	}
+	req.Header.Set("Cookie", cookie)
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "", false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", "", false
+	}
+	body, _ := io.ReadAll(resp.Body)
+	var out struct {
+		Tasks []map[string]any `json:"tasks"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return "", "", false
+	}
+	for _, t := range out.Tasks {
+		id := 0
+		switch v := t["id"].(type) {
+		case float64:
+			id = int(v)
+		case int:
+			id = v
+		case string:
+			id, _ = strconv.Atoi(strings.TrimSpace(v))
+		}
+		if id != taskID {
+			continue
+		}
+		st, _ := t["status"].(string)
+		if strings.EqualFold(strings.TrimSpace(st), "succeeded") || strings.EqualFold(strings.TrimSpace(st), "failed") || strings.EqualFold(strings.TrimSpace(st), "canceled") {
+			er, _ := t["error"].(string)
+			return strings.TrimSpace(st), strings.TrimSpace(er), true
+		}
+		return "", "", false
+	}
+	return "", "", false
+}
+
+func fetchRunOutput(client *http.Client, baseURL string, cookie string, workspaceID string, taskID int) (string, error) {
+	if taskID <= 0 {
+		return "", fmt.Errorf("invalid task id")
+	}
+	url := fmt.Sprintf("%s/api/runs/%d/output?workspace_id=%s", strings.TrimRight(baseURL, "/"), taskID, strings.TrimSpace(workspaceID))
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Cookie", cookie)
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("output fetch failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var out struct {
+		Output []struct {
+			Output string `json:"output"`
+			Time   string `json:"time"`
+			Stream string `json:"stream"`
+		} `json:"output"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return "", err
+	}
+	lines := make([]string, 0, len(out.Output))
+	for _, row := range out.Output {
+		if s := strings.TrimRight(row.Output, "\n"); s != "" {
+			lines = append(lines, s)
+		}
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
+func run() int {
 	baseURL := strings.TrimRight(getenv("SKYFORGE_BASE_URL", "https://skyforge.local.forwardnetworks.com"), "/")
 	username := getenv("SKYFORGE_E2E_USERNAME", getenv("SKYFORGE_SMOKE_USERNAME", "skyforge"))
 	password := mustEnv("SKYFORGE_E2E_PASSWORD")
@@ -223,7 +325,7 @@ func main() {
 		loaded, err := loadPasswordFromSecretsFile(abs)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "missing SKYFORGE_E2E_PASSWORD and failed to load from %s: %v\n", abs, err)
-			os.Exit(2)
+			return 2
 		}
 		password = loaded
 	}
@@ -236,11 +338,11 @@ func main() {
 	resp, body, err := doJSON(client, http.MethodGet, healthURL, nil, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "health request failed: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		fmt.Fprintf(os.Stderr, "health failed: %s\n", strings.TrimSpace(string(body)))
-		os.Exit(1)
+		return 1
 	}
 	fmt.Printf("OK health: %s\n", healthURL)
 
@@ -248,16 +350,16 @@ func main() {
 	resp, body, err = doJSON(client, http.MethodPost, loginURL, loginRequest{Username: username, Password: password}, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "login request failed: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		fmt.Fprintf(os.Stderr, "login failed (%d): %s\n", resp.StatusCode, strings.TrimSpace(string(body)))
-		os.Exit(1)
+		return 1
 	}
 	cookie := resp.Header.Get("Set-Cookie")
 	if strings.TrimSpace(cookie) == "" {
 		fmt.Fprintln(os.Stderr, "login missing Set-Cookie header")
-		os.Exit(1)
+		return 1
 	}
 	fmt.Printf("OK login: %s\n", username)
 
@@ -266,20 +368,20 @@ func main() {
 	resp, body, err = doJSON(client, http.MethodPost, createURL, workspaceCreateRequest{Name: wsName}, map[string]string{"Cookie": cookie})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "workspace create request failed: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		fmt.Fprintf(os.Stderr, "workspace create failed (%d): %s\n", resp.StatusCode, strings.TrimSpace(string(body)))
-		os.Exit(1)
+		return 1
 	}
 	var ws workspaceResponse
 	if err := json.Unmarshal(body, &ws); err != nil {
 		fmt.Fprintf(os.Stderr, "workspace create parse failed: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	if strings.TrimSpace(ws.ID) == "" {
 		fmt.Fprintf(os.Stderr, "workspace create returned empty id: %s\n", strings.TrimSpace(string(body)))
-		os.Exit(1)
+		return 1
 	}
 	fmt.Printf("OK workspace create: %s (%s)\n", ws.Name, ws.ID)
 
@@ -300,18 +402,19 @@ func main() {
 	matrixPath := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_MATRIX_FILE"))
 	if matrixPath == "" {
 		fmt.Println("OK e2echeck: no SKYFORGE_E2E_MATRIX_FILE set (skipping template validation)")
-		return
+		return 0
 	}
 	raw, err := os.ReadFile(matrixPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to read matrix file %s: %v\n", matrixPath, err)
-		os.Exit(2)
+		return 2
 	}
 	var m matrixFile
 	if err := yaml.Unmarshal(raw, &m); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to parse matrix file %s: %v\n", matrixPath, err)
-		os.Exit(2)
+		return 2
 	}
+	exitCode := 0
 	for _, t := range m.Tests {
 		name := strings.TrimSpace(t.Name)
 		kind := strings.TrimSpace(t.Kind)
@@ -322,7 +425,7 @@ func main() {
 		case "netlab_validate":
 			if t.NetlabValidate == nil {
 				fmt.Fprintf(os.Stderr, "test %q: missing netlab_validate section\n", name)
-				os.Exit(2)
+				return 2
 			}
 			reqIn := netlabValidateRequest{
 				Source:       strings.TrimSpace(t.NetlabValidate.Source),
@@ -349,40 +452,51 @@ func main() {
 			resp, body, err := doJSON(client, http.MethodPost, url, reqIn, map[string]string{"Cookie": cookie})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "test %q: request failed: %v\n", name, err)
-				os.Exit(1)
+				return 1
 			}
 			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 				fmt.Fprintf(os.Stderr, "test %q: validate failed (%d): %s\n", name, resp.StatusCode, strings.TrimSpace(string(body)))
-				os.Exit(1)
+				return 1
 			}
 			var out netlabValidateResponse
 			if err := json.Unmarshal(body, &out); err != nil {
 				fmt.Fprintf(os.Stderr, "test %q: validate response parse failed: %v\n", name, err)
-				os.Exit(1)
+				return 1
 			}
 			taskID := parseTaskID(out.Task)
 			if taskID <= 0 {
 				fmt.Fprintf(os.Stderr, "test %q: validate returned missing task id: %s\n", name, strings.TrimSpace(string(body)))
-				os.Exit(1)
+				return 1
 			}
 			fmt.Printf("OK %s: task=%d (waiting)\n", name, taskID)
 
 			// Use a separate client without request timeout to allow long-lived SSE.
 			sseClient := &http.Client{Transport: tr}
-			status, errMsg, err := waitForTaskFinished(sseClient, baseURL, cookie, taskID, wait)
+			status, errMsg, err := waitForTaskFinished(sseClient, baseURL, cookie, ws.ID, taskID, wait)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "test %q: wait failed: %v\n", name, err)
-				os.Exit(1)
+				return 1
 			}
-			if strings.TrimSpace(status) != "succeeded" {
+			switch strings.ToLower(strings.TrimSpace(status)) {
+			case "succeeded", "success":
+			default:
 				fmt.Fprintf(os.Stderr, "test %q: task finished with status=%q error=%q\n", name, status, errMsg)
-				os.Exit(1)
+				if output, err := fetchRunOutput(client, baseURL, cookie, ws.ID, taskID); err == nil && strings.TrimSpace(output) != "" {
+					fmt.Fprintf(os.Stderr, "--- task %d output ---\n%s\n--- end output ---\n", taskID, output)
+				}
+				exitCode = 1
+				continue
 			}
 			fmt.Printf("OK %s: succeeded\n", name)
 		default:
 			fmt.Fprintf(os.Stderr, "unknown test kind %q (%s)\n", kind, name)
-			os.Exit(2)
+			return 2
 		}
 	}
 	fmt.Printf("OK e2echeck: %d test(s)\n", len(m.Tests))
+	return exitCode
+}
+
+func main() {
+	os.Exit(run())
 }

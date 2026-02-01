@@ -2,6 +2,7 @@ package skyforgeconfig
 
 import (
 	"log"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -234,8 +235,21 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 	if strings.TrimSpace(workspacesCfg.DataDir) == "" {
 		workspacesCfg.DataDir = "/var/lib/skyforge"
 	}
+	// Back-compat + robustness: allow the older SKYFORGE_* env vars (injected by Helm configmaps)
+	// to fill gaps if ENCORE_CFG is missing or partially configured.
+	if strings.TrimSpace(workspacesCfg.GiteaAPIURL) == "" {
+		if v := strings.TrimRight(strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_API_URL")), "/"); v != "" {
+			workspacesCfg.GiteaAPIURL = v
+		} else if giteaBaseURL != "" {
+			workspacesCfg.GiteaAPIURL = giteaBaseURL + "/api/v1"
+		}
+	}
 	if strings.TrimSpace(workspacesCfg.GiteaUsername) == "" {
-		workspacesCfg.GiteaUsername = "skyforge"
+		if v := strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_USERNAME")); v != "" {
+			workspacesCfg.GiteaUsername = v
+		} else {
+			workspacesCfg.GiteaUsername = "skyforge"
+		}
 	}
 	if strings.TrimSpace(workspacesCfg.DeleteMode) == "" {
 		workspacesCfg.DeleteMode = "live"
