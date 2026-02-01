@@ -26,8 +26,36 @@ type kubePod struct {
 		NodeName string `json:"nodeName"`
 	} `json:"spec"`
 	Status struct {
-		PodIP string `json:"podIP"`
-		Phase string `json:"phase"`
+		PodIP   string `json:"podIP"`
+		Phase   string `json:"phase"`
+		Reason  string `json:"reason"`
+		Message string `json:"message"`
+
+		ContainerStatuses []struct {
+			Name         string `json:"name"`
+			Ready        bool   `json:"ready"`
+			RestartCount int    `json:"restartCount"`
+			Image        string `json:"image"`
+			ImageID      string `json:"imageID"`
+			State        struct {
+				Waiting *struct {
+					Reason  string `json:"reason"`
+					Message string `json:"message"`
+				} `json:"waiting,omitempty"`
+				Terminated *struct {
+					ExitCode int    `json:"exitCode"`
+					Reason   string `json:"reason"`
+					Message  string `json:"message"`
+				} `json:"terminated,omitempty"`
+			} `json:"state,omitempty"`
+			LastState struct {
+				Terminated *struct {
+					ExitCode int    `json:"exitCode"`
+					Reason   string `json:"reason"`
+					Message  string `json:"message"`
+				} `json:"terminated,omitempty"`
+			} `json:"lastState,omitempty"`
+		} `json:"containerStatuses,omitempty"`
 	} `json:"status"`
 }
 
@@ -77,4 +105,59 @@ func kubeListPods(ctx context.Context, ns string, labelSelector map[string]strin
 		return nil, err
 	}
 	return pods.Items, nil
+}
+
+func kubeSummarizePodsForJob(ctx context.Context, ns, jobName string) (string, error) {
+	pods, err := kubeListPods(ctx, ns, map[string]string{"job-name": jobName})
+	if err != nil {
+		return "", err
+	}
+	if len(pods) == 0 {
+		return "", nil
+	}
+
+	var b strings.Builder
+	for _, p := range pods {
+		name := strings.TrimSpace(p.Metadata.Name)
+		phase := strings.TrimSpace(p.Status.Phase)
+		reason := strings.TrimSpace(p.Status.Reason)
+		msg := strings.TrimSpace(p.Status.Message)
+		node := strings.TrimSpace(p.Spec.NodeName)
+		ip := strings.TrimSpace(p.Status.PodIP)
+
+		fmt.Fprintf(&b, "pod=%s phase=%s node=%s ip=%s", name, phase, node, ip)
+		if reason != "" {
+			fmt.Fprintf(&b, " reason=%s", reason)
+		}
+		if msg != "" {
+			fmt.Fprintf(&b, " message=%q", msg)
+		}
+		b.WriteString("\n")
+
+		for _, cs := range p.Status.ContainerStatuses {
+			cname := strings.TrimSpace(cs.Name)
+			if cname == "" {
+				cname = "container"
+			}
+			fmt.Fprintf(&b, "  container=%s ready=%t restarts=%d image=%s\n", cname, cs.Ready, cs.RestartCount, strings.TrimSpace(cs.Image))
+			if cs.State.Waiting != nil {
+				wr := strings.TrimSpace(cs.State.Waiting.Reason)
+				wm := strings.TrimSpace(cs.State.Waiting.Message)
+				if wr != "" || wm != "" {
+					fmt.Fprintf(&b, "    waiting reason=%s message=%q\n", wr, wm)
+				}
+			}
+			if cs.State.Terminated != nil {
+				tr := strings.TrimSpace(cs.State.Terminated.Reason)
+				tm := strings.TrimSpace(cs.State.Terminated.Message)
+				fmt.Fprintf(&b, "    terminated exitCode=%d reason=%s message=%q\n", cs.State.Terminated.ExitCode, tr, tm)
+			}
+			if cs.LastState.Terminated != nil {
+				lr := strings.TrimSpace(cs.LastState.Terminated.Reason)
+				lm := strings.TrimSpace(cs.LastState.Terminated.Message)
+				fmt.Fprintf(&b, "    lastTerminated exitCode=%d reason=%s message=%q\n", cs.LastState.Terminated.ExitCode, lr, lm)
+			}
+		}
+	}
+	return strings.TrimSpace(b.String()), nil
 }

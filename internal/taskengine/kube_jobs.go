@@ -226,7 +226,18 @@ func kubeWaitJob(ctx context.Context, ns, name string, log Logger, canceled func
 			}
 			if status.Failed > 0 {
 				lastLog, _ := kubeGetJobLogs(ctx, client, ns, name)
-				return fmt.Errorf("job failed: %s", tailLines(lastLog, 40))
+				lastLog = tailLines(lastLog, 40)
+				if strings.TrimSpace(lastLog) != "" {
+					return fmt.Errorf("job failed: %s", lastLog)
+				}
+
+				// Logs can be empty when the pod fails to start (ImagePullBackOff, scheduling, etc).
+				// Include pod-level status so callers have something actionable.
+				summary, _ := kubeSummarizePodsForJob(ctx, ns, name)
+				if strings.TrimSpace(summary) != "" {
+					return fmt.Errorf("job failed (no logs): %s", summary)
+				}
+				return fmt.Errorf("job failed")
 			}
 			if status.Succeeded > 0 {
 				return nil

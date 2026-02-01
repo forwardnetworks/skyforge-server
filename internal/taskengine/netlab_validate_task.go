@@ -235,7 +235,13 @@ func (e *Engine) runNetlabValidateTask(ctx context.Context, spec netlabValidateR
 	if err := kubeCreateJob(ctx, ns, payload); err != nil {
 		return err
 	}
-	defer func() { _ = kubeDeleteJob(context.Background(), ns, jobName) }()
+	jobSucceeded := false
+	defer func() {
+		// Keep failed Jobs around until ttlSecondsAfterFinished for debugging.
+		if jobSucceeded {
+			_ = kubeDeleteJob(context.Background(), ns, jobName)
+		}
+	}()
 
 	log.Infof("Netlab validate job created: %s", jobName)
 	if err := kubeWaitJob(ctx, ns, jobName, log, func() bool {
@@ -247,6 +253,7 @@ func (e *Engine) runNetlabValidateTask(ctx context.Context, spec netlabValidateR
 	}); err != nil {
 		return err
 	}
+	jobSucceeded = true
 
 	log.Infof("Netlab template validated successfully")
 	return nil

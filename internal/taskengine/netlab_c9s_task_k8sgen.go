@@ -240,7 +240,14 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 	if err := kubeCreateJob(ctx, ns, payload); err != nil {
 		return nil, nil, err
 	}
-	defer func() { _ = kubeDeleteJob(context.Background(), ns, jobName) }()
+	jobSucceeded := false
+	defer func() {
+		// Keep failed Jobs around until TTLSecondsAfterFinished so we can debug them.
+		// Successful jobs are safe to delete immediately to reduce cluster noise.
+		if jobSucceeded {
+			_ = kubeDeleteJob(context.Background(), ns, jobName)
+		}
+	}()
 
 	log.Infof("Netlab generator job created: %s", jobName)
 	if err := kubeWaitJob(ctx, ns, jobName, log, func() bool {
@@ -252,6 +259,7 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 	}); err != nil {
 		return nil, nil, err
 	}
+	jobSucceeded = true
 
 	data, ok, err := kubeGetConfigMap(ctx, ns, manifestCM)
 	if err != nil {
