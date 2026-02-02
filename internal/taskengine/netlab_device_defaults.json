@@ -251,20 +251,20 @@
       ],
       "image_prefix": "vrnetlab/juniper_vjunos-switch"
     },
-    {
-      "device": "vmx",
-      "credentials": [
-        {
-          "username": "admin",
-          "password": "admin"
-        },
-        {
-          "username": "admin",
-          "password": "admin@123"
-        }
-      ],
-      "image_prefix": "vrnetlab/vr-vmx"
-    },
+  {
+    "device": "vmx",
+    "credentials": [
+      {
+        "username": "admin",
+        "password": "admin@123"
+      },
+      {
+        "username": "admin",
+        "password": "admin"
+      }
+    ],
+    "image_prefix": "vrnetlab/vr-vmx"
+  },
     {
       "device": "vptx",
       "credentials": [
