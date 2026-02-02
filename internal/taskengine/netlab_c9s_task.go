@@ -349,6 +349,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		// We intentionally do this before applying post-up config so Forward can start its
 		// own reachability checks early.
 		if _, err := e.syncForwardTopologyGraphDevices(ctx, spec.TaskID, spec.WorkspaceCtx, dep, graph, forwardSyncOptions{
+			StartConnectivity: false,
 			StartCollection: false,
 		}); err != nil {
 			if log != nil {

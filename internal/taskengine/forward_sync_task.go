@@ -117,6 +117,7 @@ func (e *Engine) runForwardSyncTask(ctx context.Context, pc *workspaceContext, d
 	}
 
 	n, err := e.syncForwardTopologyGraphDevices(ctx, taskID, pc, dep, &graph, forwardSyncOptions{
+		StartConnectivity: true,
 		StartCollection: true,
 	})
 	if err != nil {

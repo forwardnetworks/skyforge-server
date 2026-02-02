@@ -1045,6 +1045,14 @@ func forwardDefaultCredentialForKind(kind string) (username, password string, ok
 }
 
 type forwardSyncOptions struct {
+	// StartConnectivity controls whether we start Forward connectivity tests immediately
+	// after importing devices/endpoints. For some in-cluster NOS images (vrnetlab/QEMU),
+	// starting connectivity too early creates noisy "unreachable" signals. Those flows
+	// should prefer an explicit SSH-ready gate before starting connectivity tests.
+	StartConnectivity bool
+
+	// StartCollection controls whether we start a Forward collection immediately after
+	// importing devices/endpoints.
 	StartCollection bool
 }
 
@@ -1246,7 +1254,10 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 	}
 	// Start connectivity tests as soon as devices are imported, so the UI shows reachability
 	// quickly even before collection is started. Best-effort (don't fail the run).
-	if len(connectivityNames) > 0 {
+	//
+	// NOTE: In some flows we intentionally defer connectivity tests until we have verified
+	// SSH readiness, to avoid false negatives during long boots (e.g., vrnetlab devices).
+	if opts.StartConnectivity && len(connectivityNames) > 0 {
 		if err := forwardBulkStartConnectivityTests(ctx, client, networkID, connectivityNames); err != nil {
 			log.Printf("forward connectivity tests skipped: %v", err)
 		} else if taskID > 0 && e != nil && e.db != nil {

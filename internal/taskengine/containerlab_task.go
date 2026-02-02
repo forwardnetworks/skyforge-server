@@ -162,6 +162,7 @@ func (e *Engine) runContainerlabTask(ctx context.Context, spec containerlabRunSp
 					log.Infof("Forward sync skipped: deployment not found")
 				} else {
 					_, _ = e.syncForwardTopologyGraphDevices(ctx, spec.TaskID, spec.WorkspaceCtx, dep, graph, forwardSyncOptions{
+						StartConnectivity: true,
 						StartCollection: true,
 					})
 				}
