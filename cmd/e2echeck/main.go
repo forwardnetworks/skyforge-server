@@ -16,11 +16,13 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -40,6 +42,14 @@ type workspaceResponse struct {
 	ID   string `json:"id"`
 	Slug string `json:"slug"`
 	Name string `json:"name"`
+}
+
+type createdWorkspaceRecord struct {
+	BaseURL        string `json:"baseUrl"`
+	WorkspaceID    string `json:"workspaceId"`
+	WorkspaceSlug  string `json:"workspaceSlug"`
+	WorkspaceName  string `json:"workspaceName"`
+	CreatedAt      string `json:"createdAt"`
 }
 
 type listWorkspacesResponse struct {
@@ -223,6 +233,77 @@ func getenvBoolOK(key string) (bool, bool) {
 	default:
 		return false, false
 	}
+}
+
+func appendCreatedWorkspace(statusDir string, rec createdWorkspaceRecord) error {
+	statusDir = strings.TrimSpace(statusDir)
+	if statusDir == "" {
+		return fmt.Errorf("statusDir missing")
+	}
+	path := filepath.Join(statusDir, "e2e-created-workspaces.jsonl")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	b, err := json.Marshal(rec)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(append(b, '\n'))
+	return err
+}
+
+func removeCreatedWorkspace(statusDir string, workspaceID string) error {
+	statusDir = strings.TrimSpace(statusDir)
+	workspaceID = strings.TrimSpace(workspaceID)
+	if statusDir == "" || workspaceID == "" {
+		return nil
+	}
+	path := filepath.Join(statusDir, "e2e-created-workspaces.jsonl")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	lines := strings.Split(string(raw), "\n")
+	out := make([]string, 0, len(lines))
+	for _, ln := range lines {
+		ln = strings.TrimSpace(ln)
+		if ln == "" {
+			continue
+		}
+		var rec createdWorkspaceRecord
+		if json.Unmarshal([]byte(ln), &rec) == nil && strings.TrimSpace(rec.WorkspaceID) == workspaceID {
+			continue
+		}
+		out = append(out, ln)
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(strings.Join(out, "\n")+"\n"), 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+func deleteWorkspaceByID(client *http.Client, baseURL, cookie, workspaceID, workspaceSlug string) error {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	workspaceID = strings.TrimSpace(workspaceID)
+	workspaceSlug = strings.TrimSpace(workspaceSlug)
+	if baseURL == "" || workspaceID == "" {
+		return fmt.Errorf("missing baseURL/workspaceID")
+	}
+	deleteURL := fmt.Sprintf("%s/api/workspaces/%s?confirm=%s", baseURL, workspaceID, url.QueryEscape(workspaceSlug))
+	resp, body, err := doJSON(client, http.MethodDelete, deleteURL, nil, map[string]string{"Cookie": cookie})
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("workspace delete failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return nil
 }
 
 func mustEnv(key string) string {
@@ -1146,25 +1227,64 @@ func waitForTaskFinished(client *http.Client, baseURL string, cookie string, wor
 	ticker := time.NewTicker(pollEvery)
 	defer ticker.Stop()
 
+	heartbeatEvery := 30 * time.Second
+	heartbeat := time.NewTicker(heartbeatEvery)
+	defer heartbeat.Stop()
+
+	start := time.Now()
+	missingPolls := 0
+	queuedPolls := 0
+	lastPoll := ""
+
 	var currentData strings.Builder
 	for {
 		select {
 		case <-ctx.Done():
+			if output, err := fetchRunOutput(client, baseURL, cookie, workspaceID, taskID); err == nil && strings.TrimSpace(output) != "" {
+				fmt.Fprintf(os.Stderr, "--- task %d output ---\n%s\n--- end output ---\n", taskID, output)
+			}
 			return "", "", fmt.Errorf("timeout waiting for task %d", taskID)
 		case err := <-errCh:
 			if err != nil {
 				return "", "", err
 			}
+		case <-heartbeat.C:
+			fmt.Fprintf(os.Stderr, "WAIT task %d (elapsed %s) lastPoll=%q\n", taskID, time.Since(start).Truncate(time.Second), lastPoll)
 		case <-ticker.C:
 			if strings.TrimSpace(workspaceID) != "" {
-				if st, er, ok := pollTaskStatus(client, baseURL, cookie, workspaceID, taskID); ok {
+				st, er, state := pollTaskStatus(client, baseURL, cookie, workspaceID, taskID)
+				switch state {
+				case pollTerminal:
 					return st, er, nil
+				case pollMissing:
+					missingPolls++
+					queuedPolls = 0
+					lastPoll = "missing"
+					if missingPolls >= 12 { // ~60s
+						reconcileURL := strings.TrimRight(strings.TrimSpace(baseURL), "/") + "/api/admin/tasks/reconcile"
+						_, _, _ = doJSON(client, http.MethodPost, reconcileURL, map[string]any{"limit": 200}, map[string]string{"Cookie": cookie})
+						missingPolls = 0
+					}
+				case pollNonTerminal:
+					missingPolls = 0
+					lastPoll = strings.TrimSpace(st)
+					if strings.EqualFold(strings.TrimSpace(st), "queued") {
+						queuedPolls++
+						if queuedPolls >= 12 { // ~60s
+							reconcileURL := strings.TrimRight(strings.TrimSpace(baseURL), "/") + "/api/admin/tasks/reconcile"
+							_, _, _ = doJSON(client, http.MethodPost, reconcileURL, map[string]any{"limit": 200}, map[string]string{"Cookie": cookie})
+							queuedPolls = 0
+						}
+					} else {
+						queuedPolls = 0
+					}
 				}
 			}
 		case line, ok := <-lineCh:
 			if !ok {
 				// Stream ended; fall back to a final poll.
-				if st, er, ok := pollTaskStatus(client, baseURL, cookie, workspaceID, taskID); ok {
+				st, er, state := pollTaskStatus(client, baseURL, cookie, workspaceID, taskID)
+				if state == pollTerminal {
 					return st, er, nil
 				}
 				return "", "", fmt.Errorf("task lifecycle stream ended before task.finished")
@@ -1203,31 +1323,39 @@ func waitForTaskFinished(client *http.Client, baseURL string, cookie string, wor
 	}
 }
 
-func pollTaskStatus(client *http.Client, baseURL string, cookie string, workspaceID string, taskID int) (status string, errMsg string, ok bool) {
+type pollState int
+
+const (
+	pollMissing pollState = iota
+	pollNonTerminal
+	pollTerminal
+)
+
+func pollTaskStatus(client *http.Client, baseURL string, cookie string, workspaceID string, taskID int) (status string, errMsg string, state pollState) {
 	workspaceID = strings.TrimSpace(workspaceID)
 	if workspaceID == "" || taskID <= 0 {
-		return "", "", false
+		return "", "", pollMissing
 	}
 	url := fmt.Sprintf("%s/api/runs?workspace_id=%s&limit=25", strings.TrimRight(baseURL, "/"), workspaceID)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		return "", "", false
+		return "", "", pollMissing
 	}
 	req.Header.Set("Cookie", cookie)
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", "", false
+		return "", "", pollMissing
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", "", false
+		return "", "", pollMissing
 	}
 	body, _ := io.ReadAll(resp.Body)
 	var out struct {
 		Tasks []map[string]any `json:"tasks"`
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
-		return "", "", false
+		return "", "", pollMissing
 	}
 	for _, t := range out.Tasks {
 		id := 0
@@ -1250,11 +1378,11 @@ func pollTaskStatus(client *http.Client, baseURL string, cookie string, workspac
 			strings.EqualFold(strings.TrimSpace(st), "error") ||
 			strings.EqualFold(strings.TrimSpace(st), "canceled") {
 			er, _ := t["error"].(string)
-			return strings.TrimSpace(st), strings.TrimSpace(er), true
+			return strings.TrimSpace(st), strings.TrimSpace(er), pollTerminal
 		}
-		return "", "", false
+		return strings.TrimSpace(st), "", pollNonTerminal
 	}
-	return "", "", false
+	return "", "", pollMissing
 }
 
 func fetchRunOutput(client *http.Client, baseURL string, cookie string, workspaceID string, taskID int) (string, error) {
@@ -1684,14 +1812,23 @@ func run() int {
 
 	var statusRec *e2eStatusRecorder
 	var runLog *e2eRunLogger
+	statusDir := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_STATUS_DIR"))
+	if statusDir == "" {
+		statusDir = "../docs"
+	}
+	if err := os.MkdirAll(statusDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to create statusDir %q: %v\n", statusDir, err)
+	}
+	if abs, err := filepath.Abs(statusDir); err == nil {
+		fmt.Printf("OK e2echeck: statusDir=%s\n", abs)
+	} else {
+		fmt.Printf("OK e2echeck: statusDir=%s\n", statusDir)
+	}
+
 	if getenvBool("SKYFORGE_E2E_STATUS_ENABLED", true) {
-		statusDir := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_STATUS_DIR"))
-		if statusDir == "" {
-			statusDir = "../docs"
-		}
 		rl, err := newE2ERunLogger(filepath.Join(statusDir, "e2e-runlog.jsonl"))
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to init e2e run logger: %v\n", err)
+			fmt.Fprintf(os.Stderr, "warning: failed to init e2e run logger (%s): %v\n", filepath.Join(statusDir, "e2e-runlog.jsonl"), err)
 		} else {
 			runLog = rl
 		}
@@ -1700,7 +1837,7 @@ func run() int {
 			filepath.Join(statusDir, "e2e-reachability-status.md"),
 		)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to init e2e status recorder: %v\n", err)
+			fmt.Fprintf(os.Stderr, "warning: failed to init e2e status recorder (%s): %v\n", statusDir, err)
 		} else {
 			statusRec = rec
 		}
@@ -1717,20 +1854,47 @@ func run() int {
 		}()
 	}
 
+	workspaceCleanup := true
+	if v, ok := getenvBoolOK("SKYFORGE_E2E_WORKSPACE_CLEANUP"); ok {
+		workspaceCleanup = v
+	}
+
 	if wsReuseID == "" {
-		defer func() {
-			deleteURL := baseURL + "/api/workspaces/" + ws.ID + "?confirm=" + ws.Slug
-			resp, body, err := doJSON(client, http.MethodDelete, deleteURL, nil, map[string]string{"Cookie": cookie})
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "workspace delete request failed: %v\n", err)
-				return
-			}
-			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-				fmt.Fprintf(os.Stderr, "workspace delete failed (%d): %s\n", resp.StatusCode, strings.TrimSpace(string(body)))
-				return
-			}
-			fmt.Printf("OK workspace delete: %s\n", ws.ID)
+		_ = appendCreatedWorkspace(statusDir, createdWorkspaceRecord{
+			BaseURL:         strings.TrimRight(baseURL, "/"),
+			WorkspaceID:     ws.ID,
+			WorkspaceSlug:   ws.Slug,
+			WorkspaceName:   ws.Name,
+			CreatedAt:       time.Now().UTC().Format(time.RFC3339),
+		})
+	}
+
+	if wsReuseID == "" && workspaceCleanup {
+		var deleteOnce sync.Once
+		cleanup := func(reason string) {
+			deleteOnce.Do(func() {
+				if err := deleteWorkspaceByID(client, baseURL, cookie, ws.ID, ws.Slug); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: workspace delete failed (%s): %v\n", reason, err)
+					return
+				}
+				_ = removeCreatedWorkspace(statusDir, ws.ID)
+				fmt.Printf("OK workspace delete: %s\n", ws.ID)
+			})
+		}
+
+		sigCh := make(chan os.Signal, 2)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		go func() {
+			sig := <-sigCh
+			cleanup(fmt.Sprintf("signal=%s", sig.String()))
+			os.Exit(130)
 		}()
+
+		defer func() {
+			cleanup("defer")
+		}()
+	} else if wsReuseID == "" && !workspaceCleanup {
+		fmt.Printf("SKIP workspace delete: SKYFORGE_E2E_WORKSPACE_CLEANUP=false (workspaceId=%s)\n", ws.ID)
 	}
 
 	var m matrixFile
