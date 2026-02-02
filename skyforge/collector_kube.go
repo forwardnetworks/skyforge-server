@@ -447,8 +447,9 @@ func ensureCollectorDeployedForName(ctx context.Context, cfg Config, username, d
 						"imagePullSecrets":   imagePullSecrets,
 						"initContainers": []any{
 							map[string]any{
-								"name":    "init-persist-key",
-								"image":   "busybox:1.36",
+								"name": "init-persist-key",
+								// Avoid Docker Hub pull rate limits in clusters without Docker Hub auth.
+								"image":   "public.ecr.aws/docker/library/busybox:1.36",
 								"command": []string{"sh", "-c"},
 								"securityContext": map[string]any{
 									"runAsUser":  0,
@@ -592,8 +593,9 @@ func ensureCollectorDeployedForName(ctx context.Context, cfg Config, username, d
 							"imagePullSecrets":   patchImagePullSecrets,
 							"initContainers": []any{
 								map[string]any{
-									"name":    "init-persist-key",
-									"image":   "busybox:1.36",
+									"name": "init-persist-key",
+									// Avoid Docker Hub pull rate limits in clusters without Docker Hub auth.
+									"image":   "public.ecr.aws/docker/library/busybox:1.36",
 									"command": []string{"sh", "-c"},
 									"securityContext": map[string]any{
 										"runAsUser":  0,
