@@ -1019,6 +1019,9 @@ func forwardDeviceKeyFromKind(kind string) string {
 		return "ios"
 	case "nxos", "cisco_n9kv", "n9kv":
 		return "nxos"
+	case "junos", "vmx", "vr-vmx", "vr_vmx", "juniper_vmx", "vjunos-router", "vjunos-switch":
+		// Normalize Juniper devices to vMX/Junos (Forward type: juniper_junos_ssh).
+		return "vmx"
 	default:
 		return kind
 	}
@@ -1033,6 +1036,8 @@ func forwardDefaultCredentialForKind(kind string) (username, password string, ok
 	case "ios":
 		return "admin", "admin", true
 	case "nxos":
+		return "admin", "admin", true
+	case "vmx":
 		return "admin", "admin", true
 	default:
 		return "", "", false
