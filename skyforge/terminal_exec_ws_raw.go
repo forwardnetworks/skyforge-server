@@ -253,6 +253,24 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 	workspaceKey := strings.TrimSpace(req.PathValue("id"))
 	deploymentID := strings.TrimSpace(req.PathValue("deploymentID"))
 	if workspaceKey == "" || deploymentID == "" {
+		// Best-effort path param extraction (PathValue is only populated when the
+		// underlying mux supports it).
+		parts := strings.Split(strings.Trim(req.URL.Path, "/"), "/")
+		// expected: api/workspaces/<id>/deployments/<deploymentID>/terminal/ws
+		for i := 0; i+1 < len(parts); i++ {
+			switch parts[i] {
+			case "workspaces":
+				if workspaceKey == "" {
+					workspaceKey = strings.TrimSpace(parts[i+1])
+				}
+			case "deployments":
+				if deploymentID == "" {
+					deploymentID = strings.TrimSpace(parts[i+1])
+				}
+			}
+		}
+	}
+	if workspaceKey == "" || deploymentID == "" {
 		http.Error(w, "invalid path params", http.StatusBadRequest)
 		return
 	}
@@ -348,20 +366,44 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 		cancel()
 		if err == nil && pod != nil {
 			best := ""
+			// Prefer the NOS container, which in clabernetes native mode is the topology node name.
 			for _, c := range pod.Spec.Containers {
 				name := strings.TrimSpace(c.Name)
 				if name == "" {
 					continue
 				}
-				if best == "" {
-					best = name
-				}
-				if name == "nos" {
+				if name == node {
 					best = name
 					break
 				}
-				if name == "node" {
-					best = name
+			}
+			if best == "" {
+				// Fall back to common container names, and avoid selecting the launcher when possible.
+				bestNonLauncher := ""
+				bestAny := ""
+				for _, c := range pod.Spec.Containers {
+					name := strings.TrimSpace(c.Name)
+					if name == "" {
+						continue
+					}
+					if bestAny == "" {
+						bestAny = name
+					}
+					if name != "clabernetes-launcher" && bestNonLauncher == "" {
+						bestNonLauncher = name
+					}
+					if name == "nos" {
+						bestNonLauncher = name
+						break
+					}
+					if name == "node" {
+						bestNonLauncher = name
+					}
+				}
+				if bestNonLauncher != "" {
+					best = bestNonLauncher
+				} else {
+					best = bestAny
 				}
 			}
 			container = best

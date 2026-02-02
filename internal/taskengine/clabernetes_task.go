@@ -176,9 +176,10 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		if connectivity == "multus" {
 			return fmt.Errorf("clabernetes connectivity=multus is not supported")
 		}
-		nativeMode := envBool(spec.Environment, "SKYFORGE_CLABERNETES_NATIVE_MODE", true)
+		// Skyforge never supports Docker-in-Docker (non-native) mode; always run clabernetes in
+		// native mode so NOS containers run directly as Kubernetes containers.
+		nativeMode := true
 		hostNetwork := envBool(spec.Environment, "SKYFORGE_CLABERNETES_HOST_NETWORK", false)
-		forceNativeMode := envBool(spec.Environment, "SKYFORGE_CLABERNETES_FORCE_NATIVE_MODE", false)
 		disableExpose := envBool(spec.Environment, "SKYFORGE_CLABERNETES_DISABLE_EXPOSE", false)
 		// Default to auto-exposing so clabernetes creates per-node ClusterIP services for
 		// management ports defined in topology.defaults.ports (injected by Skyforge).
@@ -191,7 +192,6 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 			exposeType = "ClusterIP"
 		}
 
-		disableNativeForCeos := envBool(spec.Environment, "SKYFORGE_CLABERNETES_DISABLE_NATIVE_FOR_CEOS", false)
 		// Ensure clabernetes launcher pods can pull private images (launcher/NOS) by wiring the
 		// namespace pull secret into the topology service account via spec.imagePull.pullSecrets.
 		secretName := strings.TrimSpace(e.cfg.ImagePullSecretName)
@@ -305,11 +305,13 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 			}
 		}
 
-		// Some NOS images can be finicky in native mode depending on host kernel/cgroup setup.
-		// Keep this opt-in so that "native + no-DIND" is the default path.
-		if nativeMode && disableNativeForCeos && !forceNativeMode && containerlabTopologyHasKind(spec.TopologyYAML, "ceos") {
-			log.Infof("Clabernetes: disabling native mode for cEOS nodes (set SKYFORGE_CLABERNETES_FORCE_NATIVE_MODE=true to override)")
-			nativeMode = false
+		if containerlabTopologyHasKind(spec.TopologyYAML, "ceos") {
+			// Historically, cEOS could be finicky in some native-mode setups. Skyforge does not
+			// support falling back to Docker-in-Docker; surface a clear error if this is hit so
+			// we can address native compatibility instead of silently switching runtimes.
+			if envBool(spec.Environment, "SKYFORGE_CLABERNETES_DISABLE_NATIVE_FOR_CEOS", false) {
+				return fmt.Errorf("cEOS native mode is required; Docker-in-Docker is not supported")
+			}
 		}
 
 		deployment := map[string]any{
@@ -382,6 +384,15 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 				}
 				if topo != nil && topo.Status.TopologyReady {
 					log.Infof("Topology is ready (elapsed %s)", time.Since(started).Truncate(time.Second))
+
+					// Validate we actually landed in clabernetes native mode. If this fails, the
+					// topology will be running Docker-in-Docker inside the launcher, which Skyforge
+					// never supports due to performance/compatibility concerns.
+					log.Infof("Clabernetes native mode: validating (no Docker-in-Docker)")
+					if err := kubeAssertClabernetesNativeMode(ctx, ns, name); err != nil {
+						return err
+					}
+					log.Infof("Clabernetes native mode: verified")
 
 					// Best-effort: capture a topology graph artifact after deploy so the UI can render
 					// resolved management IPs from clabernetes pods.

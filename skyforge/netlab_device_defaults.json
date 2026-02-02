@@ -256,11 +256,11 @@
       "credentials": [
         {
           "username": "admin",
-          "password": "admin"
+          "password": "admin@123"
         },
         {
           "username": "admin",
-          "password": "admin@123"
+          "password": "admin"
         }
       ],
       "image_prefix": "vrnetlab/vr-vmx"

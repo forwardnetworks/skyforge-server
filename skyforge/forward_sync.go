@@ -2,7 +2,9 @@ package skyforge
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -286,6 +288,80 @@ func (s *Service) forwardConfigForUser(ctx context.Context, username string) (*f
 		SkipTLSVerify: rec.SkipTLSVerify,
 		Username:      rec.ForwardUsername,
 		Password:      rec.ForwardPassword,
+		CollectorUser: collectorUser,
+	}, nil
+}
+
+func (s *Service) forwardConfigForUserCollectorConfigID(ctx context.Context, username, collectorConfigID string) (*forwardCredentials, error) {
+	if s.db == nil {
+		return nil, fmt.Errorf("database unavailable")
+	}
+	username = strings.TrimSpace(username)
+	collectorConfigID = strings.TrimSpace(collectorConfigID)
+	if username == "" || collectorConfigID == "" {
+		return nil, nil
+	}
+
+	ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	// sf_user_forward_collectors stores encrypted values (base_url, forward_username, forward_password, etc).
+	var baseURLEnc, fwdUserEnc, fwdPassEnc string
+	var collectorUserEnc, authKeyEnc string
+	var skipTLSVerify bool
+	err := s.db.QueryRowContext(ctxReq, `SELECT base_url, COALESCE(skip_tls_verify, false),
+  forward_username, forward_password,
+  COALESCE(collector_username, ''), COALESCE(authorization_key, '')
+FROM sf_user_forward_collectors
+WHERE username=$1 AND id=$2`, username, collectorConfigID).Scan(
+		&baseURLEnc, &skipTLSVerify, &fwdUserEnc, &fwdPassEnc, &collectorUserEnc, &authKeyEnc,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) || isMissingDBRelation(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	box := newSecretBox(s.cfg.SessionSecret)
+	baseURL, err := box.decrypt(baseURLEnc)
+	if err != nil {
+		return nil, nil
+	}
+	fwdUser, err := box.decrypt(fwdUserEnc)
+	if err != nil {
+		return nil, nil
+	}
+	fwdPass, err := box.decrypt(fwdPassEnc)
+	if err != nil {
+		return nil, nil
+	}
+	collectorUser, _ := box.decrypt(collectorUserEnc)
+	authKey, _ := box.decrypt(authKeyEnc)
+
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL == "" {
+		baseURL = defaultForwardBaseURL
+	}
+	fwdUser = strings.TrimSpace(fwdUser)
+	fwdPass = strings.TrimSpace(fwdPass)
+	if fwdUser == "" || fwdPass == "" {
+		return nil, nil
+	}
+
+	collectorUser = strings.TrimSpace(collectorUser)
+	authKey = strings.TrimSpace(authKey)
+	if collectorUser == "" && authKey != "" {
+		if before, _, ok := strings.Cut(authKey, ":"); ok {
+			collectorUser = strings.TrimSpace(before)
+		}
+	}
+
+	return &forwardCredentials{
+		BaseURL:       baseURL,
+		SkipTLSVerify: skipTLSVerify,
+		Username:      fwdUser,
+		Password:      fwdPass,
 		CollectorUser: collectorUser,
 	}, nil
 }

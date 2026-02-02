@@ -350,7 +350,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		// own reachability checks early.
 		if _, err := e.syncForwardTopologyGraphDevices(ctx, spec.TaskID, spec.WorkspaceCtx, dep, graph, forwardSyncOptions{
 			StartConnectivity: false,
-			StartCollection: false,
+			StartCollection:   false,
 		}); err != nil {
 			if log != nil {
 				log.Infof("forward sync skipped: %v", err)
@@ -695,13 +695,19 @@ func waitForForwardSSHReady(ctx context.Context, taskID int, e *Engine, graph *T
 		return nil
 	}
 
+	start := time.Now()
 	deadline := time.Now().Add(timeout)
+	if log != nil {
+		log.Infof("forward ssh readiness: waiting for ssh on nodes=%d timeout=%s", len(targets), timeout)
+	}
 	for _, node := range targets {
 		node := node
 		host := strings.TrimSpace(node.MgmtHost)
 		if host == "" {
 			host = strings.TrimSpace(node.MgmtIP)
 		}
+		nodeStart := time.Now()
+		lastProgress := time.Time{}
 		for {
 			if time.Now().After(deadline) {
 				return fmt.Errorf("forward sync wait timed out waiting for ssh on %s (%s)", strings.TrimSpace(node.Label), host)
@@ -716,7 +722,35 @@ func waitForForwardSSHReady(ctx context.Context, taskID int, e *Engine, graph *T
 			// Prefer a real SSH banner read instead of a bare TCP connect. Some NOS images
 			// accept TCP connections early but drop/reset them before SSH is usable.
 			if forwardSSHBannerReady(ctx, host) {
+				if log != nil {
+					log.Infof(
+						"forward ssh readiness: ok label=%s host=%s elapsed=%s",
+						strings.TrimSpace(node.Label),
+						host,
+						time.Since(nodeStart).Truncate(time.Second),
+					)
+				}
 				break
+			}
+
+			// Emit a periodic progress line so run logs don't look "hung" while devices boot.
+			if log != nil {
+				now := time.Now()
+				if lastProgress.IsZero() || now.Sub(lastProgress) >= 10*time.Second {
+					remaining := time.Until(deadline).Truncate(time.Second)
+					if remaining < 0 {
+						remaining = 0
+					}
+					log.Infof(
+						"forward ssh readiness: waiting label=%s host=%s nodeElapsed=%s overallElapsed=%s remaining=%s",
+						strings.TrimSpace(node.Label),
+						host,
+						time.Since(nodeStart).Truncate(time.Second),
+						time.Since(start).Truncate(time.Second),
+						remaining,
+					)
+					lastProgress = now
+				}
 			}
 			time.Sleep(2 * time.Second)
 		}

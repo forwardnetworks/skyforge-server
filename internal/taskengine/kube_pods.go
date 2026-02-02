@@ -107,6 +107,60 @@ func kubeListPods(ctx context.Context, ns string, labelSelector map[string]strin
 	return pods.Items, nil
 }
 
+func kubeAssertClabernetesNativeMode(ctx context.Context, ns, topologyOwner string) error {
+	ns = strings.TrimSpace(ns)
+	topologyOwner = strings.TrimSpace(topologyOwner)
+	if ns == "" || topologyOwner == "" {
+		return fmt.Errorf("namespace and topology owner are required")
+	}
+	pods, err := kubeListPods(ctx, ns, map[string]string{"clabernetes/topologyOwner": topologyOwner})
+	if err != nil {
+		return err
+	}
+	if len(pods) == 0 {
+		return fmt.Errorf("no clabernetes pods found for topology %q", topologyOwner)
+	}
+
+	var bad []string
+	for _, p := range pods {
+		podName := strings.TrimSpace(p.Metadata.Name)
+		node := strings.TrimSpace(p.Metadata.Labels["clabernetes/topologyNode"])
+		if node == "" {
+			// If we cannot identify the topology node, skip strict validation for this pod.
+			continue
+		}
+		hasNodeContainer := false
+		hasLauncherContainer := false
+		containerNames := make([]string, 0, len(p.Status.ContainerStatuses))
+		for _, cs := range p.Status.ContainerStatuses {
+			name := strings.TrimSpace(cs.Name)
+			if name == "" {
+				continue
+			}
+			containerNames = append(containerNames, name)
+			if name == node {
+				hasNodeContainer = true
+			}
+			if name == "clabernetes-launcher" {
+				hasLauncherContainer = true
+			}
+		}
+		if !hasLauncherContainer || !hasNodeContainer {
+			bad = append(bad, fmt.Sprintf("pod=%s node=%s containers=%v", podName, node, containerNames))
+		}
+	}
+	if len(bad) == 0 {
+		return nil
+	}
+
+	msg := "clabernetes native mode is required, but pods do not appear to be running in native mode (Docker-in-Docker likely active). " +
+		"This typically indicates the clabernetes Topology CRD is missing spec.deployment.nativeMode and is pruning the field."
+	if len(bad) > 5 {
+		bad = bad[:5]
+	}
+	return fmt.Errorf("%s; examples: %s", msg, strings.Join(bad, "; "))
+}
+
 func kubeSummarizePodsForJob(ctx context.Context, ns, jobName string) (string, error) {
 	pods, err := kubeListPods(ctx, ns, map[string]string{"job-name": jobName})
 	if err != nil {

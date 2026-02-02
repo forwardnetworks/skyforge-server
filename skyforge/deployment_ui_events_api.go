@@ -96,6 +96,24 @@ func (s *Service) DeploymentUIEventsStream(w http.ResponseWriter, req *http.Requ
 	workspaceKey := strings.TrimSpace(req.PathValue("id"))
 	deploymentID := strings.TrimSpace(req.PathValue("deploymentID"))
 	if workspaceKey == "" || deploymentID == "" {
+		// Best-effort path param extraction (PathValue is only populated when the
+		// underlying mux supports it).
+		parts := strings.Split(strings.Trim(req.URL.Path, "/"), "/")
+		// expected: api/workspaces/<id>/deployments/<deploymentID>/ui-events/events
+		for i := 0; i+1 < len(parts); i++ {
+			switch parts[i] {
+			case "workspaces":
+				if workspaceKey == "" {
+					workspaceKey = strings.TrimSpace(parts[i+1])
+				}
+			case "deployments":
+				if deploymentID == "" {
+					deploymentID = strings.TrimSpace(parts[i+1])
+				}
+			}
+		}
+	}
+	if workspaceKey == "" || deploymentID == "" {
 		http.Error(w, "invalid path params", http.StatusBadRequest)
 		return
 	}

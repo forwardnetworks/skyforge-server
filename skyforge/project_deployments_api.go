@@ -771,10 +771,19 @@ WHERE workspace_id=$1 AND deployment_id=$2 AND status IN ('queued','running')`, 
 			networkID := strings.TrimSpace(fmt.Sprintf("%v", raw))
 			if networkID != "" {
 				// Forward config is user-scoped (Collector sidebar), not workspace-scoped.
-				forwardCfg, err := s.forwardConfigForUser(ctx, pc.claims.Username)
-				if err != nil || forwardCfg == nil {
+				// Prefer the per-deployment collector selection (forwardCollectorId) and fall back
+				// to legacy single-collector credentials when missing.
+				collectorConfigID := strings.TrimSpace(fmt.Sprintf("%v", cfgAny["forwardCollectorId"]))
+				forwardCfg := (*forwardCredentials)(nil)
+				if collectorConfigID != "" {
+					forwardCfg, _ = s.forwardConfigForUserCollectorConfigID(ctx, pc.claims.Username, collectorConfigID)
+				}
+				if forwardCfg == nil {
+					forwardCfg, _ = s.forwardConfigForUser(ctx, pc.claims.Username)
+				}
+				if forwardCfg == nil {
 					// Best-effort: do not block deployment deletion on Forward cleanup.
-					log.Printf("deployments delete forward cleanup skipped: %v", err)
+					log.Printf("deployments delete forward cleanup skipped: forward credentials not configured")
 				} else if client, err := newForwardClient(*forwardCfg); err != nil {
 					log.Printf("deployments delete forward cleanup skipped: %v", err)
 				} else if err := forwardDeleteNetwork(ctx, client, networkID); err != nil {
