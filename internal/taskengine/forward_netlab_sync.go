@@ -1079,7 +1079,8 @@ func forwardDefaultCredentialForKind(kind string) (username, password string, ok
 	case "nxos":
 		return "admin", "admin", true
 	case "vmx":
-		return "admin", "admin", true
+		// vrnetlab Juniper vMX defaults to admin/admin@123.
+		return "admin", "admin@123", true
 	default:
 		return "", "", false
 	}
