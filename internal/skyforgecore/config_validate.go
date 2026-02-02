@@ -35,7 +35,9 @@ func ValidateConfig(cfg Config) ConfigValidation {
 	switch netlabMode {
 	case "k8s":
 		if strings.TrimSpace(cfg.NetlabGeneratorImage) == "" {
-			v.addError("netlab generator image is not configured (NetlabGeneratorImage)")
+			// The task engine has a safe default, so treat as warning to avoid breaking
+			// deployments when config is incomplete.
+			v.addWarning("netlab generator image is not configured (NetlabGeneratorImage); default will be used")
 		}
 	case "remote":
 		// BYOS netlab server mode; generator image is optional.

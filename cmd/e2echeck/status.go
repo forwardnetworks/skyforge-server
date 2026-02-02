@@ -16,14 +16,18 @@ func midnightUTC(t time.Time) time.Time {
 }
 
 type e2eStatusFile struct {
-	UpdatedAt string                   `json:"updatedAt"`
-	Devices   map[string]e2eDeviceStat `json:"devices"`
+	GeneratedAt string                   `json:"generated_at"`
+	Devices     map[string]e2eDeviceStat `json:"devices"`
+	Rows        []e2eDeviceStat          `json:"rows,omitempty"`
 }
 
 type e2eDeviceStat struct {
 	Device     string `json:"device"`
 	Status     string `json:"status"` // pass|fail|skip|unknown
 	UpdatedAt  string `json:"updatedAt"`
+	LastOKAt   string `json:"last_ok_at,omitempty"`
+	LastFailAt string `json:"last_fail_at,omitempty"`
+	LastError  string `json:"last_error,omitempty"`
 	Template   string `json:"template,omitempty"`
 	DeployType string `json:"deployType,omitempty"`
 	TaskID     int    `json:"taskId,omitempty"`
@@ -55,6 +59,15 @@ func newE2EStatusRecorder(jsonPath, mdPath string) (*e2eStatusRecorder, error) {
 		if r.state.Devices == nil {
 			r.state.Devices = map[string]e2eDeviceStat{}
 		}
+		// Old format might have rows but no devices; reconstruct.
+		if len(r.state.Devices) == 0 && len(r.state.Rows) > 0 {
+			for _, row := range r.state.Rows {
+				if strings.TrimSpace(row.Device) == "" {
+					continue
+				}
+				r.state.Devices[row.Device] = row
+			}
+		}
 	}
 	return r, nil
 }
@@ -68,17 +81,30 @@ func (r *e2eStatusRecorder) update(device string, status string, template string
 		return
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	r.state.UpdatedAt = now
-	r.state.Devices[device] = e2eDeviceStat{
+	r.state.GeneratedAt = now
+	prev := r.state.Devices[device]
+	st := e2eDeviceStat{
 		Device:     device,
 		Status:     strings.TrimSpace(status),
 		UpdatedAt:  now,
+		LastOKAt:   prev.LastOKAt,
+		LastFailAt: prev.LastFailAt,
+		LastError:  prev.LastError,
 		Template:   strings.TrimSpace(template),
 		DeployType: strings.TrimSpace(deployType),
 		TaskID:     taskID,
 		Error:      strings.TrimSpace(errMsg),
 		Notes:      strings.TrimSpace(notes),
 	}
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "pass", "ok", "success":
+		st.LastOKAt = now
+		st.LastError = ""
+	case "fail", "failed", "error":
+		st.LastFailAt = now
+		st.LastError = strings.TrimSpace(errMsg)
+	}
+	r.state.Devices[device] = st
 }
 
 func (r *e2eStatusRecorder) syncDeviceSet(devices []string) {
@@ -127,6 +153,18 @@ func (r *e2eStatusRecorder) flush() error {
 	if err := os.MkdirAll(filepath.Dir(r.jsonPath), 0o755); err != nil {
 		return err
 	}
+	// Provide a stable, easy-to-consume list view as well.
+	devs := make([]string, 0, len(r.state.Devices))
+	for d := range r.state.Devices {
+		devs = append(devs, d)
+	}
+	sort.Strings(devs)
+	rows := make([]e2eDeviceStat, 0, len(devs))
+	for _, d := range devs {
+		rows = append(rows, r.state.Devices[d])
+	}
+	r.state.Rows = rows
+
 	out, err := json.MarshalIndent(r.state, "", "  ")
 	if err != nil {
 		return err
@@ -141,8 +179,8 @@ func (r *e2eStatusRecorder) flush() error {
 func renderE2EStatusMarkdown(s e2eStatusFile) string {
 	lines := []string{}
 	lines = append(lines, "# Skyforge E2E Device Reachability Status", "")
-	if strings.TrimSpace(s.UpdatedAt) != "" {
-		lines = append(lines, fmt.Sprintf("Last updated: %s", s.UpdatedAt), "")
+	if strings.TrimSpace(s.GeneratedAt) != "" {
+		lines = append(lines, fmt.Sprintf("Last updated: %s", s.GeneratedAt), "")
 	}
 	lines = append(lines, "Scope: baseline **deploy + SSH reachability** for each onboarded Netlab device type (netlab-c9s → clabernetes + vrnetlab hybrid).", "")
 	lines = append(lines, "Legend: ✅ pass · ❌ fail · ⏭ skipped · ❔ unknown", "")

@@ -1,8 +1,10 @@
 package skyforge
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"sort"
@@ -17,10 +19,17 @@ import (
 
 const e2eAdminTokenHeader = "X-Skyforge-E2E-Token"
 
+func bytesHasSSHBanner(b []byte) bool {
+	// Some virtual devices prepend NULs or other noise before the real SSH banner.
+	// We consider the service "SSH-reachable" once we see "SSH-" anywhere in the first read.
+	return bytes.Contains(b, []byte("SSH-"))
+}
+
 type adminSSHProbeRequest struct {
 	Hosts          []string `json:"hosts"`
 	Port           int      `json:"port,omitempty"`
 	TimeoutSeconds int      `json:"timeoutSeconds,omitempty"`
+	TCPOnly        bool     `json:"tcpOnly,omitempty"`
 }
 
 type adminSSHProbeResult struct {
@@ -218,6 +227,12 @@ func (s *Service) AdminSSHProbe(ctx context.Context, req *adminSSHProbeRequest) 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			// Some virtual NOS images (especially VRNetLab-based) are slow to accept TCP
+			// connections and/or emit the SSH banner. Use a slightly more forgiving per-attempt
+			// timeout while keeping an overall deadline.
+			const connectTimeout = 8 * time.Second
+			const bannerTimeout = 12 * time.Second
+
 			deadline := time.Now().Add(timeout)
 			var lastErr string
 			attempts := 0
@@ -234,7 +249,7 @@ func (s *Service) AdminSSHProbe(ctx context.Context, req *adminSSHProbeRequest) 
 
 				attempts++
 				addr := net.JoinHostPort(host, fmt.Sprintf("%d", port))
-				d := net.Dialer{Timeout: 3 * time.Second}
+				d := net.Dialer{Timeout: connectTimeout}
 				conn, err := d.DialContext(ctxDeadline, "tcp", addr)
 				if err != nil {
 					lastErr = err.Error()
@@ -242,18 +257,36 @@ func (s *Service) AdminSSHProbe(ctx context.Context, req *adminSSHProbeRequest) 
 					continue
 				}
 
-				_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-				buf := make([]byte, 4)
-				_, _ = conn.Read(buf)
-				_ = conn.Close()
-
-				if string(buf) == "SSH-" {
+				if req.TCPOnly {
+					_ = conn.Close()
 					mu.Lock()
 					results[host] = result{ok: true, attempts: attempts}
 					mu.Unlock()
 					return
 				}
-				lastErr = fmt.Sprintf("bad banner prefix: %q", string(buf))
+
+				_ = conn.SetReadDeadline(time.Now().Add(bannerTimeout))
+				buf := make([]byte, 64)
+				n, _ := conn.Read(buf)
+				_ = conn.Close()
+
+				if n > 0 && bytesHasSSHBanner(buf[:n]) {
+					mu.Lock()
+					results[host] = result{ok: true, attempts: attempts}
+					mu.Unlock()
+					return
+				}
+				if n <= 0 {
+					lastErr = "no banner data"
+				} else {
+					// Some devices emit non-ASCII bytes before the SSH banner becomes available.
+					// Treat this as retryable and keep waiting until the overall deadline.
+					snippet := hex.EncodeToString(buf[:n])
+					if len(snippet) > 32 {
+						snippet = snippet[:32] + "..."
+					}
+					lastErr = fmt.Sprintf("bad banner prefix: 0x%s", snippet)
+				}
 				time.Sleep(2 * time.Second)
 			}
 			mu.Lock()

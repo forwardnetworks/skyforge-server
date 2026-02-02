@@ -6,11 +6,14 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -204,6 +207,21 @@ func getenvBool(key string, fallback bool) bool {
 		return false
 	default:
 		return fallback
+	}
+}
+
+func getenvBoolOK(key string) (bool, bool) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return false, false
+	}
+	switch strings.ToLower(raw) {
+	case "1", "true", "yes", "y", "on":
+		return true, true
+	case "0", "false", "no", "n", "off":
+		return false, true
+	default:
+		return false, false
 	}
 }
 
@@ -692,6 +710,7 @@ type adminSSHProbeRequest struct {
 	Hosts          []string `json:"hosts"`
 	Port           int      `json:"port,omitempty"`
 	TimeoutSeconds int      `json:"timeoutSeconds,omitempty"`
+	TCPOnly        bool     `json:"tcpOnly,omitempty"`
 }
 
 type adminSSHProbeResult struct {
@@ -705,7 +724,7 @@ type adminSSHProbeResponse struct {
 	Results map[string]adminSSHProbeResult `json:"results,omitempty"`
 }
 
-func waitForSSHProbeAPI(ctx context.Context, client *http.Client, baseURL, cookie string, hosts []string, timeout time.Duration) error {
+func waitForSSHProbeAPI(ctx context.Context, client *http.Client, baseURL, cookie string, hosts []string, timeout time.Duration, tcpOnly bool) error {
 	if len(hosts) == 0 {
 		return fmt.Errorf("no hosts")
 	}
@@ -725,6 +744,7 @@ func waitForSSHProbeAPI(ctx context.Context, client *http.Client, baseURL, cooki
 		Hosts:          hosts,
 		Port:           22,
 		TimeoutSeconds: timeoutSeconds,
+		TCPOnly:        tcpOnly,
 	}
 	url := baseURL + "/api/admin/e2e/sshprobe"
 
@@ -736,7 +756,7 @@ func waitForSSHProbeAPI(ctx context.Context, client *http.Client, baseURL, cooki
 		Jar:           client.Jar,
 		Timeout:       timeout + 60*time.Second,
 	}
-	resp, body, err := doJSON(probeClient, http.MethodPost, url, req, map[string]string{"Cookie": cookie})
+	resp, body, err := doJSONWithRetry(ctx, probeClient, http.MethodPost, url, req, map[string]string{"Cookie": cookie})
 	if err != nil {
 		return err
 	}
@@ -782,6 +802,93 @@ func waitForSSHProbeAPI(ctx context.Context, client *http.Client, baseURL, cooki
 	return fmt.Errorf("%s", msg)
 }
 
+func isSlowSSHDevice(device string) bool {
+	switch strings.ToLower(strings.TrimSpace(device)) {
+	case "iosv", "iosvl2":
+		return true
+	default:
+		return false
+	}
+}
+
+func waitForSSHProbeAPIForDevice(ctx context.Context, client *http.Client, baseURL, cookie string, device string, hosts []string, timeout time.Duration) error {
+	// Fast path.
+	if !isSlowSSHDevice(device) {
+		return waitForSSHProbeAPI(ctx, client, baseURL, cookie, hosts, timeout, false)
+	}
+
+	// Two-phase probe for slow-booting NOS:
+	// 1) wait until TCP/22 is open (no banner requirement)
+	// 2) then require the SSH banner.
+	if timeout <= 0 {
+		timeout = 10 * time.Minute
+	}
+	warmup := 6 * time.Minute
+	if warmup > timeout/2 {
+		warmup = timeout / 2
+	}
+	if warmup < 60*time.Second {
+		warmup = 60 * time.Second
+	}
+	if err := waitForSSHProbeAPI(ctx, client, baseURL, cookie, hosts, warmup, true); err != nil {
+		return err
+	}
+	return waitForSSHProbeAPI(ctx, client, baseURL, cookie, hosts, timeout-warmup, false)
+}
+
+func isRetryableSSProbeHTTPError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Common flaky failures we see when the API is rolling or proxying:
+	// - EOF (connection reset mid-request)
+	// - transient net errors
+	// - context deadline exceeded (rare, but better to retry once within the overall probe window)
+	if errors.Is(err, io.EOF) {
+		return true
+	}
+	var ne net.Error
+	if errors.As(err, &ne) {
+		return true
+	}
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		if errors.Is(ue.Err, io.EOF) {
+			return true
+		}
+		var ne2 net.Error
+		if errors.As(ue.Err, &ne2) {
+			return true
+		}
+	}
+	return false
+}
+
+func doJSONWithRetry(ctx context.Context, client *http.Client, method, urlStr string, body any, headers map[string]string) (*http.Response, []byte, error) {
+	// Keep this narrow: only used for sshprobe, where we can tolerate brief API flaps.
+	// Use small bounded retries and let the probe endpoint's own timeout handle the long tail.
+	const maxAttempts = 3
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		resp, b, err := doJSON(client, method, urlStr, body, headers)
+		if err == nil {
+			return resp, b, nil
+		}
+		lastErr = err
+		if !isRetryableSSProbeHTTPError(err) || attempt == maxAttempts {
+			return nil, nil, err
+		}
+		// small jittered backoff
+		sleep := time.Duration(250+rand.Intn(500)) * time.Millisecond
+		select {
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		case <-time.After(sleep):
+		}
+	}
+	return nil, nil, lastErr
+}
+
 func waitForSSHProbeJob(ctx context.Context, namespace string, hosts []string, timeout time.Duration) error {
 	if err := kubectlAvailable(ctx); err != nil {
 		return err
@@ -824,11 +931,11 @@ def probe(host):
     try:
       s = socket.create_connection((host, 22), timeout=3)
       s.settimeout(3)
-      data = s.recv(4)
+      data = s.recv(64)
       s.close()
-      if data == b"SSH-":
+      if b"SSH-" in data:
         return True, None
-      last = f"bad_banner:{data!r}"
+      last = f"bad_banner:{data[:16]!r}"
     except Exception as e:
       last = str(e)
     time.sleep(2)
@@ -1486,6 +1593,10 @@ func run() int {
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		DialContext:     dialer.DialContext,
+		// Keep a small pool of idle conns; e2echeck is chatty (polling + SSE + probes).
+		MaxIdleConns:        64,
+		MaxIdleConnsPerHost: 16,
+		IdleConnTimeout:     90 * time.Second,
 	}
 	client := &http.Client{Timeout: timeout, Transport: tr}
 
@@ -2112,7 +2223,7 @@ func run() int {
 									}
 								}
 							default:
-								if err := waitForSSHProbeAPI(context.Background(), client, baseURL, cookie, hosts, sshWait); err != nil {
+								if err := waitForSSHProbeAPIForDevice(context.Background(), client, baseURL, cookie, device, hosts, sshWait); err != nil {
 									fmt.Fprintf(os.Stderr, "test %q: ssh probe api failed: %v\n", name, err)
 									if statusRec != nil && device != "" {
 										statusRec.update(device, "fail", templateName, deployType, taskID, err.Error(), "ssh probe failed")
@@ -2164,7 +2275,11 @@ func run() int {
 				}
 			}
 
-			if t.NetlabDeploy.Cleanup {
+			cleanup := t.NetlabDeploy.Cleanup
+			if v, ok := getenvBoolOK("SKYFORGE_E2E_CLEANUP"); ok {
+				cleanup = v
+			}
+			if cleanup {
 				destroyURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/destroy", baseURL, ws.ID, dep.ID)
 				resp, body, err = doJSON(client, http.MethodPost, destroyURL, map[string]any{}, map[string]string{"Cookie": cookie})
 				if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {

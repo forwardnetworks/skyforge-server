@@ -179,7 +179,8 @@ tests:
       setOverrides: []
       timeout: 25m
       sshBanners: true
-      sshTimeout: 12m
+      # NXOSv (N9Kv) is a heavier image; allow extra time for boot + initial vrnetlab config.
+      sshTimeout: 25m
       cleanup: true
 
   - name: netlab-validate-cumulus
@@ -288,6 +289,174 @@ tests:
       template: topology.yml
       environment:
         NETLAB_DEVICE: fortios
+      setOverrides: []
+      timeout: 25m
+      sshBanners: true
+      sshTimeout: 12m
+      cleanup: true
+
+  - name: netlab-validate-cat8000v
+    kind: netlab_validate
+    netlab_validate:
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: cat8000v
+      setOverrides: []
+      timeout: 10m
+
+  - name: netlab-deploy-cat8000v
+    kind: netlab_deploy
+    netlab_deploy:
+      type: netlab-c9s
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: cat8000v
+      setOverrides: []
+      timeout: 25m
+      sshBanners: true
+      sshTimeout: 12m
+      cleanup: true
+
+  - name: netlab-validate-arubacx
+    kind: netlab_validate
+    netlab_validate:
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: arubacx
+      setOverrides: []
+      timeout: 10m
+
+  - name: netlab-deploy-arubacx
+    kind: netlab_deploy
+    netlab_deploy:
+      type: netlab-c9s
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: arubacx
+      setOverrides: []
+      timeout: 25m
+      sshBanners: true
+      sshTimeout: 12m
+      cleanup: true
+
+  - name: netlab-validate-dellos10
+    kind: netlab_validate
+    netlab_validate:
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: dellos10
+      setOverrides: []
+      timeout: 10m
+
+  - name: netlab-deploy-dellos10
+    kind: netlab_deploy
+    netlab_deploy:
+      type: netlab-c9s
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: dellos10
+      setOverrides: []
+      timeout: 25m
+      sshBanners: true
+      sshTimeout: 12m
+      cleanup: true
+
+  - name: netlab-validate-vjunos-router
+    kind: netlab_validate
+    netlab_validate:
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: vjunos-router
+      setOverrides: []
+      timeout: 10m
+
+  - name: netlab-deploy-vjunos-router
+    kind: netlab_deploy
+    netlab_deploy:
+      type: netlab-c9s
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: vjunos-router
+      setOverrides: []
+      timeout: 25m
+      sshBanners: true
+      sshTimeout: 12m
+      cleanup: true
+
+  - name: netlab-validate-vjunos-switch
+    kind: netlab_validate
+    netlab_validate:
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: vjunos-switch
+      setOverrides: []
+      timeout: 10m
+
+  - name: netlab-deploy-vjunos-switch
+    kind: netlab_deploy
+    netlab_deploy:
+      type: netlab-c9s
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: vjunos-switch
+      setOverrides: []
+      timeout: 25m
+      sshBanners: true
+      sshTimeout: 12m
+      cleanup: true
+
+  - name: netlab-validate-vptx
+    kind: netlab_validate
+    netlab_validate:
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: vptx
+      setOverrides: []
+      timeout: 10m
+
+  - name: netlab-deploy-vptx
+    kind: netlab_deploy
+    netlab_deploy:
+      type: netlab-c9s
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: vptx
       setOverrides: []
       timeout: 25m
       sshBanners: true
