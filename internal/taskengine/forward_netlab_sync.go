@@ -2,8 +2,10 @@ package taskengine
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +22,7 @@ const (
 	forwardNetworkNameKey      = "forwardNetworkName"
 	forwardCliCredentialIDKey  = "forwardCliCredentialId"
 	forwardCliCredentialMap    = "forwardCliCredentialIdsByDevice"
+	forwardCliCredentialFPMap  = "forwardCliCredentialFingerprintsByDevice"
 	forwardSnmpCredentialIDKey = "forwardSnmpCredentialId"
 	forwardJumpServerIDKey     = "forwardJumpServerId"
 	forwardEnabledKey          = "forwardEnabled"
@@ -172,6 +175,16 @@ func netlabCredentialForDevice(device, image string) (netlabDeviceCredential, bo
 		return netlabDeviceCredential{Username: defaultNetlabDeviceUsername, Password: defaultNetlabDevicePassword}, true
 	}
 	return netlabDeviceCredential{}, false
+}
+
+func forwardCredentialFingerprint(username, password string) string {
+	username = strings.TrimSpace(username)
+	password = strings.TrimSpace(password)
+	if username == "" || password == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(username + ":" + password))
+	return hex.EncodeToString(sum[:])
 }
 
 type netlabStatusDevice struct {
@@ -766,6 +779,16 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 			}
 		}
 	}
+	credentialFPsByDevice := map[string]string{}
+	if raw, ok := cfgAny[forwardCliCredentialFPMap]; ok {
+		if parsed, ok := raw.(map[string]any); ok {
+			for key, value := range parsed {
+				if fp, ok := value.(string); ok && strings.TrimSpace(fp) != "" {
+					credentialFPsByDevice[strings.ToLower(strings.TrimSpace(key))] = strings.TrimSpace(fp)
+				}
+			}
+		}
+	}
 
 	sanitizeCredentialComponent := func(value string) string {
 		value = strings.ToLower(strings.TrimSpace(value))
@@ -921,6 +944,10 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 		}
 
 		cred, ok := netlabCredentialForDevice(row.Device, row.Image)
+		desiredFP := ""
+		if ok {
+			desiredFP = forwardCredentialFingerprint(cred.Username, cred.Password)
+		}
 		cliCredentialID := ""
 		if rawDeviceKey != "" {
 			cliCredentialID = credentialIDsByDevice[rawDeviceKey]
@@ -928,12 +955,25 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 		if cliCredentialID == "" && deviceKey != "" {
 			cliCredentialID = credentialIDsByDevice[deviceKey]
 		}
+
+		// If this credential is Skyforge-managed and the desired credential fingerprint has changed
+		// (or was never recorded), rotate the Forward CLI credential for this device kind.
+		if desiredFP != "" && deviceKey != "" {
+			storedFP := credentialFPsByDevice[deviceKey]
+			if storedFP == "" || storedFP != desiredFP {
+				cliCredentialID = ""
+			}
+		}
+
 		if cliCredentialID == "" && ok && strings.TrimSpace(cred.Username) != "" && strings.TrimSpace(cred.Password) != "" {
 			created, err := forwardCreateCliCredentialNamed(ctx, client, networkID, credentialNameForDevice(deviceKey), cred.Username, cred.Password)
-			if err == nil {
-				cliCredentialID = created.ID
-				if deviceKey != "" {
+			if err == nil && created != nil {
+				cliCredentialID = strings.TrimSpace(created.ID)
+				if deviceKey != "" && cliCredentialID != "" {
 					credentialIDsByDevice[deviceKey] = cliCredentialID
+					if desiredFP != "" {
+						credentialFPsByDevice[deviceKey] = desiredFP
+					}
 					changed = true
 				}
 			}
@@ -994,6 +1034,7 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 	_ = forwardStartCollection(ctx, client, networkID)
 	if changed {
 		cfgAny[forwardCliCredentialMap] = credentialIDsByDevice
+		cfgAny[forwardCliCredentialFPMap] = credentialFPsByDevice
 		if err := e.updateDeploymentConfig(ctx, pc.workspace.ID, dep.ID, cfgAny); err != nil {
 			return 0, err
 		}
@@ -1116,6 +1157,19 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 			}
 		}
 	}
+	credentialFPsByKind := map[string]string{}
+	if raw, ok := cfgAny[forwardCliCredentialFPMap]; ok {
+		if m, ok := raw.(map[string]any); ok {
+			for k, v := range m {
+				if s, ok := v.(string); ok {
+					fp := strings.TrimSpace(s)
+					if fp != "" {
+						credentialFPsByKind[strings.ToLower(strings.TrimSpace(k))] = fp
+					}
+				}
+			}
+		}
+	}
 	changed := false
 
 	credentialNameForKind := func(kind string) string {
@@ -1158,6 +1212,17 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 		seen[key] = true
 
 		deviceKey := forwardDeviceKeyFromKind(node.Kind)
+		desiredCred, desiredOK := netlabCredentialForDevice(deviceKey, "")
+		if !desiredOK {
+			if u, p, ok := forwardDefaultCredentialForKind(deviceKey); ok {
+				desiredCred = netlabDeviceCredential{Username: u, Password: p}
+				desiredOK = true
+			}
+		}
+		desiredFP := ""
+		if desiredOK {
+			desiredFP = forwardCredentialFingerprint(desiredCred.Username, desiredCred.Password)
+		}
 		if deviceKey == "linux" {
 			if linuxEndpointProfileID == "" {
 				profileID, err := forwardEnsureEndpointProfile(ctx, client, "Linux", []string{"UNIX"})
@@ -1170,14 +1235,22 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 				}
 			}
 			cliCredentialID := credentialIDsByKind[deviceKey]
-			if cliCredentialID == "" {
-				if u, p, ok := forwardDefaultCredentialForKind(deviceKey); ok {
-					created, err := forwardCreateCliCredentialNamed(ctx, client, networkID, credentialNameForKind(deviceKey), u, p)
-					if err == nil && created != nil {
-						cliCredentialID = created.ID
-						credentialIDsByKind[deviceKey] = cliCredentialID
-						changed = true
+
+			if desiredFP != "" {
+				stored := credentialFPsByKind[deviceKey]
+				if stored == "" || stored != desiredFP {
+					cliCredentialID = ""
+				}
+			}
+			if cliCredentialID == "" && desiredOK {
+				created, err := forwardCreateCliCredentialNamed(ctx, client, networkID, credentialNameForKind(deviceKey), desiredCred.Username, desiredCred.Password)
+				if err == nil && created != nil && strings.TrimSpace(created.ID) != "" {
+					cliCredentialID = strings.TrimSpace(created.ID)
+					credentialIDsByKind[deviceKey] = cliCredentialID
+					if desiredFP != "" {
+						credentialFPsByKind[deviceKey] = desiredFP
 					}
+					changed = true
 				}
 			}
 			name := strings.TrimSpace(node.Label)
@@ -1203,14 +1276,22 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 			continue
 		}
 		cliCredentialID := credentialIDsByKind[deviceKey]
-		if cliCredentialID == "" {
-			if u, p, ok := forwardDefaultCredentialForKind(deviceKey); ok {
-				created, err := forwardCreateCliCredentialNamed(ctx, client, networkID, credentialNameForKind(deviceKey), u, p)
-				if err == nil && created != nil {
-					cliCredentialID = created.ID
-					credentialIDsByKind[deviceKey] = cliCredentialID
-					changed = true
+
+		if desiredFP != "" && deviceKey != "" {
+			stored := credentialFPsByKind[deviceKey]
+			if stored == "" || stored != desiredFP {
+				cliCredentialID = ""
+			}
+		}
+		if cliCredentialID == "" && deviceKey != "" && desiredOK {
+			created, err := forwardCreateCliCredentialNamed(ctx, client, networkID, credentialNameForKind(deviceKey), desiredCred.Username, desiredCred.Password)
+			if err == nil && created != nil && strings.TrimSpace(created.ID) != "" {
+				cliCredentialID = strings.TrimSpace(created.ID)
+				credentialIDsByKind[deviceKey] = cliCredentialID
+				if desiredFP != "" {
+					credentialFPsByKind[deviceKey] = desiredFP
 				}
+				changed = true
 			}
 		}
 
@@ -1272,6 +1353,7 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 	}
 	if changed {
 		cfgAny[forwardCliCredentialMap] = credentialIDsByKind
+		cfgAny[forwardCliCredentialFPMap] = credentialFPsByKind
 		if err := e.updateDeploymentConfig(ctx, pc.workspace.ID, dep.ID, cfgAny); err != nil {
 			return 0, err
 		}

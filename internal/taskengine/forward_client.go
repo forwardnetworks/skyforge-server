@@ -270,26 +270,61 @@ func forwardSetCollector(ctx context.Context, c *forwardClient, networkID string
 }
 
 func forwardCreateCliCredentialNamed(ctx context.Context, c *forwardClient, networkID string, name string, username string, password string) (*forwardCliCredential, error) {
-	payload := map[string]any{
-		"name":     strings.TrimSpace(name),
-		"username": strings.TrimSpace(username),
-		"password": strings.TrimSpace(password),
+	baseName := strings.TrimSpace(name)
+	username = strings.TrimSpace(username)
+	password = strings.TrimSpace(password)
+	if baseName == "" || username == "" || password == "" {
+		return nil, fmt.Errorf("forward create cli credential missing required fields")
 	}
-	resp, body, err := c.doJSON(ctx, http.MethodPost, "/api/networks/"+url.PathEscape(strings.TrimSpace(networkID))+"/cli-credentials", nil, payload)
-	if err != nil {
-		return nil, err
+
+	// Forward rejects duplicate credential names within a network (409 conflict).
+	// We prefer stable names, but if a collision occurs we generate a unique name
+	// and retry a few times. This makes runs idempotent-ish without requiring a
+	// "list credentials" API.
+	nameForAttempt := func(attempt int) string {
+		if attempt <= 0 {
+			return baseName
+		}
+		suffix := fmt.Sprintf("-%d-%d", time.Now().Unix(), attempt)
+		max := 80 - len(suffix)
+		base := baseName
+		if max < 1 {
+			base = "cred"
+		} else if len(base) > max {
+			base = strings.TrimRight(base[:max], "-")
+		}
+		return base + suffix
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("forward create cli credential failed: %s", strings.TrimSpace(string(body)))
+
+	var lastBody []byte
+	for attempt := 0; attempt < 5; attempt++ {
+		payload := map[string]any{
+			"name":     nameForAttempt(attempt),
+			"username": username,
+			"password": password,
+		}
+		resp, body, err := c.doJSON(ctx, http.MethodPost, "/api/networks/"+url.PathEscape(strings.TrimSpace(networkID))+"/cli-credentials", nil, payload)
+		if err != nil {
+			return nil, err
+		}
+		lastBody = body
+		if resp.StatusCode == 409 || strings.Contains(strings.ToLower(string(body)), "already") || strings.Contains(strings.ToLower(string(body)), "exists") {
+			continue
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return nil, fmt.Errorf("forward create cli credential failed: %s", strings.TrimSpace(string(body)))
+		}
+		var out forwardCliCredential
+		if err := json.Unmarshal(body, &out); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(out.ID) == "" {
+			return nil, fmt.Errorf("forward create cli credential returned empty id")
+		}
+		return &out, nil
 	}
-	var out forwardCliCredential
-	if err := json.Unmarshal(body, &out); err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(out.ID) == "" {
-		return nil, fmt.Errorf("forward create cli credential returned empty id")
-	}
-	return &out, nil
+
+	return nil, fmt.Errorf("forward create cli credential failed: name conflict (%s)", strings.TrimSpace(string(lastBody)))
 }
 
 func forwardCreateSnmpCredential(ctx context.Context, c *forwardClient, networkID string, community string) (*forwardSnmpCredential, error) {
