@@ -379,8 +379,11 @@ func (s *Service) CreateUserForwardCollectorConfig(ctx context.Context, req *Cre
 	skipTLSVerify := req.SkipTLSVerify
 
 	box := newSecretBox(s.cfg.SessionSecret)
-	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
-	defer cancel()
+	// Keep request-scoped work bounded, but do NOT let a short timeout abort the
+	// in-cluster collector deploy (PVC provision/pod pulls can legitimately take
+	// a few minutes).
+	ctxReq, cancelReq := context.WithTimeout(ctx, 90*time.Second)
+	defer cancelReq()
 
 	// Create a Forward-side collector (do not attempt to delete any existing collectors).
 	client, err := newForwardClient(forwardCredentials{
@@ -393,7 +396,7 @@ func (s *Service) CreateUserForwardCollectorConfig(ctx context.Context, req *Cre
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid Forward config").Err()
 	}
 	// Basic auth check.
-	if _, err := forwardListCollectors(ctx, client); err != nil {
+	if _, err := forwardListCollectors(ctxReq, client); err != nil {
 		msg := strings.ToLower(err.Error())
 		if strings.Contains(msg, "401") || strings.Contains(msg, "403") || strings.Contains(msg, "unauthorized") || strings.Contains(msg, "forbidden") {
 			return nil, errs.B().Code(errs.Unauthenticated).Msg("Forward authentication failed").Err()
@@ -438,7 +441,7 @@ func (s *Service) CreateUserForwardCollectorConfig(ctx context.Context, req *Cre
 		default:
 			forwardCollectorName = fmt.Sprintf("%s-%s-%s", baseCollectorName, shortID, uuid.NewString()[:4])
 		}
-		created, err = forwardCreateCollector(ctx, client, forwardCollectorName)
+		created, err = forwardCreateCollector(ctxReq, client, forwardCollectorName)
 		if err == nil {
 			break
 		}
@@ -477,19 +480,19 @@ func (s *Service) CreateUserForwardCollectorConfig(ctx context.Context, req *Cre
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to encrypt Forward config").Err()
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.db.BeginTx(ctxReq, nil)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to save collector").Err()
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	if req.SetDefault {
-		if _, err := tx.ExecContext(ctx, `UPDATE sf_user_forward_collectors SET is_default=false WHERE username=$1`, user.Username); err != nil {
+		if _, err := tx.ExecContext(ctxReq, `UPDATE sf_user_forward_collectors SET is_default=false WHERE username=$1`, user.Username); err != nil {
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to save collector").Err()
 		}
 	}
 
-	_, err = tx.ExecContext(ctx, `INSERT INTO sf_user_forward_collectors (
+	_, err = tx.ExecContext(ctxReq, `INSERT INTO sf_user_forward_collectors (
   id, username, name,
   base_url, skip_tls_verify, forward_username, forward_password,
   collector_id, collector_username, authorization_key,
@@ -511,15 +514,17 @@ func (s *Service) CreateUserForwardCollectorConfig(ctx context.Context, req *Cre
 	}
 
 	// Deploy (or update) the in-cluster collector with the returned auth key.
+	// This can take minutes (PVC provision, image pulls). Run it async so the UI
+	// doesn't error out due to request timeouts/cancellation.
 	deployName := collectorDeploymentNameForConfig(user.Username, configID, req.SetDefault)
-	{
-		ctx2, cancel2 := context.WithTimeout(ctx, 2*time.Minute)
+	go func() {
+		ctx2, cancel2 := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel2()
 		if _, err := ensureCollectorDeployedForName(ctx2, s.cfg, user.Username, deployName, strings.TrimSpace(created.AuthorizationKey), baseURL, skipTLSVerify); err != nil {
 			log.Printf("collector deploy (%s): %v", deployName, err)
 			// Keep the config saved; user can retry deploy via restart later.
 		}
-	}
+	}()
 
 	return &UserForwardCollectorConfigSummary{
 		ID:                configID,
@@ -686,16 +691,65 @@ func (s *Service) RestartUserForwardCollectorConfig(ctx context.Context, id stri
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	var isDefault bool
-	err = s.db.QueryRowContext(ctxReq, `SELECT COALESCE(is_default, false) FROM sf_user_forward_collectors WHERE id=$1 AND username=$2`, id, user.Username).Scan(&isDefault)
+	// If the collector isn't deployed yet (common after cluster restarts / image pull delays),
+	// "Restart" should act like "Deploy (if missing) then Restart".
+	var (
+		isDefault     bool
+		baseURLEnc    sql.NullString
+		skipTLSVerify sql.NullBool
+		authKeyEnc    sql.NullString
+	)
+	err = s.db.QueryRowContext(ctxReq, `SELECT COALESCE(is_default, false), base_url, COALESCE(skip_tls_verify, false), authorization_key
+FROM sf_user_forward_collectors WHERE id=$1 AND username=$2`, id, user.Username).Scan(&isDefault, &baseURLEnc, &skipTLSVerify, &authKeyEnc)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, errs.B().Code(errs.NotFound).Msg("collector not found").Err()
 		}
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to restart collector").Err()
 	}
-	if err := restartCollectorDeploymentByName(ctxReq, collectorDeploymentNameForConfig(user.Username, id, isDefault)); err != nil {
+
+	deployName := collectorDeploymentNameForConfig(user.Username, id, isDefault)
+
+	// First try a normal restart (fast path).
+	if err := restartCollectorDeploymentByName(ctxReq, deployName); err != nil {
+		// If the Deployment doesn't exist, deploy it first and then return runtime.
+		if strings.Contains(strings.ToLower(err.Error()), "not deployed") {
+			box := newSecretBox(s.cfg.SessionSecret)
+			dec := func(v sql.NullString) (string, error) {
+				s := strings.TrimSpace(v.String)
+				if s == "" {
+					return "", nil
+				}
+				if strings.HasPrefix(s, "enc:") {
+					return box.decrypt(s)
+				}
+				return s, nil
+			}
+			baseURL, decErr := dec(baseURLEnc)
+			if decErr != nil {
+				return nil, errs.B().Code(errs.Unavailable).Msg("failed to decrypt collector config").Err()
+			}
+			if strings.TrimSpace(baseURL) == "" {
+				baseURL = defaultForwardBaseURL
+			}
+			authKey, decErr := dec(authKeyEnc)
+			if decErr != nil {
+				return nil, errs.B().Code(errs.Unavailable).Msg("failed to decrypt collector config").Err()
+			}
+			if strings.TrimSpace(authKey) == "" {
+				return nil, errs.B().Code(errs.FailedPrecondition).Msg("collector authorization key missing").Err()
+			}
+
+			ctx2, cancel2 := context.WithTimeout(ctx, 10*time.Minute)
+			defer cancel2()
+			if _, depErr := ensureCollectorDeployedForName(ctx2, s.cfg, user.Username, deployName, authKey, baseURL, skipTLSVerify.Valid && skipTLSVerify.Bool); depErr != nil {
+				log.Printf("collector deploy (%s): %v", deployName, depErr)
+				return nil, errs.B().Code(errs.Unavailable).Msg("failed to deploy collector").Err()
+			}
+			// No restart needed after a fresh deploy.
+			return getCollectorRuntimeStatusByName(ctxReq, deployName)
+		}
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to restart collector").Err()
 	}
-	return getCollectorRuntimeStatusByName(ctxReq, collectorDeploymentNameForConfig(user.Username, id, isDefault))
+	return getCollectorRuntimeStatusByName(ctxReq, deployName)
 }

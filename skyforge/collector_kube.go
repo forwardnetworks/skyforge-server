@@ -113,7 +113,6 @@ func ensureCollectorDeployedForName(ctx context.Context, cfg Config, username, d
 		name = collectorResourceNameForUser(username)
 	}
 	dataPVCName := name + "-data"
-	configName := name + "-cfg"
 	labels := map[string]string{
 		"app.kubernetes.io/name":      "skyforge",
 		"app.kubernetes.io/component": "collector",
@@ -180,68 +179,6 @@ func ensureCollectorDeployedForName(ctx context.Context, cfg Config, username, d
 			if patchResp.StatusCode < 200 || patchResp.StatusCode >= 300 {
 				data, _ := io.ReadAll(io.LimitReader(patchResp.Body, 32<<10))
 				return nil, fmt.Errorf("kube secret patch failed: %s: %s", patchResp.Status, strings.TrimSpace(string(data)))
-			}
-		}
-	}
-
-	// 1b) ConfigMap with fwd.properties (overrides the baked-in fwd-appserver URL in the
-	// Forward Enterprise collector image).
-	{
-		baseURL := strings.TrimSpace(forwardBaseURL)
-		if baseURL == "" {
-			baseURL = "https://fwd.app"
-		}
-		fwdProps := renderCollectorFwdProperties(baseURL, skipTLSVerify, token)
-		payload := map[string]any{
-			"apiVersion": "v1",
-			"kind":       "ConfigMap",
-			"metadata": map[string]any{
-				"name":      configName,
-				"namespace": ns,
-				"labels":    labels,
-			},
-			"data": map[string]string{
-				"fwd.properties": fwdProps,
-			},
-		}
-		body, _ := json.Marshal(payload)
-
-		createURL := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/configmaps", url.PathEscape(ns))
-		createReq, err := kubeRequest(ctx, http.MethodPost, createURL, bytes.NewReader(body))
-		if err != nil {
-			return nil, err
-		}
-		createReq.Header.Set("Content-Type", "application/json")
-		resp, err := client.Do(createReq)
-		if err != nil {
-			return nil, err
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
-			data, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<10))
-			return nil, fmt.Errorf("kube configmap create failed: %s: %s", resp.Status, strings.TrimSpace(string(data)))
-		}
-		if resp.StatusCode == http.StatusConflict {
-			patchBody, _ := json.Marshal(map[string]any{
-				"metadata": map[string]any{"labels": labels},
-				"data": map[string]string{
-					"fwd.properties": fwdProps,
-				},
-			})
-			patchURL := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/configmaps/%s", url.PathEscape(ns), url.PathEscape(configName))
-			patchReq, err := kubeRequest(ctx, http.MethodPatch, patchURL, bytes.NewReader(patchBody))
-			if err != nil {
-				return nil, err
-			}
-			patchReq.Header.Set("Content-Type", "application/strategic-merge-patch+json")
-			patchResp, err := client.Do(patchReq)
-			if err != nil {
-				return nil, err
-			}
-			defer patchResp.Body.Close()
-			if patchResp.StatusCode < 200 || patchResp.StatusCode >= 300 {
-				data, _ := io.ReadAll(io.LimitReader(patchResp.Body, 32<<10))
-				return nil, fmt.Errorf("kube configmap patch failed: %s: %s", patchResp.Status, strings.TrimSpace(string(data)))
 			}
 		}
 	}
@@ -362,6 +299,22 @@ func ensureCollectorDeployedForName(ctx context.Context, cfg Config, username, d
 		}
 	}
 
+	appHost := "fwd.app"
+	{
+		baseURL := strings.TrimSpace(forwardBaseURL)
+		if baseURL == "" {
+			baseURL = "https://fwd.app"
+		}
+		if !strings.Contains(baseURL, "://") {
+			baseURL = "https://" + baseURL
+		}
+		if parsed, err := url.Parse(baseURL); err == nil {
+			if h := strings.TrimSpace(parsed.Hostname()); h != "" {
+				appHost = h
+			}
+		}
+	}
+
 	collectorEnv := []any{
 		map[string]any{
 			"name": "TOKEN",
@@ -371,6 +324,10 @@ func ensureCollectorDeployedForName(ctx context.Context, cfg Config, username, d
 					"key":  "TOKEN",
 				},
 			},
+		},
+		map[string]any{
+			"name":  "APP_HOST",
+			"value": appHost,
 		},
 		// Required by /collector/collector.sh in the Forward Enterprise collector image.
 		map[string]any{
@@ -485,12 +442,6 @@ func ensureCollectorDeployedForName(ctx context.Context, cfg Config, username, d
 								"emptyDir": map[string]any{},
 							},
 							map[string]any{
-								"name": "collector-cfg",
-								"configMap": map[string]any{
-									"name": configName,
-								},
-							},
-							map[string]any{
 								"name": "collector-data",
 								"persistentVolumeClaim": map[string]any{
 									"claimName": dataPVCName,
@@ -536,11 +487,6 @@ func ensureCollectorDeployedForName(ctx context.Context, cfg Config, username, d
 									map[string]any{
 										"name":      "collector-data",
 										"mountPath": "/collector/private",
-									},
-									map[string]any{
-										"name":      "collector-cfg",
-										"mountPath": "/collector/fwd.properties",
-										"subPath":   "fwd.properties",
 									},
 								},
 								"env": collectorEnv,
@@ -626,12 +572,6 @@ func ensureCollectorDeployedForName(ctx context.Context, cfg Config, username, d
 									"emptyDir": map[string]any{},
 								},
 								map[string]any{
-									"name": "collector-cfg",
-									"configMap": map[string]any{
-										"name": configName,
-									},
-								},
-								map[string]any{
 									"name": "collector-data",
 									"persistentVolumeClaim": map[string]any{
 										"claimName": dataPVCName,
@@ -672,11 +612,6 @@ func ensureCollectorDeployedForName(ctx context.Context, cfg Config, username, d
 											"name":      "collector-data",
 											"mountPath": "/collector/private",
 										},
-										map[string]any{
-											"name":      "collector-cfg",
-											"mountPath": "/collector/fwd.properties",
-											"subPath":   "fwd.properties",
-										},
 									},
 									"env": collectorEnv,
 								},
@@ -714,42 +649,6 @@ func ensureCollectorDeployedForName(ctx context.Context, cfg Config, username, d
 		}, nil
 	}
 	return st, nil
-}
-
-func renderCollectorFwdProperties(baseURL string, skipTLSVerify bool, authorizationKey string) string {
-	urlStr := strings.TrimSpace(baseURL)
-	if urlStr == "" {
-		urlStr = "https://fwd.app"
-	}
-	if !strings.Contains(urlStr, "://") {
-		urlStr = "https://" + urlStr
-	}
-	username := ""
-	password := ""
-	if ak := strings.TrimSpace(authorizationKey); ak != "" {
-		parts := strings.SplitN(ak, ":", 2)
-		if len(parts) == 2 {
-			username = strings.TrimSpace(parts[0])
-			password = strings.TrimSpace(parts[1])
-		}
-	}
-	verifySSL := "true"
-	if skipTLSVerify {
-		verifySSL = "false"
-	}
-	// Minimal config needed by the collector to reach the Forward server.
-	// The Forward collector image expects username/password in fwd.properties. For
-	// fwd.app we use the authorization key returned from POST /api/collectors:
-	//   <collector-username>:<secret>
-	return strings.TrimSpace(fmt.Sprintf(`
-# Managed by Skyforge.
-url = %s
-username = %s
-password = %s
-verify_ssl_cert = %s
-disable_auto_update = true
-version = 1.7
-`, urlStr, username, password, verifySSL)) + "\n"
 }
 
 func getCollectorRuntimeStatus(ctx context.Context, username string) (*collectorRuntimeStatus, error) {
@@ -1002,7 +901,6 @@ func deleteCollectorResourcesByName(ctx context.Context, deploymentName string) 
 		return fmt.Errorf("collector deployment name not specified")
 	}
 	dataPVCName := name + "-data"
-	configName := name + "-cfg"
 	client, err := kubeHTTPClient()
 	if err != nil {
 		return err
@@ -1042,24 +940,6 @@ func deleteCollectorResourcesByName(ctx context.Context, deploymentName string) 
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusNotFound && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
 			rlog.Debug("kube delete pvc failed", "status", resp.Status, "pvc", dataPVCName)
-		}
-	}
-
-	// ConfigMap (best-effort).
-	{
-		u := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s/configmaps/%s?propagationPolicy=Background",
-			url.PathEscape(ns), url.PathEscape(configName))
-		req, err := kubeRequest(ctx, http.MethodDelete, u, nil)
-		if err != nil {
-			return err
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			return err
-		}
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusNotFound && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
-			rlog.Debug("kube delete configmap failed", "status", resp.Status, "configmap", configName)
 		}
 	}
 
