@@ -403,9 +403,26 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	}
 
 	// 5) Start collection after post-up config has been applied (best-effort).
-	// If SSH readiness couldn't be verified locally, still attempt collection so Forward
-	// can perform its own retries.
+	// NOTE: "Topology ready" in Kubernetes is not the same thing as "SSH ready" for the NOS.
+	// Many vrnetlab/QEMU-based NOS images accept pod readiness quickly but refuse port 22 for
+	// minutes while still booting. Starting Forward collection too early results in noisy
+	// "device unreachable" signals and wastes time. We therefore gate collection on an SSH
+	// banner check (configurable timeout).
 	if dep != nil {
+		sshReadySeconds := envInt(spec.Environment, "SKYFORGE_FORWARD_SSH_READY_SECONDS", 900)
+		if sshReadySeconds > 0 && graph != nil {
+			_ = taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "forward.ssh.ready", func() error {
+				if err := waitForForwardSSHReady(ctx, spec.TaskID, e, graph, time.Duration(sshReadySeconds)*time.Second, log); err != nil {
+					// Keep the lab up even if collection is blocked; surface a clear error in the run.
+					if log != nil {
+						log.Infof("forward sync wait timed out: %v", err)
+					}
+					return err
+				}
+				return nil
+			})
+		}
+
 		_ = taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "forward.collection.start", func() error {
 			if err := e.startForwardCollectionForDeployment(ctx, spec.TaskID, spec.WorkspaceCtx, dep); err != nil {
 				if log != nil {
