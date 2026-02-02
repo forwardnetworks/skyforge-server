@@ -1017,6 +1017,8 @@ func forwardDeviceKeyFromKind(kind string) string {
 		return "linux"
 	case "cisco_iol", "iol", "ios-xe", "ios_xe", "ios":
 		return "ios"
+	case "nxos", "cisco_n9kv", "n9kv":
+		return "nxos"
 	default:
 		return kind
 	}
@@ -1029,6 +1031,8 @@ func forwardDefaultCredentialForKind(kind string) (username, password string, ok
 	case "linux":
 		return "root", "admin", true
 	case "ios":
+		return "admin", "admin", true
+	case "nxos":
 		return "admin", "admin", true
 	default:
 		return "", "", false
