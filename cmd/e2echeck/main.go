@@ -138,6 +138,22 @@ type putUserForwardCollectorRequest struct {
 	Password      string `json:"password"`
 }
 
+type createUserForwardCollectorConfigRequest struct {
+	Name          string `json:"name"`
+	BaseURL       string `json:"baseUrl"`
+	SkipTLSVerify bool   `json:"skipTlsVerify"`
+	Username      string `json:"username"`
+	Password      string `json:"password"`
+	SetDefault    bool   `json:"setDefault"`
+}
+
+type userForwardCollectorConfigSummary struct {
+	ID        string                  `json:"id"`
+	Name      string                  `json:"name"`
+	IsDefault bool                    `json:"isDefault"`
+	Runtime   *collectorRuntimeStatus `json:"runtime,omitempty"`
+}
+
 type matrixFile struct {
 	Tests []matrixTest `yaml:"tests"`
 }
@@ -1456,57 +1472,62 @@ func resolveDefaultCollectorPod(client *http.Client, baseURL string, cookie stri
 		}
 	}
 
-	resp, body, err = doJSON(client, http.MethodGet, baseURL+"/api/forward/collector/runtime", nil, map[string]string{"Cookie": cookie})
-	if err != nil {
-		return "", "", "", fmt.Errorf("collector runtime lookup failed: %v", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", "", "", fmt.Errorf("collector runtime lookup failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	var decoded userCollectorRuntimeResponse
-	if err := json.Unmarshal(body, &decoded); err != nil {
-		return "", "", "", fmt.Errorf("collector runtime parse failed: %v", err)
-	}
-	if decoded.Runtime == nil || !decoded.Runtime.Ready || strings.TrimSpace(decoded.Runtime.PodName) == "" {
-		// If we want to probe SSH from within the Forward collector pod, bootstrap the user's
-		// Forward collector settings (which also ensures the in-cluster collector exists).
-		//
-		// This keeps E2E self-contained even if the admin user hasn't configured Forward yet.
-		if getenvBool("SKYFORGE_E2E_BOOTSTRAP_COLLECTOR", true) && strings.EqualFold(sshProbeMode(), "collector_exec") {
-			fwdUser := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_FORWARD_USERNAME"))
-			fwdPass := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_FORWARD_PASSWORD"))
-			if fwdUser == "" || fwdPass == "" {
-				return "", "", "", fmt.Errorf("collector not ready (set SKYFORGE_E2E_FORWARD_USERNAME/SKYFORGE_E2E_FORWARD_PASSWORD to auto-bootstrap)")
-			}
-			fwdBase := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_FORWARD_BASE_URL"))
-			if fwdBase == "" {
-				fwdBase = "https://fwd.app"
-			}
-
-			_, _, _ = doJSON(client, http.MethodPut, baseURL+"/api/forward/collector", putUserForwardCollectorRequest{
-				BaseURL:       fwdBase,
-				SkipTLSVerify: getenvBool("SKYFORGE_E2E_FORWARD_SKIP_TLS_VERIFY", false),
-				Username:      fwdUser,
-				Password:      fwdPass,
-			}, map[string]string{"Cookie": cookie})
-
-			// Wait for the runtime to become ready.
-			deadline := time.Now().Add(10 * time.Minute)
-			for time.Now().Before(deadline) {
-				resp2, body2, err2 := doJSON(client, http.MethodGet, baseURL+"/api/forward/collector/runtime", nil, map[string]string{"Cookie": cookie})
-				if err2 == nil && resp2.StatusCode >= 200 && resp2.StatusCode < 300 {
-					var rr userCollectorRuntimeResponse
-					if json.Unmarshal(body2, &rr) == nil && rr.Runtime != nil && rr.Runtime.Ready && strings.TrimSpace(rr.Runtime.PodName) != "" {
-						return "", strings.TrimSpace(rr.Runtime.Namespace), strings.TrimSpace(rr.Runtime.PodName), nil
-					}
-				}
-				time.Sleep(5 * time.Second)
-			}
-			return "", "", "", fmt.Errorf("collector not ready after bootstrap wait")
+	// If we want to probe SSH from within the Forward collector pod (or sync to Forward),
+	// bootstrap a per-user collector config when none exist yet.
+	//
+	// This keeps E2E self-contained even if the user hasn't configured Forward yet.
+	if getenvBool("SKYFORGE_E2E_BOOTSTRAP_COLLECTOR", true) && (strings.EqualFold(sshProbeMode(), "collector_exec") || getenvBool("SKYFORGE_E2E_FORWARD", false)) {
+		fwdUser := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_FORWARD_USERNAME"))
+		fwdPass := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_FORWARD_PASSWORD"))
+		if fwdUser == "" || fwdPass == "" {
+			return "", "", "", fmt.Errorf("collector not ready (set SKYFORGE_E2E_FORWARD_USERNAME/SKYFORGE_E2E_FORWARD_PASSWORD to auto-bootstrap)")
 		}
-		return "", "", "", fmt.Errorf("collector not ready")
+		fwdBase := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_FORWARD_BASE_URL"))
+		if fwdBase == "" {
+			fwdBase = "https://fwd.app"
+		}
+
+		// Create a new collector config (multi-collector model).
+		resp2, body2, err2 := doJSON(client, http.MethodPost, baseURL+"/api/forward/collector-configs", createUserForwardCollectorConfigRequest{
+			Name:          "e2e",
+			BaseURL:       fwdBase,
+			SkipTLSVerify: getenvBool("SKYFORGE_E2E_FORWARD_SKIP_TLS_VERIFY", false),
+			Username:      fwdUser,
+			Password:      fwdPass,
+			SetDefault:    true,
+		}, map[string]string{"Cookie": cookie})
+		if err2 != nil {
+			return "", "", "", fmt.Errorf("collector bootstrap failed: %v", err2)
+		}
+		if resp2.StatusCode < 200 || resp2.StatusCode >= 300 {
+			return "", "", "", fmt.Errorf("collector bootstrap failed (%d): %s", resp2.StatusCode, strings.TrimSpace(string(body2)))
+		}
+		var created userForwardCollectorConfigSummary
+		if err := json.Unmarshal(body2, &created); err != nil {
+			return "", "", "", fmt.Errorf("collector bootstrap parse failed: %v", err)
+		}
+		createdID := strings.TrimSpace(created.ID)
+		if createdID == "" {
+			return "", "", "", fmt.Errorf("collector bootstrap returned empty id")
+		}
+
+		// Wait for runtime to become ready.
+		deadline := time.Now().Add(10 * time.Minute)
+		for time.Now().Before(deadline) {
+			rtURL := baseURL + "/api/forward/collector-configs/" + url.PathEscape(createdID) + "/runtime"
+			resp3, body3, err3 := doJSON(client, http.MethodGet, rtURL, nil, map[string]string{"Cookie": cookie})
+			if err3 == nil && resp3.StatusCode >= 200 && resp3.StatusCode < 300 {
+				var rr collectorRuntimeStatus
+				if json.Unmarshal(body3, &rr) == nil && rr.Ready && strings.TrimSpace(rr.PodName) != "" {
+					return createdID, strings.TrimSpace(rr.Namespace), strings.TrimSpace(rr.PodName), nil
+				}
+			}
+			time.Sleep(5 * time.Second)
+		}
+		return "", "", "", fmt.Errorf("collector not ready after bootstrap wait")
 	}
-	return "", strings.TrimSpace(decoded.Runtime.Namespace), strings.TrimSpace(decoded.Runtime.PodName), nil
+
+	return "", "", "", fmt.Errorf("collector not ready")
 }
 
 func findAnyCollectorPodViaKubectl(ctx context.Context) (collectorConfigID string, namespace string, podName string, err error) {
