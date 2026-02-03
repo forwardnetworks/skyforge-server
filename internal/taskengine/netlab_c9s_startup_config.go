@@ -125,6 +125,7 @@ func injectNetlabC9sVrnetlabStartupConfig(
 			continue
 		}
 		combined = stripNetlabJunosDeleteDirectives(kind, combined)
+		combined = normalizeNetlabJunosHierarchicalConfig(kind, combined)
 		combined = appendDefaultSNMPPublic(kind, combined)
 
 		key := sanitizeArtifactKeySegment(fmt.Sprintf("%s-startup-config.cfg", nodeName))
@@ -187,6 +188,63 @@ func stripNetlabJunosDeleteDirectives(kind, startupConfig string) string {
 		}
 		out = append(out, line)
 	}
+	return strings.Join(out, "\n")
+}
+
+func normalizeNetlabJunosHierarchicalConfig(kind, startupConfig string) string {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	startupConfig = strings.ReplaceAll(startupConfig, "\r\n", "\n")
+	if strings.TrimSpace(kind) == "" || strings.TrimSpace(startupConfig) == "" {
+		return startupConfig
+	}
+	if !(kind == "vr-vmx" || strings.Contains(kind, "junos") || strings.Contains(kind, "vqfx") || strings.Contains(kind, "vsrx") || strings.Contains(kind, "vjunos")) {
+		return startupConfig
+	}
+	// Only attempt to normalize hierarchical (brace) syntax.
+	if !strings.Contains(startupConfig, "{") {
+		return startupConfig
+	}
+
+	in := strings.Split(startupConfig, "\n")
+	out := make([]string, 0, len(in))
+
+	for i := 0; i < len(in); i++ {
+		line := in[i]
+		trimmed := strings.TrimSpace(line)
+
+		// netlab can occasionally emit `router-id X` without a trailing semicolon in hierarchical config.
+		if strings.HasPrefix(trimmed, "router-id ") && !strings.HasSuffix(trimmed, ";") {
+			out = append(out, line+";")
+			continue
+		}
+
+		// netlab can emit an empty interface list:
+		//
+		// interface [
+		// ];
+		//
+		// which Junos rejects. If the list is empty, drop the whole block.
+		if strings.HasPrefix(trimmed, "interface [") {
+			j := i + 1
+			hasEntries := false
+			for ; j < len(in); j++ {
+				t := strings.TrimSpace(in[j])
+				if t == "];" {
+					break
+				}
+				if t != "" {
+					hasEntries = true
+				}
+			}
+			if j < len(in) && strings.TrimSpace(in[j]) == "];" && !hasEntries {
+				i = j
+				continue
+			}
+		}
+
+		out = append(out, line)
+	}
+
 	return strings.Join(out, "\n")
 }
 
