@@ -229,12 +229,18 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	}
 	var clabYAML []byte
 	var nodeMounts map[string][]c9sFileFromConfigMap
+	var generatorManifest *netlabC9sManifest
 	if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.k8s-generate", func() error {
 		var err error
-		clabYAML, nodeMounts, err = e.runNetlabC9sTaskK8sGenerator(ctx, spec, topologyPath, tarballNameFromSpec(spec), log)
+		clabYAML, nodeMounts, generatorManifest, err = e.runNetlabC9sTaskK8sGenerator(ctx, spec, topologyPath, tarballNameFromSpec(spec), log)
 		return err
 	}); err != nil {
 		return err
+	}
+	if envBool(spec.Environment, "SKYFORGE_NETLAB_C9S_ENABLE_NETLAB_INITIAL", true) {
+		if generatorManifest == nil || generatorManifest.NetlabOutput == nil || len(generatorManifest.NetlabOutput.Chunks) == 0 {
+			return fmt.Errorf("netlab initial enabled but generator output missing netlabOutput artifacts")
+		}
 	}
 
 	topologyBytes, nodeMounts, nodeNameMapping, err := prepareC9sTopologyForDeploy(spec.TaskID, topologyName, labName, clabYAML, nodeMounts, e, log)
@@ -242,15 +248,25 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		return err
 	}
 
+	// Persist the node name mapping (original ↔ sanitized) so post-deploy steps
+	// (netlab initial applier, debug tooling) can consistently address Kubernetes
+	// services while keeping netlab artifacts in original node names.
+	if err := kubeUpsertC9sNameMapConfigMap(ctx, ns, topologyName, nodeNameMapping); err != nil {
+		return err
+	}
+
 	// Prefer startup-config injection (instead of post-start exec hacks).
 	// This keeps netlab as the source-of-truth but lets Skyforge adapt the generated output
 	// for clabernetes-native execution (files are mounted into the launcher, not the NOS container).
-	if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.startup-config", func() error {
-		var err error
-		topologyBytes, nodeMounts, err = injectNetlabC9sStartupConfig(ctx, ns, topologyName, topologyBytes, nodeMounts, log)
-		return err
-	}); err != nil {
-		return err
+	enableStartupConfigInjection := envBool(spec.Environment, "SKYFORGE_NETLAB_C9S_ENABLE_STARTUP_CONFIG_INJECTION", false)
+	if enableStartupConfigInjection {
+		if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.startup-config", func() error {
+			var err error
+			topologyBytes, nodeMounts, err = injectNetlabC9sStartupConfig(ctx, ns, topologyName, topologyBytes, nodeMounts, log)
+			return err
+		}); err != nil {
+			return err
+		}
 	}
 
 	clabSpec := clabernetesRunSpec{
@@ -380,14 +396,46 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 
 	}
 
+	// Apply netlab-generated device configuration using netlab's own `netlab initial`
+	// workflow (Ansible playbooks + device-specific tasks). This avoids Skyforge-specific
+	// config concatenation logic and keeps netlab as the source of truth.
+	//
+	// We run it after early Forward topology upload so Forward can start reachability
+	// checks while configuration is being applied, but before starting Forward collection.
+	enableNetlabInitial := envBool(spec.Environment, "SKYFORGE_NETLAB_C9S_ENABLE_NETLAB_INITIAL", true)
+	if enableNetlabInitial {
+		// Gate netlab initial on SSH readiness. Netlab initial relies on SSH/NETCONF access
+		// to push config. Many vrnetlab-based nodes become "Running" long before they accept
+		// SSH logins, and starting netlab initial too early results in authentication errors
+		// (devices not fully booted yet).
+		if graph != nil {
+			sshReadySeconds := envInt(spec.Environment, "SKYFORGE_NETLAB_INITIAL_SSH_READY_SECONDS", envInt(spec.Environment, "SKYFORGE_FORWARD_SSH_READY_SECONDS", 900))
+			if sshReadySeconds > 0 {
+				if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.ssh.ready", func() error {
+					return waitForForwardSSHReady(ctx, spec.TaskID, e, graph, time.Duration(sshReadySeconds)*time.Second, log)
+				}); err != nil {
+					return err
+				}
+			}
+		}
+		if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.apply", func() error {
+			return e.runNetlabC9sApplierJob(ctx, ns, topologyName, log)
+		}); err != nil {
+			return err
+		}
+	}
+
 	// 4) Apply post-up config for supported NOS kinds (cfglets, SSH enable, etc).
 	// This must happen before Forward collection starts, but should not be blocked by
 	// Forward sync failures (lab should still be configured even if Forward is down).
-	if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.nos-postup", func() error {
-		return runNetlabC9sNOSPostUp(ctx, ns, topologyName, topologyBytes, nodeMounts, log)
-	}); err != nil && log != nil {
-		// Best-effort: lab is still usable even if cfglets fail.
-		log.Infof("c9s post-up config failed (ignored): %v", err)
+	enableNOSPostUp := envBool(spec.Environment, "SKYFORGE_NETLAB_C9S_ENABLE_NOS_POSTUP", false)
+	if enableNOSPostUp {
+		if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.nos-postup", func() error {
+			return runNetlabC9sNOSPostUp(ctx, ns, topologyName, topologyBytes, nodeMounts, log)
+		}); err != nil && log != nil {
+			// Best-effort: lab is still usable even if cfglets fail.
+			log.Infof("c9s post-up config failed (ignored): %v", err)
+		}
 	}
 
 	// Optional: start connectivity tests in a single batch after post-up config.
@@ -953,33 +1001,6 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 		topo["name"] = labName
 	}
 
-	// Defensive: pin known-problematic vrnetlab images to immutable tags.
-	// Netlab defaults are the primary source of truth, but we have observed cases
-	// where generator output can still contain legacy tags; rewriting here keeps
-	// clabernetes deployments deterministic and avoids flaky SSH readiness.
-	if topology, ok := topo["topology"].(map[string]any); ok {
-		if nodes, ok := topology["nodes"].(map[string]any); ok {
-			changed := 0
-			for node, nodeAny := range nodes {
-				cfg, ok := nodeAny.(map[string]any)
-				if !ok || cfg == nil {
-					continue
-				}
-				img, _ := cfg["image"].(string)
-				if rewritten, ok := rewriteVrnetlabImageForCluster(img); ok {
-					cfg["image"] = rewritten
-					nodes[node] = cfg
-					changed++
-				}
-			}
-			if changed > 0 {
-				log.Infof("c9s: rewritten vrnetlab image(s): nodes=%d", changed)
-				topology["nodes"] = nodes
-				topo["topology"] = topology
-			}
-		}
-	}
-
 	// Rewrite bind sources to the mounted file paths (only for node_files paths).
 	mountRoot := path.Join("/tmp/skyforge-c9s", topologyName)
 	if topology, ok := topo["topology"].(map[string]any); ok {
@@ -1009,7 +1030,7 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 				// Rewrite startup-config if present.
 				if sc, ok := cfg["startup-config"].(string); ok {
 					sc = strings.TrimSpace(sc)
-					if strings.HasPrefix(sc, "config/") {
+					if strings.HasPrefix(sc, "config/") || strings.HasPrefix(sc, "node_files/") {
 						cfg["startup-config"] = path.Join(mountRoot, sc)
 					}
 				}

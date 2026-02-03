@@ -173,6 +173,8 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 	}
 	netlabGeneratorImage := strings.TrimSpace(enc.NetlabGenerator.GeneratorImage)
 	netlabGeneratorPullPolicy := strings.TrimSpace(enc.NetlabGenerator.PullPolicy)
+	netlabApplierImage := strings.TrimSpace(enc.NetlabGenerator.ApplierImage)
+	netlabApplierPullPolicy := strings.TrimSpace(enc.NetlabGenerator.ApplierPullPolicy)
 
 	featuresCfg := skyforgecore.FeaturesConfig{
 		GiteaEnabled:     enc.Features.GiteaEnabled,
@@ -383,6 +385,8 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		NetlabC9sGeneratorMode:                   netlabC9sGeneratorMode,
 		NetlabGeneratorImage:                     netlabGeneratorImage,
 		NetlabGeneratorPullPolicy:                netlabGeneratorPullPolicy,
+		NetlabApplierImage:                       netlabApplierImage,
+		NetlabApplierPullPolicy:                  netlabApplierPullPolicy,
 		Features:                                 featuresCfg,
 	}
 }
@@ -473,6 +477,8 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 	}
 	netlabGeneratorImage := strings.TrimSpace(enc.NetlabGenerator.GeneratorImage)
 	netlabGeneratorPullPolicy := strings.TrimSpace(enc.NetlabGenerator.PullPolicy)
+	netlabApplierImage := strings.TrimSpace(enc.NetlabGenerator.ApplierImage)
+	netlabApplierPullPolicy := strings.TrimSpace(enc.NetlabGenerator.ApplierPullPolicy)
 
 	featuresCfg := skyforgecore.FeaturesConfig{
 		GiteaEnabled:     enc.Features.GiteaEnabled,
@@ -508,6 +514,8 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		NetlabC9sGeneratorMode:                   netlabC9sGeneratorMode,
 		NetlabGeneratorImage:                     netlabGeneratorImage,
 		NetlabGeneratorPullPolicy:                netlabGeneratorPullPolicy,
+		NetlabApplierImage:                       netlabApplierImage,
+		NetlabApplierPullPolicy:                  netlabApplierPullPolicy,
 		Forward: skyforgecore.ForwardConfig{
 			SNMPPlaceholderEnabled: enc.Forward.SNMPPlaceholderEnabled,
 			SNMPCommunity:          strings.TrimSpace(enc.Forward.SNMPCommunity),

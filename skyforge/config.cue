@@ -185,4 +185,6 @@ NetlabGenerator: {
 	// in local/dev setups even if ENCORE_CFG_SKYFORGE isn't wired up yet.
 	GeneratorImage:    "ghcr.io/forwardnetworks/skyforge-netlab-generator:20260127-b8947318"
 	PullPolicy:        "IfNotPresent"
+	ApplierImage:      "ghcr.io/forwardnetworks/skyforge-netlab-applier:latest"
+	ApplierPullPolicy: "IfNotPresent"
 }

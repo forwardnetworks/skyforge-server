@@ -26,6 +26,14 @@ type netlabC9sManifest struct {
 			Rel string `json:"rel"`
 		} `json:"files"`
 	} `json:"sharedFiles,omitempty"`
+	NetlabOutput *struct {
+		Type     string `json:"type"`
+		Encoding string `json:"encoding"`
+		Chunks   []struct {
+			ConfigMapName string `json:"configMapName"`
+			Key           string `json:"key"`
+		} `json:"chunks"`
+	} `json:"netlabOutput,omitempty"`
 }
 
 const defaultNetlabC9sGeneratorImage = "ghcr.io/forwardnetworks/skyforge-netlab-generator:latest"
@@ -42,12 +50,12 @@ const defaultNetlabC9sGeneratorImage = "ghcr.io/forwardnetworks/skyforge-netlab-
 //   - `nodes` mapping node -> {configMapName, files:[{key,rel}]}
 //
 // The worker uses this to mount node_files into clabernetes node pods without needing a tarball.
-func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9sRunSpec, topologyPath, tarballName string, log Logger) ([]byte, map[string][]c9sFileFromConfigMap, error) {
+func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9sRunSpec, topologyPath, tarballName string, log Logger) ([]byte, map[string][]c9sFileFromConfigMap, *netlabC9sManifest, error) {
 	if log == nil {
 		log = noopLogger{}
 	}
 	if e == nil {
-		return nil, nil, fmt.Errorf("engine unavailable")
+		return nil, nil, nil, fmt.Errorf("engine unavailable")
 	}
 
 	image := strings.TrimSpace(e.cfg.NetlabGeneratorImage)
@@ -60,10 +68,10 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 		pullPolicy = "IfNotPresent"
 	}
 	if spec.WorkspaceCtx == nil {
-		return nil, nil, fmt.Errorf("workspace context unavailable")
+		return nil, nil, nil, fmt.Errorf("workspace context unavailable")
 	}
 	if strings.TrimSpace(spec.Template) == "" {
-		return nil, nil, fmt.Errorf("netlab template is required")
+		return nil, nil, nil, fmt.Errorf("netlab template is required")
 	}
 
 	ns := strings.TrimSpace(spec.K8sNamespace)
@@ -79,27 +87,27 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 	// via a ConfigMap.
 	bundleB64, err := e.buildNetlabTopologyBundleB64(ctx, spec.WorkspaceCtx, spec.TemplateSource, spec.TemplateRepo, spec.TemplatesDir, spec.Template)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	bundleB64 = strings.TrimSpace(bundleB64)
 	if bundleB64 == "" {
-		return nil, nil, fmt.Errorf("netlab topology bundle is empty")
+		return nil, nil, nil, fmt.Errorf("netlab topology bundle is empty")
 	}
 	// Defensive cap: Kubernetes object size limit is ~1MiB; base64 expands.
 	if len(bundleB64) > 900_000 {
-		return nil, nil, fmt.Errorf("netlab topology bundle too large for in-cluster generator (%d bytes base64)", len(bundleB64))
+		return nil, nil, nil, fmt.Errorf("netlab topology bundle too large for in-cluster generator (%d bytes base64)", len(bundleB64))
 	}
 	if _, err := base64.StdEncoding.DecodeString(bundleB64); err != nil {
-		return nil, nil, fmt.Errorf("invalid netlab topology bundle encoding: %w", err)
+		return nil, nil, nil, fmt.Errorf("invalid netlab topology bundle encoding: %w", err)
 	}
 
 	if err := kubeEnsureNamespace(ctx, ns); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	// The generator runs in the workspace namespace and pulls its image from GHCR.
 	// Ensure the image pull secret exists in the workspace namespace before creating the Job.
 	if err := kubeEnsureNamespaceImagePullSecret(ctx, ns, strings.TrimSpace(e.cfg.ImagePullSecretName), strings.TrimSpace(e.cfg.ImagePullSecretNamespace)); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	labels := map[string]string{
@@ -110,7 +118,7 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 	if err := kubeUpsertConfigMap(ctx, ns, bundleCM, map[string]string{
 		"bundle.b64": bundleB64,
 	}, labels); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	defer func() {
 		_, _ = kubeDeleteConfigMap(context.Background(), ns, bundleCM)
@@ -121,7 +129,7 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 	const roleName = "skyforge-netlab-generator"
 	const rbName = "skyforge-netlab-generator"
 	if err := kubeUpsertServiceAccount(ctx, ns, saName, labels); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	// kubeUpsertServiceAccount doesn't include imagePullSecrets; ensure the generator SA can pull.
 	secretName := strings.TrimSpace(e.cfg.ImagePullSecretName)
@@ -129,7 +137,7 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 		secretName = "ghcr-pull"
 	}
 	if err := kubeEnsureServiceAccountImagePullSecret(ctx, ns, saName, secretName); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	rules := []map[string]any{
 		{
@@ -139,10 +147,10 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 		},
 	}
 	if err := kubeUpsertRole(ctx, ns, roleName, rules, labels); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if err := kubeUpsertRoleBinding(ctx, ns, rbName, roleName, saName, labels); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	jobName := sanitizeKubeNameFallback(fmt.Sprintf("netlab-gen-%s-%d", topologyName, time.Now().Unix()%10_000), "netlab-gen")
@@ -231,7 +239,7 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 	}
 
 	if err := kubeCreateJob(ctx, ns, payload); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	jobSucceeded := false
 	defer func() {
@@ -250,28 +258,28 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 		canceled, _ := e.taskCanceled(ctx, spec.TaskID)
 		return canceled
 	}); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	jobSucceeded = true
 
 	data, ok, err := kubeGetConfigMap(ctx, ns, manifestCM)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if !ok {
-		return nil, nil, fmt.Errorf("netlab generator did not write manifest configmap %s", manifestCM)
+		return nil, nil, nil, fmt.Errorf("netlab generator did not write manifest configmap %s", manifestCM)
 	}
 	raw := strings.TrimSpace(data["manifest.json"])
 	if raw == "" {
-		return nil, nil, fmt.Errorf("netlab generator manifest is empty")
+		return nil, nil, nil, fmt.Errorf("netlab generator manifest is empty")
 	}
 	var manifest netlabC9sManifest
 	if err := json.Unmarshal([]byte(raw), &manifest); err != nil {
-		return nil, nil, fmt.Errorf("invalid netlab generator manifest: %w", err)
+		return nil, nil, nil, fmt.Errorf("invalid netlab generator manifest: %w", err)
 	}
 	clab := strings.TrimSpace(manifest.ClabYAML)
 	if clab == "" {
-		return nil, nil, fmt.Errorf("netlab generator manifest missing clabYAML")
+		return nil, nil, nil, fmt.Errorf("netlab generator manifest missing clabYAML")
 	}
 
 	mountRoot := path.Join("/tmp/skyforge-c9s", topologyName)
@@ -326,5 +334,5 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 		nodeMounts[node] = mounts
 	}
 
-	return []byte(clab), nodeMounts, nil
+	return []byte(clab), nodeMounts, &manifest, nil
 }

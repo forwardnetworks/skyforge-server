@@ -59,6 +59,8 @@ type Config struct {
 	NetlabC9sGeneratorMode                   string
 	NetlabGeneratorImage                     string
 	NetlabGeneratorPullPolicy                string
+	NetlabApplierImage                       string
+	NetlabApplierPullPolicy                  string
 	PKICACert                                string
 	PKICAKey                                 string
 	PKIDefaultDays                           int

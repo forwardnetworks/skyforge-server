@@ -39,6 +39,9 @@ func ValidateConfig(cfg Config) ConfigValidation {
 			// deployments when config is incomplete.
 			v.addWarning("netlab generator image is not configured (NetlabGeneratorImage); default will be used")
 		}
+		if strings.TrimSpace(cfg.NetlabApplierImage) == "" {
+			v.addWarning("netlab applier image is not configured (NetlabApplierImage); netlab initial apply will be unavailable")
+		}
 	case "remote":
 		// BYOS netlab server mode; generator image is optional.
 	default:
