@@ -782,12 +782,16 @@ WHERE workspace_id=$1 AND deployment_id=$2 AND status IN ('queued','running')`, 
 					forwardCfg, _ = s.forwardConfigForUser(ctx, pc.claims.Username)
 				}
 				if forwardCfg == nil {
-					// Best-effort: do not block deployment deletion on Forward cleanup.
-					log.Printf("deployments delete forward cleanup skipped: forward credentials not configured")
-				} else if client, err := newForwardClient(*forwardCfg); err != nil {
-					log.Printf("deployments delete forward cleanup skipped: %v", err)
-				} else if err := forwardDeleteNetwork(ctx, client, networkID); err != nil {
-					log.Printf("deployments delete forward cleanup skipped: %v", err)
+					return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward credentials are not configured (cannot delete Forward network)").Err()
+				}
+				client, err := newForwardClient(*forwardCfg)
+				if err != nil {
+					return nil, errs.B().Code(errs.Unavailable).Msg("failed to initialize Forward client").Err()
+				}
+				delCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				defer cancel()
+				if err := forwardDeleteNetwork(delCtx, client, networkID); err != nil {
+					return nil, errs.B().Code(errs.Unavailable).Msg("failed to delete Forward network").Err()
 				}
 			}
 		}

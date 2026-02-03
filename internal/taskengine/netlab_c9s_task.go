@@ -700,7 +700,8 @@ func waitForForwardSSHReady(ctx context.Context, taskID int, e *Engine, graph *T
 	if log != nil {
 		log.Infof("forward ssh readiness: waiting for ssh on nodes=%d timeout=%s", len(targets), timeout)
 	}
-	for _, node := range targets {
+	readyCount := 0
+	for idx, node := range targets {
 		node := node
 		host := strings.TrimSpace(node.MgmtHost)
 		if host == "" {
@@ -710,7 +711,13 @@ func waitForForwardSSHReady(ctx context.Context, taskID int, e *Engine, graph *T
 		lastProgress := time.Time{}
 		for {
 			if time.Now().After(deadline) {
-				return fmt.Errorf("forward sync wait timed out waiting for ssh on %s (%s)", strings.TrimSpace(node.Label), host)
+				return fmt.Errorf(
+					"forward sync wait timed out waiting for ssh on %s (%s) (progress %d/%d ready)",
+					strings.TrimSpace(node.Label),
+					host,
+					readyCount,
+					len(targets),
+				)
 			}
 			if taskID > 0 && e != nil {
 				canceled, _ := e.taskCanceled(ctx, taskID)
@@ -722,9 +729,12 @@ func waitForForwardSSHReady(ctx context.Context, taskID int, e *Engine, graph *T
 			// Prefer a real SSH banner read instead of a bare TCP connect. Some NOS images
 			// accept TCP connections early but drop/reset them before SSH is usable.
 			if forwardSSHBannerReady(ctx, host) {
+				readyCount++
 				if log != nil {
 					log.Infof(
-						"forward ssh readiness: ok label=%s host=%s elapsed=%s",
+						"forward ssh readiness: ok (%d/%d) label=%s host=%s elapsed=%s",
+						readyCount,
+						len(targets),
 						strings.TrimSpace(node.Label),
 						host,
 						time.Since(nodeStart).Truncate(time.Second),
@@ -742,7 +752,9 @@ func waitForForwardSSHReady(ctx context.Context, taskID int, e *Engine, graph *T
 						remaining = 0
 					}
 					log.Infof(
-						"forward ssh readiness: waiting label=%s host=%s nodeElapsed=%s overallElapsed=%s remaining=%s",
+						"forward ssh readiness: waiting (%d/%d) label=%s host=%s nodeElapsed=%s overallElapsed=%s remaining=%s",
+						idx+1,
+						len(targets),
 						strings.TrimSpace(node.Label),
 						host,
 						time.Since(nodeStart).Truncate(time.Second),
