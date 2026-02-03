@@ -124,6 +124,7 @@ func injectNetlabC9sVrnetlabStartupConfig(
 			log.Infof("c9s: vrnetlab startup-config skipped (no snippets): %s", nodeName)
 			continue
 		}
+		combined = appendDefaultSNMPPublic(kind, combined)
 
 		key := sanitizeArtifactKeySegment(fmt.Sprintf("%s-startup-config.cfg", nodeName))
 		if key == "" || key == "unknown" {
@@ -160,6 +161,50 @@ func injectNetlabC9sVrnetlabStartupConfig(
 	}
 
 	return out, nodeMounts, nil
+}
+
+func appendDefaultSNMPPublic(kind, startupConfig string) string {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	startupConfig = strings.ReplaceAll(startupConfig, "\r\n", "\n")
+	if strings.TrimSpace(kind) == "" || strings.TrimSpace(startupConfig) == "" {
+		return startupConfig
+	}
+
+	// If the topology already contains SNMP config, don't inject defaults.
+	if strings.Contains(strings.ToLower(startupConfig), "snmp") {
+		return startupConfig
+	}
+
+	snippet := ""
+	switch {
+	case kind == "vr-vmx" ||
+		strings.Contains(kind, "junos") ||
+		strings.Contains(kind, "vqfx") ||
+		strings.Contains(kind, "vsrx") ||
+		strings.Contains(kind, "vjunos"):
+		// Junos accepts `set` commands in configuration mode.
+		snippet = "set snmp community public authorization read-only\n"
+	case strings.Contains(kind, "n9kv") || strings.Contains(kind, "nxos"):
+		// NX-OS supports v2c community strings, but uses role-based groups.
+		snippet = "snmp-server community public group network-operator\n"
+	case strings.Contains(kind, "ios") ||
+		strings.Contains(kind, "csr") ||
+		strings.Contains(kind, "c8000") ||
+		strings.Contains(kind, "cat8000"):
+		snippet = "snmp-server community public ro\n"
+	case strings.Contains(kind, "eos") || strings.Contains(kind, "veos"):
+		snippet = "snmp-server community public ro\n"
+	}
+
+	if strings.TrimSpace(snippet) == "" {
+		return startupConfig
+	}
+
+	if !strings.HasSuffix(startupConfig, "\n") {
+		startupConfig += "\n"
+	}
+
+	return startupConfig + snippet
 }
 
 func combineNetlabSnippets(data map[string]string, knownOrder []string) string {
