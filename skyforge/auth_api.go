@@ -377,6 +377,55 @@ func (s *Service) SessionForwardAuth(w http.ResponseWriter, req *http.Request) {
 	_ = json.NewEncoder(w).Encode(&forwardAuthSessionPayload{Status: "ok"})
 }
 
+// SessionForwardAuthEnvoy is a Skyforge SSO gate endpoint for Envoy ext_authz.
+//
+// It behaves like SessionForwardAuth on success, but on unauthenticated requests it
+// returns a 302 redirect to Skyforge login, preserving the original request URI
+// via the `next` parameter.
+//
+// NOTE: Envoy's ext_authz filter commonly forwards the original request path in
+// `x-envoy-original-path` (preferred) rather than `x-forwarded-uri`.
+//
+//encore:api public raw method=GET path=/api/session/forwardauth/envoy
+func (s *Service) SessionForwardAuthEnvoy(w http.ResponseWriter, req *http.Request) {
+	s.sessionForwardAuthEnvoy(w, req)
+}
+
+//encore:api public raw method=POST path=/api/session/forwardauth/envoy
+func (s *Service) SessionForwardAuthEnvoyPost(w http.ResponseWriter, req *http.Request) {
+	s.sessionForwardAuthEnvoy(w, req)
+}
+
+func (s *Service) sessionForwardAuthEnvoy(w http.ResponseWriter, req *http.Request) {
+	claims := claimsFromCookie(s.sessionManager, req.Header.Get("Cookie"))
+	if claims == nil {
+		originalPath := strings.TrimSpace(req.Header.Get("X-Envoy-Original-Path"))
+		if originalPath == "" {
+			originalPath = strings.TrimSpace(req.Header.Get("X-Forwarded-Uri"))
+		}
+		if originalPath == "" {
+			originalPath = "/"
+		}
+		// Avoid open redirects; always force a path-absolute `next`.
+		if !strings.HasPrefix(originalPath, "/") {
+			originalPath = "/"
+		}
+
+		w.Header().Set("Location", "/api/oidc/login?next="+url.QueryEscape(originalPath))
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusFound)
+		_ = json.NewEncoder(w).Encode(&forwardAuthSessionPayload{Status: "unauthenticated"})
+		return
+	}
+
+	addSessionHeaders(w.Header(), claims)
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(&forwardAuthSessionPayload{Status: "ok"})
+}
+
 // SessionForwardAuthHead is a Skyforge SSO gate compatible endpoint used by Traefik forwardAuth (HEAD).
 //
 //encore:api public raw method=HEAD path=/api/session/forwardauth
