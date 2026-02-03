@@ -412,6 +412,8 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		// Optional: apply per-node Kubernetes resource requests for common NOS kinds.
 		// This improves scheduler placement and CPU share allocation, and helps avoid
 		// pathological "slow SSH read rates" caused by severe CPU contention.
+		//
+		// NOTE: clabernetes expects these under spec.deployment.resources (not spec.resources).
 		if envBool(spec.Environment, "SKYFORGE_CLABERNETES_ENABLE_RESOURCES", true) && strings.TrimSpace(spec.TopologyYAML) != "" {
 			kinds, err := containerlabNodeKinds(spec.TopologyYAML)
 			if err != nil {
@@ -452,7 +454,7 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 					}
 				}
 				if len(resources) > 0 {
-					payload["spec"].(map[string]any)["resources"] = resources
+					deployment["resources"] = resources
 					log.Infof("Clabernetes resources: configured nodes=%d", len(resources))
 				}
 			}
