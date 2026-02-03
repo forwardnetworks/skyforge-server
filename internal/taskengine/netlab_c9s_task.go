@@ -1001,6 +1001,39 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 		topo["name"] = labName
 	}
 
+	// Rewrite vrnetlab image references into our GHCR mirror so clabernetes can pull them.
+	//
+	// Netlab templates often reference upstream tags like "vrnetlab/vr-vmx:18.2R1.9" which are
+	// not reliably available via DockerHub. We mirror vrnetlab images under:
+	//   ghcr.io/forwardnetworks/vrnetlab/<name>:<tag>
+	//
+	// This is an adaptation layer; netlab remains the source-of-truth for config generation.
+	rewrittenVrnetlabNodes := 0
+	if topology, ok := topo["topology"].(map[string]any); ok {
+		if nodes, ok := topology["nodes"].(map[string]any); ok {
+			for node, nodeAny := range nodes {
+				cfg, ok := nodeAny.(map[string]any)
+				if !ok || cfg == nil {
+					continue
+				}
+				image := strings.TrimSpace(fmt.Sprintf("%v", cfg["image"]))
+				if image == "" {
+					continue
+				}
+				if rewritten, ok := rewriteVrnetlabImageForCluster(image); ok && strings.TrimSpace(rewritten) != "" && rewritten != image {
+					cfg["image"] = rewritten
+					nodes[node] = cfg
+					rewrittenVrnetlabNodes++
+				}
+			}
+			topology["nodes"] = nodes
+		}
+		topo["topology"] = topology
+	}
+	if rewrittenVrnetlabNodes > 0 {
+		log.Infof("c9s: rewritten vrnetlab image(s): nodes=%d", rewrittenVrnetlabNodes)
+	}
+
 	// Rewrite bind sources to the mounted file paths (only for node_files paths).
 	mountRoot := path.Join("/tmp/skyforge-c9s", topologyName)
 	if topology, ok := topo["topology"].(map[string]any); ok {
