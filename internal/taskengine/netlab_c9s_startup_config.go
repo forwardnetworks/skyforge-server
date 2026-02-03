@@ -58,23 +58,8 @@ func injectNetlabC9sVrnetlabStartupConfig(
 		return topologyYAML, nodeMounts, nil
 	}
 
-	overrideCM := sanitizeKubeNameFallback(fmt.Sprintf("c9s-%s-vrnetlab-startup", topologyName), "c9s-vrnetlab-startup")
-	overrideData := map[string]string{}
-	labels := map[string]string{"skyforge-c9s-topology": topologyName}
-
-	knownOrder := []string{
-		"normalize",
-		"initial",
-		"vlan",
-		"bgp",
-		"vxlan",
-		"evpn",
-		"ebgp_ecmp",
-		"ebgp.ecmp",
-		"firewall.zonebased",
-	}
-
 	const startupPath = "/config/startup-config.cfg"
+	mountedCount := 0
 
 	for node, nodeAny := range nodesAny {
 		nodeName := strings.TrimSpace(fmt.Sprintf("%v", node))
@@ -95,65 +80,48 @@ func injectNetlabC9sVrnetlabStartupConfig(
 			continue
 		}
 
-		// Find the netlab-generated snippet ConfigMap for this node (from mounts).
-		cmName := ""
-		if mounts, ok := nodeMounts[nodeName]; ok {
-			for _, m := range mounts {
-				if strings.TrimSpace(m.ConfigMapName) != "" {
-					cmName = strings.TrimSpace(m.ConfigMapName)
-					break
-				}
+		// For vrnetlab nodes, do not concatenate netlab snippets (node_files). Instead,
+		// rely on netlab's generated startup configs (workdir/config/<node>.cfg) and
+		// mount them into the vrnetlab container at /config/startup-config.cfg.
+		//
+		// This keeps netlab as the source-of-truth for ordering/merging and avoids
+		// subtle syntax issues that can arise when recombining fragments.
+		expectedConfigName := fmt.Sprintf("%s.cfg", nodeName)
+		var startupCfg c9sFileFromConfigMap
+		found := false
+		for _, m := range nodeMounts[nodeName] {
+			if strings.TrimSpace(m.ConfigMapName) == "" || strings.TrimSpace(m.ConfigMapPath) == "" {
+				continue
 			}
+			if strings.TrimSpace(m.ConfigMapPath) != expectedConfigName {
+				continue
+			}
+			if !strings.Contains(m.FilePath, "/config/") {
+				continue
+			}
+			startupCfg = m
+			found = true
+			break
 		}
-		if cmName == "" {
-			log.Infof("c9s: vrnetlab startup-config skipped (no node configmap): %s", nodeName)
-			continue
+		if !found {
+			return nil, nil, fmt.Errorf("netlab did not produce startup config for %s (expected config/%s)", nodeName, expectedConfigName)
 		}
 
-		data, ok, err := kubeGetConfigMap(ctx, ns, cmName)
-		if err != nil {
-			return nil, nil, err
-		}
-		if !ok || len(data) == 0 {
-			log.Infof("c9s: vrnetlab startup-config skipped (empty configmap): %s", cmName)
-			continue
-		}
-
-		combined := combineNetlabSnippets(data, knownOrder)
-		if strings.TrimSpace(combined) == "" {
-			log.Infof("c9s: vrnetlab startup-config skipped (no snippets): %s", nodeName)
-			continue
-		}
-		combined = stripNetlabJunosDeleteDirectives(kind, combined)
-		combined = normalizeNetlabJunosHierarchicalConfig(kind, combined)
-		combined = appendDefaultSNMPPublic(kind, combined)
-
-		key := sanitizeArtifactKeySegment(fmt.Sprintf("%s-startup-config.cfg", nodeName))
-		if key == "" || key == "unknown" {
-			key = "startup-config.cfg"
-		}
-		overrideData[key] = combined
-
-		// Set startup-config path in topology for clarity (mount is handled by FilesFromConfigMap).
 		cfg["startup-config"] = startupPath
 		nodesAny[node] = cfg
 
-		// Ensure the file is mounted into the NOS container at the path vrnetlab expects.
 		nodeMounts[nodeName] = upsertC9sMount(nodeMounts[nodeName], c9sFileFromConfigMap{
-			ConfigMapName: overrideCM,
-			ConfigMapPath: key,
+			ConfigMapName: startupCfg.ConfigMapName,
+			ConfigMapPath: startupCfg.ConfigMapPath,
 			FilePath:      startupPath,
 			Mode:          "read",
 		})
+		mountedCount++
 	}
 
-	if len(overrideData) == 0 {
-		return topologyYAML, nodeMounts, nil
+	if mountedCount > 0 {
+		log.Infof("c9s: vrnetlab startup-config mounted from netlab config/: nodes=%d", mountedCount)
 	}
-	if err := kubeUpsertConfigMap(ctx, ns, overrideCM, overrideData, labels); err != nil {
-		return nil, nil, err
-	}
-	log.Infof("c9s: vrnetlab startup-config injected: nodes=%d", len(overrideData))
 
 	topology["nodes"] = nodesAny
 	topo["topology"] = topology
@@ -205,6 +173,8 @@ func normalizeNetlabJunosHierarchicalConfig(kind, startupConfig string) string {
 		return startupConfig
 	}
 
+	junosIfaceUnits := collectJunosInterfaceUnits(startupConfig)
+
 	in := strings.Split(startupConfig, "\n")
 	out := make([]string, 0, len(in))
 
@@ -218,34 +188,99 @@ func normalizeNetlabJunosHierarchicalConfig(kind, startupConfig string) string {
 			continue
 		}
 
-		// netlab can emit an empty interface list:
+		// netlab can emit an interface list split across lines:
 		//
 		// interface [
+		//   ge-0/0/0.0
 		// ];
 		//
-		// which Junos rejects. If the list is empty, drop the whole block.
+		// and in some cases it is empty (which Junos rejects). Normalize it to a
+		// single-line list. If the list is empty, populate it with interface units
+		// found under `interfaces { ... }` so that BGP export policies remain meaningful.
 		if strings.HasPrefix(trimmed, "interface [") {
+			indent := line[:strings.Index(line, "interface")]
+
 			j := i + 1
-			hasEntries := false
+			entries := make([]string, 0, 8)
 			for ; j < len(in); j++ {
 				t := strings.TrimSpace(in[j])
 				if t == "];" {
 					break
 				}
-				if t != "" {
-					hasEntries = true
+				if t == "" {
+					continue
 				}
+				entries = append(entries, strings.Fields(t)...)
 			}
-			if j < len(in) && strings.TrimSpace(in[j]) == "];" && !hasEntries {
+
+			// If the bracket list exists but contains no entries, fall back to the
+			// interfaces present in the same config.
+			if len(entries) == 0 && len(junosIfaceUnits) > 0 {
+				entries = append(entries, junosIfaceUnits...)
+			}
+
+			// Only emit the line if we have something reasonable to put in it.
+			if len(entries) > 0 {
+				out = append(out, indent+"interface [ "+strings.Join(entries, " ")+" ];")
+			}
+
+			// Skip all lines up to and including the closing "];" line.
+			if j < len(in) {
 				i = j
-				continue
 			}
+			continue
 		}
 
 		out = append(out, line)
 	}
 
 	return strings.Join(out, "\n")
+}
+
+func collectJunosInterfaceUnits(startupConfig string) []string {
+	startupConfig = strings.ReplaceAll(startupConfig, "\r\n", "\n")
+	lines := strings.Split(startupConfig, "\n")
+
+	seen := map[string]bool{}
+	out := make([]string, 0, 8)
+
+	inInterfaces := false
+	braceDepth := 0
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+
+		// Track entry into the `interfaces { ... }` block.
+		if !inInterfaces && trimmed == "interfaces {" {
+			inInterfaces = true
+			braceDepth = 1
+			continue
+		}
+
+		if inInterfaces {
+			// Capture interface unit headers like `ge-0/0/0.0 {` and `lo0.0 {`.
+			if idx := strings.Index(trimmed, "{"); idx > 0 {
+				left := strings.TrimSpace(trimmed[:idx])
+				if strings.Contains(left, ".") && !strings.Contains(left, " ") && !seen[left] {
+					seen[left] = true
+					out = append(out, left)
+				}
+			}
+
+			// Update brace depth; once it drops to 0 we are out of `interfaces`.
+			braceDepth += strings.Count(line, "{")
+			braceDepth -= strings.Count(line, "}")
+			if braceDepth <= 0 {
+				inInterfaces = false
+			}
+		}
+	}
+
+	sort.Strings(out)
+	return out
 }
 
 func appendDefaultSNMPPublic(kind, startupConfig string) string {
