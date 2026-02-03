@@ -338,6 +338,26 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 	defer conn.Close(websocket.StatusNormalClosure, "")
 	conn.SetReadLimit(1 << 20)
 
+	// Keep the WebSocket alive through reverse proxies and idle periods.
+	// Without this, some proxies close idle connections without a close frame,
+	// which surfaces to the browser as code 1006.
+	{
+		t := time.NewTicker(15 * time.Second)
+		defer t.Stop()
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+					ctxPing, cancel := context.WithTimeout(ctx, 2*time.Second)
+					_ = conn.Ping(ctxPing)
+					cancel()
+				}
+			}
+		}()
+	}
+
 	// Resolve pod name.
 	resolveCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	podName, err := resolveClabernetesNodePod(resolveCtx, k8sNamespace, topologyName, node)

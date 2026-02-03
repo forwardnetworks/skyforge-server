@@ -294,6 +294,50 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 			}
 		}
 
+		// Default: prefer spreading per-topology pods across Kubernetes nodes.
+		//
+		// Large NOS images (vrnetlab/QEMU) can be CPU-heavy. If all nodes in a topology schedule
+		// onto the same Kubernetes worker, SSH responsiveness and Forward collection can degrade
+		// significantly (slow read rates, timeouts, etc.). We therefore apply a soft pod
+		// anti-affinity rule keyed on clabernetes' own topology owner label.
+		//
+		// This remains "preferred" (not required) so small clusters can still schedule labs.
+		if envBool(spec.Environment, "SKYFORGE_CLABERNETES_ENABLE_POD_ANTI_AFFINITY", true) {
+			specMap := payload["spec"].(map[string]any)
+			scheduling, ok := specMap["scheduling"].(map[string]any)
+			if !ok || scheduling == nil {
+				scheduling = map[string]any{}
+				specMap["scheduling"] = scheduling
+			}
+			affinity, ok := scheduling["affinity"].(map[string]any)
+			if !ok || affinity == nil {
+				affinity = map[string]any{}
+				scheduling["affinity"] = affinity
+			}
+			if _, ok := affinity["podAntiAffinity"]; !ok {
+				affinity["podAntiAffinity"] = map[string]any{
+					"preferredDuringSchedulingIgnoredDuringExecution": []any{
+						map[string]any{
+							"weight": 100,
+							"podAffinityTerm": map[string]any{
+								"labelSelector": map[string]any{
+									"matchExpressions": []any{
+										map[string]any{
+											"key":      "clabernetes/topologyOwner",
+											"operator": "In",
+											"values":   []any{name},
+										},
+									},
+								},
+								"topologyKey": "kubernetes.io/hostname",
+							},
+						},
+					},
+				}
+				log.Infof("Clabernetes scheduling: prefer spreading pods (podAntiAffinity topologyOwner=%s)", name)
+			}
+		}
+
 		if disableExpose {
 			payload["spec"].(map[string]any)["expose"] = map[string]any{
 				"disableExpose": true,

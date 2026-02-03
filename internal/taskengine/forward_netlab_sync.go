@@ -1079,8 +1079,8 @@ func forwardDefaultCredentialForKind(kind string) (username, password string, ok
 	case "nxos":
 		return "admin", "admin", true
 	case "vmx":
-		// vrnetlab Juniper vMX defaults to admin/admin@123.
-		return "admin", "admin@123", true
+		// vrnetlab Juniper vMX defaults to vrnetlab/VR-netlab9 (see vr-vmx launch.py).
+		return "vrnetlab", "VR-netlab9", true
 	default:
 		return "", "", false
 	}
