@@ -29,6 +29,12 @@ type kubeConfigMapList struct {
 	} `json:"items"`
 }
 
+type kubeNamespace struct {
+	Metadata struct {
+		Labels map[string]string `json:"labels"`
+	} `json:"metadata"`
+}
+
 func EnsureNamespace(ctx context.Context, ns string) error {
 	ns = strings.TrimSpace(ns)
 	if ns == "" {
@@ -49,10 +55,47 @@ func EnsureNamespace(ctx context.Context, ns string) error {
 	if err != nil {
 		return err
 	}
-	_, _ = io.Copy(io.Discard, io.LimitReader(getResp.Body, 4<<10))
+	bodyBytes, _ := io.ReadAll(io.LimitReader(getResp.Body, 64<<10))
 	getResp.Body.Close()
 	switch getResp.StatusCode {
 	case http.StatusOK:
+		// Ensure existing namespaces are labeled so admission policies apply
+		// consistently even if the namespace was created before Skyforge added
+		// labeling.
+		needsLabel := true
+		var existing kubeNamespace
+		if err := json.Unmarshal(bodyBytes, &existing); err == nil && existing.Metadata.Labels != nil {
+			if strings.TrimSpace(existing.Metadata.Labels["skyforge-managed"]) == "true" {
+				needsLabel = false
+			}
+		}
+		if !needsLabel {
+			return nil
+		}
+
+		patch := map[string]any{
+			"metadata": map[string]any{
+				"labels": map[string]any{
+					"skyforge-managed": "true",
+				},
+			},
+		}
+		patchBody, _ := json.Marshal(patch)
+		patchURL := fmt.Sprintf("https://kubernetes.default.svc/api/v1/namespaces/%s", ns)
+		patchReq, err := Request(ctx, http.MethodPatch, patchURL, bytes.NewReader(patchBody))
+		if err != nil {
+			return err
+		}
+		patchReq.Header.Set("Content-Type", "application/merge-patch+json")
+		patchResp, err := client.Do(patchReq)
+		if err != nil {
+			return err
+		}
+		defer patchResp.Body.Close()
+		if patchResp.StatusCode < 200 || patchResp.StatusCode >= 300 {
+			data, _ := io.ReadAll(io.LimitReader(patchResp.Body, 16<<10))
+			return fmt.Errorf("kube namespace label patch failed: %s: %s", patchResp.Status, strings.TrimSpace(string(data)))
+		}
 		return nil
 	case http.StatusNotFound:
 	default:

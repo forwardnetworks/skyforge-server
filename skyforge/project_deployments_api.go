@@ -70,6 +70,8 @@ type WorkspaceDeploymentActionResponse struct {
 
 type WorkspaceDeploymentDeleteRequest struct {
 	ForwardDelete bool `query:"forward_delete" encore:"optional"`
+	// Alternate casing used by some UI clients.
+	ForwardDeleteCamel bool `query:"forwardDelete" encore:"optional"`
 }
 
 type WorkspaceDeploymentInfoResponse struct {
@@ -762,7 +764,7 @@ WHERE workspace_id=$1 AND deployment_id=$2 AND status IN ('queued','running')`, 
 			log.Printf("deployments delete c9s cleanup (ignored): %v", err)
 		}
 	}
-	if req != nil && req.ForwardDelete {
+	if req != nil && (req.ForwardDelete || req.ForwardDeleteCamel) {
 		cfgAny, _ := fromJSONMap(existing.Config)
 		if cfgAny == nil {
 			cfgAny = map[string]any{}

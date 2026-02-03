@@ -405,10 +405,6 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 			}
 		}
 
-		if len(deployment) > 0 {
-			payload["spec"].(map[string]any)["deployment"] = deployment
-		}
-
 		// Optional: apply per-node Kubernetes resource requests for common NOS kinds.
 		// This improves scheduler placement and CPU share allocation, and helps avoid
 		// pathological "slow SSH read rates" caused by severe CPU contention.
@@ -458,6 +454,11 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 					log.Infof("Clabernetes resources: configured nodes=%d", len(resources))
 				}
 			}
+		}
+
+		// Persist deployment overrides after all optional mutations (files, resources, etc).
+		if len(deployment) > 0 {
+			payload["spec"].(map[string]any)["deployment"] = deployment
 		}
 
 		if err := kubeCreateClabernetesTopology(ctx, ns, payload); err != nil {
