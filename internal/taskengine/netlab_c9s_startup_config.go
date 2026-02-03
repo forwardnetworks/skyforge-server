@@ -124,6 +124,7 @@ func injectNetlabC9sVrnetlabStartupConfig(
 			log.Infof("c9s: vrnetlab startup-config skipped (no snippets): %s", nodeName)
 			continue
 		}
+		combined = stripNetlabJunosDeleteDirectives(kind, combined)
 		combined = appendDefaultSNMPPublic(kind, combined)
 
 		key := sanitizeArtifactKeySegment(fmt.Sprintf("%s-startup-config.cfg", nodeName))
@@ -161,6 +162,32 @@ func injectNetlabC9sVrnetlabStartupConfig(
 	}
 
 	return out, nodeMounts, nil
+}
+
+func stripNetlabJunosDeleteDirectives(kind, startupConfig string) string {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	startupConfig = strings.ReplaceAll(startupConfig, "\r\n", "\n")
+	if strings.TrimSpace(kind) == "" || strings.TrimSpace(startupConfig) == "" {
+		return startupConfig
+	}
+
+	// netlab Junos templates contain `delete:` pseudo-directives intended for idempotent CLI execution.
+	// Those lines are not valid Junos configuration syntax and will make `load merge terminal` fail.
+	//
+	// Stripping them is safe for Skyforge, as labs are typically deployed from a clean slate.
+	if !(kind == "vr-vmx" || strings.Contains(kind, "junos") || strings.Contains(kind, "vqfx") || strings.Contains(kind, "vsrx") || strings.Contains(kind, "vjunos")) {
+		return startupConfig
+	}
+
+	in := strings.Split(startupConfig, "\n")
+	out := make([]string, 0, len(in))
+	for _, line := range in {
+		if strings.HasPrefix(strings.TrimSpace(line), "delete:") {
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
 }
 
 func appendDefaultSNMPPublic(kind, startupConfig string) string {
