@@ -263,16 +263,16 @@
     "device": "vmx",
     "credentials": [
       {
-        "username": "vrnetlab",
-        "password": "VR-netlab9"
-      },
-      {
         "username": "admin",
         "password": "admin@123"
       },
       {
         "username": "admin",
         "password": "admin"
+      },
+      {
+        "username": "vrnetlab",
+        "password": "VR-netlab9"
       }
     ],
     "image_prefix": "vrnetlab/vr-vmx"
@@ -281,16 +281,16 @@
       "device": "junos",
       "credentials": [
         {
-          "username": "vrnetlab",
-          "password": "VR-netlab9"
-        },
-        {
           "username": "admin",
           "password": "admin@123"
         },
         {
           "username": "admin",
           "password": "admin"
+        },
+        {
+          "username": "vrnetlab",
+          "password": "VR-netlab9"
         }
       ]
     },

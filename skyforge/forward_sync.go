@@ -713,8 +713,7 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *
 		}
 		cred, ok := netlabCredentialForDevice(row.Device, row.Image)
 		// Some netlab status outputs omit the "device" field; fall back to our normalized
-		// device key so we still select the correct default credentials (e.g. vMX uses
-		// vrnetlab/VR-netlab9, not admin/admin).
+		// device key so we still select the correct default credentials.
 		if !ok && deviceKey != "" {
 			cred, ok = netlabCredentialForDevice(deviceKey, row.Image)
 		}

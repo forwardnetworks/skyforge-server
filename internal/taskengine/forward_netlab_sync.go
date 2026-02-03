@@ -945,8 +945,7 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 
 		cred, ok := netlabCredentialForDevice(row.Device, row.Image)
 		// Some netlab status outputs omit the "device" field; fall back to our normalized
-		// device key so we still select the correct default credentials (e.g. vMX uses
-		// vrnetlab/VR-netlab9, not admin/admin).
+		// device key so we still select the correct default credentials.
 		if !ok && deviceKey != "" {
 			cred, ok = netlabCredentialForDevice(deviceKey, row.Image)
 		}
@@ -1088,8 +1087,9 @@ func forwardDefaultCredentialForKind(kind string) (username, password string, ok
 	case "nxos":
 		return "admin", "admin", true
 	case "vmx":
-		// vrnetlab Juniper vMX defaults to vrnetlab/VR-netlab9 (see vr-vmx launch.py).
-		return "vrnetlab", "VR-netlab9", true
+		// Prefer admin credentials (netlab defaults) for Junos/vMX. Some images may still use
+		// vrnetlab/VR-netlab9; that remains as a fallback in netlab_device_defaults.json.
+		return "admin", "admin@123", true
 	default:
 		return "", "", false
 	}
