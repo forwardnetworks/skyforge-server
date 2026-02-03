@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 )
 
 type QueuedTask struct {
@@ -38,6 +39,67 @@ LIMIT $1`, limit)
 		priority     int
 	}
 	items := make([]QueuedTask, 0, 64)
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.workspaceID, &r.deploymentID, &r.priority); err != nil {
+			return nil, err
+		}
+		if r.id <= 0 || strings.TrimSpace(r.workspaceID) == "" {
+			continue
+		}
+		key := strings.TrimSpace(r.workspaceID)
+		if r.deploymentID.Valid && strings.TrimSpace(r.deploymentID.String) != "" {
+			key = fmt.Sprintf("%s:%s", strings.TrimSpace(r.workspaceID), strings.TrimSpace(r.deploymentID.String))
+		}
+		items = append(items, QueuedTask{
+			TaskID:   r.id,
+			Key:      key,
+			Priority: r.priority,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+// ListStuckQueuedTasksByKey returns at most one queued task per (workspace_id, deployment_id),
+// selecting the oldest (highest priority, then lowest id) for each key.
+//
+// This is used as a DB-backed fallback for environments where Pub/Sub delivery might be delayed
+// or unavailable. The minAge guard helps avoid racing normal Pub/Sub delivery.
+func ListStuckQueuedTasksByKey(ctx context.Context, db *sql.DB, limit int, minAge time.Duration) ([]QueuedTask, error) {
+	if db == nil {
+		return nil, sql.ErrConnDone
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if minAge < 0 {
+		minAge = 0
+	}
+
+	ageStr := fmt.Sprintf("%fs", minAge.Seconds())
+	rows, err := db.QueryContext(ctx, `
+SELECT DISTINCT ON (workspace_id, COALESCE(deployment_id, ''))
+  id, workspace_id, deployment_id, priority
+FROM sf_tasks
+WHERE status='queued'
+  AND created_at <= now() - $2::interval
+ORDER BY workspace_id, COALESCE(deployment_id, ''), priority DESC, id ASC
+LIMIT $1`, limit, ageStr)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type row struct {
+		id           int
+		workspaceID  string
+		deploymentID sql.NullString
+		priority     int
+	}
+	items := make([]QueuedTask, 0, 32)
 	for rows.Next() {
 		var r row
 		if err := rows.Scan(&r.id, &r.workspaceID, &r.deploymentID, &r.priority); err != nil {

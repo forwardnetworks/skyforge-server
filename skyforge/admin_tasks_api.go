@@ -2,10 +2,12 @@ package skyforge
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 	"time"
 
 	"encore.app/internal/taskqueue"
+	"encore.app/internal/taskheartbeats"
 	"encore.app/internal/taskreconcile"
 	"encore.app/internal/taskstore"
 	"encore.dev/beta/errs"
@@ -83,6 +85,91 @@ func (s *Service) ReconcileQueuedTasks(ctx context.Context, req *ReconcileTasksR
 		Republished:     republished,
 		PublishErrors:   publishErrors,
 	}, nil
+}
+
+type TaskQueueDiagResponse struct {
+	Status string `json:"status"`
+
+	Queued                int    `json:"queued"`
+	Running               int    `json:"running"`
+	OldestQueuedAgeSec    int    `json:"oldestQueuedAgeSec"`
+	WorkerHeartbeatAgeSec int    `json:"workerHeartbeatAgeSec"`
+	WorkerEnabled         bool   `json:"workerEnabled"`
+	PublishFailures10m    int    `json:"publishFailures10m"`
+	PublishFailuresLatest string `json:"publishFailuresLatest,omitempty"`
+}
+
+// TaskQueueDiag provides admin diagnostics for the task queue.
+//
+// This is intended to answer: "are tasks queued because of real backlog, or because
+// queue event delivery/worker execution is broken?"
+//
+//encore:api auth method=GET path=/api/admin/tasks/diag tag:admin
+func (s *Service) TaskQueueDiag(ctx context.Context) (*TaskQueueDiagResponse, error) {
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("task store unavailable").Err()
+	}
+	if _, err := requireAdmin(); err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	queued, running, oldestAge, err := taskQueueSummary(ctx, s.db)
+	if err != nil {
+		return nil, errs.B().Code(errs.Internal).Msg("failed to read task queue summary").Err()
+	}
+
+	heartbeatAge := 0
+	if s.cfg.TaskWorkerEnabled {
+		if age, err := taskheartbeats.MostRecentWorkerHeartbeatAgeSeconds(ctx, s.db); err == nil && age > 0 {
+			heartbeatAge = int(age)
+		}
+	}
+
+	failCount := 0
+	var latest sql.NullTime
+	if err := s.db.QueryRowContext(ctx, `
+SELECT
+  COUNT(*) AS failures,
+  MAX(created_at) AS latest
+FROM sf_task_events
+WHERE event_type='task.enqueue.publish_failed'
+  AND created_at > now() - interval '10 minutes'
+`).Scan(&failCount, &latest); err != nil {
+		// Best-effort; don't fail diag endpoint if this query fails.
+		rlog.Error("task queue diag publish failure query failed", "err", err)
+	}
+	latestStr := ""
+	if latest.Valid {
+		latestStr = latest.Time.UTC().Format(time.RFC3339)
+	}
+
+	out := &TaskQueueDiagResponse{
+		Status:                "ok",
+		Queued:                queued,
+		Running:               running,
+		OldestQueuedAgeSec:    oldestAge,
+		WorkerHeartbeatAgeSec: heartbeatAge,
+		WorkerEnabled:         s.cfg.TaskWorkerEnabled,
+		PublishFailures10m:    failCount,
+		PublishFailuresLatest: latestStr,
+	}
+	// Basic heuristics to flag queue health quickly.
+	if queued > 0 && heartbeatAge > 120 && s.cfg.TaskWorkerEnabled {
+		out.Status = "degraded"
+	}
+	if queued > 0 && oldestAge > 300 && s.cfg.TaskWorkerEnabled {
+		out.Status = "degraded"
+	}
+	if failCount > 0 {
+		out.Status = "degraded"
+	}
+	if queued > 0 && !s.cfg.TaskWorkerEnabled {
+		out.Status = "degraded"
+	}
+	return out, nil
 }
 
 type ReconcileRunningTasksRequest struct {

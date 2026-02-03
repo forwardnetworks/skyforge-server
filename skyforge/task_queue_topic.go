@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"encore.app/internal/taskqueue"
+	"encore.app/internal/taskstore"
 	"encore.dev/rlog"
 )
 
@@ -44,11 +45,25 @@ func (s *Service) enqueueTaskID(ctx context.Context, taskID int, workspaceID str
 	}
 	if priority < taskPriorityInteractive {
 		if _, err := taskQueueBackgroundTopic.Publish(ctx, &taskqueue.TaskEnqueuedEvent{TaskID: taskID, Key: key}); err != nil {
+			taskQueuePublishFailuresTotal.With(taskQueueTopicLabels{Topic: "background"}).Add(1)
+			if s.db != nil {
+				_ = taskstore.AppendTaskEvent(context.Background(), s.db, taskID, "task.enqueue.publish_failed", map[string]any{
+					"topic": "background",
+					"err":   err.Error(),
+				})
+			}
 			rlog.Error("task enqueue publish failed", "task_id", taskID, "err", err)
 		}
 		return
 	}
 	if _, err := taskQueueInteractiveTopic.Publish(ctx, &taskqueue.TaskEnqueuedEvent{TaskID: taskID, Key: key}); err != nil {
+		taskQueuePublishFailuresTotal.With(taskQueueTopicLabels{Topic: "interactive"}).Add(1)
+		if s.db != nil {
+			_ = taskstore.AppendTaskEvent(context.Background(), s.db, taskID, "task.enqueue.publish_failed", map[string]any{
+				"topic": "interactive",
+				"err":   err.Error(),
+			})
+		}
 		rlog.Error("task enqueue publish failed", "task_id", taskID, "err", err)
 	}
 }

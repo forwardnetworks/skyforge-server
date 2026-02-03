@@ -13,6 +13,10 @@ type taskFinishLabels struct {
 	Status   string
 }
 
+type taskQueueTopicLabels struct {
+	Topic string
+}
+
 var (
 	loginAttempts = metrics.NewCounter[uint64]("skyforge_login_attempts_total", metrics.CounterConfig{})
 	loginFailures = metrics.NewCounter[uint64]("skyforge_login_failures_total", metrics.CounterConfig{})
@@ -58,4 +62,6 @@ var (
 
 	taskWorkersAliveCurrent        = metrics.NewGauge[float64]("skyforge_task_workers_alive_current", metrics.GaugeConfig{})
 	taskWorkersHeartbeatAgeSeconds = metrics.NewGauge[float64]("skyforge_task_workers_heartbeat_age_seconds", metrics.GaugeConfig{})
+
+	taskQueuePublishFailuresTotal = metrics.NewCounterGroup[taskQueueTopicLabels, uint64]("skyforge_task_queue_publish_failures_total", metrics.CounterConfig{})
 )

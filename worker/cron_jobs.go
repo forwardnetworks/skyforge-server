@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -51,6 +52,9 @@ func CronWorkerHeartbeat(ctx context.Context) error {
 	if !workerEncoreCfg.TaskWorkerEnabled {
 		return nil
 	}
+	if role := strings.ToLower(strings.TrimSpace(os.Getenv("SKYFORGE_ROLE"))); role != "" && role != "worker" {
+		return nil
+	}
 	instance := taskheartbeats.WorkerInstanceName()
 	if strings.TrimSpace(instance) == "" {
 		return nil
@@ -70,10 +74,110 @@ var _ = cron.NewJob("skyforge-worker-heartbeat", cron.JobConfig{
 
 // NOTE: worker uses the shared Encore-managed database resource directly.
 
+var (
+	queuePollerOnce sync.Once
+	queuePollerSem  chan struct{}
+)
+
+func initQueuePollerSem() {
+	queuePollerOnce.Do(func() {
+		maxConc := workerEncoreCfg.TaskWorkerPollMaxConcurrency
+		if maxConc <= 0 {
+			maxConc = 4
+		}
+		if maxConc > 32 {
+			maxConc = 32
+		}
+		queuePollerSem = make(chan struct{}, maxConc)
+	})
+}
+
+// CronProcessQueuedTasksFallback is a DB-backed fallback that starts tasks directly when they
+// appear stuck in "queued".
+//
+// This avoids the "queued forever" failure mode when Pub/Sub delivery is delayed/unavailable.
+// The primary mechanism is still Pub/Sub; this only kicks in after a minimum queued age.
+//
+//encore:api private method=POST path=/internal/worker/tasks/poll
+func CronProcessQueuedTasksFallback(ctx context.Context) error {
+	if !workerEncoreCfg.TaskWorkerEnabled {
+		return nil
+	}
+	if !workerEncoreCfg.TaskWorkerPollEnabled {
+		return nil
+	}
+	if role := strings.ToLower(strings.TrimSpace(os.Getenv("SKYFORGE_ROLE"))); role != "" && role != "worker" {
+		return nil
+	}
+
+	initQueuePollerSem()
+
+	stdlib, err := getWorkerDB(ctx)
+	if err != nil {
+		return err
+	}
+
+	minQueued := time.Duration(workerEncoreCfg.TaskWorkerPollMinQueuedSeconds) * time.Second
+	if minQueued < 0 {
+		minQueued = 0
+	}
+	limit := workerEncoreCfg.TaskWorkerPollMaxTasksPerTick
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 200 {
+		limit = 200
+	}
+
+	// Only attempt to start tasks that have been queued for at least minQueued.
+	ctxList, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	items, err := taskreconcile.ListStuckQueuedTasksByKey(ctxList, stdlib, limit, minQueued)
+	if err != nil {
+		return err
+	}
+	if len(items) == 0 {
+		return nil
+	}
+
+	svc := &Service{}
+	for _, item := range items {
+		taskID := item.TaskID
+		if taskID <= 0 {
+			continue
+		}
+		select {
+		case queuePollerSem <- struct{}{}:
+			go func() {
+				defer func() { <-queuePollerSem }()
+				// Run with a background context so the cron call can return quickly.
+				bg := context.Background()
+				_ = svc.handleTaskEnqueued(bg, &taskqueue.TaskEnqueuedEvent{TaskID: taskID, Key: item.Key})
+			}()
+		default:
+			// Poller is at concurrency limit; remaining items will be retried on the next tick.
+			return nil
+		}
+	}
+	return nil
+}
+
+var _ = cron.NewJob("skyforge-worker-poll-queued", cron.JobConfig{
+	Title:    "Fallback poll queued tasks",
+	Endpoint: CronProcessQueuedTasksFallback,
+	Every:    1 * cron.Minute,
+})
+
 // CronReconcileQueuedTasks republishes queue events for tasks stuck in the "queued" state.
 //
 //encore:api private method=POST path=/internal/worker/tasks/reconcile
 func CronReconcileQueuedTasks(ctx context.Context) error {
+	if !workerEncoreCfg.TaskWorkerEnabled {
+		return nil
+	}
+	if role := strings.ToLower(strings.TrimSpace(os.Getenv("SKYFORGE_ROLE"))); role != "" && role != "worker" {
+		return nil
+	}
 	stdlib, err := getWorkerDB(ctx)
 	if err != nil {
 		return err

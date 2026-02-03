@@ -192,6 +192,17 @@ type EncoreConfig struct {
 
 type WorkerConfig struct {
 	TaskWorkerEnabled bool
+	// TaskWorkerPollEnabled enables a DB-backed fallback loop for processing queued tasks
+	// when Pub/Sub delivery is delayed or unavailable.
+	TaskWorkerPollEnabled bool
+	// TaskWorkerPollMinQueuedSeconds is the minimum queued age before the fallback poller
+	// will attempt to start tasks directly (to avoid racing normal Pub/Sub delivery).
+	TaskWorkerPollMinQueuedSeconds int
+	// TaskWorkerPollMaxTasksPerTick caps how many queued tasks the poller will attempt to start
+	// per tick.
+	TaskWorkerPollMaxTasksPerTick int
+	// TaskWorkerPollMaxConcurrency caps how many poller-started tasks may run concurrently.
+	TaskWorkerPollMaxConcurrency int
 
 	Netlab           NetlabDefaultsConfig
 	Workspaces       WorkspacesDefaultsConfig

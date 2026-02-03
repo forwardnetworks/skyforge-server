@@ -497,10 +497,25 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 					}
 					log.Infof("Clabernetes native mode: verified")
 
-					// Best-effort: capture a topology graph artifact after deploy so the UI can render
-					// resolved management IPs from clabernetes pods.
-					if err := e.captureClabernetesTopologyArtifact(ctx, spec, name); err != nil {
-						log.Infof("clabernetes topology capture failed: %v", err)
+					// Capture a topology graph artifact after deploy so the UI can render resolved
+					// management IPs from clabernetes pods.
+					graph, err := e.resolveClabernetesTopologyGraph(ctx, spec, name)
+					if err != nil {
+						log.Infof("clabernetes topology graph resolve failed: %v", err)
+					} else if graph != nil {
+						if err := e.storeClabernetesTopologyArtifact(ctx, spec, graph); err != nil {
+							log.Infof("clabernetes topology capture failed: %v", err)
+						}
+
+						// Wait until NOS nodes are actually SSH-ready before marking the deploy step complete.
+						// This avoids "ready too fast" and prevents downstream systems (Forward sync, UI terminal)
+						// from racing long boot times.
+						sshReadySeconds := envInt(spec.Environment, "SKYFORGE_CLABERNETES_SSH_READY_SECONDS", 900)
+						if sshReadySeconds > 0 {
+							if err := waitForForwardSSHReady(ctx, spec.TaskID, e, graph, time.Duration(sshReadySeconds)*time.Second, log); err != nil {
+								return err
+							}
+						}
 					}
 					return nil
 				}
@@ -557,29 +572,24 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 	}
 }
 
-func (e *Engine) captureClabernetesTopologyArtifact(ctx context.Context, spec clabernetesRunSpec, topologyOwner string) error {
+func (e *Engine) resolveClabernetesTopologyGraph(ctx context.Context, spec clabernetesRunSpec, topologyOwner string) (*TopologyGraph, error) {
 	if e == nil || spec.TaskID <= 0 {
-		return fmt.Errorf("invalid task context")
-	}
-	if strings.TrimSpace(spec.WorkspaceID) == "" {
-		// Best-effort enhancement: storing topology graphs requires a workspace scope.
-		// Skip silently rather than failing the overall run.
-		return nil
+		return nil, fmt.Errorf("invalid task context")
 	}
 	ns := strings.TrimSpace(spec.Namespace)
 	if ns == "" {
-		return fmt.Errorf("namespace is required")
+		return nil, fmt.Errorf("namespace is required")
 	}
 	topologyOwner = strings.TrimSpace(topologyOwner)
 	if topologyOwner == "" {
-		return fmt.Errorf("topology owner label is required")
+		return nil, fmt.Errorf("topology owner label is required")
 	}
 
 	pods, err := kubeListPods(ctx, ns, map[string]string{
 		"clabernetes/topologyOwner": topologyOwner,
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	podInfo := map[string]TopologyNode{}
 	for _, pod := range pods {
@@ -600,9 +610,21 @@ func (e *Engine) captureClabernetesTopologyArtifact(ctx context.Context, spec cl
 
 	graph, err := containerlabYAMLBytesToTopologyGraph([]byte(spec.TopologyYAML), podInfo)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	graph.GeneratedAt = time.Now().UTC().Format(time.RFC3339)
+	return graph, nil
+}
+
+func (e *Engine) storeClabernetesTopologyArtifact(ctx context.Context, spec clabernetesRunSpec, graph *TopologyGraph) error {
+	if e == nil || spec.TaskID <= 0 || graph == nil {
+		return fmt.Errorf("invalid task context")
+	}
+	if strings.TrimSpace(spec.WorkspaceID) == "" {
+		// Best-effort enhancement: storing topology graphs requires a workspace scope.
+		// Skip silently rather than failing the overall run.
+		return nil
+	}
 
 	graphBytes, err := json.Marshal(graph)
 	if err != nil {
@@ -611,7 +633,10 @@ func (e *Engine) captureClabernetesTopologyArtifact(ctx context.Context, spec cl
 
 	labName := strings.TrimSpace(spec.LabName)
 	if labName == "" {
-		labName = topologyOwner
+		labName = "clabernetes"
+	}
+	if labName == "" {
+		labName = "clabernetes"
 	}
 	key := fmt.Sprintf("topology/clabernetes/%s.json", sanitizeArtifactKeySegment(labName))
 	ctxPut, cancel := context.WithTimeout(ctx, 10*time.Second)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -52,6 +53,16 @@ var taskQueueBackgroundSubscription = pubsub.NewSubscription(taskqueue.Backgroun
 })
 
 func (s *Service) handleTaskEnqueued(ctx context.Context, msg *taskqueue.TaskEnqueuedEvent) error {
+	// IMPORTANT: Only the dedicated worker deployment should process tasks.
+	// If a non-worker pod accidentally includes worker subscriptions, it must not ack messages
+	// (otherwise tasks can appear "queued forever"). Returning an error causes Pub/Sub redelivery.
+	if role := strings.ToLower(strings.TrimSpace(os.Getenv("SKYFORGE_ROLE"))); role != "" && role != "worker" {
+		return fmt.Errorf("task worker invoked in non-worker role=%q", role)
+	}
+	if !workerEncoreCfg.TaskWorkerEnabled {
+		// Treat as ack: when workers are disabled we should not endlessly redeliver.
+		return nil
+	}
 	if msg == nil || msg.TaskID <= 0 {
 		return nil
 	}
