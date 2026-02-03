@@ -1,7 +1,7 @@
 {
   "profilesByKind": {
     "vr-vmx": {
-      "cpuRequest": "2000m",
+      "cpuRequest": "4000m",
       "memoryRequest": "6Gi"
     },
     "vr-n9kv": {
