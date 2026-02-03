@@ -26,13 +26,6 @@ type netlabC9sManifest struct {
 			Rel string `json:"rel"`
 		} `json:"files"`
 	} `json:"sharedFiles,omitempty"`
-	StartupConfigs *struct {
-		ConfigMapName string `json:"configMapName"`
-		Files         []struct {
-			Key string `json:"key"`
-			Rel string `json:"rel"`
-		} `json:"files"`
-	} `json:"startupConfigs,omitempty"`
 }
 
 const defaultNetlabC9sGeneratorImage = "ghcr.io/forwardnetworks/skyforge-netlab-generator:latest"
@@ -303,25 +296,6 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 		}
 	}
 
-	startupMounts := []c9sFileFromConfigMap{}
-	if manifest.StartupConfigs != nil {
-		cmName := strings.TrimSpace(manifest.StartupConfigs.ConfigMapName)
-		for _, f := range manifest.StartupConfigs.Files {
-			key := strings.TrimSpace(f.Key)
-			rel := path.Clean(strings.TrimPrefix(strings.TrimSpace(f.Rel), "/"))
-			if cmName == "" || key == "" || rel == "" || rel == "." || strings.HasPrefix(rel, "..") {
-				continue
-			}
-			mountPath := path.Join(mountRoot, "config", rel)
-			startupMounts = append(startupMounts, c9sFileFromConfigMap{
-				ConfigMapName: cmName,
-				ConfigMapPath: key,
-				FilePath:      mountPath,
-				Mode:          "read",
-			})
-		}
-	}
-
 	for node, entry := range manifest.Nodes {
 		node = strings.TrimSpace(node)
 		cmName := strings.TrimSpace(entry.ConfigMapName)
@@ -348,9 +322,6 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 		}
 		if len(sharedMounts) > 0 {
 			mounts = append(mounts, sharedMounts...)
-		}
-		if len(startupMounts) > 0 {
-			mounts = append(mounts, startupMounts...)
 		}
 		nodeMounts[node] = mounts
 	}

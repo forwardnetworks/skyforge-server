@@ -58,8 +58,23 @@ func injectNetlabC9sVrnetlabStartupConfig(
 		return topologyYAML, nodeMounts, nil
 	}
 
+	overrideCM := sanitizeKubeNameFallback(fmt.Sprintf("c9s-%s-vrnetlab-startup", topologyName), "c9s-vrnetlab-startup")
+	overrideData := map[string]string{}
+	labels := map[string]string{"skyforge-c9s-topology": topologyName}
+
+	knownOrder := []string{
+		"normalize",
+		"initial",
+		"vlan",
+		"bgp",
+		"vxlan",
+		"evpn",
+		"ebgp_ecmp",
+		"ebgp.ecmp",
+		"firewall.zonebased",
+	}
+
 	const startupPath = "/config/startup-config.cfg"
-	mountedCount := 0
 
 	for node, nodeAny := range nodesAny {
 		nodeName := strings.TrimSpace(fmt.Sprintf("%v", node))
@@ -80,48 +95,64 @@ func injectNetlabC9sVrnetlabStartupConfig(
 			continue
 		}
 
-		// For vrnetlab nodes, do not concatenate netlab snippets (node_files). Instead,
-		// rely on netlab's generated startup configs (workdir/config/<node>.cfg) and
-		// mount them into the vrnetlab container at /config/startup-config.cfg.
-		//
-		// This keeps netlab as the source-of-truth for ordering/merging and avoids
-		// subtle syntax issues that can arise when recombining fragments.
-		expectedConfigName := fmt.Sprintf("%s.cfg", nodeName)
-		var startupCfg c9sFileFromConfigMap
-		found := false
-		for _, m := range nodeMounts[nodeName] {
-			if strings.TrimSpace(m.ConfigMapName) == "" || strings.TrimSpace(m.ConfigMapPath) == "" {
-				continue
+		// Find the netlab-generated snippet ConfigMap for this node (from mounts).
+		cmName := ""
+		if mounts, ok := nodeMounts[nodeName]; ok {
+			for _, m := range mounts {
+				if strings.TrimSpace(m.ConfigMapName) != "" {
+					cmName = strings.TrimSpace(m.ConfigMapName)
+					break
+				}
 			}
-			if strings.TrimSpace(m.ConfigMapPath) != expectedConfigName {
-				continue
-			}
-			if !strings.Contains(m.FilePath, "/config/") {
-				continue
-			}
-			startupCfg = m
-			found = true
-			break
 		}
-		if !found {
-			return nil, nil, fmt.Errorf("netlab did not produce startup config for %s (expected config/%s)", nodeName, expectedConfigName)
+		if cmName == "" {
+			log.Infof("c9s: vrnetlab startup-config skipped (no node configmap): %s", nodeName)
+			continue
 		}
 
+		data, ok, err := kubeGetConfigMap(ctx, ns, cmName)
+		if err != nil {
+			return nil, nil, err
+		}
+		if !ok || len(data) == 0 {
+			log.Infof("c9s: vrnetlab startup-config skipped (empty configmap): %s", cmName)
+			continue
+		}
+
+		combined := combineNetlabSnippets(data, knownOrder)
+		if strings.TrimSpace(combined) == "" {
+			log.Infof("c9s: vrnetlab startup-config skipped (no snippets): %s", nodeName)
+			continue
+		}
+		combined = stripNetlabJunosDeleteDirectives(kind, combined)
+		combined = normalizeNetlabJunosHierarchicalConfig(kind, combined)
+
+		key := sanitizeArtifactKeySegment(fmt.Sprintf("%s-startup-config.cfg", nodeName))
+		if key == "" || key == "unknown" {
+			key = "startup-config.cfg"
+		}
+		overrideData[key] = combined
+
+		// Set startup-config path in topology for clarity (mount is handled by FilesFromConfigMap).
 		cfg["startup-config"] = startupPath
 		nodesAny[node] = cfg
 
+		// Ensure the file is mounted into the NOS container at the path vrnetlab expects.
 		nodeMounts[nodeName] = upsertC9sMount(nodeMounts[nodeName], c9sFileFromConfigMap{
-			ConfigMapName: startupCfg.ConfigMapName,
-			ConfigMapPath: startupCfg.ConfigMapPath,
+			ConfigMapName: overrideCM,
+			ConfigMapPath: key,
 			FilePath:      startupPath,
 			Mode:          "read",
 		})
-		mountedCount++
 	}
 
-	if mountedCount > 0 {
-		log.Infof("c9s: vrnetlab startup-config mounted from netlab config/: nodes=%d", mountedCount)
+	if len(overrideData) == 0 {
+		return topologyYAML, nodeMounts, nil
 	}
+	if err := kubeUpsertConfigMap(ctx, ns, overrideCM, overrideData, labels); err != nil {
+		return nil, nil, err
+	}
+	log.Infof("c9s: vrnetlab startup-config injected: nodes=%d", len(overrideData))
 
 	topology["nodes"] = nodesAny
 	topo["topology"] = topology
@@ -281,56 +312,6 @@ func collectJunosInterfaceUnits(startupConfig string) []string {
 
 	sort.Strings(out)
 	return out
-}
-
-func appendDefaultSNMPPublic(kind, startupConfig string) string {
-	kind = strings.ToLower(strings.TrimSpace(kind))
-	startupConfig = strings.ReplaceAll(startupConfig, "\r\n", "\n")
-	if strings.TrimSpace(kind) == "" || strings.TrimSpace(startupConfig) == "" {
-		return startupConfig
-	}
-
-	// If the topology already contains SNMP config, don't inject defaults.
-	if strings.Contains(strings.ToLower(startupConfig), "snmp") {
-		return startupConfig
-	}
-
-	snippet := ""
-	switch {
-	case kind == "vr-vmx" ||
-		strings.Contains(kind, "junos") ||
-		strings.Contains(kind, "vqfx") ||
-		strings.Contains(kind, "vsrx") ||
-		strings.Contains(kind, "vjunos"):
-		// netlab typically emits Junos config in "curly brace" format. Avoid mixing `set` and
-		// bracketed syntax; instead, inject an additional `snmp { ... }` block.
-		if strings.Contains(startupConfig, "{") {
-			snippet = "snmp {\n  community public {\n    authorization read-only;\n  }\n}\n"
-		} else {
-			// Fallback: set-style config (safe for many Junos CLIs).
-			snippet = "set snmp community public authorization read-only\n"
-		}
-	case strings.Contains(kind, "n9kv") || strings.Contains(kind, "nxos"):
-		// NX-OS supports v2c community strings, but uses role-based groups.
-		snippet = "snmp-server community public group network-operator\n"
-	case strings.Contains(kind, "ios") ||
-		strings.Contains(kind, "csr") ||
-		strings.Contains(kind, "c8000") ||
-		strings.Contains(kind, "cat8000"):
-		snippet = "snmp-server community public ro\n"
-	case strings.Contains(kind, "eos") || strings.Contains(kind, "veos"):
-		snippet = "snmp-server community public ro\n"
-	}
-
-	if strings.TrimSpace(snippet) == "" {
-		return startupConfig
-	}
-
-	if !strings.HasSuffix(startupConfig, "\n") {
-		startupConfig += "\n"
-	}
-
-	return startupConfig + snippet
 }
 
 func combineNetlabSnippets(data map[string]string, knownOrder []string) string {
