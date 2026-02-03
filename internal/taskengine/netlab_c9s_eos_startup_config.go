@@ -122,11 +122,13 @@ func injectNetlabC9sEOSStartupConfig(ctx context.Context, ns, topologyName strin
 		if !strings.HasSuffix(combined, "\n") {
 			combined += "\n"
 		}
+		combined, _ = injectEOSManagementSSH(combined)
+		combined, _ = injectEOSDefaultSSHUser(combined)
+		combined = injectEOSDefaultSNMPPublic(combined)
+
 		if !strings.Contains(strings.ToLower(combined), "\nend\n") {
 			combined += "end\n"
 		}
-		combined, _ = injectEOSManagementSSH(combined)
-		combined, _ = injectEOSDefaultSSHUser(combined)
 
 		key := sanitizeArtifactKeySegment(fmt.Sprintf("%s-startup.cfg", nodeName))
 		if key == "" || key == "unknown" {
@@ -162,4 +164,38 @@ func injectNetlabC9sEOSStartupConfig(ctx context.Context, ns, topologyName strin
 		return nil, nil, fmt.Errorf("encode clab.yml: %w", err)
 	}
 	return out, nodeMounts, nil
+}
+
+func injectEOSDefaultSNMPPublic(config string) string {
+	config = strings.ReplaceAll(config, "\r\n", "\n")
+	if strings.TrimSpace(config) == "" {
+		return config
+	}
+	if strings.Contains(strings.ToLower(config), "snmp-server") {
+		return config
+	}
+
+	// EOS config uses an explicit "end" marker. Insert before the last "end" if present.
+	lines := strings.Split(config, "\n")
+	endIdx := -1
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.TrimSpace(lines[i]) == "end" {
+			endIdx = i
+			break
+		}
+	}
+
+	snmpLine := "snmp-server community public ro"
+	if endIdx == -1 {
+		if !strings.HasSuffix(config, "\n") {
+			config += "\n"
+		}
+		return config + snmpLine + "\n"
+	}
+
+	out := make([]string, 0, len(lines)+2)
+	out = append(out, lines[:endIdx]...)
+	out = append(out, snmpLine)
+	out = append(out, lines[endIdx:]...)
+	return strings.Join(out, "\n")
 }
