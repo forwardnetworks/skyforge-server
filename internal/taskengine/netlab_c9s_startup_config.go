@@ -182,8 +182,14 @@ func appendDefaultSNMPPublic(kind, startupConfig string) string {
 		strings.Contains(kind, "vqfx") ||
 		strings.Contains(kind, "vsrx") ||
 		strings.Contains(kind, "vjunos"):
-		// Junos accepts `set` commands in configuration mode.
-		snippet = "set snmp community public authorization read-only\n"
+		// netlab typically emits Junos config in "curly brace" format. Avoid mixing `set` and
+		// bracketed syntax; instead, inject an additional `snmp { ... }` block.
+		if strings.Contains(startupConfig, "{") {
+			snippet = "snmp {\n  community public {\n    authorization read-only;\n  }\n}\n"
+		} else {
+			// Fallback: set-style config (safe for many Junos CLIs).
+			snippet = "set snmp community public authorization read-only\n"
+		}
 	case strings.Contains(kind, "n9kv") || strings.Contains(kind, "nxos"):
 		// NX-OS supports v2c community strings, but uses role-based groups.
 		snippet = "snmp-server community public group network-operator\n"
