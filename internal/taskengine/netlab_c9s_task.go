@@ -272,7 +272,11 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		clabSpec.Environment[k] = v
 	}
 
-	preferColocate := envBool(spec.Environment, "SKYFORGE_C9S_PREFER_COLOCATE_WITH_COLLECTOR", true)
+	// Default to spreading NOS pods across Kubernetes nodes for performance.
+	// Co-locating with the collector can be helpful for latency, but in practice it tends to
+	// concentrate all nodes of a lab onto a single worker and can cause severe CPU contention
+	// (slow SSH, slow Forward collection, etc.) unless resources and node sizing are perfect.
+	preferColocate := envBool(spec.Environment, "SKYFORGE_C9S_PREFER_COLOCATE_WITH_COLLECTOR", false)
 	preferredNode := ""
 	if preferColocate && spec.WorkspaceCtx != nil {
 		if nodeName, err := kubeCollectorNodeForUser(ctx, spec.WorkspaceCtx.claims.Username); err == nil {
@@ -291,6 +295,11 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		// This improves performance (local traffic, fewer cross-node hops) while still allowing
 		// the scheduler to spread labs across the cluster if the preferred node is full.
 		clabSpec.Environment["SKYFORGE_CLABERNETES_PREFERRED_NODE_HOSTNAME"] = preferredNode
+	}
+	// Default netlab-c9s to "spread" scheduling to avoid packing an entire NOS topology onto
+	// a single Kubernetes node by accident.
+	if _, ok := clabSpec.Environment["SKYFORGE_CLABERNETES_SCHEDULING_MODE"]; !ok {
+		clabSpec.Environment["SKYFORGE_CLABERNETES_SCHEDULING_MODE"] = "spread"
 	}
 
 	if err := deployOnce(); err != nil {
