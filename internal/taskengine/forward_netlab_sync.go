@@ -32,11 +32,6 @@ const (
 
 const defaultForwardBaseURL = "https://fwd.app"
 
-const (
-	defaultNetlabDeviceUsername = "admin"
-	defaultNetlabDevicePassword = "admin"
-)
-
 type forwardCredentials struct {
 	BaseURL        string
 	Username       string
@@ -165,14 +160,6 @@ func netlabCredentialForDevice(device, image string) (netlabDeviceCredential, bo
 				}
 			}
 		}
-	}
-	for _, cred := range netlabDefaults.Fallback {
-		if isValid(cred) {
-			return cred, true
-		}
-	}
-	if defaultNetlabDeviceUsername != "" && defaultNetlabDevicePassword != "" {
-		return netlabDeviceCredential{Username: defaultNetlabDeviceUsername, Password: defaultNetlabDevicePassword}, true
 	}
 	return netlabDeviceCredential{}, false
 }
@@ -963,6 +950,9 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 		if cliCredentialID == "" && deviceKey != "" {
 			cliCredentialID = credentialIDsByDevice[deviceKey]
 		}
+		if cliCredentialID == "" && !ok {
+			return 0, fmt.Errorf("netlab device %q (raw=%q image=%q) has no credential mapping", deviceKey, row.Device, row.Image)
+		}
 
 		// If this credential is Skyforge-managed and the desired credential fingerprint has changed
 		// (or was never recorded), rotate the Forward CLI credential for this device kind.
@@ -1087,8 +1077,6 @@ func forwardDefaultCredentialForKind(kind string) (username, password string, ok
 	case "nxos":
 		return "admin", "admin", true
 	case "vmx":
-		// Prefer admin credentials (netlab defaults) for Junos/vMX. Some images may still use
-		// vrnetlab/VR-netlab9; that remains as a fallback in netlab_device_defaults.json.
 		return "admin", "admin@123", true
 	default:
 		return "", "", false

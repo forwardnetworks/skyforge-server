@@ -23,11 +23,6 @@ const (
 	forwardEndpointProfileID   = "forwardEndpointProfileId"
 )
 
-const (
-	defaultNetlabDeviceUsername = "admin"
-	defaultNetlabDevicePassword = "admin"
-)
-
 //go:embed netlab_device_defaults.json
 var netlabDeviceDefaultsJSON []byte
 
@@ -113,6 +108,7 @@ func loadNetlabDeviceDefaults() netlabDeviceDefaults {
 func netlabCredentialForDevice(device, image string) (netlabDeviceCredential, bool) {
 	device = strings.ToLower(strings.TrimSpace(device))
 	image = strings.ToLower(strings.TrimSpace(image))
+	image = strings.TrimPrefix(image, "ghcr.io/forwardnetworks/")
 	if device == "" && image == "" {
 		return netlabDeviceCredential{}, false
 	}
@@ -136,17 +132,6 @@ func netlabCredentialForDevice(device, image string) (netlabDeviceCredential, bo
 				}
 			}
 		}
-	}
-	for _, cred := range netlabDefaults.Fallback {
-		if isValid(cred) {
-			return cred, true
-		}
-	}
-	if defaultNetlabDeviceUsername != "" && defaultNetlabDevicePassword != "" {
-		return netlabDeviceCredential{
-			Username: defaultNetlabDeviceUsername,
-			Password: defaultNetlabDevicePassword,
-		}, true
 	}
 	return netlabDeviceCredential{}, false
 }
@@ -445,10 +430,6 @@ func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *wor
 	cliCredentialID := getString(forwardCliCredentialIDKey)
 	deviceUsername := strings.TrimSpace(forwardCfg.DeviceUsername)
 	devicePassword := strings.TrimSpace(forwardCfg.DevicePassword)
-	if deviceUsername == "" && devicePassword == "" && dep.Type == "netlab" {
-		deviceUsername = defaultNetlabDeviceUsername
-		devicePassword = defaultNetlabDevicePassword
-	}
 	// For Netlab deployments, we prefer per-device credentials (created during sync based on the
 	// discovered device types) over a single default credential. Keep the legacy default credential
 	// behavior for other deployment types.
@@ -720,13 +701,12 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *
 		if !ok && deviceKey != "" {
 			cred, ok = netlabCredentialForDevice(deviceKey, "")
 		}
-		if !ok && defaultCliCredentialID == "" {
-			continue
-		}
-
 		cliCredentialID := ""
 		if deviceKey != "" {
 			cliCredentialID = credentialIDsByDevice[deviceKey]
+		}
+		if cliCredentialID == "" && !ok && defaultCliCredentialID == "" {
+			return 0, fmt.Errorf("netlab device %q (raw=%q image=%q) has no credential mapping", deviceKey, row.Device, row.Image)
 		}
 		// Prefer per-device credentials over the legacy default credential.
 		if cliCredentialID == "" && strings.TrimSpace(cred.Username) != "" && strings.TrimSpace(cred.Password) != "" {
