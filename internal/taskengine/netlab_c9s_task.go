@@ -1001,6 +1001,28 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 		topo["name"] = labName
 	}
 
+	// Ensure we always have a node name mapping ConfigMap (even when no sanitization was needed).
+	//
+	// The netlab applier job expects a mapping from Kubernetes-safe node names (as used by clabernetes)
+	// back to the original netlab node names. When sanitizeContainerlabYAMLForClabernetes makes no
+	// changes, `mapping` is empty and `reverseMapping` would otherwise remain empty which prevents
+	// the ConfigMap from being created and makes the applier fail.
+	//
+	// For the common case where node names are already DNS-safe, this becomes an identity mapping.
+	if topology, ok := topo["topology"].(map[string]any); ok {
+		if nodes, ok := topology["nodes"].(map[string]any); ok {
+			for node := range nodes {
+				nodeName := strings.TrimSpace(fmt.Sprintf("%v", node))
+				if nodeName == "" {
+					continue
+				}
+				if _, ok := reverseMapping[nodeName]; !ok {
+					reverseMapping[nodeName] = nodeName
+				}
+			}
+		}
+	}
+
 	// Rewrite vrnetlab image references into our GHCR mirror so clabernetes can pull them.
 	//
 	// Netlab templates often reference upstream tags like "vrnetlab/vr-vmx:18.2R1.9" which are
