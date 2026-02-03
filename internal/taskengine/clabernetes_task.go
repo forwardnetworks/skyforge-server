@@ -302,7 +302,16 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		// anti-affinity rule keyed on clabernetes' own topology owner label.
 		//
 		// This remains "preferred" (not required) so small clusters can still schedule labs.
-		if envBool(spec.Environment, "SKYFORGE_CLABERNETES_ENABLE_POD_ANTI_AFFINITY", true) {
+		//
+		// NOTE: For performance benchmarking and "EVE-NG-like" density, operators may want to
+		// *pack* all pods on a single node. Use SKYFORGE_CLABERNETES_SCHEDULING_MODE=pack|spread
+		// to select the default behavior (pack is the default).
+		schedulingMode := strings.ToLower(envString(spec.Environment, "SKYFORGE_CLABERNETES_SCHEDULING_MODE"))
+		if schedulingMode == "" {
+			schedulingMode = "pack"
+		}
+		enableAntiAffinity := envBool(spec.Environment, "SKYFORGE_CLABERNETES_ENABLE_POD_ANTI_AFFINITY", schedulingMode == "spread")
+		if enableAntiAffinity {
 			specMap := payload["spec"].(map[string]any)
 			scheduling, ok := specMap["scheduling"].(map[string]any)
 			if !ok || scheduling == nil {
@@ -399,6 +408,56 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		if len(deployment) > 0 {
 			payload["spec"].(map[string]any)["deployment"] = deployment
 		}
+
+		// Optional: apply per-node Kubernetes resource requests for common NOS kinds.
+		// This improves scheduler placement and CPU share allocation, and helps avoid
+		// pathological "slow SSH read rates" caused by severe CPU contention.
+		if envBool(spec.Environment, "SKYFORGE_CLABERNETES_ENABLE_RESOURCES", true) && strings.TrimSpace(spec.TopologyYAML) != "" {
+			kinds, err := containerlabNodeKinds(spec.TopologyYAML)
+			if err != nil {
+				log.Infof("Clabernetes resources: parse failed (ignored): %v", err)
+			} else if len(kinds) > 0 {
+				enableLimits := envBool(spec.Environment, "SKYFORGE_CLABERNETES_ENABLE_LIMITS", false)
+				resources := map[string]any{}
+				for nodeName, kind := range kinds {
+					profile, ok := nosResourceProfileForKind(kind)
+					if !ok {
+						continue
+					}
+					req := map[string]any{}
+					if strings.TrimSpace(profile.CPURequest) != "" {
+						req["cpu"] = strings.TrimSpace(profile.CPURequest)
+					}
+					if strings.TrimSpace(profile.MemoryRequest) != "" {
+						req["memory"] = strings.TrimSpace(profile.MemoryRequest)
+					}
+					rr := map[string]any{}
+					if len(req) > 0 {
+						rr["requests"] = req
+					}
+					if enableLimits {
+						lim := map[string]any{}
+						if strings.TrimSpace(profile.CPULimit) != "" {
+							lim["cpu"] = strings.TrimSpace(profile.CPULimit)
+						}
+						if strings.TrimSpace(profile.MemoryLimit) != "" {
+							lim["memory"] = strings.TrimSpace(profile.MemoryLimit)
+						}
+						if len(lim) > 0 {
+							rr["limits"] = lim
+						}
+					}
+					if len(rr) > 0 {
+						resources[nodeName] = rr
+					}
+				}
+				if len(resources) > 0 {
+					payload["spec"].(map[string]any)["resources"] = resources
+					log.Infof("Clabernetes resources: configured nodes=%d", len(resources))
+				}
+			}
+		}
+
 		if err := kubeCreateClabernetesTopology(ctx, ns, payload); err != nil {
 			return err
 		}

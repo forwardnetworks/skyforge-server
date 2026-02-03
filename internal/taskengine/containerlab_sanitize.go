@@ -208,6 +208,14 @@ func sanitizeContainerlabYAMLForClabernetes(containerlabYAML string) (string, ma
 		}
 		cfgMap, cfgIsMap := cfg.(map[string]any)
 		if cfgIsMap {
+			// containerlab YAMLs often set per-node `runtime: docker` (even when the topology
+			// is intended to be portable). In clabernetes native mode, these nodes run as
+			// Kubernetes pods via containerd, and this field is ignored. Remove it to avoid
+			// operator confusion ("are we using Docker-in-Docker?").
+			if _, ok := cfgMap["runtime"]; ok {
+				delete(cfgMap, "runtime")
+			}
+
 			// Ensure cEOS (systemd) nodes can run reliably in Kubernetes.
 			//
 			// The cEOS container expects a writable cgroup mount and access to host kernel modules.

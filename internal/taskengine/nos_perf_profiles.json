@@ -1,0 +1,60 @@
+{
+  "profilesByKind": {
+    "vr-vmx": {
+      "cpuRequest": "2000m",
+      "memoryRequest": "6Gi"
+    },
+    "vr-n9kv": {
+      "cpuRequest": "4000m",
+      "memoryRequest": "12Gi"
+    },
+    "cisco_vios": {
+      "cpuRequest": "1000m",
+      "memoryRequest": "2Gi"
+    },
+    "cisco_viosl2": {
+      "cpuRequest": "1000m",
+      "memoryRequest": "2Gi"
+    },
+    "cisco_iol": {
+      "cpuRequest": "500m",
+      "memoryRequest": "512Mi"
+    },
+    "cisco_iol_l2": {
+      "cpuRequest": "500m",
+      "memoryRequest": "512Mi"
+    },
+    "cisco_asav": {
+      "cpuRequest": "2000m",
+      "memoryRequest": "4Gi"
+    },
+    "vr-fortios": {
+      "cpuRequest": "2000m",
+      "memoryRequest": "4Gi"
+    },
+    "vr-ftosv": {
+      "cpuRequest": "2000m",
+      "memoryRequest": "4Gi"
+    },
+    "vr-sros": {
+      "cpuRequest": "4000m",
+      "memoryRequest": "8Gi"
+    },
+    "juniper_vsrx": {
+      "cpuRequest": "2000m",
+      "memoryRequest": "4Gi"
+    },
+    "openbsd_openbsd": {
+      "cpuRequest": "500m",
+      "memoryRequest": "512Mi"
+    },
+    "aruba_arubaos-cx": {
+      "cpuRequest": "2000m",
+      "memoryRequest": "4Gi"
+    },
+    "juniper_vjunosevolved": {
+      "cpuRequest": "4000m",
+      "memoryRequest": "12Gi"
+    }
+  }
+}
