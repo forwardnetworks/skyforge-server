@@ -80,13 +80,15 @@ func ListStuckQueuedTasksByKey(ctx context.Context, db *sql.DB, limit int, minAg
 	}
 
 	ageStr := fmt.Sprintf("%fs", minAge.Seconds())
+	// NOTE: deployment_id is a UUID column. We cast to text before COALESCE to avoid invalid
+	// UUID casts when comparing NULL deployments (workspace-scoped tasks).
 	rows, err := db.QueryContext(ctx, `
-SELECT DISTINCT ON (workspace_id, COALESCE(deployment_id, ''))
+SELECT DISTINCT ON (workspace_id, COALESCE(deployment_id::text, ''))
   id, workspace_id, deployment_id, priority
 FROM sf_tasks
 WHERE status='queued'
   AND created_at <= now() - $2::interval
-ORDER BY workspace_id, COALESCE(deployment_id, ''), priority DESC, id ASC
+ORDER BY workspace_id, COALESCE(deployment_id::text, ''), priority DESC, id ASC
 LIMIT $1`, limit, ageStr)
 	if err != nil {
 		return nil, err
