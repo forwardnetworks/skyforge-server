@@ -207,6 +207,44 @@ func kubeWaitJob(ctx context.Context, ns, name string, log Logger, canceled func
 
 	started := time.Now()
 	var lastHeartbeat time.Time
+	var lastLogs string
+	var lastLogFetch time.Time
+
+	// Best-effort: stream job logs into the Skyforge run log so users can see progress
+	// (especially important for long-running generator/applier jobs).
+	streamLogs := func() {
+		if time.Since(lastLogFetch) < 10*time.Second {
+			return
+		}
+		lastLogFetch = time.Now()
+		out, err := kubeGetJobLogs(ctx, client, ns, name)
+		if err != nil {
+			return
+		}
+		out = strings.TrimRight(out, "\n")
+		if strings.TrimSpace(out) == "" {
+			return
+		}
+
+		delta := out
+		if lastLogs != "" && strings.HasPrefix(out, lastLogs) {
+			delta = out[len(lastLogs):]
+		} else if lastLogs != "" && len(out) > 0 {
+			// Logs might be truncated due to our server-side read limit; fall back to a tail.
+			delta = tailLines(out, 200)
+		}
+		if strings.TrimSpace(delta) == "" {
+			lastLogs = out
+			return
+		}
+		// Avoid flooding: if delta is huge, only show a tail.
+		if len(delta) > 128<<10 {
+			delta = tailLines(delta, 200)
+		}
+		appendJobLogs(delta, log)
+		lastLogs = out
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -220,6 +258,7 @@ func kubeWaitJob(ctx context.Context, ns, name string, log Logger, canceled func
 			if err != nil {
 				log.Errorf("Job status error: %v", err)
 			}
+			streamLogs()
 			if time.Since(lastHeartbeat) >= 30*time.Second {
 				lastHeartbeat = time.Now()
 				log.Infof("Job still running (elapsed %s)", time.Since(started).Truncate(time.Second))
@@ -240,6 +279,7 @@ func kubeWaitJob(ctx context.Context, ns, name string, log Logger, canceled func
 				return fmt.Errorf("job failed")
 			}
 			if status.Succeeded > 0 {
+				streamLogs()
 				return nil
 			}
 		}
