@@ -235,10 +235,6 @@
       "device": "vjunos-router",
       "credentials": [
         {
-          "username": "vrnetlab",
-          "password": "VR-netlab9"
-        },
-        {
           "username": "admin",
           "password": "admin@123"
         }
@@ -248,10 +244,6 @@
     {
       "device": "vjunos-switch",
       "credentials": [
-        {
-          "username": "vrnetlab",
-          "password": "VR-netlab9"
-        },
         {
           "username": "admin",
           "password": "admin@123"
@@ -265,14 +257,6 @@
       {
         "username": "admin",
         "password": "admin@123"
-      },
-      {
-        "username": "admin",
-        "password": "admin"
-      },
-      {
-        "username": "vrnetlab",
-        "password": "VR-netlab9"
       }
     ],
     "image_prefix": "vrnetlab/vr-vmx"
@@ -283,14 +267,6 @@
         {
           "username": "admin",
           "password": "admin@123"
-        },
-        {
-          "username": "admin",
-          "password": "admin"
-        },
-        {
-          "username": "vrnetlab",
-          "password": "VR-netlab9"
         }
       ]
     },
