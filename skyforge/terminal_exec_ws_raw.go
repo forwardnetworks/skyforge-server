@@ -307,6 +307,15 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 	if command == "" {
 		command = "sh"
 	}
+	// UI historically uses `cli` for Junos-like nodes, but most clabernetes/vrnetlab
+	// Junos images don't ship a `cli` binary in the container filesystem. They *do*
+	// expose the device console over telnet on localhost:5000 (vrnetlab convention).
+	//
+	// To keep the terminal working without requiring frontend rebuilds, transparently
+	// map `cli` to that console connection.
+	if strings.EqualFold(strings.TrimSpace(command), "cli") {
+		command = "telnet 127.0.0.1 5000"
+	}
 	cmd := strings.Fields(command)
 	if len(cmd) == 0 {
 		cmd = []string{"sh"}
