@@ -166,6 +166,8 @@ func runQueuedTaskFallbackLoop() {
 			continue
 		}
 
+		rlog.Info("queued task fallback: found queued tasks", "count", len(items))
+
 		for _, item := range items {
 			if item.TaskID <= 0 || strings.TrimSpace(item.Key) == "" {
 				continue
