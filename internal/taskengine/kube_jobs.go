@@ -279,6 +279,9 @@ func kubeWaitJob(ctx context.Context, ns, name string, log Logger, canceled func
 				return fmt.Errorf("job failed")
 			}
 			if status.Succeeded > 0 {
+				// Ensure we capture logs even for fast jobs (<10s) where the periodic
+				// stream interval might skip the final output.
+				lastLogFetch = time.Time{}
 				streamLogs()
 				return nil
 			}
