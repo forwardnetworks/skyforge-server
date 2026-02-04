@@ -549,9 +549,15 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 			command = terminalutil.VrnetlabDefaultCommand(image)
 			cmd = strings.Fields(command)
 		} else if strings.EqualFold(rawCommand, "cli") {
-			// `cli` isn't a standard binary in most containers; fall back to a shell.
-			command = "sh"
-			cmd = []string{"sh"}
+			// `cli` is a UI convenience, not a standard binary.
+			// For cEOS, prefer launching the EOS CLI binary; otherwise fall back to a shell.
+			if terminalutil.IsCEOSImage(image) {
+				command = "Cli"
+				cmd = []string{"Cli"}
+			} else {
+				command = "sh"
+				cmd = []string{"sh"}
+			}
 		}
 	}
 
@@ -560,7 +566,7 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 	// session for the same pod/container/command.
 	sessKey := ""
 	var sess *terminalSession
-	if strings.HasPrefix(command, "telnet 127.0.0.1 5000") {
+	if strings.HasPrefix(command, "telnet 127.0.0.1 5000") || command == "Cli" {
 		sessKey = terminalSessionKey(k8sNamespace, podName, container, command)
 		sess = &terminalSession{
 			cancel:  cancel,
@@ -658,6 +664,9 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 	outCh <- terminalServerMsg{Type: "info", Data: fmt.Sprintf("connected: %s/%s (%s)", k8sNamespace, podName, strings.Join(cmd, " "))}
 	if strings.HasPrefix(command, "telnet 127.0.0.1 5000") {
 		outCh <- terminalServerMsg{Type: "info", Data: "vrnetlab console is single-connection; opening a new terminal will close any existing console session for this node."}
+	}
+	if command == "Cli" {
+		outCh <- terminalServerMsg{Type: "info", Data: "opening a new terminal will close any existing terminal session for this node."}
 	}
 
 	streamErr := executor.StreamWithContext(ctx, remotecommand.StreamOptions{

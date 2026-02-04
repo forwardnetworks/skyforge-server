@@ -12,6 +12,21 @@ func IsVrnetlabImage(image string) bool {
 	return strings.Contains(image, "/vrnetlab/") || strings.HasPrefix(image, "vrnetlab/")
 }
 
+func IsCEOSImage(image string) bool {
+	image = strings.ToLower(strings.TrimSpace(image))
+	if image == "" {
+		return false
+	}
+	// Common cEOS images:
+	// - ceos:4.32.0F
+	// - ghcr.io/<org>/ceos:...
+	// - docker.io/arista/ceos:...
+	if strings.Contains(image, "ceos") {
+		return true
+	}
+	return false
+}
+
 // NormalizeCommand applies compatibility shims for in-browser terminals.
 //
 func NormalizeCommand(command string) string {
@@ -25,11 +40,5 @@ func NormalizeCommand(command string) string {
 func VrnetlabDefaultCommand(image string) string {
 	image = strings.ToLower(strings.TrimSpace(image))
 	// Most vrnetlab-backed nodes expose the NOS console over telnet on localhost:5000.
-	//
-	// Exception: IOL (IOU) does not expose a vrnetlab telnet console in the container,
-	// so falling back to a shell is more useful than a broken telnet session.
-	if strings.Contains(image, "cisco_iol") {
-		return "sh"
-	}
 	return "telnet 127.0.0.1 5000"
 }
