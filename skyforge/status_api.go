@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -28,6 +29,16 @@ type StatusSummaryResponse struct {
 	WorkspacesTotal   int `json:"workspacesTotal,omitempty"`
 	DeploymentsTotal  int `json:"deploymentsTotal,omitempty"`
 	DeploymentsActive int `json:"deploymentsActive,omitempty"`
+}
+
+func tcpDialCheck(ctx context.Context, addr string, timeout time.Duration) error {
+	dialer := &net.Dialer{Timeout: timeout}
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return err
+	}
+	_ = conn.Close()
+	return nil
 }
 
 func countWorkspaces(ctx context.Context, db *sql.DB) (int, error) {
@@ -112,6 +123,41 @@ func (s *Service) StatusSummary(ctx context.Context) (*StatusSummaryResponse, er
 			Status: "up",
 		})
 	}
+
+	// Infra dependency checks (best-effort, do not leak environment details).
+	{
+		ctxDial, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		defer cancel()
+		if err := tcpDialCheck(ctxDial, "nsq:4150", 400*time.Millisecond); err != nil {
+			resp.Checks = append(resp.Checks, StatusCheckResponse{
+				Name:   "nsq",
+				Status: "down",
+				Detail: "connect failed",
+			})
+		} else {
+			resp.Checks = append(resp.Checks, StatusCheckResponse{
+				Name:   "nsq",
+				Status: "up",
+			})
+		}
+	}
+	{
+		ctxDial, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		defer cancel()
+		if err := tcpDialCheck(ctxDial, "redis:6379", 400*time.Millisecond); err != nil {
+			resp.Checks = append(resp.Checks, StatusCheckResponse{
+				Name:   "redis",
+				Status: "down",
+				Detail: "connect failed",
+			})
+		} else {
+			resp.Checks = append(resp.Checks, StatusCheckResponse{
+				Name:   "redis",
+				Status: "up",
+			})
+		}
+	}
+
 	if s.db == nil {
 		resp.Checks = append(resp.Checks, StatusCheckResponse{
 			Name:   "postgres",
