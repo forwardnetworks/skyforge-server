@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"encore.dev/rlog"
@@ -286,7 +287,8 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	ctx := req.Context()
+	ctx, cancel := context.WithCancel(req.Context())
+	defer cancel()
 	dep, err := s.getWorkspaceDeployment(ctx, ws.ID, deploymentID)
 	if err != nil || dep == nil {
 		http.Error(w, "deployment not found", http.StatusNotFound)
@@ -337,6 +339,9 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 	defer conn.Close(websocket.StatusNormalClosure, "")
 	conn.SetReadLimit(1 << 20)
 
+	var lastClientActivityUnixNano atomic.Int64
+	lastClientActivityUnixNano.Store(time.Now().UnixNano())
+
 	// Keep the WebSocket alive through reverse proxies and idle periods.
 	// Without this, some proxies close idle connections without a close frame,
 	// which surfaces to the browser as code 1006.
@@ -350,8 +355,38 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 					return
 				case <-t.C:
 					ctxPing, cancel := context.WithTimeout(ctx, 2*time.Second)
-					_ = conn.Ping(ctxPing)
+					err := conn.Ping(ctxPing)
 					cancel()
+					if err != nil {
+						// If we can't ping the client, force-close to avoid leaving an orphaned
+						// kube exec (and a vrnetlab console session) running indefinitely.
+						cancel()
+						_ = conn.Close(websocket.StatusGoingAway, "client ping failed")
+						return
+					}
+				}
+			}
+		}()
+	}
+
+	// Safety net: if the browser disappears without a proper close, expire the session.
+	// This is especially important for vrnetlab consoles which are effectively single-user.
+	{
+		idleTimeout := 5 * time.Minute
+		t := time.NewTicker(30 * time.Second)
+		defer t.Stop()
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+					last := time.Unix(0, lastClientActivityUnixNano.Load())
+					if time.Since(last) > idleTimeout {
+						cancel()
+						_ = conn.Close(websocket.StatusNormalClosure, "idle timeout")
+						return
+					}
 				}
 			}
 		}()
@@ -516,6 +551,7 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 			if err := wsjson.Read(ctx, conn, &in); err != nil {
 				return
 			}
+			lastClientActivityUnixNano.Store(time.Now().UnixNano())
 			switch strings.ToLower(strings.TrimSpace(in.Type)) {
 			case "stdin":
 				if in.Data == "" {
@@ -536,6 +572,9 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 	}()
 
 	outCh <- terminalServerMsg{Type: "info", Data: fmt.Sprintf("connected: %s/%s (%s)", k8sNamespace, podName, strings.Join(cmd, " "))}
+	if strings.HasPrefix(command, "telnet 127.0.0.1 5000") {
+		outCh <- terminalServerMsg{Type: "info", Data: "vrnetlab console is single-connection; close other terminal windows for this node if you get disconnected."}
+	}
 
 	streamErr := executor.StreamWithContext(ctx, remotecommand.StreamOptions{
 		Stdin:             stdinR,
