@@ -16,6 +16,7 @@ import (
 	"encore.app/internal/taskqueue"
 	"encore.app/internal/taskreconcile"
 	"encore.app/internal/taskstore"
+	"encore.app/worker/taskrunner"
 	"encore.dev/config"
 	"encore.dev/pubsub"
 	"encore.dev/rlog"
@@ -41,16 +42,16 @@ func getWorkerCoreCfg() skyforgecore.Config {
 }
 
 var taskQueueSubscription = pubsub.NewSubscription(taskqueue.InteractiveTopic, "skyforge-task-worker", pubsub.SubscriptionConfig[*taskqueue.TaskEnqueuedEvent]{
-	Handler:        pubsub.MethodHandler((*Service).handleTaskEnqueued),
+	Handler:        pubsub.MethodHandler((*Service).handleInteractiveTaskEnqueued),
 	MaxConcurrency: 8,
-	// Tasks can be long-running (netlab/terraform). Keep ack generous.
-	AckDeadline: 2 * time.Hour,
+	// Handler must ack quickly; long-running work happens in a DB-backed runner.
+	AckDeadline: 30 * time.Second,
 })
 
 var taskQueueBackgroundSubscription = pubsub.NewSubscription(taskqueue.BackgroundTopic, "skyforge-task-worker-background", pubsub.SubscriptionConfig[*taskqueue.TaskEnqueuedEvent]{
-	Handler:        pubsub.MethodHandler((*Service).handleTaskEnqueued),
+	Handler:        pubsub.MethodHandler((*Service).handleBackgroundTaskEnqueued),
 	MaxConcurrency: 2,
-	AckDeadline:    2 * time.Hour,
+	AckDeadline:    30 * time.Second,
 })
 
 func init() {
@@ -59,6 +60,60 @@ func init() {
 		time.Sleep(10 * time.Second)
 		runQueuedTaskFallbackLoop()
 	}()
+}
+
+var (
+	interactiveRunner *taskrunner.Runner
+	backgroundRunner  *taskrunner.Runner
+)
+
+func init() {
+	exec := func(ctx context.Context, taskID int) error {
+		stdlib, err := getWorkerDB(ctx)
+		if err != nil {
+			return err
+		}
+		return taskexec.ProcessQueuedTask(ctx, stdlib, taskID, taskexec.Deps{
+			Dispatch: func(ctx context.Context, task *taskstore.TaskRecord, log taskexec.Logger) error {
+				eng := taskengine.New(getWorkerCoreCfg(), stdlib)
+				taskLog := taskDBLogger{db: stdlib, taskID: task.ID}
+				if handled, err := eng.DispatchTask(ctx, task, taskLog); handled {
+					return err
+				}
+				return fmt.Errorf("unsupported task type: %s", strings.TrimSpace(task.TaskType))
+			},
+			Notify: func(ctx context.Context, task *taskstore.TaskRecord, status string, errMsg string) error {
+				_, err := taskqueue.StatusTopic.Publish(ctx, &taskqueue.TaskStatusEvent{
+					TaskID: task.ID,
+					Status: status,
+					Error:  errMsg,
+				})
+				return err
+			},
+			UpdateDeploymentStatus: func(ctx context.Context, workspaceID string, deploymentID string, status string, finishedAt time.Time) error {
+				return taskstore.UpdateDeploymentStatus(ctx, stdlib, workspaceID, deploymentID, status, &finishedAt)
+			},
+			EnqueueNextDeploymentTask: func(ctx context.Context, nextTaskID int, workspaceID string, deploymentID string) {
+				key := strings.TrimSpace(workspaceID)
+				if strings.TrimSpace(deploymentID) != "" {
+					key = fmt.Sprintf("%s:%s", strings.TrimSpace(workspaceID), strings.TrimSpace(deploymentID))
+				}
+				ev := &taskqueue.TaskEnqueuedEvent{TaskID: nextTaskID, Key: key}
+				priority := 0
+				if p := getTaskPriority(ctx, stdlib, nextTaskID); p != 0 {
+					priority = p
+				}
+				if priority < taskstore.PriorityInteractive {
+					_, _ = taskqueue.BackgroundTopic.Publish(ctx, ev)
+					return
+				}
+				_, _ = taskqueue.InteractiveTopic.Publish(ctx, ev)
+			},
+		}, rlogLogger{})
+	}
+
+	interactiveRunner = taskrunner.New("interactive", 8, 64, exec)
+	backgroundRunner = taskrunner.New("background", 2, 16, exec)
 }
 
 func runQueuedTaskFallbackLoop() {
@@ -77,15 +132,12 @@ func runQueuedTaskFallbackLoop() {
 		return
 	}
 
-	svc := &Service{}
 	sem := make(chan struct{}, 2)
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 
-	const (
-		limit  = 50
-		minAge = 20 * time.Second
-	)
+	const limit = 50
+	minAge := 20 * time.Second
 
 	for range ticker.C {
 		if role := strings.ToLower(strings.TrimSpace(os.Getenv("SKYFORGE_ROLE"))); role != "" && role != "worker" {
@@ -122,9 +174,10 @@ func runQueuedTaskFallbackLoop() {
 			case sem <- struct{}{}:
 				go func(taskID int, key string) {
 					defer func() { <-sem }()
-					bg, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-					defer cancel()
-					_ = svc.handleTaskEnqueued(bg, &taskqueue.TaskEnqueuedEvent{TaskID: taskID, Key: key})
+					// Prefer interactive runner for fallback, it handles both task types via DB priority.
+					if err := interactiveRunner.Submit(taskID); err != nil {
+						rlog.Error("queued task fallback: submit failed", "task_id", taskID, "err", err)
+					}
 				}(item.TaskID, item.Key)
 			default:
 				// At concurrency limit; remaining items will be retried on the next tick.
@@ -134,7 +187,15 @@ func runQueuedTaskFallbackLoop() {
 	}
 }
 
-func (s *Service) handleTaskEnqueued(ctx context.Context, msg *taskqueue.TaskEnqueuedEvent) error {
+func (s *Service) handleInteractiveTaskEnqueued(ctx context.Context, msg *taskqueue.TaskEnqueuedEvent) error {
+	return s.submitTask(ctx, msg, interactiveRunner)
+}
+
+func (s *Service) handleBackgroundTaskEnqueued(ctx context.Context, msg *taskqueue.TaskEnqueuedEvent) error {
+	return s.submitTask(ctx, msg, backgroundRunner)
+}
+
+func (s *Service) submitTask(ctx context.Context, msg *taskqueue.TaskEnqueuedEvent, r *taskrunner.Runner) error {
 	// IMPORTANT: Only the dedicated worker deployment should process tasks.
 	// If a non-worker pod accidentally includes worker subscriptions, it must not ack messages
 	// (otherwise tasks can appear "queued forever"). Returning an error causes Pub/Sub redelivery.
@@ -148,47 +209,15 @@ func (s *Service) handleTaskEnqueued(ctx context.Context, msg *taskqueue.TaskEnq
 	if msg == nil || msg.TaskID <= 0 {
 		return nil
 	}
-	stdlib, err := getWorkerDB(ctx)
-	if err != nil {
+	if r == nil {
+		return fmt.Errorf("task runner not configured")
+	}
+	// ACK quickly: execution happens asynchronously in the DB-backed runner.
+	if err := r.Submit(msg.TaskID); err != nil {
+		rlog.Error("task enqueue: runner submit failed", "task_id", msg.TaskID, "err", err)
 		return err
 	}
-	return taskexec.ProcessQueuedTask(ctx, stdlib, msg.TaskID, taskexec.Deps{
-		Dispatch: func(ctx context.Context, task *taskstore.TaskRecord, log taskexec.Logger) error {
-			eng := taskengine.New(getWorkerCoreCfg(), stdlib)
-			taskLog := taskDBLogger{db: stdlib, taskID: task.ID}
-			if handled, err := eng.DispatchTask(ctx, task, taskLog); handled {
-				return err
-			}
-			return fmt.Errorf("unsupported task type: %s", strings.TrimSpace(task.TaskType))
-		},
-		Notify: func(ctx context.Context, task *taskstore.TaskRecord, status string, errMsg string) error {
-			_, err := taskqueue.StatusTopic.Publish(ctx, &taskqueue.TaskStatusEvent{
-				TaskID: task.ID,
-				Status: status,
-				Error:  errMsg,
-			})
-			return err
-		},
-		UpdateDeploymentStatus: func(ctx context.Context, workspaceID string, deploymentID string, status string, finishedAt time.Time) error {
-			return taskstore.UpdateDeploymentStatus(ctx, stdlib, workspaceID, deploymentID, status, &finishedAt)
-		},
-		EnqueueNextDeploymentTask: func(ctx context.Context, nextTaskID int, workspaceID string, deploymentID string) {
-			key := strings.TrimSpace(workspaceID)
-			if strings.TrimSpace(deploymentID) != "" {
-				key = fmt.Sprintf("%s:%s", strings.TrimSpace(workspaceID), strings.TrimSpace(deploymentID))
-			}
-			ev := &taskqueue.TaskEnqueuedEvent{TaskID: nextTaskID, Key: key}
-			priority := 0
-			if p := getTaskPriority(ctx, stdlib, nextTaskID); p != 0 {
-				priority = p
-			}
-			if priority < taskstore.PriorityInteractive {
-				_, _ = taskqueue.BackgroundTopic.Publish(ctx, ev)
-				return
-			}
-			_, _ = taskqueue.InteractiveTopic.Publish(ctx, ev)
-		},
-	}, rlogLogger{})
+	return nil
 }
 
 type rlogLogger struct{}

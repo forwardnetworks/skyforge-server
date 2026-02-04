@@ -140,7 +140,6 @@ func CronProcessQueuedTasksFallback(ctx context.Context) error {
 		return nil
 	}
 
-	svc := &Service{}
 	for _, item := range items {
 		taskID := item.TaskID
 		if taskID <= 0 {
@@ -150,9 +149,9 @@ func CronProcessQueuedTasksFallback(ctx context.Context) error {
 		case queuePollerSem <- struct{}{}:
 			go func() {
 				defer func() { <-queuePollerSem }()
-				// Run with a background context so the cron call can return quickly.
-				bg := context.Background()
-				_ = svc.handleTaskEnqueued(bg, &taskqueue.TaskEnqueuedEvent{TaskID: taskID, Key: item.Key})
+				if err := interactiveRunner.Submit(taskID); err != nil {
+					rlog.Error("cron poll queued: submit failed", "task_id", taskID, "err", err)
+				}
 			}()
 		default:
 			// Poller is at concurrency limit; remaining items will be retried on the next tick.
