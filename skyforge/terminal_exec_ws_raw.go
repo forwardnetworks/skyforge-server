@@ -363,9 +363,14 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 	container := strings.TrimSpace(req.URL.Query().Get("container"))
 	rawCommand := strings.TrimSpace(req.URL.Query().Get("command"))
 	command := terminalutil.NormalizeCommand(rawCommand)
-	cmd := strings.Fields(command)
-	if len(cmd) == 0 {
-		cmd = []string{"sh"}
+	cmd := []string{}
+	{
+		fields := strings.Fields(command)
+		if len(fields) == 0 {
+			cmd = []string{"sh"}
+		} else {
+			cmd = fields
+		}
 	}
 
 	cfgAny, _ := fromJSONMap(dep.Config)
@@ -546,8 +551,28 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 			}
 		}
 		if terminalutil.IsVrnetlabImage(image) {
-			command = terminalutil.VrnetlabDefaultCommand(image)
-			cmd = strings.Fields(command)
+			// Cisco IOL does not expose a vrnetlab console on :5000 in our builds; use
+			// an SSH session from the launcher container instead.
+			if terminalutil.IsCiscoIOLImage(image) {
+				for _, c := range pod.Spec.Containers {
+					if strings.TrimSpace(c.Name) == "clabernetes-launcher" {
+						container = "clabernetes-launcher"
+						break
+					}
+				}
+				command = "ssh admin@127.0.0.1"
+				cmd = []string{
+					"ssh",
+					"-o", "StrictHostKeyChecking=no",
+					"-o", "UserKnownHostsFile=/dev/null",
+					"-o", "PreferredAuthentications=password",
+					"-o", "PubkeyAuthentication=no",
+					"admin@127.0.0.1",
+				}
+			} else {
+				command = terminalutil.VrnetlabConsoleCommand
+				cmd = terminalutil.VrnetlabConsoleExec(image)
+			}
 		} else if strings.EqualFold(rawCommand, "cli") {
 			// `cli` is a UI convenience, not a standard binary.
 			// For cEOS, prefer launching the EOS CLI binary; otherwise fall back to a shell.
@@ -566,7 +591,7 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 	// session for the same pod/container/command.
 	sessKey := ""
 	var sess *terminalSession
-	if strings.HasPrefix(command, "telnet 127.0.0.1 5000") || command == "Cli" {
+	if command == terminalutil.VrnetlabConsoleCommand || command == "Cli" {
 		sessKey = terminalSessionKey(k8sNamespace, podName, container, command)
 		sess = &terminalSession{
 			cancel:  cancel,

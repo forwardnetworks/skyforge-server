@@ -23,20 +23,16 @@ func TestNormalizeCommand(t *testing.T) {
 	}
 }
 
-func TestVrnetlabDefaultCommand(t *testing.T) {
-	tests := []struct {
-		in   string
-		want string
-	}{
-		{"ghcr.io/forwardnetworks/vrnetlab/vr-vmx:18.2R1.9", "telnet 127.0.0.1 5000"},
-		{"vrnetlab/juniper_vjunos-router:23.4R2-S2.1", "telnet 127.0.0.1 5000"},
-		{"ghcr.io/forwardnetworks/vrnetlab/cisco_iol:17.16.01a", "telnet 127.0.0.1 5000"},
+func TestVrnetlabConsoleExec(t *testing.T) {
+	got := VrnetlabConsoleExec("ghcr.io/forwardnetworks/vrnetlab/vr-vmx:18.2R1.9")
+	if len(got) != 3 {
+		t.Fatalf("VrnetlabConsoleExec returned %d args, want 3", len(got))
 	}
-
-	for _, tt := range tests {
-		if got := VrnetlabDefaultCommand(tt.in); got != tt.want {
-			t.Fatalf("VrnetlabDefaultCommand(%q) = %q, want %q", tt.in, got, tt.want)
-		}
+	if got[0] != "bash" || got[1] != "-lc" {
+		t.Fatalf("VrnetlabConsoleExec = %q, want bash -lc ...", got)
+	}
+	if got[2] == "" {
+		t.Fatalf("VrnetlabConsoleExec script is empty")
 	}
 }
 

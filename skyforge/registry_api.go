@@ -147,7 +147,15 @@ func (s *Service) ListRegistryRepos(w http.ResponseWriter, req *http.Request) {
 
 	cfg := registryConfigFromEnv()
 	if cfg.BaseURL == "" {
-		http.Error(w, "registry not configured (set SKYFORGE_REGISTRY_URL)", http.StatusServiceUnavailable)
+		// The portal probes this endpoint to decide whether to show registry features.
+		// Returning 200 with an empty list keeps the Deployments UI usable when the
+		// registry integration isn't configured.
+		writeJSON(w, http.StatusOK, RegistryReposResponse{
+			BaseURL:       "",
+			Repositories:  []string{},
+			FilteredCount: 0,
+			TotalCount:    0,
+		})
 		return
 	}
 
