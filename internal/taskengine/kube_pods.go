@@ -161,6 +161,45 @@ func kubeAssertClabernetesNativeMode(ctx context.Context, ns, topologyOwner stri
 	return fmt.Errorf("%s; examples: %s", msg, strings.Join(bad, "; "))
 }
 
+func kubeClabernetesTopologyPodsReady(ctx context.Context, ns, topologyOwner string) (bool, []string, error) {
+	ns = strings.TrimSpace(ns)
+	topologyOwner = strings.TrimSpace(topologyOwner)
+	if ns == "" || topologyOwner == "" {
+		return false, nil, fmt.Errorf("namespace and topology owner are required")
+	}
+	pods, err := kubeListPods(ctx, ns, map[string]string{"clabernetes/topologyOwner": topologyOwner})
+	if err != nil {
+		return false, nil, err
+	}
+	if len(pods) == 0 {
+		return false, nil, nil
+	}
+
+	var notReady []string
+	for _, p := range pods {
+		podName := strings.TrimSpace(p.Metadata.Name)
+		if podName == "" {
+			podName = "<unknown>"
+		}
+		if strings.TrimSpace(p.Status.Phase) != "Running" {
+			notReady = append(notReady, fmt.Sprintf("%s phase=%s", podName, strings.TrimSpace(p.Status.Phase)))
+			continue
+		}
+		allContainersReady := true
+		for _, cs := range p.Status.ContainerStatuses {
+			if !cs.Ready {
+				allContainersReady = false
+				break
+			}
+		}
+		if !allContainersReady {
+			notReady = append(notReady, fmt.Sprintf("%s containersReady=false", podName))
+		}
+	}
+
+	return len(notReady) == 0, notReady, nil
+}
+
 func kubeSummarizePodsForJob(ctx context.Context, ns, jobName string) (string, error) {
 	pods, err := kubeListPods(ctx, ns, map[string]string{"job-name": jobName})
 	if err != nil {

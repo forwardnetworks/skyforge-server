@@ -488,8 +488,25 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 					log.Errorf("Topology status error: %v", err)
 					continue
 				}
-				if topo != nil && topo.Status.TopologyReady {
-					log.Infof("Topology is ready (elapsed %s)", time.Since(started).Truncate(time.Second))
+
+				podsReady := false
+				var podsNotReady []string
+				if topo != nil {
+					ready, notReady, err := kubeClabernetesTopologyPodsReady(ctx, ns, name)
+					if err != nil {
+						log.Infof("clabernetes pod readiness check failed: %v", err)
+					} else {
+						podsReady = ready
+						podsNotReady = notReady
+					}
+				}
+
+				if topo != nil && (topo.Status.TopologyReady || podsReady) {
+					if topo.Status.TopologyReady {
+						log.Infof("Topology is ready (elapsed %s)", time.Since(started).Truncate(time.Second))
+					} else {
+						log.Infof("Topology not marked ready by clabernetes yet, but all topology pods are Ready (elapsed %s)", time.Since(started).Truncate(time.Second))
+					}
 
 					// Validate we actually landed in clabernetes native mode. If this fails, the
 					// topology will be running Docker-in-Docker inside the launcher, which Skyforge
@@ -522,8 +539,16 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 					}
 					return nil
 				}
+
 				if time.Since(started) >= deployTimeout {
 					return fmt.Errorf("clabernetes deploy timed out after %s", time.Since(started).Truncate(time.Second))
+				}
+				if len(podsNotReady) > 0 {
+					// Keep logs terse and stable; list a small sample of not-ready pods.
+					if len(podsNotReady) > 3 {
+						podsNotReady = podsNotReady[:3]
+					}
+					log.Infof("Clabernetes pod readiness: not ready yet (%s)", strings.Join(podsNotReady, "; "))
 				}
 				log.Infof("Waiting for topology to become ready (elapsed %s)", time.Since(started).Truncate(time.Second))
 			}
