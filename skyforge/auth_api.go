@@ -396,22 +396,62 @@ func (s *Service) SessionForwardAuthEnvoyPost(w http.ResponseWriter, req *http.R
 	s.sessionForwardAuthEnvoy(w, req)
 }
 
+// NOTE: Envoy's ext_authz `path_prefix` can append the original request path to the
+// configured prefix (e.g. `/api/session/forwardauth/envoy/`), so we also expose
+// wildcard handlers.
+//
+//encore:api public raw method=GET path=/api/session/forwardauth/envoy/*rest
+func (s *Service) SessionForwardAuthEnvoyAny(w http.ResponseWriter, req *http.Request) {
+	s.sessionForwardAuthEnvoy(w, req)
+}
+
+//encore:api public raw method=POST path=/api/session/forwardauth/envoy/*rest
+func (s *Service) SessionForwardAuthEnvoyPostAny(w http.ResponseWriter, req *http.Request) {
+	s.sessionForwardAuthEnvoy(w, req)
+}
+
 func (s *Service) sessionForwardAuthEnvoy(w http.ResponseWriter, req *http.Request) {
 	claims := claimsFromCookie(s.sessionManager, req.Header.Get("Cookie"))
 	if claims == nil {
-		originalPath := strings.TrimSpace(req.Header.Get("X-Envoy-Original-Path"))
-		if originalPath == "" {
-			originalPath = strings.TrimSpace(req.Header.Get("X-Forwarded-Uri"))
+		uri := strings.TrimSpace(req.Header.Get("X-Forwarded-Uri"))
+		if uri == "" {
+			uri = strings.TrimSpace(req.Header.Get("X-Envoy-Original-Path"))
 		}
-		if originalPath == "" {
-			originalPath = "/"
+		if uri == "" && req != nil && req.URL != nil {
+			// Envoy ext_authz can call this endpoint by appending the original request
+			// path to the configured `path_prefix`. If that happens, reconstruct the
+			// original path from the request URL.
+			//
+			// Example:
+			//   configured `path_prefix`: /api/session/forwardauth/envoy
+			//   original request path:    /
+			//   auth request path:        /api/session/forwardauth/envoy/
+			const prefix = "/api/session/forwardauth/envoy"
+			if strings.HasPrefix(req.URL.Path, prefix) {
+				uri = strings.TrimPrefix(req.URL.Path, prefix)
+			}
 		}
-		// Avoid open redirects; always force a path-absolute `next`.
-		if !strings.HasPrefix(originalPath, "/") {
-			originalPath = "/"
+		if uri == "" {
+			uri = "/"
+		}
+		if !strings.HasPrefix(uri, "/") {
+			uri = "/"
 		}
 
-		w.Header().Set("Location", "/api/oidc/login?next="+url.QueryEscape(originalPath))
+		prefix := strings.TrimSpace(req.Header.Get("X-Skyforge-External-Prefix"))
+		if prefix == "" {
+			// Many Gateway API implementations preserve the pre-rewrite URL prefix here.
+			prefix = strings.TrimSpace(req.Header.Get("X-Forwarded-Prefix"))
+		}
+		if prefix != "" && strings.HasPrefix(prefix, "/") && prefix != "/" {
+			if uri == "/" {
+				uri = prefix + "/"
+			} else if strings.HasPrefix(uri, "/") {
+				uri = prefix + uri
+			}
+		}
+
+		w.Header().Set("Location", "/api/oidc/login?next="+url.QueryEscape(uri))
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusFound)
