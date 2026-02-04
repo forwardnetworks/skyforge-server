@@ -4,8 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"time"
 )
+
+const templateIndexScannerVersion = 2
 
 type templateIndexRecord struct {
 	HeadSHA   string
@@ -13,10 +16,19 @@ type templateIndexRecord struct {
 	UpdatedAt time.Time
 }
 
+func templateIndexDirKey(dir string) string {
+	// This store is a performance cache. Include a scanner version so that changes
+	// to directory scanning logic force a rescan even when the HEAD SHA hasn't changed.
+	//
+	// Note: we intentionally leave old rows behind; they are small and harmless.
+	return fmt.Sprintf("%s@v%d", dir, templateIndexScannerVersion)
+}
+
 func loadTemplateIndex(ctx context.Context, db *sql.DB, kind, owner, repo, branch, dir string) (*templateIndexRecord, error) {
 	if db == nil {
 		return nil, nil
 	}
+	dirKey := templateIndexDirKey(dir)
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
@@ -29,7 +41,7 @@ func loadTemplateIndex(ctx context.Context, db *sql.DB, kind, owner, repo, branc
 SELECT head_sha, templates, updated_at
 FROM sf_template_indexes
 WHERE kind=$1 AND owner=$2 AND repo=$3 AND branch=$4 AND dir=$5
-`, kind, owner, repo, branch, dir).Scan(&headSHA, &raw, &updatedAt)
+`, kind, owner, repo, branch, dirKey).Scan(&headSHA, &raw, &updatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -52,6 +64,7 @@ func upsertTemplateIndex(ctx context.Context, db *sql.DB, kind, owner, repo, bra
 	if db == nil {
 		return nil
 	}
+	dirKey := templateIndexDirKey(dir)
 	payload, err := json.Marshal(templates)
 	if err != nil {
 		return err
@@ -66,6 +79,6 @@ ON CONFLICT (kind, owner, repo, branch, dir) DO UPDATE
 SET head_sha=excluded.head_sha,
     templates=excluded.templates,
     updated_at=now()
-`, kind, owner, repo, branch, dir, headSHA, payload)
+`, kind, owner, repo, branch, dirKey, headSHA, payload)
 	return err
 }

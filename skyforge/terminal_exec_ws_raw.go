@@ -16,8 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"encore.dev/rlog"
 	"encore.app/internal/terminalutil"
+	"encore.dev/rlog"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -27,6 +27,61 @@ import (
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
 )
+
+type terminalSession struct {
+	cancel  context.CancelFunc
+	close   func(status websocket.StatusCode, reason string)
+	started time.Time
+}
+
+var terminalSessions sync.Map // map[key]*terminalSession
+
+func terminalSessionKey(namespace, pod, container, command string) string {
+	// Node name is intentionally omitted: pod already uniquely identifies the node.
+	return strings.Join([]string{
+		strings.TrimSpace(namespace),
+		strings.TrimSpace(pod),
+		strings.TrimSpace(container),
+		strings.TrimSpace(command),
+	}, "|")
+}
+
+func terminalSessionTakeover(key string, next *terminalSession) (replaced bool) {
+	if key == "" || next == nil {
+		return false
+	}
+	if prevAny, loaded := terminalSessions.LoadOrStore(key, next); loaded {
+		if prev, ok := prevAny.(*terminalSession); ok && prev != nil {
+			// Force the previous session to exit quickly. Some vrnetlab-backed nodes
+			// only allow a single console connection at a time, so leaving a stale
+			// exec running makes new terminals fail until it times out.
+			if prev.close != nil {
+				prev.close(websocket.StatusPolicyViolation, "replaced by a newer terminal session")
+			}
+			if prev.cancel != nil {
+				prev.cancel()
+			}
+		}
+		terminalSessions.Store(key, next)
+		return true
+	}
+	return false
+}
+
+func terminalSessionRelease(key string, sess *terminalSession) {
+	if key == "" || sess == nil {
+		return
+	}
+	curAny, ok := terminalSessions.Load(key)
+	if !ok {
+		return
+	}
+	cur, ok := curAny.(*terminalSession)
+	if !ok || cur != sess {
+		return
+	}
+	terminalSessions.Delete(key)
+}
 
 func terminalWSAcceptOptions(publicURL string, req *http.Request) *websocket.AcceptOptions {
 	if req == nil {
@@ -336,7 +391,13 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		return
 	}
-	defer conn.Close(websocket.StatusNormalClosure, "")
+	var connCloseOnce sync.Once
+	connClose := func(status websocket.StatusCode, reason string) {
+		connCloseOnce.Do(func() {
+			_ = conn.Close(status, reason)
+		})
+	}
+	defer connClose(websocket.StatusNormalClosure, "")
 	conn.SetReadLimit(1 << 20)
 
 	var lastClientActivityUnixNano atomic.Int64
@@ -361,7 +422,7 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 						// If we can't ping the client, force-close to avoid leaving an orphaned
 						// kube exec (and a vrnetlab console session) running indefinitely.
 						cancel()
-						_ = conn.Close(websocket.StatusGoingAway, "client ping failed")
+						connClose(websocket.StatusGoingAway, "client ping failed")
 						return
 					}
 				}
@@ -384,7 +445,7 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 					last := time.Unix(0, lastClientActivityUnixNano.Load())
 					if time.Since(last) > idleTimeout {
 						cancel()
-						_ = conn.Close(websocket.StatusNormalClosure, "idle timeout")
+						connClose(websocket.StatusNormalClosure, "idle timeout")
 						return
 					}
 				}
@@ -494,6 +555,25 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	// Some vrnetlab-backed nodes only allow a single console connection at a time.
+	// To make the UI more forgiving, automatically "take over" any existing console
+	// session for the same pod/container/command.
+	sessKey := ""
+	var sess *terminalSession
+	if strings.HasPrefix(command, "telnet 127.0.0.1 5000") {
+		sessKey = terminalSessionKey(k8sNamespace, podName, container, command)
+		sess = &terminalSession{
+			cancel:  cancel,
+			close:   connClose,
+			started: time.Now(),
+		}
+		repl := terminalSessionTakeover(sessKey, sess)
+		if repl {
+			_ = wsjson.Write(ctx, conn, terminalServerMsg{Type: "info", Data: "closed an existing console session for this node"})
+		}
+		defer terminalSessionRelease(sessKey, sess)
+	}
+
 	opts := &corev1.PodExecOptions{
 		Container: container,
 		Command:   cmd,
@@ -577,7 +657,7 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 
 	outCh <- terminalServerMsg{Type: "info", Data: fmt.Sprintf("connected: %s/%s (%s)", k8sNamespace, podName, strings.Join(cmd, " "))}
 	if strings.HasPrefix(command, "telnet 127.0.0.1 5000") {
-		outCh <- terminalServerMsg{Type: "info", Data: "vrnetlab console is single-connection; close other terminal windows for this node if you get disconnected."}
+		outCh <- terminalServerMsg{Type: "info", Data: "vrnetlab console is single-connection; opening a new terminal will close any existing console session for this node."}
 	}
 
 	streamErr := executor.StreamWithContext(ctx, remotecommand.StreamOptions{
