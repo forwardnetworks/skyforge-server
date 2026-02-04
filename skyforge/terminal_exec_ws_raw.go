@@ -479,62 +479,68 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// If container isn't specified and the pod has multiple containers, pick a sensible default.
+	// Fetch the pod spec (used to detect device type and select the right container/command).
+	// If the API is temporarily slow, retry with a longer timeout so we don't fall back to
+	// executing the literal `cli` command (which is not a real binary).
 	var pod *corev1.Pod
-	if container == "" {
-		ctxGet, cancel := context.WithTimeout(ctx, 3*time.Second)
-		pod, err = clientset.CoreV1().Pods(k8sNamespace).Get(ctxGet, podName, metav1.GetOptions{})
-		cancel()
-		if err == nil && pod != nil {
-			best := ""
-			// Prefer the NOS container, which in clabernetes native mode is the topology node name.
+	getPod := func(timeout time.Duration) (*corev1.Pod, error) {
+		ctxGet, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		return clientset.CoreV1().Pods(k8sNamespace).Get(ctxGet, podName, metav1.GetOptions{})
+	}
+	pod, err = getPod(3 * time.Second)
+	if err != nil && (rawCommand == "" || strings.EqualFold(rawCommand, "sh") || strings.EqualFold(rawCommand, "cli")) {
+		pod, _ = getPod(10 * time.Second)
+	}
+
+	// If container isn't specified and the pod has multiple containers, pick a sensible default.
+	if container == "" && pod != nil {
+		best := ""
+		// Prefer the NOS container, which in clabernetes native mode is the topology node name.
+		for _, c := range pod.Spec.Containers {
+			name := strings.TrimSpace(c.Name)
+			if name == "" {
+				continue
+			}
+			if name == node {
+				best = name
+				break
+			}
+		}
+		if best == "" {
+			// Fall back to common container names, and avoid selecting the launcher when possible.
+			bestNonLauncher := ""
+			bestAny := ""
 			for _, c := range pod.Spec.Containers {
 				name := strings.TrimSpace(c.Name)
 				if name == "" {
 					continue
 				}
-				if name == node {
-					best = name
+				if bestAny == "" {
+					bestAny = name
+				}
+				if name != "clabernetes-launcher" && bestNonLauncher == "" {
+					bestNonLauncher = name
+				}
+				if name == "nos" {
+					bestNonLauncher = name
 					break
 				}
-			}
-			if best == "" {
-				// Fall back to common container names, and avoid selecting the launcher when possible.
-				bestNonLauncher := ""
-				bestAny := ""
-				for _, c := range pod.Spec.Containers {
-					name := strings.TrimSpace(c.Name)
-					if name == "" {
-						continue
-					}
-					if bestAny == "" {
-						bestAny = name
-					}
-					if name != "clabernetes-launcher" && bestNonLauncher == "" {
-						bestNonLauncher = name
-					}
-					if name == "nos" {
-						bestNonLauncher = name
-						break
-					}
-					if name == "node" {
-						bestNonLauncher = name
-					}
-				}
-				if bestNonLauncher != "" {
-					best = bestNonLauncher
-				} else {
-					best = bestAny
+				if name == "node" {
+					bestNonLauncher = name
 				}
 			}
-			container = best
+			if bestNonLauncher != "" {
+				best = bestNonLauncher
+			} else {
+				best = bestAny
+			}
 		}
-	} else {
-		// We still fetch the pod to detect vrnetlab-backed nodes and pick a better
-		// default terminal command.
-		ctxGet, cancel := context.WithTimeout(ctx, 3*time.Second)
-		pod, _ = clientset.CoreV1().Pods(k8sNamespace).Get(ctxGet, podName, metav1.GetOptions{})
-		cancel()
+		container = best
+	}
+	if container == "" {
+		// Best-effort fallback: in clabernetes native mode, the NOS container is the topology node name.
+		container = node
 	}
 
 	// If the user didn't explicitly request a shell/command, prefer the vrnetlab
@@ -601,24 +607,21 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	// Some vrnetlab-backed nodes only allow a single console connection at a time.
-	// To make the UI more forgiving, automatically "take over" any existing console
-	// session for the same pod/container/command.
-	sessKey := ""
-	var sess *terminalSession
-	if command == terminalutil.VrnetlabConsoleCommand || command == terminalutil.CiscoIOLConsoleCommand || command == "Cli" {
-		sessKey = terminalSessionKey(k8sNamespace, podName, container, command)
-		sess = &terminalSession{
-			cancel:  cancel,
-			close:   connClose,
-			started: time.Now(),
-		}
-		repl := terminalSessionTakeover(sessKey, sess)
-		if repl {
-			_ = wsjson.Write(ctx, conn, terminalServerMsg{Type: "info", Data: "closed an existing console session for this node"})
-		}
-		defer terminalSessionRelease(sessKey, sess)
+	// Ensure the browser can always open a fresh terminal for a node.
+	//
+	// Some NOS consoles are single-connection (vrnetlab, iol via in-launcher ssh, etc).
+	// Even for regular shells, a stale exec can confuse users (and can surface as WS code 1006).
+	// Use a per-pod session key so that opening a new terminal replaces any existing one.
+	sessKey := terminalSessionKey(k8sNamespace, podName, "", "")
+	sess := &terminalSession{
+		cancel:  cancel,
+		close:   connClose,
+		started: time.Now(),
 	}
+	if terminalSessionTakeover(sessKey, sess) {
+		_ = wsjson.Write(ctx, conn, terminalServerMsg{Type: "info", Data: "closed an existing terminal session for this node"})
+	}
+	defer terminalSessionRelease(sessKey, sess)
 
 	opts := &corev1.PodExecOptions{
 		Container: container,

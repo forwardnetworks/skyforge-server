@@ -65,14 +65,37 @@ cat >&3`
 }
 
 func CiscoIOLConsoleExec() []string {
-	// Cisco IOL images do not expose a stable vrnetlab console on :5000 in our builds.
-	// Start an SSH session against the NOS inside the pod network namespace.
-	return []string{
-		"ssh",
-		"-o", "StrictHostKeyChecking=no",
-		"-o", "UserKnownHostsFile=/dev/null",
-		"-o", "PreferredAuthentications=password",
-		"-o", "PubkeyAuthentication=no",
-		"admin@127.0.0.1",
-	}
+	// Cisco IOL nodes typically expose an SSH server on localhost:22 in the launcher
+	// network namespace, but do not expose a stable vrnetlab console port on :5000.
+	//
+	// We want the browser terminal to land directly in IOS without prompting for a
+	// password. Use SSH_ASKPASS to provide the default credentials non-interactively.
+	//
+	// Notes:
+	// - This runs in the launcher container (which has bash/ssh/setsid).
+	// - We intentionally keep the credentials as the containerlab/netlab defaults.
+	// - The session remains interactive after auth; the askpass is only used for login.
+	script := `set -euo pipefail
+export SKYFORGE_SSH_USERNAME="${SKYFORGE_SSH_USERNAME:-admin}"
+export SKYFORGE_SSH_PASSWORD="${SKYFORGE_SSH_PASSWORD:-admin}"
+
+askpass="$(mktemp)"
+cat >"${askpass}" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "${SKYFORGE_SSH_PASSWORD:-}"
+EOF
+chmod +x "${askpass}"
+export SSH_ASKPASS="${askpass}"
+export SSH_ASKPASS_REQUIRE=force
+export DISPLAY=1
+
+exec setsid -w ssh \
+  -o StrictHostKeyChecking=no \
+  -o UserKnownHostsFile=/dev/null \
+  -o PreferredAuthentications=password \
+  -o PubkeyAuthentication=no \
+  "${SKYFORGE_SSH_USERNAME}@127.0.0.1"`
+
+	return []string{"bash", "-lc", script}
 }
