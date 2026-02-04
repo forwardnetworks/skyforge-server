@@ -211,7 +211,11 @@ func (s *Service) ListRegistryTags(w http.ResponseWriter, req *http.Request) {
 
 	cfg := registryConfigFromEnv()
 	if cfg.BaseURL == "" {
-		http.Error(w, "registry not configured (set SKYFORGE_REGISTRY_URL)", http.StatusServiceUnavailable)
+		// Keep UI usable when registry isn't configured.
+		writeJSON(w, http.StatusOK, RegistryTagsListResponse{
+			Repository: "",
+			Tags:       []string{},
+		})
 		return
 	}
 

@@ -44,6 +44,9 @@ func NormalizeCommand(command string) string {
 // VrnetlabConsoleCommand is a stable identifier used for session takeover in the terminal UX.
 const VrnetlabConsoleCommand = "vrnetlab-console"
 
+// CiscoIOLConsoleCommand is a stable identifier used for session takeover for Cisco IOL nodes.
+const CiscoIOLConsoleCommand = "iol-console"
+
 func VrnetlabConsoleExec(image string) []string {
 	// Most vrnetlab-backed nodes expose the NOS console over TCP on localhost:5000.
 	//
@@ -59,4 +62,17 @@ trap 'kill 0' EXIT
 cat <&3 &
 cat >&3`
 	return []string{"bash", "-lc", script}
+}
+
+func CiscoIOLConsoleExec() []string {
+	// Cisco IOL images do not expose a stable vrnetlab console on :5000 in our builds.
+	// Start an SSH session against the NOS inside the pod network namespace.
+	return []string{
+		"ssh",
+		"-o", "StrictHostKeyChecking=no",
+		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "PreferredAuthentications=password",
+		"-o", "PubkeyAuthentication=no",
+		"admin@127.0.0.1",
+	}
 }

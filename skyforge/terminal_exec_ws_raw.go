@@ -543,40 +543,55 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 	// This covers most nodes launched via netlab/clabernetes that wrap a NOS with
 	// vrnetlab (vMX, vJunos, ASAv, NX-OS, etc).
 	if (rawCommand == "" || strings.EqualFold(rawCommand, "sh") || strings.EqualFold(rawCommand, "cli")) && pod != nil {
-		image := ""
+		const launcherName = "clabernetes-launcher"
+		launcherExists := false
+		containerImages := map[string]string{}
 		for _, c := range pod.Spec.Containers {
-			if strings.TrimSpace(c.Name) == container {
-				image = strings.TrimSpace(c.Image)
-				break
+			name := strings.TrimSpace(c.Name)
+			if name == "" {
+				continue
+			}
+			img := strings.TrimSpace(c.Image)
+			containerImages[name] = img
+			if name == launcherName {
+				launcherExists = true
 			}
 		}
-		if terminalutil.IsVrnetlabImage(image) {
-			// Cisco IOL does not expose a vrnetlab console on :5000 in our builds; use
+
+		// Detect device type based on any container image in the pod (not just the selected container).
+		// In clabernetes native mode, the launcher and NOS containers share a network namespace, but
+		// only the launcher is guaranteed to have a rich shell environment (bash, ssh client, etc).
+		vrnetlabImage := ""
+		ceosContainer := ""
+		for name, img := range containerImages {
+			if vrnetlabImage == "" && terminalutil.IsVrnetlabImage(img) {
+				vrnetlabImage = img
+			}
+			if ceosContainer == "" && terminalutil.IsCEOSImage(img) {
+				ceosContainer = name
+			}
+		}
+
+		if vrnetlabImage != "" {
+			// Always run console helpers in the launcher when possible, to avoid depending on
+			// binaries (bash/telnet/ssh) being present in the NOS container.
+			if launcherExists {
+				container = launcherName
+			}
+			// Cisco IOL does not expose a stable vrnetlab console on :5000 in our builds; use
 			// an SSH session from the launcher container instead.
-			if terminalutil.IsCiscoIOLImage(image) {
-				for _, c := range pod.Spec.Containers {
-					if strings.TrimSpace(c.Name) == "clabernetes-launcher" {
-						container = "clabernetes-launcher"
-						break
-					}
-				}
-				command = "ssh admin@127.0.0.1"
-				cmd = []string{
-					"ssh",
-					"-o", "StrictHostKeyChecking=no",
-					"-o", "UserKnownHostsFile=/dev/null",
-					"-o", "PreferredAuthentications=password",
-					"-o", "PubkeyAuthentication=no",
-					"admin@127.0.0.1",
-				}
+			if terminalutil.IsCiscoIOLImage(vrnetlabImage) {
+				command = terminalutil.CiscoIOLConsoleCommand
+				cmd = terminalutil.CiscoIOLConsoleExec()
 			} else {
 				command = terminalutil.VrnetlabConsoleCommand
-				cmd = terminalutil.VrnetlabConsoleExec(image)
+				cmd = terminalutil.VrnetlabConsoleExec(vrnetlabImage)
 			}
 		} else if strings.EqualFold(rawCommand, "cli") {
 			// `cli` is a UI convenience, not a standard binary.
 			// For cEOS, prefer launching the EOS CLI binary; otherwise fall back to a shell.
-			if terminalutil.IsCEOSImage(image) {
+			if ceosContainer != "" {
+				container = ceosContainer
 				command = "Cli"
 				cmd = []string{"Cli"}
 			} else {
@@ -591,7 +606,7 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 	// session for the same pod/container/command.
 	sessKey := ""
 	var sess *terminalSession
-	if command == terminalutil.VrnetlabConsoleCommand || command == "Cli" {
+	if command == terminalutil.VrnetlabConsoleCommand || command == terminalutil.CiscoIOLConsoleCommand || command == "Cli" {
 		sessKey = terminalSessionKey(k8sNamespace, podName, container, command)
 		sess = &terminalSession{
 			cancel:  cancel,
@@ -687,8 +702,8 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 	}()
 
 	outCh <- terminalServerMsg{Type: "info", Data: fmt.Sprintf("connected: %s/%s (%s)", k8sNamespace, podName, strings.Join(cmd, " "))}
-	if strings.HasPrefix(command, "telnet 127.0.0.1 5000") {
-		outCh <- terminalServerMsg{Type: "info", Data: "vrnetlab console is single-connection; opening a new terminal will close any existing console session for this node."}
+	if command == terminalutil.VrnetlabConsoleCommand || command == terminalutil.CiscoIOLConsoleCommand {
+		outCh <- terminalServerMsg{Type: "info", Data: "console is single-connection; opening a new terminal will close any existing console session for this node."}
 	}
 	if command == "Cli" {
 		outCh <- terminalServerMsg{Type: "info", Data: "opening a new terminal will close any existing terminal session for this node."}
