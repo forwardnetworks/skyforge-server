@@ -304,7 +304,8 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	container := strings.TrimSpace(req.URL.Query().Get("container"))
-	command := terminalutil.NormalizeCommand(req.URL.Query().Get("command"))
+	rawCommand := strings.TrimSpace(req.URL.Query().Get("command"))
+	command := terminalutil.NormalizeCommand(rawCommand)
 	cmd := strings.Fields(command)
 	if len(cmd) == 0 {
 		cmd = []string{"sh"}
@@ -378,9 +379,10 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// If container isn't specified and the pod has multiple containers, pick a sensible default.
+	var pod *corev1.Pod
 	if container == "" {
 		ctxGet, cancel := context.WithTimeout(ctx, 3*time.Second)
-		pod, err := clientset.CoreV1().Pods(k8sNamespace).Get(ctxGet, podName, metav1.GetOptions{})
+		pod, err = clientset.CoreV1().Pods(k8sNamespace).Get(ctxGet, podName, metav1.GetOptions{})
 		cancel()
 		if err == nil && pod != nil {
 			best := ""
@@ -425,6 +427,31 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 				}
 			}
 			container = best
+		}
+	} else {
+		// We still fetch the pod to detect vrnetlab-backed nodes and pick a better
+		// default terminal command.
+		ctxGet, cancel := context.WithTimeout(ctx, 3*time.Second)
+		pod, _ = clientset.CoreV1().Pods(k8sNamespace).Get(ctxGet, podName, metav1.GetOptions{})
+		cancel()
+	}
+
+	// If the user didn't explicitly request a shell/command, prefer the vrnetlab
+	// console for vrnetlab-backed nodes.
+	//
+	// This covers most nodes launched via netlab/clabernetes that wrap a NOS with
+	// vrnetlab (vMX, vJunos, ASAv, NX-OS, etc).
+	if (rawCommand == "" || strings.EqualFold(rawCommand, "sh") || strings.EqualFold(rawCommand, "cli")) && pod != nil {
+		image := ""
+		for _, c := range pod.Spec.Containers {
+			if strings.TrimSpace(c.Name) == container {
+				image = strings.TrimSpace(c.Image)
+				break
+			}
+		}
+		if terminalutil.IsVrnetlabImage(image) {
+			command = "telnet 127.0.0.1 5000"
+			cmd = strings.Fields(command)
 		}
 	}
 
