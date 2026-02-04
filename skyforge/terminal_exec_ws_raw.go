@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"encore.dev/rlog"
+	"encore.app/internal/terminalutil"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -303,19 +304,7 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	container := strings.TrimSpace(req.URL.Query().Get("container"))
-	command := strings.TrimSpace(req.URL.Query().Get("command"))
-	if command == "" {
-		command = "sh"
-	}
-	// UI historically uses `cli` for Junos-like nodes, but most clabernetes/vrnetlab
-	// Junos images don't ship a `cli` binary in the container filesystem. They *do*
-	// expose the device console over telnet on localhost:5000 (vrnetlab convention).
-	//
-	// To keep the terminal working without requiring frontend rebuilds, transparently
-	// map `cli` to that console connection.
-	if strings.EqualFold(strings.TrimSpace(command), "cli") {
-		command = "telnet 127.0.0.1 5000"
-	}
+	command := terminalutil.NormalizeCommand(req.URL.Query().Get("command"))
 	cmd := strings.Fields(command)
 	if len(cmd) == 0 {
 		cmd = []string{"sh"}
