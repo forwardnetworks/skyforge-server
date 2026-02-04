@@ -485,8 +485,12 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 			}
 		}
 		if terminalutil.IsVrnetlabImage(image) {
-			command = "telnet 127.0.0.1 5000"
+			command = terminalutil.VrnetlabDefaultCommand(image)
 			cmd = strings.Fields(command)
+		} else if strings.EqualFold(rawCommand, "cli") {
+			// `cli` isn't a standard binary in most containers; fall back to a shell.
+			command = "sh"
+			cmd = []string{"sh"}
 		}
 	}
 

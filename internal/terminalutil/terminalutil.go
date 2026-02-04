@@ -14,17 +14,22 @@ func IsVrnetlabImage(image string) bool {
 
 // NormalizeCommand applies compatibility shims for in-browser terminals.
 //
-// The Skyforge UI historically used `cli` for Junos-like nodes, but most
-// clabernetes/vrnetlab Junos images don't ship a `cli` binary in the container
-// filesystem. They *do* expose the device console over telnet on localhost:5000
-// (vrnetlab convention).
 func NormalizeCommand(command string) string {
 	command = strings.TrimSpace(command)
 	if command == "" {
 		return "sh"
 	}
-	if strings.EqualFold(command, "cli") {
-		return "telnet 127.0.0.1 5000"
-	}
 	return command
+}
+
+func VrnetlabDefaultCommand(image string) string {
+	image = strings.ToLower(strings.TrimSpace(image))
+	// Most vrnetlab-backed nodes expose the NOS console over telnet on localhost:5000.
+	//
+	// Exception: IOL (IOU) does not expose a vrnetlab telnet console in the container,
+	// so falling back to a shell is more useful than a broken telnet session.
+	if strings.Contains(image, "cisco_iol") {
+		return "sh"
+	}
+	return "telnet 127.0.0.1 5000"
 }
