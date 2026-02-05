@@ -108,6 +108,7 @@ type FeaturesConfig struct {
 	NetboxEnabled    bool `json:"netboxEnabled"`
 	NautobotEnabled  bool `json:"nautobotEnabled"`
 	DNSEnabled       bool `json:"dnsEnabled"`
+	ElasticEnabled   bool `json:"elasticEnabled"`
 }
 
 type OIDCConfig struct {

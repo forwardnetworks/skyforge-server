@@ -397,7 +397,11 @@ func (s *Service) CaptureWorkspaceDeploymentLinkPcap(ctx context.Context, id, de
 		size = len(payload)
 	}
 
-	if err := storage.Write(ctx, &storage.WriteRequest{ObjectName: artifactObjectName(pc.workspace.ID, key), Data: payload}); err != nil {
+	storageSvc, err := storage.GetService()
+	if err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("artifact storage unavailable").Err()
+	}
+	if err := storageSvc.Write(ctx, &storage.WriteRequest{ObjectName: artifactObjectName(pc.workspace.ID, key), Data: payload}); err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to upload pcap").Err()
 	}
 

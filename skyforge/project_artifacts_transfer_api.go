@@ -80,7 +80,11 @@ func (s *Service) handleWorkspaceArtifactUpload(ctx context.Context, id string, 
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to upload artifact").Err()
 		}
 	} else {
-		if err := storage.Write(ctx, &storage.WriteRequest{ObjectName: objectName, Data: payload}); err != nil {
+		storageSvc, err := storage.GetService()
+		if err != nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("artifact storage unavailable").Err()
+		}
+		if err := storageSvc.Write(ctx, &storage.WriteRequest{ObjectName: objectName, Data: payload}); err != nil {
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to upload artifact").Err()
 		}
 	}
@@ -146,7 +150,11 @@ func (s *Service) handleWorkspaceArtifactDownload(ctx context.Context, id string
 			return nil, errs.B().Code(errs.NotFound).Msg("artifact not found").Err()
 		}
 	} else {
-		data, err := storage.Read(ctx, &storage.ReadRequest{ObjectName: objectName})
+		storageSvc, err := storage.GetService()
+		if err != nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("artifact storage unavailable").Err()
+		}
+		data, err := storageSvc.Read(ctx, &storage.ReadRequest{ObjectName: objectName})
 		if err != nil {
 			return nil, errs.B().Code(errs.NotFound).Msg("artifact not found").Err()
 		}
