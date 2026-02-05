@@ -72,6 +72,12 @@ type UserAISaveRequest struct {
 	Kind     AITemplateKind `json:"kind"`
 	Content  string         `json:"content"`
 	PathHint string         `json:"pathHint,omitempty"`
+	// Filename is an optional user-provided base filename (repo-relative name is computed
+	// from Kind + PathHint). If provided, it may include the expected extension.
+	// Examples:
+	// - netlab: "bgp-demo" or "bgp-demo.yml"
+	// - containerlab: "dc1" or "dc1.clab.yml"
+	Filename string `json:"filename,omitempty"`
 	Message  string         `json:"message,omitempty"`
 }
 
@@ -401,6 +407,13 @@ func (s *Service) SaveUserAITemplate(ctx context.Context, req *UserAISaveRequest
 	}
 
 	slug := uuid.New().String()
+	if strings.TrimSpace(req.Filename) != "" {
+		base, err := sanitizeTemplateBasename(req.Filename, ext)
+		if err != nil {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
+		}
+		slug = base
+	}
 	filePath := path.Join(dir, slug+ext)
 	if !isSafeRelativePath(filePath) {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("generated path is not safe").Err()
@@ -422,6 +435,45 @@ func (s *Service) SaveUserAITemplate(ctx context.Context, req *UserAISaveRequest
 		Branch:      branch,
 		Path:        filePath,
 	}, nil
+}
+
+func sanitizeTemplateBasename(filename string, requiredExt string) (string, error) {
+	name := strings.TrimSpace(filename)
+	if name == "" {
+		return "", fmt.Errorf("filename is empty")
+	}
+	name = strings.Trim(name, "/")
+	if strings.Contains(name, "/") || strings.Contains(name, "\\") {
+		return "", fmt.Errorf("filename must not contain path separators")
+	}
+
+	// Allow the user to include the expected extension.
+	switch {
+	case strings.HasSuffix(name, requiredExt):
+		name = strings.TrimSuffix(name, requiredExt)
+	case strings.Contains(name, "."):
+		// Reject other extensions to keep naming predictable and avoid confusing dropdowns.
+		return "", fmt.Errorf("filename must end with %s", requiredExt)
+	}
+
+	name = strings.Trim(name, ".-_")
+	if name == "" {
+		return "", fmt.Errorf("filename is invalid")
+	}
+	if len(name) > 120 {
+		return "", fmt.Errorf("filename too long")
+	}
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+		case r == '-' || r == '_' || r == '.':
+		default:
+			return "", fmt.Errorf("filename contains invalid characters")
+		}
+	}
+	return name, nil
 }
 
 // ValidateUserAITemplate persists a generated netlab template and enqueues a netlab validation task.

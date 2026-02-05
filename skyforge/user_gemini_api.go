@@ -19,13 +19,17 @@ import (
 )
 
 type UserGeminiConfigResponse struct {
-	Enabled     bool   `json:"enabled"`
-	Configured  bool   `json:"configured"`
-	Email       string `json:"email,omitempty"`
-	Scopes      string `json:"scopes,omitempty"`
-	HasToken    bool   `json:"hasToken"`
-	UpdatedAt   string `json:"updatedAt,omitempty"`
-	RedirectURL string `json:"redirectUrl,omitempty"`
+	Enabled        bool   `json:"enabled"`
+	Configured     bool   `json:"configured"`
+	Email          string `json:"email,omitempty"`
+	Scopes         string `json:"scopes,omitempty"`
+	HasToken       bool   `json:"hasToken"`
+	UpdatedAt      string `json:"updatedAt,omitempty"`
+	RedirectURL    string `json:"redirectUrl,omitempty"`
+	ProjectID      string `json:"projectId,omitempty"`
+	Location       string `json:"location,omitempty"`
+	Model          string `json:"model,omitempty"`
+	FallbackModel  string `json:"fallbackModel,omitempty"`
 }
 
 type userGeminiOAuthRow struct {
@@ -177,13 +181,17 @@ func (s *Service) GetUserGeminiConfig(ctx context.Context) (*UserGeminiConfigRes
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Gemini config").Err()
 	}
 	resp := &UserGeminiConfigResponse{
-		Enabled:     true,
-		Configured:  rec != nil && rec.RefreshTokenEnc != "",
-		HasToken:    rec != nil && rec.RefreshTokenEnc != "",
-		Email:       "",
-		Scopes:      "",
-		UpdatedAt:   "",
-		RedirectURL: cfg.RedirectURL,
+		Enabled:       true,
+		Configured:    rec != nil && rec.RefreshTokenEnc != "",
+		HasToken:      rec != nil && rec.RefreshTokenEnc != "",
+		Email:         "",
+		Scopes:        "",
+		UpdatedAt:     "",
+		RedirectURL:   cfg.RedirectURL,
+		ProjectID:     strings.TrimSpace(s.cfg.GeminiProjectID),
+		Location:      strings.TrimSpace(s.cfg.GeminiLocation),
+		Model:         strings.TrimSpace(s.cfg.GeminiModel),
+		FallbackModel: strings.TrimSpace(s.cfg.GeminiFallbackModel),
 	}
 	if rec != nil {
 		resp.Email = rec.Email
