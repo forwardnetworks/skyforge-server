@@ -26,15 +26,41 @@ configlets:
       # no-op (keep linux hosts SNMP-free by default)
     eos: |
       snmp-server community public ro
+    # Netlab device keys that behave like EOS but don't necessarily inherit its configlet.
+    # Keep explicit keys to avoid "fallback" behavior.
+    ceos: |
+      snmp-server community public ro
     ios: |
       snmp-server community public RO
+    iol: |
+      snmp-server community public RO
+    ioll2: |
+      snmp-server community public RO
+    iosv: |
+      snmp-server community public RO
+    iosvl2: |
+      snmp-server community public RO
     iosxe: |
+      snmp-server community public RO
+    csr: |
+      snmp-server community public RO
+    cat8000v: |
       snmp-server community public RO
     iosxr: |
       snmp-server community public RO
     asa: |
       snmp-server community public
     junos: |
+      set snmp community public authorization read-only
+    vmx: |
+      set snmp community public authorization read-only
+    vsrx: |
+      set snmp community public authorization read-only
+    vjunos-router: |
+      set snmp community public authorization read-only
+    vjunos-switch: |
+      set snmp community public authorization read-only
+    vptx: |
       set snmp community public authorization read-only
     nxos: |
       snmp-server community public group network-operator

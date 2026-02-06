@@ -423,6 +423,21 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 					return err
 				}
 			}
+
+			// Netlab initial's built-in "SSH ready" check is effectively an authentication check.
+			// Some NOS images present a banner long before interactive logins work, which makes
+			// netlab initial fail with "SSH server not ready after 100s" even though port 22 is open.
+			//
+			// Gate on a real password authentication handshake using the exact credentials we
+			// derive for the deployed images so netlab initial starts only when config push is possible.
+			authReadySeconds := envInt(spec.Environment, "SKYFORGE_NETLAB_INITIAL_AUTH_READY_SECONDS", sshReadySeconds)
+			if authReadySeconds > 0 {
+				if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.ssh.auth.ready", func() error {
+					return waitForNetlabInitialSSHAuthReady(ctx, spec.TaskID, e, graph, topologyBytes, time.Duration(authReadySeconds)*time.Second, log)
+				}); err != nil {
+					return err
+				}
+			}
 		}
 		if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.apply", func() error {
 			return e.runNetlabC9sApplierJob(ctx, ns, topologyName, setOverrides, spec.Environment, log)
