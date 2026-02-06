@@ -10,7 +10,7 @@ ENV ANSIBLE_COLLECTIONS_PATHS=/opt/ansible/collections
 RUN apt-get update \
   && apt-get install -y --no-install-recommends sshpass openssh-client \
   && rm -rf /var/lib/apt/lists/* \
-  && python3 -m pip install --no-cache-dir "ansible-core==2.17.8" \
+  && python3 -m pip install --no-cache-dir "ansible-core==2.17.8" "paramiko==3.5.1" \
   && ansible-galaxy collection install -p "${ANSIBLE_COLLECTIONS_PATH}" \
     ansible.netcommon \
     arista.eos \
