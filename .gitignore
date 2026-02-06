@@ -7,3 +7,4 @@ encore.gen.cue
 .env.*.local
 __pycache__/
 *.pyc
+.e2e-status/
