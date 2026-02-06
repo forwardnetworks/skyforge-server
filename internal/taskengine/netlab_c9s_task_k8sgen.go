@@ -34,6 +34,15 @@ type netlabC9sManifest struct {
 			Key           string `json:"key"`
 		} `json:"chunks"`
 	} `json:"netlabOutput,omitempty"`
+	// Backward/forward compatibility: some generator versions used snake_case for netlab output metadata.
+	NetlabOutputSnake *struct {
+		Type     string `json:"type"`
+		Encoding string `json:"encoding"`
+		Chunks   []struct {
+			ConfigMapName string `json:"configMapName"`
+			Key           string `json:"key"`
+		} `json:"chunks"`
+	} `json:"netlab_output,omitempty"`
 }
 
 const defaultNetlabC9sGeneratorImage = "ghcr.io/forwardnetworks/skyforge-netlab-generator:latest"
@@ -276,6 +285,10 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 	var manifest netlabC9sManifest
 	if err := json.Unmarshal([]byte(raw), &manifest); err != nil {
 		return nil, nil, nil, fmt.Errorf("invalid netlab generator manifest: %w", err)
+	}
+	// Normalize generator manifest schema variants.
+	if manifest.NetlabOutput == nil && manifest.NetlabOutputSnake != nil {
+		manifest.NetlabOutput = manifest.NetlabOutputSnake
 	}
 	clab := strings.TrimSpace(manifest.ClabYAML)
 	if clab == "" {
