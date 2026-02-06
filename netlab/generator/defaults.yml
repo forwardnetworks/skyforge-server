@@ -13,15 +13,27 @@
 provider: clab
 plugin: [ files ]
 
+# Apply SNMP config globally so collectors can discover devices out of the box.
+# Blueprints can still override by setting `config: []` explicitly if needed.
+config: [ snmp_config ]
+
 # Global configlets available to all blueprints.
 #
 # Configlets are only applied when referenced in a topology via `config: [ ... ]`.
 configlets:
   snmp_config:
+    linux: |
+      # no-op (keep linux hosts SNMP-free by default)
     eos: |
       snmp-server community public ro
     ios: |
       snmp-server community public RO
+    iosxe: |
+      snmp-server community public RO
+    iosxr: |
+      snmp-server community public RO
+    asa: |
+      snmp-server community public
     junos: |
       set snmp community public authorization read-only
     nxos: |
