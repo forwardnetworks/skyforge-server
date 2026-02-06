@@ -616,8 +616,40 @@ func deriveNetlabC9sSetOverridesFromClabYAML(clabYAML []byte) []string {
 		}
 		lines = append(lines, fmt.Sprintf("devices.%s.group_vars.ansible_user=%s", info.deviceKey, cred.Username))
 		lines = append(lines, fmt.Sprintf("devices.%s.group_vars.ansible_ssh_pass=%s", info.deviceKey, cred.Password))
+
+		// Netlab `initial --ready` uses an Ansible-side SSH readiness check that defaults to
+		// 20 retries * 5s delay = 100s. Several NOS images (especially EOS + VRNETLAB/QEMU-based)
+		// will present an SSH banner long before they accept successful interactive logins.
+		// When that happens, netlab initial reports "SSH server not ready after 100s" even
+		// though the pod is Running and port 22 is open.
+		//
+		// Increase the readiness window for known-slow devices based on the image we
+		// actually deployed, keeping the behavior closer to upstream netlab (which runs
+		// the same readiness checks) while avoiding flaky timeouts in-cluster.
+		if retries, delay, ok := netlabInitialReadyTuning(info.deviceKey); ok {
+			lines = append(lines, fmt.Sprintf("devices.%s.group_vars.netlab_check_retries=%d", info.deviceKey, retries))
+			lines = append(lines, fmt.Sprintf("devices.%s.group_vars.netlab_check_delay=%d", info.deviceKey, delay))
+		}
 	}
 	return lines
+}
+
+func netlabInitialReadyTuning(deviceKey string) (retries int, delaySeconds int, ok bool) {
+	switch strings.ToLower(strings.TrimSpace(deviceKey)) {
+	case "eos":
+		// cEOS can take a few minutes before auth succeeds even though the SSH banner is present.
+		return 60, 5, true // 5m
+	case "iol", "iosv", "iosvl2":
+		return 90, 5, true // 7.5m
+	case "csr", "cat8000v":
+		return 120, 5, true // 10m
+	case "nxos":
+		return 180, 5, true // 15m
+	case "vmx", "vsrx", "vjunos-router", "vjunos-switch", "vptx":
+		return 240, 5, true // 20m
+	default:
+		return 0, 0, false
+	}
 }
 
 // netlabDeviceKeyForClabNode attempts to map a containerlab node kind/image to the
