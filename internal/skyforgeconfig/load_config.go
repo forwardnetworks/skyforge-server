@@ -187,6 +187,22 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		NetboxEnabled:    enc.Features.NetboxEnabled,
 		NautobotEnabled:  enc.Features.NautobotEnabled,
 		DNSEnabled:       enc.Features.DNSEnabled,
+		ElasticEnabled:   enc.Features.ElasticEnabled,
+	}
+
+	elasticURL := strings.TrimSpace(enc.Elastic.URL)
+	elasticIndexPrefix := strings.TrimSpace(enc.Elastic.IndexPrefix)
+	if elasticIndexPrefix == "" {
+		elasticIndexPrefix = "skyforge"
+	}
+	// For the common "in-cluster Elastic" case, allow the feature flag to
+	// implicitly enable the default service name.
+	if elasticURL == "" && enc.Features.ElasticEnabled {
+		elasticURL = "http://elasticsearch:9200"
+	}
+	elasticCfg := skyforgecore.ElasticConfig{
+		URL:         elasticURL,
+		IndexPrefix: elasticIndexPrefix,
 	}
 
 	uiCfg := skyforgecore.UIConfig{
@@ -388,6 +404,7 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		NetlabApplierImage:                       netlabApplierImage,
 		NetlabApplierPullPolicy:                  netlabApplierPullPolicy,
 		Features:                                 featuresCfg,
+		Elastic:                                  elasticCfg,
 	}
 }
 
@@ -491,6 +508,20 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		NetboxEnabled:    enc.Features.NetboxEnabled,
 		NautobotEnabled:  enc.Features.NautobotEnabled,
 		DNSEnabled:       enc.Features.DNSEnabled,
+		ElasticEnabled:   enc.Features.ElasticEnabled,
+	}
+
+	elasticURL := strings.TrimSpace(enc.Elastic.URL)
+	elasticIndexPrefix := strings.TrimSpace(enc.Elastic.IndexPrefix)
+	if elasticIndexPrefix == "" {
+		elasticIndexPrefix = "skyforge"
+	}
+	if elasticURL == "" && enc.Features.ElasticEnabled {
+		elasticURL = "http://elasticsearch:9200"
+	}
+	elasticCfg := skyforgecore.ElasticConfig{
+		URL:         elasticURL,
+		IndexPrefix: elasticIndexPrefix,
 	}
 
 	// Note: Worker does not need OIDC, LDAP, DNS, UI, or admin users.
@@ -524,5 +555,6 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		PKICAKey:  strings.TrimSpace(sec.PKICAKey),
 		SSHCAKey:  strings.TrimSpace(sec.SSHCAKey),
 		Features:  featuresCfg,
+		Elastic:   elasticCfg,
 	}
 }

@@ -352,6 +352,7 @@ func (s *Service) WebhookIngestAny(w http.ResponseWriter, req *http.Request) {
 	headersJSON, _ := json.Marshal(headers)
 
 	srcIP := requestSourceIP(req)
+	receivedAt := time.Now().UTC()
 	_, dbErr := s.db.ExecContext(req.Context(), `
 INSERT INTO sf_webhook_events (username, token, method, path, source_ip, headers_json, body)
 VALUES ($1,$2,$3,$4,$5,$6,$7)
@@ -362,6 +363,17 @@ VALUES ($1,$2,$3,$4,$5,$6,$7)
 	}
 	// Best-effort update signal for UI streaming (SSE).
 	_ = notifyWebhookUpdatePG(req.Context(), s.db, username)
+
+	s.indexElasticAsync("webhook", receivedAt, map[string]any{
+		"received_at": receivedAt.Format(time.RFC3339Nano),
+		"username":    strings.ToLower(strings.TrimSpace(username)),
+		"token":       token,
+		"method":      req.Method,
+		"path":        rest,
+		"source_ip":   srcIP,
+		"headers":     json.RawMessage(headersJSON),
+		"body":        string(bodyBytes),
+	})
 
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
