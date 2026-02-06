@@ -27,8 +27,8 @@
       "image_prefix": "vrnetlab/cisco_c8000v",
       "credentials": [
         {
-          "username": "vagrant",
-          "password": "vagrant"
+          "username": "vrnetlab",
+          "password": "VR-netlab9"
         }
       ]
     },
@@ -37,8 +37,8 @@
       "image_prefix": "vrnetlab/vr-csr",
       "credentials": [
         {
-          "username": "vagrant",
-          "password": "vagrant"
+          "username": "vrnetlab",
+          "password": "VR-netlab9"
         }
       ]
     },
@@ -117,8 +117,8 @@
       "image_prefix": "vrnetlab/cisco_vios",
       "credentials": [
         {
-          "username": "vagrant",
-          "password": "vagrant"
+          "username": "admin",
+          "password": "admin"
         }
       ]
     },
@@ -127,8 +127,8 @@
       "image_prefix": "vrnetlab/cisco_viosl2",
       "credentials": [
         {
-          "username": "vagrant",
-          "password": "vagrant"
+          "username": "admin",
+          "password": "admin"
         }
       ]
     },
