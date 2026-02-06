@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"path"
 	"sort"
@@ -999,11 +998,23 @@ func forwardSSHBannerReadyOnce(ctx context.Context, host string) bool {
 	defer conn.Close()
 
 	_ = conn.SetReadDeadline(time.Now().Add(750 * time.Millisecond))
-	buf := make([]byte, 4)
-	if _, err := io.ReadFull(conn, buf); err != nil {
+	// Some NOS images (notably certain IOS/CSR variants) may emit non-SSH bytes
+	// (e.g. NULs) before the SSH banner. Read a small prefix and look for "SSH-"
+	// rather than requiring it at offset 0.
+	buf := make([]byte, 64)
+	n, err := conn.Read(buf)
+	if err != nil || n <= 0 {
 		return false
 	}
-	return bytes.Equal(buf, []byte("SSH-"))
+	buf = buf[:n]
+	if bytes.HasPrefix(buf, []byte("SSH-")) {
+		return true
+	}
+	// Accept banners that start slightly later in the stream (after NUL/newlines).
+	if idx := bytes.Index(buf, []byte("SSH-")); idx >= 0 && idx <= 32 {
+		return true
+	}
+	return false
 }
 
 func (e *Engine) captureC9sTopologyArtifact(ctx context.Context, spec netlabC9sRunSpec, ns, topologyName, labName string, topologyYAML []byte, nodeNameMapping map[string]string, log Logger) (*TopologyGraph, error) {
