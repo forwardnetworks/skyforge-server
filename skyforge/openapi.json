@@ -364,6 +364,29 @@
         ],
         "type": "object"
       },
+      "skyforge.CapacityInterfaceVrfRow": {
+        "properties": {
+          "deviceName": {
+            "type": "string"
+          },
+          "ifaceName": {
+            "type": "string"
+          },
+          "subIfaceName": {
+            "type": "string"
+          },
+          "vrf": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deviceName",
+          "vrf",
+          "ifaceName",
+          "subIfaceName"
+        ],
+        "type": "object"
+      },
       "skyforge.CapacityInterfaceWithDirection": {
         "properties": {
           "deviceName": {
@@ -1778,6 +1801,80 @@
         ],
         "type": "object"
       },
+      "skyforge.PolicyReportFlowImpact": {
+        "properties": {
+          "afterDecision": {
+            "type": "string"
+          },
+          "afterIndex": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "afterRule": {
+            "type": "string"
+          },
+          "beforeDecision": {
+            "type": "string"
+          },
+          "beforeIndex": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "beforeRule": {
+            "type": "string"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "device": {
+            "type": "string"
+          },
+          "flow": {
+            "$ref": "#/components/schemas/skyforge.PolicyReportFlowTuple"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "device",
+          "flow",
+          "beforeDecision",
+          "afterDecision",
+          "beforeRule",
+          "afterRule",
+          "beforeIndex",
+          "afterIndex",
+          "changed",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "skyforge.PolicyReportFlowTuple": {
+        "properties": {
+          "dstIp": {
+            "type": "string"
+          },
+          "dstPort": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ipProto": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "srcIp": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "srcIp",
+          "dstIp",
+          "ipProto",
+          "dstPort"
+        ],
+        "type": "object"
+      },
       "skyforge.PolicyReportNQEResponse": {
         "properties": {
           "results": {
@@ -1884,6 +1981,55 @@
           "newSamples",
           "oldSamples",
           "changedSamples"
+        ],
+        "type": "object"
+      },
+      "skyforge.PolicyReportProposedRule": {
+        "properties": {
+          "action": {
+            "title": "PERMIT or DENY\n",
+            "type": "string"
+          },
+          "index": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ipProto": {
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "title": "empty = any\n",
+            "type": "array"
+          },
+          "ipv4Dst": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "ipv4Src": {
+            "items": {
+              "type": "string"
+            },
+            "title": "CIDR strings, empty = any\n",
+            "type": "array"
+          },
+          "tpDst": {
+            "items": {
+              "type": "string"
+            },
+            "title": "entries like \"443\" or \"443-445\"; empty = any\n",
+            "type": "array"
+          }
+        },
+        "required": [
+          "index",
+          "action",
+          "ipv4Src",
+          "ipv4Dst",
+          "ipProto",
+          "tpDst"
         ],
         "type": "object"
       },
@@ -2070,6 +2216,22 @@
         "required": [
           "campaign",
           "counts"
+        ],
+        "type": "object"
+      },
+      "skyforge.PolicyReportRuleChange": {
+        "properties": {
+          "op": {
+            "title": "ADD, REMOVE, MODIFY\n",
+            "type": "string"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/skyforge.PolicyReportProposedRule"
+          }
+        },
+        "required": [
+          "op",
+          "rule"
         ],
         "type": "object"
       },
@@ -14262,6 +14424,12 @@
                     "forwardNetworkId": {
                       "type": "string"
                     },
+                    "interfaceVrfs": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.CapacityInterfaceVrfRow"
+                      },
+                      "type": "array"
+                    },
                     "interfaces": {
                       "items": {
                         "$ref": "#/components/schemas/skyforge.CapacityInterfaceInventoryRow"
@@ -14289,6 +14457,7 @@
                     "snapshotId",
                     "devices",
                     "interfaces",
+                    "interfaceVrfs",
                     "routeScale",
                     "bgpNeighbors"
                   ],
@@ -19040,6 +19209,112 @@
           }
         },
         "summary": "GetWorkspacePolicyReportCatalog returns the embedded Policy Reports check\ncatalog.\n"
+      }
+    },
+    "/api/workspaces/{id}/policy-reports/change-planning/simulate": {
+      "post": {
+        "description": "This endpoint is intentionally stubbed for now. Earlier iterations depended on fast-changing NQE output shapes and would become brittle quickly.\n",
+        "operationId": "POST:skyforge.SimulateWorkspacePolicyReportChangePlanning",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "change": {
+                    "$ref": "#/components/schemas/skyforge.PolicyReportRuleChange"
+                  },
+                  "deviceName": {
+                    "title": "optional filter\n",
+                    "type": "string"
+                  },
+                  "firewallsOnly": {
+                    "type": "boolean"
+                  },
+                  "flows": {
+                    "items": {
+                      "$ref": "#/components/schemas/skyforge.PolicyReportFlowTuple"
+                    },
+                    "type": "array"
+                  },
+                  "includeImplicitDefault": {
+                    "type": "boolean"
+                  },
+                  "networkId": {
+                    "type": "string"
+                  },
+                  "snapshotId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "networkId",
+                  "snapshotId",
+                  "firewallsOnly",
+                  "includeImplicitDefault",
+                  "deviceName",
+                  "flows",
+                  "change"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "changedCount": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "impacts": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.PolicyReportFlowImpact"
+                      },
+                      "type": "array"
+                    },
+                    "totalDevices": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "totalFlows": {
+                      "format": "int64",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "totalFlows",
+                    "totalDevices",
+                    "changedCount",
+                    "impacts"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "SimulateWorkspacePolicyReportChangePlanning simulates a rule change against a\nset of flows (no config push).\n"
       }
     },
     "/api/workspaces/{id}/policy-reports/checks": {
