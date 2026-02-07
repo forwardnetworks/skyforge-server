@@ -1,0 +1,19 @@
+/**
+ * @intent OSPF hardening: ensure passive-interface default is present.
+ */
+@query
+ospfPassiveInterfaceDefaultMissing =
+  foreach device in network.devices
+  where isPresent(device.files.config)
+  where device.platform.os in [OS.IOS, OS.IOS_XE, OS.NXOS, OS.ARISTA_EOS]
+  let ospfHeader = `router ospf {processId:string}`
+  foreach ospf in patternMatches(device.files.config, ospfHeader)
+  let line = ospf.line
+  let children = line.children
+  let hasPassiveDefault = max(foreach c in children select matches(c.text, "passive-interface default"))
+  select {
+    violation: !hasPassiveDefault,
+    device: device.name,
+    os: device.platform.os,
+    ospfProcess: ospf.data.processId
+  };
