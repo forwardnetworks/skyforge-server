@@ -196,11 +196,12 @@ class VIOS_vm(vrnetlab.VM):
                 r = con.send_command("show ip ssh")
                 return "SSH Enabled" in (r.result or "")
 
-            res_key = con.send_command("show crypto key mypubkey rsa")
-            has_keys = rsa_keys_present(res_key.result)
-            if not has_keys:
+            # Prefer checking whether SSH is enabled. Some IOSvL2 builds return odd/no output from
+            # "show crypto key mypubkey rsa" even when key material exists (and vice versa).
+            has_ssh = ssh_is_enabled()
+            if not has_ssh:
                 modulus = int(os.getenv("RSA_KEY_MODULUS", "1024"))
-                self.logger.info("No RSA keys detected; generating RSA keys (modulus %d)", modulus)
+                self.logger.info("SSH not enabled; generating RSA keys (modulus %d)", modulus)
                 # IOSv expects key generation in config mode. Supplying modulus makes it non-interactive.
                 res += con.send_configs([f"crypto key generate rsa general-keys modulus {modulus}\n"])
 
@@ -208,10 +209,10 @@ class VIOS_vm(vrnetlab.VM):
                 deadline = time.time() + key_wait
                 while time.time() < deadline:
                     if ssh_is_enabled():
-                        has_keys = True
+                        has_ssh = True
                         break
                     time.sleep(2)
-                if not has_keys:
+                if not has_ssh:
                     self.logger.warning("SSH did not become enabled within %ds after RSA key generation", key_wait)
         except Exception as e:
             self.logger.warning("RSA key check/generation failed: %s", e)
