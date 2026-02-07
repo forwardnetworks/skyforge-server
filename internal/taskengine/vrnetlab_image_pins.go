@@ -13,6 +13,15 @@ var vrnetlabPinnedImages = map[string]string{
 	// Pin to the expected digest to ensure fresh pulls when the tag is updated.
 	"ghcr.io/forwardnetworks/vrnetlab/vr-ftosv:10.6.1.0.24V": "ghcr.io/forwardnetworks/vrnetlab/vr-ftosv@sha256:1cde7dd305c5ebead38ecaba4d0ec694cb4ad4bb835dc8d11dcc46fee1279968",
 	"vrnetlab/vr-ftosv:10.6.1.0.24V":                         "ghcr.io/forwardnetworks/vrnetlab/vr-ftosv@sha256:1cde7dd305c5ebead38ecaba4d0ec694cb4ad4bb835dc8d11dcc46fee1279968",
+
+	// Cisco IOSv/vIOS and IOSvL2/vIOS-L2: ensure SSH is enabled reliably by using Skyforge-patched tags.
+	// Older tags can fail to generate RSA keys (SSH never starts), causing both netlab initial and Forward connectivity to fail.
+	"ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3": "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge1",
+	"vrnetlab/cisco_vios:15.9.3":                         "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge1",
+	"docker.io/vrnetlab/cisco_vios:15.9.3":               "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge1",
+	"ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2": "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge1",
+	"vrnetlab/cisco_viosl2:15.2":                         "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge1",
+	"docker.io/vrnetlab/cisco_viosl2:15.2":               "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge1",
 }
 
 func rewritePinnedVrnetlabImage(image string) (string, bool) {

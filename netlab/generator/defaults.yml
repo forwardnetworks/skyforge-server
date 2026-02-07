@@ -90,10 +90,10 @@ devices:
   # Netlab device types are `iosv` and `iosvl2` (do not introduce new device keys here).
   iosv:
     clab:
-      image: ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3
+      image: ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge1
   iosvl2:
     clab:
-      image: ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2
+      image: ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge1
 
   # Cisco CSR1000v via vrnetlab
   csr:
