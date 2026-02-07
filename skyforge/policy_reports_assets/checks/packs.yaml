@@ -13,6 +13,22 @@ packs:
       - id: "acl-permit-any-service.nqe"
       - id: "acl-any-to-rfc1918-sensitive-ports.nqe"
 
+  - id: "policy-analytics"
+    title: "Policy Analytics Pack"
+    description: "Rulebase analytics for hygiene and intent: flow lookup, shadowing, redundancy, and conflicts."
+    checks:
+      - id: "acl-flow-to-rules.nqe"
+        parameters:
+          srcIp: "10.0.0.1"
+          dstIp: "10.0.0.2"
+          ipProto: 6
+          dstPort: 443
+          firewallsOnly: true
+          includeImplicitDefault: false
+      - id: "acl-shadowed-rules.nqe"
+      - id: "acl-redundant-rules.nqe"
+      - id: "acl-overlap-conflicts.nqe"
+
   - id: "policy-recert"
     title: "Policy Recert Pack"
     description: "Lifecycle and usage-based findings useful for quarterly rule recertification."
@@ -29,4 +45,3 @@ packs:
     checks:
       - id: "default-route-urpf-heuristic.nqe"
       - id: "ospf-passive-default.nqe"
-

@@ -2,10 +2,10 @@ package skyforge
 
 import "testing"
 
-func TestLoadSecureTrackCatalog(t *testing.T) {
-	cat, err := loadSecureTrackCatalog()
+func TestLoadPolicyReportCatalog(t *testing.T) {
+	cat, err := loadPolicyReportCatalog()
 	if err != nil {
-		t.Fatalf("loadSecureTrackCatalog: %v", err)
+		t.Fatalf("loadPolicyReportCatalog: %v", err)
 	}
 	if cat == nil {
 		t.Fatalf("catalog is nil")
@@ -18,10 +18,10 @@ func TestLoadSecureTrackCatalog(t *testing.T) {
 	}
 }
 
-func TestSecureTrackListNQEFiles(t *testing.T) {
-	files, err := secureTrackListNQEFiles()
+func TestPolicyReportsListNQEFiles(t *testing.T) {
+	files, err := policyReportsListNQEFiles()
 	if err != nil {
-		t.Fatalf("secureTrackListNQEFiles: %v", err)
+		t.Fatalf("policyReportsListNQEFiles: %v", err)
 	}
 	if len(files) == 0 {
 		t.Fatalf("expected embedded .nqe files")
@@ -38,13 +38,13 @@ func TestSecureTrackListNQEFiles(t *testing.T) {
 	}
 }
 
-func TestSecureTrackNormalizeNQEResponse(t *testing.T) {
+func TestPolicyReportsNormalizeNQEResponse(t *testing.T) {
 	body := []byte(`{
   "snapshotId": "S-1",
   "totalNumItems": 3,
   "items": [{"k": 1}]
 }`)
-	out, err := secureTrackNormalizeNQEResponse(body)
+	out, err := policyReportsNormalizeNQEResponse(body)
 	if err != nil {
 		t.Fatalf("normalize: %v", err)
 	}

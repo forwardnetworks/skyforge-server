@@ -31,6 +31,7 @@ aclPermitAnyService =
     rule: aclEntry.name,
     action: aclEntry.action,
     reason: "ANY_SERVICE",
+    evidence: sourceConfigText(aclEntry.name),
     ipv4Src: h.ipv4Src,
     ipv4Dst: h.ipv4Dst,
     ipProto: h.ipProtocol,
@@ -45,4 +46,3 @@ aclPermitAnyService =
     vendor: device.platform.vendor,
     tags: device.tagNames
   };
-

@@ -2,6 +2,7 @@ package skyforge
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -11,18 +12,7 @@ import (
 	"encore.dev/beta/errs"
 )
 
-type SecureTrackChecksResponse struct {
-	Catalog *SecureTrackCatalog       `json:"catalog,omitempty"`
-	Checks  []SecureTrackCatalogCheck `json:"checks"`
-	Files   []string                  `json:"files"`
-}
-
-type SecureTrackCheckResponse struct {
-	Check   *SecureTrackCatalogCheck `json:"check,omitempty"`
-	Content string                   `json:"content"`
-}
-
-func (s *Service) secureTrackForwardClient(ctx context.Context, workspaceID string) (*forwardClient, error) {
+func (s *Service) policyReportsForwardClient(ctx context.Context, workspaceID string) (*forwardClient, error) {
 	if s == nil || s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("server unavailable").Err()
 	}
@@ -40,10 +30,21 @@ func (s *Service) secureTrackForwardClient(ctx context.Context, workspaceID stri
 	return client, nil
 }
 
-// GetWorkspaceSecureTrackCatalog returns the embedded SecureTrack check catalog.
+type PolicyReportChecksResponse struct {
+	Catalog *PolicyReportCatalog       `json:"catalog,omitempty"`
+	Checks  []PolicyReportCatalogCheck `json:"checks"`
+	Files   []string                   `json:"files"`
+}
+
+type PolicyReportCheckResponse struct {
+	Check   *PolicyReportCatalogCheck `json:"check,omitempty"`
+	Content string                    `json:"content"`
+}
+
+// GetWorkspacePolicyReportCatalog returns the embedded Policy Reports check catalog.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/securetrack/catalog
-func (s *Service) GetWorkspaceSecureTrackCatalog(ctx context.Context, id string) (*SecureTrackCatalog, error) {
+//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/catalog
+func (s *Service) GetWorkspacePolicyReportCatalog(ctx context.Context, id string) (*PolicyReportCatalog, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -54,17 +55,17 @@ func (s *Service) GetWorkspaceSecureTrackCatalog(ctx context.Context, id string)
 	}
 	_ = pc
 
-	cat, err := loadSecureTrackCatalog()
+	cat, err := loadPolicyReportCatalog()
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load catalog").Err()
 	}
 	return cat, nil
 }
 
-// GetWorkspaceSecureTrackPacks returns the embedded SecureTrack packs definition.
+// GetWorkspacePolicyReportPacks returns the embedded Policy Reports packs definition.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/securetrack/packs
-func (s *Service) GetWorkspaceSecureTrackPacks(ctx context.Context, id string) (*SecureTrackPacks, error) {
+//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/packs
+func (s *Service) GetWorkspacePolicyReportPacks(ctx context.Context, id string) (*PolicyReportPacks, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -75,17 +76,17 @@ func (s *Service) GetWorkspaceSecureTrackPacks(ctx context.Context, id string) (
 	}
 	_ = pc
 
-	packs, err := loadSecureTrackPacks()
+	packs, err := loadPolicyReportPacks()
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load packs").Err()
 	}
 	return packs, nil
 }
 
-// GetWorkspaceSecureTrackChecks lists known checks (catalog + embedded .nqe files).
+// GetWorkspacePolicyReportChecks lists known checks (catalog + embedded .nqe files).
 //
-//encore:api auth method=GET path=/api/workspaces/:id/securetrack/checks
-func (s *Service) GetWorkspaceSecureTrackChecks(ctx context.Context, id string) (*SecureTrackChecksResponse, error) {
+//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/checks
+func (s *Service) GetWorkspacePolicyReportChecks(ctx context.Context, id string) (*PolicyReportChecksResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -96,13 +97,13 @@ func (s *Service) GetWorkspaceSecureTrackChecks(ctx context.Context, id string) 
 	}
 	_ = pc
 
-	files, err := secureTrackListNQEFiles()
+	files, err := policyReportsListNQEFiles()
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to list checks").Err()
 	}
 
-	cat, _ := loadSecureTrackCatalog()
-	checks := []SecureTrackCatalogCheck{}
+	cat, _ := loadPolicyReportCatalog()
+	checks := []PolicyReportCatalogCheck{}
 	if cat != nil {
 		exists := map[string]bool{}
 		for _, f := range files {
@@ -115,7 +116,7 @@ func (s *Service) GetWorkspaceSecureTrackChecks(ctx context.Context, id string) 
 		}
 	} else {
 		for _, f := range files {
-			checks = append(checks, SecureTrackCatalogCheck{ID: f})
+			checks = append(checks, PolicyReportCatalogCheck{ID: f})
 		}
 	}
 
@@ -123,17 +124,17 @@ func (s *Service) GetWorkspaceSecureTrackChecks(ctx context.Context, id string) 
 		return strings.ToLower(checks[i].ID) < strings.ToLower(checks[j].ID)
 	})
 
-	return &SecureTrackChecksResponse{
+	return &PolicyReportChecksResponse{
 		Catalog: cat,
 		Checks:  checks,
 		Files:   files,
 	}, nil
 }
 
-// GetWorkspaceSecureTrackCheck returns the .nqe file content for a given check.
+// GetWorkspacePolicyReportCheck returns the .nqe file content for a given check.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/securetrack/checks/:checkId
-func (s *Service) GetWorkspaceSecureTrackCheck(ctx context.Context, id string, checkId string) (*SecureTrackCheckResponse, error) {
+//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/checks/:checkId
+func (s *Service) GetWorkspacePolicyReportCheck(ctx context.Context, id string, checkId string) (*PolicyReportCheckResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -144,13 +145,13 @@ func (s *Service) GetWorkspaceSecureTrackCheck(ctx context.Context, id string, c
 	}
 	_ = pc
 
-	content, err := secureTrackReadNQE(checkId)
+	content, err := policyReportsReadNQE(checkId)
 	if err != nil {
 		return nil, errs.B().Code(errs.NotFound).Msg("check not found").Err()
 	}
 
-	var check *SecureTrackCatalogCheck
-	if cat, err := loadSecureTrackCatalog(); err == nil && cat != nil {
+	var check *PolicyReportCatalogCheck
+	if cat, err := loadPolicyReportCatalog(); err == nil && cat != nil {
 		idNorm := strings.TrimSpace(checkId)
 		if !strings.HasSuffix(strings.ToLower(idNorm), ".nqe") {
 			idNorm += ".nqe"
@@ -163,16 +164,16 @@ func (s *Service) GetWorkspaceSecureTrackCheck(ctx context.Context, id string, c
 		}
 	}
 
-	return &SecureTrackCheckResponse{
+	return &PolicyReportCheckResponse{
 		Check:   check,
 		Content: content,
 	}, nil
 }
 
-// GetWorkspaceSecureTrackSnapshots lists snapshots for a Forward network.
+// GetWorkspacePolicyReportSnapshots lists snapshots for a Forward network.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/securetrack/snapshots
-func (s *Service) GetWorkspaceSecureTrackSnapshots(ctx context.Context, id string, req *SecureTrackSnapshotsRequest) (*SecureTrackSnapshotsResponse, error) {
+//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/snapshots
+func (s *Service) GetWorkspacePolicyReportSnapshots(ctx context.Context, id string, req *PolicyReportSnapshotsRequest) (*PolicyReportSnapshotsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -189,7 +190,7 @@ func (s *Service) GetWorkspaceSecureTrackSnapshots(ctx context.Context, id strin
 		maxResults = 50
 	}
 
-	client, err := s.secureTrackForwardClient(ctx, pc.workspace.ID)
+	client, err := s.policyReportsForwardClient(ctx, pc.workspace.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -204,13 +205,13 @@ func (s *Service) GetWorkspaceSecureTrackSnapshots(ctx context.Context, id strin
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, errs.B().Code(errs.Unavailable).Msg("Forward snapshots failed").Meta("upstream", strings.TrimSpace(string(body))).Err()
 	}
-	return &SecureTrackSnapshotsResponse{Body: body}, nil
+	return &PolicyReportSnapshotsResponse{Body: body}, nil
 }
 
-// RunWorkspaceSecureTrackNQE executes an NQE query and returns a normalized response.
+// RunWorkspacePolicyReportNQE executes an NQE query and returns a normalized response.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/securetrack/nqe
-func (s *Service) RunWorkspaceSecureTrackNQE(ctx context.Context, id string, req *SecureTrackNQERequest) (*SecureTrackNQEResponse, error) {
+//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/nqe
+func (s *Service) RunWorkspacePolicyReportNQE(ctx context.Context, id string, req *PolicyReportNQERequest) (*PolicyReportNQEResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -231,7 +232,7 @@ func (s *Service) RunWorkspaceSecureTrackNQE(ctx context.Context, id string, req
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("query is required").Err()
 	}
 
-	client, err := s.secureTrackForwardClient(ctx, pc.workspace.ID)
+	client, err := s.policyReportsForwardClient(ctx, pc.workspace.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -256,17 +257,17 @@ func (s *Service) RunWorkspaceSecureTrackNQE(ctx context.Context, id string, req
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, errs.B().Code(errs.Unavailable).Msg("Forward NQE failed").Meta("upstream", strings.TrimSpace(string(body))).Err()
 	}
-	out, err := secureTrackNormalizeNQEResponse(body)
+	out, err := policyReportsNormalizeNQEResponse(body)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("invalid Forward response").Err()
 	}
 	return out, nil
 }
 
-// RunWorkspaceSecureTrackCheck executes an embedded check (.nqe) and returns a normalized response.
+// RunWorkspacePolicyReportCheck executes an embedded check (.nqe) and returns a normalized response.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/securetrack/checks/run
-func (s *Service) RunWorkspaceSecureTrackCheck(ctx context.Context, id string, req *SecureTrackRunCheckRequest) (*SecureTrackNQEResponse, error) {
+//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/checks/run
+func (s *Service) RunWorkspacePolicyReportCheck(ctx context.Context, id string, req *PolicyReportRunCheckRequest) (*PolicyReportNQEResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -286,21 +287,21 @@ func (s *Service) RunWorkspaceSecureTrackCheck(ctx context.Context, id string, r
 	if checkID == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("checkId is required").Err()
 	}
-	queryText, err := secureTrackReadNQE(checkID)
+	queryText, err := policyReportsReadNQE(checkID)
 	if err != nil {
 		return nil, errs.B().Code(errs.NotFound).Msg("check not found").Err()
 	}
 
 	// Merge catalog defaults (if any) under request parameters.
 	params := JSONMap{}
-	for k, v := range secureTrackCatalogDefaultsFor(checkID) {
+	for k, v := range policyReportsCatalogDefaultsFor(checkID) {
 		params[k] = v
 	}
 	for k, v := range req.Parameters {
 		params[k] = v
 	}
 
-	client, err := s.secureTrackForwardClient(ctx, pc.workspace.ID)
+	client, err := s.policyReportsForwardClient(ctx, pc.workspace.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -324,17 +325,17 @@ func (s *Service) RunWorkspaceSecureTrackCheck(ctx context.Context, id string, r
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, errs.B().Code(errs.Unavailable).Msg("Forward NQE failed").Meta("upstream", strings.TrimSpace(string(body))).Err()
 	}
-	out, err := secureTrackNormalizeNQEResponse(body)
+	out, err := policyReportsNormalizeNQEResponse(body)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("invalid Forward response").Err()
 	}
 	return out, nil
 }
 
-// RunWorkspaceSecureTrackPack executes all checks in a pack (serially) and returns per-check results.
+// RunWorkspacePolicyReportPack executes all checks in a pack (serially) and returns per-check results.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/securetrack/packs/run
-func (s *Service) RunWorkspaceSecureTrackPack(ctx context.Context, id string, req *SecureTrackRunPackRequest) (*SecureTrackRunPackResponse, error) {
+//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/packs/run
+func (s *Service) RunWorkspacePolicyReportPack(ctx context.Context, id string, req *PolicyReportRunPackRequest) (*PolicyReportRunPackResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -355,12 +356,12 @@ func (s *Service) RunWorkspaceSecureTrackPack(ctx context.Context, id string, re
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("packId is required").Err()
 	}
 
-	packs, err := loadSecureTrackPacks()
+	packs, err := loadPolicyReportPacks()
 	if err != nil || packs == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("packs unavailable").Err()
 	}
 
-	var pack *SecureTrackPack
+	var pack *PolicyReportPack
 	for i := range packs.Packs {
 		if strings.EqualFold(strings.TrimSpace(packs.Packs[i].ID), packID) {
 			pack = &packs.Packs[i]
@@ -372,24 +373,24 @@ func (s *Service) RunWorkspaceSecureTrackPack(ctx context.Context, id string, re
 	}
 
 	// Reuse one Forward client for the whole pack.
-	fwdClient, err := s.secureTrackForwardClient(ctx, pc.workspace.ID)
+	fwdClient, err := s.policyReportsForwardClient(ctx, pc.workspace.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	results := map[string]*SecureTrackNQEResponse{}
+	results := map[string]*PolicyReportNQEResponse{}
 	for _, chk := range pack.Checks {
 		checkID := strings.TrimSpace(chk.ID)
 		if checkID == "" {
 			continue
 		}
-		queryText, err := secureTrackReadNQE(checkID)
+		queryText, err := policyReportsReadNQE(checkID)
 		if err != nil {
 			return nil, errs.B().Code(errs.Unavailable).Msg("pack check missing").Meta("checkId", checkID).Err()
 		}
 
 		params := JSONMap{}
-		for k, v := range secureTrackCatalogDefaultsFor(checkID) {
+		for k, v := range policyReportsCatalogDefaultsFor(checkID) {
 			params[k] = v
 		}
 		for k, v := range chk.Parameters {
@@ -405,6 +406,9 @@ func (s *Service) RunWorkspaceSecureTrackPack(ctx context.Context, id string, re
 		if len(params) > 0 {
 			payload["parameters"] = params
 		}
+		if req.QueryOptions != nil {
+			payload["queryOptions"] = req.QueryOptions
+		}
 
 		resp, body, err := fwdClient.doJSON(ctx, http.MethodPost, "/api/nqe", query, payload)
 		if err != nil {
@@ -413,17 +417,166 @@ func (s *Service) RunWorkspaceSecureTrackPack(ctx context.Context, id string, re
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			return nil, errs.B().Code(errs.Unavailable).Msg("Forward NQE failed").Meta("checkId", checkID).Meta("upstream", strings.TrimSpace(string(body))).Err()
 		}
-		out, err := secureTrackNormalizeNQEResponse(body)
+		out, err := policyReportsNormalizeNQEResponse(body)
 		if err != nil {
 			return nil, errs.B().Code(errs.Unavailable).Msg("invalid Forward response").Meta("checkId", checkID).Err()
 		}
 		results[checkID] = out
 	}
 
-	return &SecureTrackRunPackResponse{
+	return &PolicyReportRunPackResponse{
 		PackID:     packID,
 		NetworkID:  networkID,
 		SnapshotID: strings.TrimSpace(req.SnapshotID),
 		Results:    results,
+	}, nil
+}
+
+// RunWorkspacePolicyReportPackDelta runs a pack on two snapshots and returns a per-check delta summary.
+//
+//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/packs/delta
+func (s *Service) RunWorkspacePolicyReportPackDelta(ctx context.Context, id string, req *PolicyReportPackDeltaRequest) (*PolicyReportPackDeltaResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	pc, err := s.workspaceContextForUser(user, id)
+	if err != nil {
+		return nil, err
+	}
+	if req == nil {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("request required").Err()
+	}
+	networkID := strings.TrimSpace(req.NetworkID)
+	if networkID == "" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("networkId is required").Err()
+	}
+	packID := strings.TrimSpace(req.PackID)
+	if packID == "" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("packId is required").Err()
+	}
+	baseSnap := strings.TrimSpace(req.BaselineSnapshotID)
+	compSnap := strings.TrimSpace(req.CompareSnapshotID)
+	if baseSnap == "" || compSnap == "" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("baselineSnapshotId and compareSnapshotId are required").Err()
+	}
+
+	maxSamples := req.MaxSamplesPerBucket
+	if maxSamples <= 0 || maxSamples > 100 {
+		maxSamples = 20
+	}
+
+	// Run the pack twice.
+	baseResp, err := s.RunWorkspacePolicyReportPack(ctx, id, &PolicyReportRunPackRequest{
+		NetworkID:    networkID,
+		SnapshotID:   baseSnap,
+		PackID:       packID,
+		QueryOptions: req.QueryOptions,
+	})
+	if err != nil {
+		return nil, err
+	}
+	compResp, err := s.RunWorkspacePolicyReportPack(ctx, id, &PolicyReportRunPackRequest{
+		NetworkID:    networkID,
+		SnapshotID:   compSnap,
+		PackID:       packID,
+		QueryOptions: req.QueryOptions,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	_ = pc
+
+	checkIDs := map[string]bool{}
+	for k := range baseResp.Results {
+		checkIDs[k] = true
+	}
+	for k := range compResp.Results {
+		checkIDs[k] = true
+	}
+	ids := make([]string, 0, len(checkIDs))
+	for k := range checkIDs {
+		ids = append(ids, k)
+	}
+	sort.Strings(ids)
+
+	deltas := make([]PolicyReportPackDeltaCheck, 0, len(ids))
+	for _, chk := range ids {
+		base := baseResp.Results[chk]
+		comp := compResp.Results[chk]
+
+		baseItems := []any{}
+		compItems := []any{}
+		if base != nil && len(base.Results) > 0 {
+			_ = json.Unmarshal(base.Results, &baseItems)
+		}
+		if comp != nil && len(comp.Results) > 0 {
+			_ = json.Unmarshal(comp.Results, &compItems)
+		}
+
+		baseSet := map[string]json.RawMessage{}
+		compSet := map[string]json.RawMessage{}
+		for _, it := range baseItems {
+			b, _ := json.Marshal(it)
+			baseSet[string(b)] = b
+		}
+		for _, it := range compItems {
+			b, _ := json.Marshal(it)
+			compSet[string(b)] = b
+		}
+
+		newSamples := make([]json.RawMessage, 0, maxSamples)
+		oldSamples := make([]json.RawMessage, 0, maxSamples)
+		newCount := 0
+		resolvedCount := 0
+
+		for k, v := range compSet {
+			if _, ok := baseSet[k]; ok {
+				continue
+			}
+			newCount++
+			if len(newSamples) < maxSamples {
+				newSamples = append(newSamples, v)
+			}
+		}
+		for k, v := range baseSet {
+			if _, ok := compSet[k]; ok {
+				continue
+			}
+			resolvedCount++
+			if len(oldSamples) < maxSamples {
+				oldSamples = append(oldSamples, v)
+			}
+		}
+
+		newJSON, _ := json.Marshal(newSamples)
+		oldJSON, _ := json.Marshal(oldSamples)
+		baselineTotal := 0
+		compareTotal := 0
+		if base != nil {
+			baselineTotal = base.Total
+		}
+		if comp != nil {
+			compareTotal = comp.Total
+		}
+
+		deltas = append(deltas, PolicyReportPackDeltaCheck{
+			CheckID:       chk,
+			BaselineTotal: baselineTotal,
+			CompareTotal:  compareTotal,
+			NewCount:      newCount,
+			ResolvedCount: resolvedCount,
+			NewSamples:    newJSON,
+			OldSamples:    oldJSON,
+		})
+	}
+
+	return &PolicyReportPackDeltaResponse{
+		PackID:             packID,
+		NetworkID:          networkID,
+		BaselineSnapshotID: baseSnap,
+		CompareSnapshotID:  compSnap,
+		Checks:             deltas,
 	}, nil
 }

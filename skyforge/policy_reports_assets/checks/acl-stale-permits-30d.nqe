@@ -30,6 +30,7 @@ aclStalePermits(daysWindow : Integer) =
     device: device.name,
     rule: aclEntry.name,
     action: aclEntry.action,
+    evidence: sourceConfigText(aclEntry.name),
     lastUsed: lastUsed,
     now: now,
     age: if isPresent(lastUsed) then toString(now - lastUsed) else "unknown",

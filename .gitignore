@@ -3,5 +3,6 @@ encore.gen.go
 encore.gen.cue
 /.encore
 /encore.gen
+.e2e-status/
 .env.local
 .env.*.local

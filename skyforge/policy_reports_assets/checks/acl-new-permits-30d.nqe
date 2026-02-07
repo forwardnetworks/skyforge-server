@@ -27,6 +27,7 @@ aclNewPermits(daysWindow : Integer) =
     device: device.name,
     rule: aclEntry.name,
     action: aclEntry.action,
+    evidence: sourceConfigText(aclEntry.name),
     createdAt: createdAt,
     age: toString(now - createdAt),
     lastModified: aclEntry.lifecycleData?.lastModified,

@@ -77,6 +77,76 @@ checks:
     severity: "high"
     description: "Flags firewall PERMIT rules whose modeled service is effectively 'any'."
 
+  - id: "acl-flow-to-rules.nqe"
+    title: "Flow to rules (modeled ACL)"
+    category: "policy-analytics"
+    severity: "low"
+    description: "Given a flow tuple, list modeled ACL entries that match it (ordered)."
+    params:
+      - name: "srcIp"
+        type: "String"
+        description: "Source IP address (IPv4)."
+        required: true
+      - name: "dstIp"
+        type: "String"
+        description: "Destination IP address (IPv4)."
+        required: true
+      - name: "ipProto"
+        type: "Integer"
+        default: -1
+        description: "IP protocol number (6 TCP, 17 UDP). Use -1 to ignore."
+      - name: "dstPort"
+        type: "Integer"
+        default: -1
+        description: "Destination port. Use -1 to ignore."
+      - name: "firewallsOnly"
+        type: "Bool"
+        default: true
+        description: "Limit to devices typed as FIREWALL."
+      - name: "includeImplicitDefault"
+        type: "Bool"
+        default: false
+        description: "Include implicit/default rules."
+
+  - id: "acl-shadowed-rules.nqe"
+    title: "Shadowed rules (modeled ACL)"
+    category: "policy-analytics"
+    severity: "medium"
+    description: "Flags rules fully shadowed by earlier rules with same action."
+    params:
+      - name: "firewallsOnly"
+        type: "Bool"
+        default: true
+      - name: "includeImplicitDefault"
+        type: "Bool"
+        default: false
+
+  - id: "acl-redundant-rules.nqe"
+    title: "Redundant rules (modeled ACL)"
+    category: "policy-analytics"
+    severity: "medium"
+    description: "Flags rules with equivalent match/action (duplicate policy)."
+    params:
+      - name: "firewallsOnly"
+        type: "Bool"
+        default: true
+      - name: "includeImplicitDefault"
+        type: "Bool"
+        default: false
+
+  - id: "acl-overlap-conflicts.nqe"
+    title: "Overlapping conflicts (modeled ACL)"
+    category: "policy-analytics"
+    severity: "high"
+    description: "Flags overlapping rules with different actions (first-match pitfalls)."
+    params:
+      - name: "firewallsOnly"
+        type: "Bool"
+        default: true
+      - name: "includeImplicitDefault"
+        type: "Bool"
+        default: false
+
   - id: "default-route-urpf-heuristic.nqe"
     title: "Default route without obvious uRPF (config heuristic)"
     category: "routing-hardening"

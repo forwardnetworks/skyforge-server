@@ -13,37 +13,37 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-//go:embed securetrack_assets/checks/*
-var secureTrackAssets embed.FS
+//go:embed policy_reports_assets/checks/*
+var policyReportsAssets embed.FS
 
 var (
-	secureTrackCatalogOnce sync.Once
-	secureTrackCatalog     *SecureTrackCatalog
-	secureTrackCatalogErr  error
+	policyReportsCatalogOnce sync.Once
+	policyReportsCatalog     *PolicyReportCatalog
+	policyReportsCatalogErr  error
 
-	secureTrackPacksOnce sync.Once
-	secureTrackPacks     *SecureTrackPacks
-	secureTrackPacksErr  error
+	policyReportsPacksOnce sync.Once
+	policyReportsPacks     *PolicyReportPacks
+	policyReportsPacksErr  error
 )
 
-func loadSecureTrackCatalog() (*SecureTrackCatalog, error) {
-	secureTrackCatalogOnce.Do(func() {
-		b, err := fs.ReadFile(secureTrackAssets, "securetrack_assets/checks/catalog.yaml")
+func loadPolicyReportCatalog() (*PolicyReportCatalog, error) {
+	policyReportsCatalogOnce.Do(func() {
+		b, err := fs.ReadFile(policyReportsAssets, "policy_reports_assets/checks/catalog.yaml")
 		if err != nil {
-			secureTrackCatalogErr = err
+			policyReportsCatalogErr = err
 			return
 		}
-		var cat SecureTrackCatalog
+		var cat PolicyReportCatalog
 		if err := yaml.Unmarshal(b, &cat); err != nil {
-			secureTrackCatalogErr = err
+			policyReportsCatalogErr = err
 			return
 		}
-		secureTrackCatalog = &cat
+		policyReportsCatalog = &cat
 	})
-	return secureTrackCatalog, secureTrackCatalogErr
+	return policyReportsCatalog, policyReportsCatalogErr
 }
 
-type secureTrackCatalogParamYAML struct {
+type policyReportsCatalogParamYAML struct {
 	Name        string `yaml:"name"`
 	Type        string `yaml:"type"`
 	Default     any    `yaml:"default,omitempty"`
@@ -51,8 +51,8 @@ type secureTrackCatalogParamYAML struct {
 	Required    bool   `yaml:"required,omitempty"`
 }
 
-func (p *SecureTrackCatalogParam) UnmarshalYAML(value *yaml.Node) error {
-	var tmp secureTrackCatalogParamYAML
+func (p *PolicyReportCatalogParam) UnmarshalYAML(value *yaml.Node) error {
+	var tmp policyReportsCatalogParamYAML
 	if err := value.Decode(&tmp); err != nil {
 		return err
 	}
@@ -72,30 +72,30 @@ func (p *SecureTrackCatalogParam) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
-func loadSecureTrackPacks() (*SecureTrackPacks, error) {
-	secureTrackPacksOnce.Do(func() {
-		b, err := fs.ReadFile(secureTrackAssets, "securetrack_assets/checks/packs.yaml")
+func loadPolicyReportPacks() (*PolicyReportPacks, error) {
+	policyReportsPacksOnce.Do(func() {
+		b, err := fs.ReadFile(policyReportsAssets, "policy_reports_assets/checks/packs.yaml")
 		if err != nil {
-			secureTrackPacksErr = err
+			policyReportsPacksErr = err
 			return
 		}
-		var packs SecureTrackPacks
+		var packs PolicyReportPacks
 		if err := yaml.Unmarshal(b, &packs); err != nil {
-			secureTrackPacksErr = err
+			policyReportsPacksErr = err
 			return
 		}
-		secureTrackPacks = &packs
+		policyReportsPacks = &packs
 	})
-	return secureTrackPacks, secureTrackPacksErr
+	return policyReportsPacks, policyReportsPacksErr
 }
 
-type secureTrackPackCheckYAML struct {
+type policyReportsPackCheckYAML struct {
 	ID         string         `yaml:"id"`
 	Parameters map[string]any `yaml:"parameters,omitempty"`
 }
 
-func (p *SecureTrackPackCheck) UnmarshalYAML(value *yaml.Node) error {
-	var tmp secureTrackPackCheckYAML
+func (p *PolicyReportPackCheck) UnmarshalYAML(value *yaml.Node) error {
+	var tmp policyReportsPackCheckYAML
 	if err := value.Decode(&tmp); err != nil {
 		return err
 	}
@@ -112,8 +112,8 @@ func (p *SecureTrackPackCheck) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
-func secureTrackListNQEFiles() ([]string, error) {
-	matches, err := fs.Glob(secureTrackAssets, "securetrack_assets/checks/*.nqe")
+func policyReportsListNQEFiles() ([]string, error) {
+	matches, err := fs.Glob(policyReportsAssets, "policy_reports_assets/checks/*.nqe")
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func secureTrackListNQEFiles() ([]string, error) {
 	return out, nil
 }
 
-func secureTrackReadNQE(checkID string) (string, error) {
+func policyReportsReadNQE(checkID string) (string, error) {
 	checkID = strings.TrimSpace(checkID)
 	if checkID == "" {
 		return "", fmt.Errorf("checkId is required")
@@ -137,15 +137,15 @@ func secureTrackReadNQE(checkID string) (string, error) {
 	if !strings.HasSuffix(strings.ToLower(checkID), ".nqe") {
 		checkID += ".nqe"
 	}
-	b, err := fs.ReadFile(secureTrackAssets, "securetrack_assets/checks/"+checkID)
+	b, err := fs.ReadFile(policyReportsAssets, "policy_reports_assets/checks/"+checkID)
 	if err != nil {
 		return "", err
 	}
 	return string(b), nil
 }
 
-func secureTrackCatalogDefaultsFor(checkID string) JSONMap {
-	cat, err := loadSecureTrackCatalog()
+func policyReportsCatalogDefaultsFor(checkID string) JSONMap {
+	cat, err := loadPolicyReportCatalog()
 	if err != nil || cat == nil {
 		return nil
 	}
@@ -172,7 +172,7 @@ func secureTrackCatalogDefaultsFor(checkID string) JSONMap {
 	return nil
 }
 
-func secureTrackNormalizeNQEResponse(body []byte) (*SecureTrackNQEResponse, error) {
+func policyReportsNormalizeNQEResponse(body []byte) (*PolicyReportNQEResponse, error) {
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(body, &obj); err != nil {
 		return nil, err
@@ -201,7 +201,7 @@ func secureTrackNormalizeNQEResponse(body []byte) (*SecureTrackNQEResponse, erro
 		results = raw
 	}
 
-	return &SecureTrackNQEResponse{
+	return &PolicyReportNQEResponse{
 		SnapshotID: snapshotID,
 		Total:      total,
 		Results:    results,

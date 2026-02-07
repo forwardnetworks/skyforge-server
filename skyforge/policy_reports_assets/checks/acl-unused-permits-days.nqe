@@ -1,12 +1,12 @@
 /**
- * @intent Policy recertification: PERMIT rules with hitCount == 0 (firewalls).
+ * @intent Policy recertification: unused PERMIT rules older than N days (firewalls).
  * @description
  *  Uses modeled ACL entry lifecycle telemetry when present.
- *  Flags PERMIT rules where truncatedHitCount is present and is zero.
+ *  Flags PERMIT rules whose lastUsed is older than daysWindow. Optionally includes rules with no usage telemetry.
  */
 
 @query
-aclNeverHitPermits =
+aclUnusedPermits(daysWindow : Integer, includeUnknownUsage : Bool) =
   foreach device in network.devices
   where device.platform.deviceType == DeviceType.FIREWALL
   let now =
@@ -19,19 +19,22 @@ aclNeverHitPermits =
   where aclEntry.action == AclAction.PERMIT
   where !aclEntry.implicitRule
   where !aclEntry.defaultRule
-
+  let lastUsed = aclEntry.lifecycleData?.lastUsed
   let hitCount = aclEntry.lifecycleData?.truncatedHitCount
-  let isZero = isPresent(hitCount) && toString(hitCount) == "0"
-  where isZero
+  let isStale = isPresent(lastUsed) && now - lastUsed > days(daysWindow)
+  let isUnknownUsage = includeUnknownUsage && !isPresent(lastUsed) && !isPresent(hitCount)
+  where isStale || isUnknownUsage
 
   select {
     violation: true,
     device: device.name,
     rule: aclEntry.name,
     action: aclEntry.action,
-    reason: "HITCOUNT_ZERO",
+    reason: if isStale then "UNUSED_DAYS_WINDOW" else "NO_USAGE_DATA",
+    evidence: sourceConfigText(aclEntry.name),
+    lastUsed: lastUsed,
+    age: if isPresent(lastUsed) then toString(now - lastUsed) else "unknown",
     hitCount: hitCount,
-    lastUsed: aclEntry.lifecycleData?.lastUsed,
     createdAt: aclEntry.lifecycleData?.createdAt,
     lastModified: aclEntry.lifecycleData?.lastModified,
     ipv4Src: h.ipv4Src,
@@ -44,4 +47,3 @@ aclNeverHitPermits =
     vendor: device.platform.vendor,
     tags: device.tagNames
   };
-

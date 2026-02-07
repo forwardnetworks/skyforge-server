@@ -19,17 +19,20 @@ import (
 )
 
 type UserGeminiConfigResponse struct {
-	Enabled        bool   `json:"enabled"`
-	Configured     bool   `json:"configured"`
-	Email          string `json:"email,omitempty"`
-	Scopes         string `json:"scopes,omitempty"`
-	HasToken       bool   `json:"hasToken"`
-	UpdatedAt      string `json:"updatedAt,omitempty"`
-	RedirectURL    string `json:"redirectUrl,omitempty"`
-	ProjectID      string `json:"projectId,omitempty"`
-	Location       string `json:"location,omitempty"`
-	Model          string `json:"model,omitempty"`
-	FallbackModel  string `json:"fallbackModel,omitempty"`
+	Enabled          bool   `json:"enabled"`
+	AIEnabled        bool   `json:"aiEnabled"`
+	OAuthConfigured  bool   `json:"oauthConfigured"`
+	VertexConfigured bool   `json:"vertexConfigured"`
+	Configured       bool   `json:"configured"`
+	Email            string `json:"email,omitempty"`
+	Scopes           string `json:"scopes,omitempty"`
+	HasToken         bool   `json:"hasToken"`
+	UpdatedAt        string `json:"updatedAt,omitempty"`
+	RedirectURL      string `json:"redirectUrl,omitempty"`
+	ProjectID        string `json:"projectId,omitempty"`
+	Location         string `json:"location,omitempty"`
+	Model            string `json:"model,omitempty"`
+	FallbackModel    string `json:"fallbackModel,omitempty"`
 }
 
 type userGeminiOAuthRow struct {
@@ -162,16 +165,40 @@ func (s *Service) GetUserGeminiConfig(ctx context.Context) (*UserGeminiConfigRes
 		return nil, err
 	}
 	username := strings.ToLower(strings.TrimSpace(user.Username))
+
+	oauthCfg, _ := geminiOAuthConfig(s.cfg)
+	oauthConfigured := oauthCfg != nil
+	vertexConfigured := strings.TrimSpace(s.cfg.GeminiProjectID) != ""
+
+	// Always return the non-secret instance config so the UI can explain what is
+	// missing (Gemini disabled vs OAuth not configured vs Vertex project unset).
+	resp := &UserGeminiConfigResponse{
+		Enabled:          s.cfg.GeminiEnabled,
+		AIEnabled:        s.cfg.AIEnabled,
+		OAuthConfigured:  oauthConfigured,
+		VertexConfigured: vertexConfigured,
+		Configured:       false,
+		HasToken:         false,
+		Email:            "",
+		Scopes:           "",
+		UpdatedAt:        "",
+		RedirectURL:      "",
+		ProjectID:        strings.TrimSpace(s.cfg.GeminiProjectID),
+		Location:         strings.TrimSpace(s.cfg.GeminiLocation),
+		Model:            strings.TrimSpace(s.cfg.GeminiModel),
+		FallbackModel:    strings.TrimSpace(s.cfg.GeminiFallbackModel),
+	}
+
 	if !s.cfg.GeminiEnabled {
-		return &UserGeminiConfigResponse{Enabled: false, Configured: false, HasToken: false}, nil
+		return resp, nil
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	cfg, err := geminiOAuthConfig(s.cfg)
-	if err != nil || cfg == nil {
-		return &UserGeminiConfigResponse{Enabled: true, Configured: false, HasToken: false}, nil
+	if !oauthConfigured {
+		return resp, nil
 	}
+
 	box := newSecretBox(s.cfg.SessionSecret)
 	ctxDB, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
@@ -180,19 +207,9 @@ func (s *Service) GetUserGeminiConfig(ctx context.Context) (*UserGeminiConfigRes
 		log.Printf("gemini get: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Gemini config").Err()
 	}
-	resp := &UserGeminiConfigResponse{
-		Enabled:       true,
-		Configured:    rec != nil && rec.RefreshTokenEnc != "",
-		HasToken:      rec != nil && rec.RefreshTokenEnc != "",
-		Email:         "",
-		Scopes:        "",
-		UpdatedAt:     "",
-		RedirectURL:   cfg.RedirectURL,
-		ProjectID:     strings.TrimSpace(s.cfg.GeminiProjectID),
-		Location:      strings.TrimSpace(s.cfg.GeminiLocation),
-		Model:         strings.TrimSpace(s.cfg.GeminiModel),
-		FallbackModel: strings.TrimSpace(s.cfg.GeminiFallbackModel),
-	}
+	resp.RedirectURL = oauthCfg.RedirectURL
+	resp.Configured = rec != nil && rec.RefreshTokenEnc != ""
+	resp.HasToken = rec != nil && rec.RefreshTokenEnc != ""
 	if rec != nil {
 		resp.Email = rec.Email
 		resp.Scopes = rec.Scopes

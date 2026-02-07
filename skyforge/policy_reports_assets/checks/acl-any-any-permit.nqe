@@ -18,6 +18,7 @@ aclAnyAnyPermit =
     device: device.name,
     rule: aclEntry.name,
     action: aclEntry.action,
+    evidence: sourceConfigText(aclEntry.name),
     ipv4Src: h.ipv4Src,
     ipv4Dst: h.ipv4Dst,
     ipProto: h.ipProtocol,

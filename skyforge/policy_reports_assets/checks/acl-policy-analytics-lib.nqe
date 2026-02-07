@@ -1,0 +1,54 @@
+/**
+ * @intent Library: helper functions for policy analytics (shadowing, redundancy, overlap).
+ * @description
+ *  Intended to be copy-pasted into other .nqe checks (NQE does not currently support imports).
+ *
+ *  Conventions:
+ *  - Empty bags for match fields are treated as "any".
+ *  - Subnet bags are compared via ipAddressSet, which supports subset checks and set operations.
+ */
+
+subnetsToSet(subnets) =
+  ipAddressSet(subnets);
+
+subnetsSubset(a, b) =
+  // "any" (empty) is only a subset of "any"
+  if length(a) == 0 then length(b) == 0
+  else if length(b) == 0 then true
+  else subnetsToSet(a) in subnetsToSet(b);
+
+subnetsOverlap(a, b) =
+  length(a) == 0 || length(b) == 0 ||
+  !isEmpty(intersect(subnetsToSet(a), subnetsToSet(b)));
+
+rangesSubset(a, b) =
+  if length(a) == 0 then length(b) == 0
+  else if length(b) == 0 then true
+  else all(
+    foreach ra in a
+    select any(
+      foreach rb in b
+      select rb.start <= ra.start && ra.end <= rb.end
+    )
+  );
+
+rangesOverlap(a, b) =
+  length(a) == 0 || length(b) == 0 ||
+  any(
+    foreach ra in a
+    foreach rb in b
+    select ra.start <= rb.end && rb.start <= ra.end
+  );
+
+headerSubset(hA, hB) =
+  subnetsSubset(hA.ipv4Src, hB.ipv4Src) &&
+  subnetsSubset(hA.ipv4Dst, hB.ipv4Dst) &&
+  rangesSubset(hA.ipProtocol, hB.ipProtocol) &&
+  rangesSubset(hA.tpDst, hB.tpDst);
+
+headerOverlap(hA, hB) =
+  subnetsOverlap(hA.ipv4Src, hB.ipv4Src) &&
+  subnetsOverlap(hA.ipv4Dst, hB.ipv4Dst) &&
+  rangesOverlap(hA.ipProtocol, hB.ipProtocol) &&
+  rangesOverlap(hA.tpDst, hB.tpDst);
+
