@@ -13,6 +13,16 @@ var vrnetlabPinnedImages = map[string]string{
 	// Pin to the expected digest to ensure fresh pulls when the tag is updated.
 	"ghcr.io/forwardnetworks/vrnetlab/vr-ftosv:10.6.1.0.24V": "ghcr.io/forwardnetworks/vrnetlab/vr-ftosv@sha256:1cde7dd305c5ebead38ecaba4d0ec694cb4ad4bb835dc8d11dcc46fee1279968",
 	"vrnetlab/vr-ftosv:10.6.1.0.24V":                         "ghcr.io/forwardnetworks/vrnetlab/vr-ftosv@sha256:1cde7dd305c5ebead38ecaba4d0ec694cb4ad4bb835dc8d11dcc46fee1279968",
+
+	// IOSv / IOSvL2 (vrnetlab) must set a management IP compatible with QEMU hostfwd.
+	// Older tags used a router-style Gi0/0 IP assignment even for IOSvL2, causing SSH readiness
+	// to hang forever (TCP connects, but no SSH banner from the guest).
+	"ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3":  "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge1",
+	"vrnetlab/cisco_vios:15.9.3":                          "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge1",
+	"docker.io/vrnetlab/cisco_vios:15.9.3":                "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge1",
+	"ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2":  "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge1",
+	"vrnetlab/cisco_viosl2:15.2":                          "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge1",
+	"docker.io/vrnetlab/cisco_viosl2:15.2":                "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge1",
 }
 
 func rewritePinnedVrnetlabImage(image string) (string, bool) {
