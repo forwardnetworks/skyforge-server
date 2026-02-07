@@ -18,11 +18,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"encore.dev"
 	"encore.dev/rlog"
 
+	elasticint "encore.app/integrations/elastic"
 	"encore.app/internal/secretbox"
 	"encore.app/internal/skyforgeconfig"
 	"encore.app/internal/skyforgedb"
@@ -2461,6 +2463,10 @@ type Service struct {
 	userStore      usersStore
 	box            *secretBox
 	db             *sql.DB
+
+	elasticOnce    sync.Once
+	elasticClient  *elasticint.Client
+	elasticInitErr error
 }
 
 func NewSessionManager(secret, cookie string, ttl time.Duration, secureMode, cookieDomain string) *SessionManager {
@@ -2623,21 +2629,20 @@ func adminUsernameForClaims(claims *SessionClaims) string {
 }
 
 func isAdminForClaims(cfg Config, claims *SessionClaims) bool {
-	// Defensive: some auth paths can populate ActorUsername unexpectedly.
-	// Treat the session as admin if either the effective actor OR the user is admin.
 	if claims == nil {
 		return false
 	}
-	if isAdminUser(cfg, strings.TrimSpace(claims.Username)) {
-		return true
+
+	candidates := []string{
+		strings.TrimSpace(claims.Username),
+		strings.TrimSpace(claims.Email),
+		strings.TrimSpace(claims.ActorUsername),
+		strings.TrimSpace(claims.ActorEmail),
 	}
-	// Some OIDC setups use opaque usernames; the email is typically stable and is already
-	// allowed in `skyforge.adminUsers`.
-	if isAdminUser(cfg, strings.TrimSpace(claims.Email)) {
-		return true
-	}
-	if strings.TrimSpace(claims.ActorUsername) != "" && isAdminUser(cfg, strings.TrimSpace(claims.ActorUsername)) {
-		return true
+	for _, c := range candidates {
+		if isAdminUser(cfg, c) {
+			return true
+		}
 	}
 	return false
 }
@@ -2654,7 +2659,7 @@ func isImpersonating(claims *SessionClaims) bool {
 
 func auditActor(cfg Config, claims *SessionClaims) (actor string, actorIsAdmin bool, impersonated string) {
 	actor = adminUsernameForClaims(claims)
-	actorIsAdmin = isAdminUser(cfg, actor)
+	actorIsAdmin = isAdminForClaims(cfg, claims)
 	if isImpersonating(claims) {
 		impersonated = strings.TrimSpace(claims.Username)
 	}

@@ -92,11 +92,26 @@ type Config struct {
 	ForwardCollectorHeapSizeGB int
 	Forward                    ForwardConfig
 	Features                   FeaturesConfig
+	Elastic                    ElasticConfig
 }
 
 type ForwardConfig struct {
 	SNMPPlaceholderEnabled bool
 	SNMPCommunity          string
+}
+
+type ElasticConfig struct {
+	// URL is the Elasticsearch base URL (e.g. http://elasticsearch:9200).
+	//
+	// When empty, Skyforge treats Elasticsearch indexing as disabled even if the
+	// feature flag is enabled.
+	URL string
+	// IndexPrefix is the prefix used for Skyforge-managed indices.
+	// Example indices:
+	//   <prefix>-syslog-YYYY.MM.DD
+	//   <prefix>-snmp-trap-YYYY.MM.DD
+	//   <prefix>-webhook-YYYY.MM.DD
+	IndexPrefix string
 }
 
 type FeaturesConfig struct {

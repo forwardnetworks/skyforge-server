@@ -240,6 +240,23 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		DNSEnabled:       enc.Features.DNSEnabled,
 		ElasticEnabled:   enc.Features.ElasticEnabled,
 	}
+	// "Forward Networks integrations" umbrella: keep Forward-specific integrations/tools
+	// (e.g. Forward Collector, ServiceNow demo, Elastic indexing) behind a single switch.
+	//
+	// NOTE: AI is intentionally not gated by this flag.
+	if !featuresCfg.ForwardEnabled {
+		featuresCfg.ElasticEnabled = false
+	}
+
+	// For the common "in-cluster Elastic" case, allow the feature flag to
+	// implicitly enable the default service name.
+	if elasticURL == "" && featuresCfg.ElasticEnabled {
+		elasticURL = "http://elasticsearch:9200"
+	}
+	elasticCfg := skyforgecore.ElasticConfig{
+		URL:         elasticURL,
+		IndexPrefix: elasticIndexPrefix,
+	}
 
 	uiCfg := skyforgecore.UIConfig{
 		ProductName:      strings.TrimSpace(enc.UI.ProductName),
@@ -442,6 +459,7 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		NetlabApplierImage:                       netlabApplierImage,
 		NetlabApplierPullPolicy:                  netlabApplierPullPolicy,
 		Features:                                 featuresCfg,
+		Elastic:                                  elasticCfg,
 	}
 }
 
@@ -534,15 +552,6 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 	netlabApplierImage := strings.TrimSpace(enc.NetlabGenerator.ApplierImage)
 	netlabApplierPullPolicy := strings.TrimSpace(enc.NetlabGenerator.ApplierPullPolicy)
 
-	elasticURL := strings.TrimRight(strings.TrimSpace(enc.Elastic.URL), "/")
-	elasticIndexPrefix := strings.TrimSpace(enc.Elastic.IndexPrefix)
-	if elasticURL == "" && enc.Features.ElasticEnabled {
-		elasticURL = "http://elasticsearch:9200"
-	}
-	if elasticIndexPrefix == "" {
-		elasticIndexPrefix = "skyforge"
-	}
-
 	featuresCfg := skyforgecore.FeaturesConfig{
 		GiteaEnabled:     enc.Features.GiteaEnabled,
 		MinioEnabled:     enc.Features.MinioEnabled,
@@ -555,6 +564,26 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		NautobotEnabled:  enc.Features.NautobotEnabled,
 		DNSEnabled:       enc.Features.DNSEnabled,
 		ElasticEnabled:   enc.Features.ElasticEnabled,
+	}
+	// "Forward Networks integrations" umbrella: keep Forward-specific integrations/tools
+	// (e.g. Forward Collector, ServiceNow demo, Elastic indexing) behind a single switch.
+	//
+	// NOTE: AI is intentionally not gated by this flag.
+	if !featuresCfg.ForwardEnabled {
+		featuresCfg.ElasticEnabled = false
+	}
+
+	elasticURL := strings.TrimRight(strings.TrimSpace(enc.Elastic.URL), "/")
+	elasticIndexPrefix := strings.TrimSpace(enc.Elastic.IndexPrefix)
+	if elasticIndexPrefix == "" {
+		elasticIndexPrefix = "skyforge"
+	}
+	if elasticURL == "" && featuresCfg.ElasticEnabled {
+		elasticURL = "http://elasticsearch:9200"
+	}
+	elasticCfg := skyforgecore.ElasticConfig{
+		URL:         elasticURL,
+		IndexPrefix: elasticIndexPrefix,
 	}
 
 	// Note: Worker does not need OIDC, LDAP, DNS, UI, or admin users.
@@ -590,5 +619,6 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		PKICAKey:  strings.TrimSpace(sec.PKICAKey),
 		SSHCAKey:  strings.TrimSpace(sec.SSHCAKey),
 		Features:  featuresCfg,
+		Elastic:   elasticCfg,
 	}
 }

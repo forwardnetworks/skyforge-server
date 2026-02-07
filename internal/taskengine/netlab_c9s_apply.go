@@ -12,6 +12,8 @@ const defaultNetlabC9sApplierImage = "ghcr.io/forwardnetworks/skyforge-netlab-ap
 func (e *Engine) runNetlabC9sApplierJob(
 	ctx context.Context,
 	ns, topologyName string,
+	setOverrides []string,
+	environment map[string]string,
 	log Logger,
 ) error {
 	if log == nil {
@@ -108,12 +110,32 @@ func (e *Engine) runNetlabC9sApplierJob(
 							"name":            "applier",
 							"image":           image,
 							"imagePullPolicy": pullPolicy,
-							"env": kubeEnvList(map[string]string{
-								"SKYFORGE_C9S_NAMESPACE":     ns,
-								"SKYFORGE_C9S_TOPOLOGY_NAME": topologyName,
-								"SKYFORGE_C9S_MANIFEST_CM":   manifestCM,
-								"SKYFORGE_C9S_NAME_MAP_CM":   nameMapCM,
-							}),
+							"env": func() []map[string]any {
+								applierEnv := map[string]string{
+									"SKYFORGE_C9S_NAMESPACE":     ns,
+									"SKYFORGE_C9S_TOPOLOGY_NAME": topologyName,
+									"SKYFORGE_C9S_MANIFEST_CM":   manifestCM,
+									"SKYFORGE_C9S_NAME_MAP_CM":   nameMapCM,
+								}
+								if len(setOverrides) > 0 {
+									applierEnv["SKYFORGE_NETLAB_SET_OVERRIDES"] = strings.Join(setOverrides, "\n")
+								}
+								for k, v := range environment {
+									kk := strings.TrimSpace(k)
+									if kk == "" {
+										continue
+									}
+									up := strings.ToUpper(kk)
+									if strings.HasPrefix(up, "NETLAB_") || strings.HasPrefix(kk, "netlab_") || up == "SKYFORGE_NETLAB_SET_OVERRIDES" {
+										// Prefer explicit setOverrides over environment-provided overrides.
+										if up == "SKYFORGE_NETLAB_SET_OVERRIDES" && len(setOverrides) > 0 {
+											continue
+										}
+										applierEnv[kk] = v
+									}
+								}
+								return kubeEnvList(applierEnv)
+							}(),
 							"volumeMounts": []map[string]any{
 								{"name": "work", "mountPath": "/work"},
 							},
