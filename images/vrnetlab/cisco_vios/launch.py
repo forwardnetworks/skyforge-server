@@ -64,6 +64,13 @@ class VIOS_vm(vrnetlab.VM):
             case _:
                 raise ValueError(f"Invalid device_type '{device_type}'. Must be 'router' or 'switch'")
 
+        # IOSv RSA key generation for SSH can stall indefinitely on low-entropy VMs.
+        # Attach a virtio-rng device to give the guest a better entropy source.
+        rng_args = "-object rng-random,filename=/dev/urandom,id=rng0 -device virtio-rng-pci,rng=rng0"
+        cur_qemu_args = os.getenv("QEMU_ADDITIONAL_ARGS", "").strip()
+        if rng_args not in cur_qemu_args:
+            os.environ["QEMU_ADDITIONAL_ARGS"] = (cur_qemu_args + " " + rng_args).strip()
+
         super(VIOS_vm, self).__init__(
             username=username,
             password=password,
@@ -194,8 +201,9 @@ class VIOS_vm(vrnetlab.VM):
             res_key = con.send_command("show crypto key mypubkey rsa")
             has_keys = rsa_keys_present(res_key.result)
             if not has_keys:
-                self.logger.info("No RSA keys detected; generating RSA keys (modulus 2048)")
-                con.send_command("crypto key generate rsa modulus 2048")
+                modulus = int(os.getenv("RSA_KEY_MODULUS", "1024"))
+                self.logger.info("No RSA keys detected; generating RSA keys (modulus %d)", modulus)
+                con.send_command(f"crypto key generate rsa modulus {modulus}")
 
                 key_wait = int(os.getenv("RSA_KEY_WAIT_SECONDS", "180"))
                 deadline = time.time() + key_wait
