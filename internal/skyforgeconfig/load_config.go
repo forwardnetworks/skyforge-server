@@ -231,6 +231,13 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		DNSEnabled:       enc.Features.DNSEnabled,
 		ElasticEnabled:   enc.Features.ElasticEnabled,
 	}
+	// "Forward Networks integrations" umbrella: keep Forward-specific integrations/tools
+	// (e.g. Forward Collector, ServiceNow demo, Elastic indexing) behind a single switch.
+	//
+	// NOTE: AI is intentionally not gated by this flag.
+	if !featuresCfg.ForwardEnabled {
+		featuresCfg.ElasticEnabled = false
+	}
 
 	elasticURL := strings.TrimSpace(enc.Elastic.URL)
 	elasticIndexPrefix := strings.TrimSpace(enc.Elastic.IndexPrefix)
@@ -239,7 +246,7 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 	}
 	// For the common "in-cluster Elastic" case, allow the feature flag to
 	// implicitly enable the default service name.
-	if elasticURL == "" && enc.Features.ElasticEnabled {
+	if elasticURL == "" && featuresCfg.ElasticEnabled {
 		elasticURL = "http://elasticsearch:9200"
 	}
 	elasticCfg := skyforgecore.ElasticConfig{
