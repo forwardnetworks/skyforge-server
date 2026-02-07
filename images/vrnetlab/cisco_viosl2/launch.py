@@ -139,6 +139,8 @@ class VIOS_vm(vrnetlab.VM):
         con.commandeer(conn=self.scrapli_tn)
 
         access_cfg = [
+            # IOSv/IOSvL2 refuses RSA key generation until hostname is set to something other than the default.
+            f"hostname {self.hostname}",
             f"username {self.username} privilege 15 secret {self.password}",
             "ip domain-name lab",
         ]
@@ -195,7 +197,8 @@ class VIOS_vm(vrnetlab.VM):
             if not has_keys:
                 modulus = int(os.getenv("RSA_KEY_MODULUS", "1024"))
                 self.logger.info("No RSA keys detected; generating RSA keys (modulus %d)", modulus)
-                con.send_command(f"crypto key generate rsa modulus {modulus}")
+                # IOSv expects key generation in config mode. Supplying modulus makes it non-interactive.
+                con.send_configs([f"crypto key generate rsa general-keys modulus {modulus}\n"])
 
                 key_wait = int(os.getenv("RSA_KEY_WAIT_SECONDS", "180"))
                 deadline = time.time() + key_wait
