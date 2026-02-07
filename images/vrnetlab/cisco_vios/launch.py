@@ -5,6 +5,7 @@ import os
 import re
 import signal
 import sys
+import time
 
 import vrnetlab
 from scrapli.driver.core import IOSXEDriver
@@ -181,17 +182,31 @@ class VIOS_vm(vrnetlab.VM):
         res = con.send_configs(cfg_lines + [l + "\n" for l in access_cfg])
 
         try:
-            res_key = con.send_command("show crypto key mypubkey rsa")
-            has_keys = bool(
-                re.search(
-                    r"key\\s+(name|label)\\s*:|ssh-rsa|begin\\s+public\\s+key",
-                    res_key.result,
-                    re.IGNORECASE,
+            def rsa_keys_present(s: str) -> bool:
+                return bool(
+                    re.search(
+                        r"key\\s+(name|label)\\s*:|ssh-rsa|begin\\s+public\\s+key",
+                        s or "",
+                        re.IGNORECASE,
+                    )
                 )
-            )
+
+            res_key = con.send_command("show crypto key mypubkey rsa")
+            has_keys = rsa_keys_present(res_key.result)
             if not has_keys:
                 self.logger.info("No RSA keys detected; generating RSA keys (modulus 2048)")
                 con.send_command("crypto key generate rsa modulus 2048")
+
+                key_wait = int(os.getenv("RSA_KEY_WAIT_SECONDS", "180"))
+                deadline = time.time() + key_wait
+                while time.time() < deadline:
+                    chk = con.send_command("show crypto key mypubkey rsa")
+                    if rsa_keys_present(chk.result):
+                        has_keys = True
+                        break
+                    time.sleep(2)
+                if not has_keys:
+                    self.logger.warning("RSA key generation did not complete within %ds", key_wait)
         except Exception as e:
             self.logger.warning("RSA key check/generation failed: %s", e)
 
@@ -253,4 +268,3 @@ if __name__ == "__main__":
         device_type=args.type,
     )
     vr.start()
-

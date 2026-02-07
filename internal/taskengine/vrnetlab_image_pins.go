@@ -17,12 +17,12 @@ var vrnetlabPinnedImages = map[string]string{
 	// IOSv / IOSvL2 (vrnetlab) must set a management IP compatible with QEMU hostfwd.
 	// Older tags used a router-style Gi0/0 IP assignment even for IOSvL2, causing SSH readiness
 	// to hang forever (TCP connects, but no SSH banner from the guest).
-	"ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3":  "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge1",
-	"vrnetlab/cisco_vios:15.9.3":                          "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge1",
-	"docker.io/vrnetlab/cisco_vios:15.9.3":                "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge1",
-	"ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2":  "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge1",
-	"vrnetlab/cisco_viosl2:15.2":                          "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge1",
-	"docker.io/vrnetlab/cisco_viosl2:15.2":                "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge1",
+	"ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3":  "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge2",
+	"vrnetlab/cisco_vios:15.9.3":                          "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge2",
+	"docker.io/vrnetlab/cisco_vios:15.9.3":                "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge2",
+	"ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2":  "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge2",
+	"vrnetlab/cisco_viosl2:15.2":                          "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge2",
+	"docker.io/vrnetlab/cisco_viosl2:15.2":                "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge2",
 }
 
 func rewritePinnedVrnetlabImage(image string) (string, bool) {
