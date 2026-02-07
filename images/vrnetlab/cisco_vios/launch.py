@@ -59,17 +59,11 @@ class VIOS_vm(vrnetlab.VM):
                 ram = 768
                 self.logger.info("Configuring switch with 768MB RAM")
             case "router":
-                ram = 512
-                self.logger.info("Configuring router with 512MB RAM")
+                # IOSv can be unstable and have very slow crypto operations with too little RAM.
+                ram = 1024
+                self.logger.info("Configuring router with 1024MB RAM")
             case _:
                 raise ValueError(f"Invalid device_type '{device_type}'. Must be 'router' or 'switch'")
-
-        # IOSv RSA key generation for SSH can stall indefinitely on low-entropy VMs.
-        # Attach a virtio-rng device to give the guest a better entropy source.
-        rng_args = "-object rng-random,filename=/dev/urandom,id=rng0 -device virtio-rng-pci,rng=rng0"
-        cur_qemu_args = os.getenv("QEMU_ADDITIONAL_ARGS", "").strip()
-        if rng_args not in cur_qemu_args:
-            os.environ["QEMU_ADDITIONAL_ARGS"] = (cur_qemu_args + " " + rng_args).strip()
 
         super(VIOS_vm, self).__init__(
             username=username,
