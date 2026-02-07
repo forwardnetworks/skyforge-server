@@ -139,7 +139,7 @@ class VIOS_vm(vrnetlab.VM):
 
         access_cfg = [
             f"username {self.username} privilege 15 secret {self.password}",
-            "ip domain name lab",
+            "ip domain-name lab",
         ]
         if self.device_type == "switch":
             access_cfg += [

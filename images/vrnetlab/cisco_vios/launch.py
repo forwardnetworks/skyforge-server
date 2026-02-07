@@ -141,7 +141,7 @@ class VIOS_vm(vrnetlab.VM):
         # IOSvL2 is a switch and cannot assign an IP to Gi0/0; it must use an SVI (Vlan1).
         access_cfg = [
             f"username {self.username} privilege 15 secret {self.password}",
-            "ip domain name lab",
+            "ip domain-name lab",
         ]
         if self.device_type == "switch":
             access_cfg += [
