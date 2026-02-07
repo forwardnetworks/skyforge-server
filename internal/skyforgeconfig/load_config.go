@@ -1,6 +1,8 @@
 package skyforgeconfig
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"log"
 	"os"
 	"sort"
@@ -36,11 +38,51 @@ func parseUserList(raw string) []string {
 	return out
 }
 
+func loadEncoreConfigOverrideFromEnv() (EncoreConfig, bool) {
+	raw := strings.TrimSpace(os.Getenv("ENCORE_CFG_SKYFORGE"))
+	if raw == "" {
+		return EncoreConfig{}, false
+	}
+
+	// `config.Load` should handle runtime config, but in some environments the injected
+	// loader may not pick up `ENCORE_CFG_SKYFORGE`. Treat this env var as a source of
+	// truth when present so Helm-provided typed config stays effective.
+	var cfg EncoreConfig
+	if strings.HasPrefix(raw, "{") {
+		if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+			log.Printf("invalid ENCORE_CFG_SKYFORGE JSON: %v", err)
+			return EncoreConfig{}, false
+		}
+		return cfg, true
+	}
+
+	// Helm stores the JSON as base64url without padding (Encore's legacy format).
+	// Accept both padded and unpadded.
+	enc := raw
+	if m := len(enc) % 4; m != 0 {
+		enc += strings.Repeat("=", 4-m)
+	}
+	decoded, err := base64.URLEncoding.DecodeString(enc)
+	if err != nil {
+		log.Printf("invalid ENCORE_CFG_SKYFORGE base64url: %v", err)
+		return EncoreConfig{}, false
+	}
+	if err := json.Unmarshal(decoded, &cfg); err != nil {
+		log.Printf("invalid ENCORE_CFG_SKYFORGE decoded JSON: %v", err)
+		return EncoreConfig{}, false
+	}
+	return cfg, true
+}
+
 // LoadConfig loads Skyforge runtime configuration from env, Encore config, and secrets.
 //
 // The Encore-managed config values must be passed in from a service package,
 // since config.Load cannot be called from a non-service library.
 func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config {
+	if override, ok := loadEncoreConfigOverrideFromEnv(); ok {
+		enc = override
+	}
+
 	sessionTTL := 8 * time.Hour
 	if raw := strings.TrimSpace(enc.SessionTTL); raw != "" {
 		if parsed, err := time.ParseDuration(raw); err == nil {

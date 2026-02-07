@@ -2629,7 +2629,22 @@ func adminUsernameForClaims(claims *SessionClaims) string {
 }
 
 func isAdminForClaims(cfg Config, claims *SessionClaims) bool {
-	return isAdminUser(cfg, adminUsernameForClaims(claims))
+	if claims == nil {
+		return false
+	}
+
+	candidates := []string{
+		strings.TrimSpace(claims.Username),
+		strings.TrimSpace(claims.Email),
+		strings.TrimSpace(claims.ActorUsername),
+		strings.TrimSpace(claims.ActorEmail),
+	}
+	for _, c := range candidates {
+		if isAdminUser(cfg, c) {
+			return true
+		}
+	}
+	return false
 }
 
 func isImpersonating(claims *SessionClaims) bool {
@@ -2644,7 +2659,7 @@ func isImpersonating(claims *SessionClaims) bool {
 
 func auditActor(cfg Config, claims *SessionClaims) (actor string, actorIsAdmin bool, impersonated string) {
 	actor = adminUsernameForClaims(claims)
-	actorIsAdmin = isAdminUser(cfg, actor)
+	actorIsAdmin = isAdminForClaims(cfg, claims)
 	if isImpersonating(claims) {
 		impersonated = strings.TrimSpace(claims.Username)
 	}
