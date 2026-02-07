@@ -1,0 +1,32 @@
+version: "1"
+
+# "Evidence packs" bundle parameterized NQE checks into a single run that can be exported.
+# This is intended as a product-direction demo feature (governance-style reporting),
+# not a replacement for Forward's built-in security analysis features.
+
+packs:
+  - id: "policy-risk"
+    title: "Policy Risk Pack"
+    description: "High-signal modeled ACL risks that map to common audit questions."
+    checks:
+      - id: "acl-any-any-permit.nqe"
+      - id: "acl-permit-any-service.nqe"
+      - id: "acl-any-to-rfc1918-sensitive-ports.nqe"
+
+  - id: "policy-recert"
+    title: "Policy Recert Pack"
+    description: "Lifecycle and usage-based findings useful for quarterly rule recertification."
+    checks:
+      - id: "acl-unused-permits-days.nqe"
+        parameters:
+          daysWindow: 30
+          includeUnknownUsage: true
+      - id: "acl-never-hit-permits.nqe"
+
+  - id: "routing-hardening"
+    title: "Routing Hardening Pack"
+    description: "Lightweight config heuristics (good for quick posture conversations)."
+    checks:
+      - id: "default-route-urpf-heuristic.nqe"
+      - id: "ospf-passive-default.nqe"
+
