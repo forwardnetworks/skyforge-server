@@ -1,0 +1,67 @@
+/**
+ * @intent Policy analytics: find unreachable ACL rules (fully covered by an earlier rule).
+ * @description
+ *  A rule J is unreachable if there exists an earlier rule I such that match(J) is a subset of match(I).
+ *  Because evaluation is first-match, rule J can never be the effective decision for any flow in its match region.
+ *
+ *  Notes:
+ *  - Conservative: focuses on ipv4Src/ipv4Dst/ipProtocol/tpDst only.
+ *  - Empty match fields are treated as "any".
+ *  - Superset checks for subnets are done via ipAddressSet; range subset checks are per-range.
+ */
+
+subnetsToSet(subnets) = ipAddressSet(subnets);
+
+subnetsSubset(a, b) =
+  if length(a) == 0 then length(b) == 0
+  else if length(b) == 0 then true
+  else subnetsToSet(a) in subnetsToSet(b);
+
+rangesSubset(a, b) =
+  if length(a) == 0 then length(b) == 0
+  else if length(b) == 0 then true
+  else all(
+    foreach ra in a
+    select any(
+      foreach rb in b
+      select rb.start <= ra.start && ra.end <= rb.end
+    )
+  );
+
+headerSubset(hA, hB) =
+  subnetsSubset(hA.ipv4Src, hB.ipv4Src) &&
+  subnetsSubset(hA.ipv4Dst, hB.ipv4Dst) &&
+  rangesSubset(hA.ipProtocol, hB.ipProtocol) &&
+  rangesSubset(hA.tpDst, hB.tpDst);
+
+@query
+aclUnreachableRules(firewallsOnly : Bool, includeImplicitDefault : Bool) =
+  foreach device in network.devices
+  where !firewallsOnly || device.platform.deviceType == DeviceType.FIREWALL
+  let rules = device.aclEntries
+  foreach j in fromTo(0, length(rules) - 1)
+  let rj = rules[j]
+  where includeImplicitDefault || (!rj.implicitRule && !rj.defaultRule)
+
+  foreach i in fromTo(0, j - 1)
+  let ri = rules[i]
+  where includeImplicitDefault || (!ri.implicitRule && !ri.defaultRule)
+
+  let hj = rj.headerMatches
+  let hi = ri.headerMatches
+  where headerSubset(hj, hi)
+
+  select {
+    violation: true,
+    device: device.name,
+    unreachableRuleIndex: j,
+    unreachableRule: rj.name,
+    unreachableAction: rj.action,
+    unreachableEvidence: sourceConfigText(rj.name),
+    coveringRuleIndex: i,
+    coveringRule: ri.name,
+    coveringAction: ri.action,
+    coveringEvidence: sourceConfigText(ri.name),
+    overApproximated: hj.overApproximated || hi.overApproximated
+  };
+

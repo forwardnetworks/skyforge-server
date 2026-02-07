@@ -39,6 +39,8 @@ type Config struct {
 	NautobotInternalBaseURL   string
 	YaadeBaseURL              string
 	YaadeInternalBaseURL      string
+	ElasticURL                string
+	ElasticIndexPrefix        string
 	Netlab                    NetlabConfig
 	OIDC                      OIDCConfig
 	LDAP                      LDAPConfig

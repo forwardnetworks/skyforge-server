@@ -22,6 +22,7 @@ const (
 	TaskTypeClabernetes    = "clabernetes-run"
 	TaskTypeForwardInit    = "forward-init"
 	TaskTypeForwardSync    = "forward-sync"
+	TaskTypeCapacityRollup = "capacity-rollup"
 	TaskTypeTerraformPref  = "terraform-"
 )
 

@@ -15,15 +15,15 @@ type UserEnvVar struct {
 }
 
 type UserSettingsResponse struct {
-	DefaultForwardCollectorConfigID string       `json:"defaultForwardCollectorConfigId,omitempty"`
-	DefaultEnv                      []UserEnvVar `json:"defaultEnv,omitempty"`
+	DefaultForwardCollectorConfigID string                 `json:"defaultForwardCollectorConfigId,omitempty"`
+	DefaultEnv                      []UserEnvVar           `json:"defaultEnv,omitempty"`
 	ExternalTemplateRepos           []ExternalTemplateRepo `json:"externalTemplateRepos,omitempty"`
-	UpdatedAt                       string       `json:"updatedAt,omitempty"`
+	UpdatedAt                       string                 `json:"updatedAt,omitempty"`
 }
 
 type PutUserSettingsRequest struct {
-	DefaultForwardCollectorConfigID string       `json:"defaultForwardCollectorConfigId,omitempty"`
-	DefaultEnv                      []UserEnvVar `json:"defaultEnv,omitempty"`
+	DefaultForwardCollectorConfigID string                 `json:"defaultForwardCollectorConfigId,omitempty"`
+	DefaultEnv                      []UserEnvVar           `json:"defaultEnv,omitempty"`
 	ExternalTemplateRepos           []ExternalTemplateRepo `json:"externalTemplateRepos,omitempty"`
 }
 
@@ -98,10 +98,10 @@ func (s *Service) PutUserSettings(ctx context.Context, req *PutUserSettingsReque
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	out, err := upsertUserSettings(ctx, s.db, userSettingsRecord{
-		UserID:                       user.Username,
+		UserID:                        user.Username,
 		DefaultForwardCollectorConfig: strings.TrimSpace(req.DefaultForwardCollectorConfigID),
-		DefaultEnvJSON:               string(envJSON),
-		ExternalTemplateReposJSON:    string(reposJSON),
+		DefaultEnvJSON:                string(envJSON),
+		ExternalTemplateReposJSON:     string(reposJSON),
 	})
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to save user settings").Err()

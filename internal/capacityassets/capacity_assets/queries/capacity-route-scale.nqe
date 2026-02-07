@@ -1,0 +1,16 @@
+/**
+ * @intent Capacity routing scale: count FIB routes (IPv4/IPv6) per VRF.
+ */
+@query
+capacityRouteScale =
+  foreach device in network.devices
+  foreach ni in device.networkInstances
+  let v4 = if isPresent(ni.afts.ipv4Unicast) then length(ni.afts.ipv4Unicast.ipEntries) else 0
+  let v6 = if isPresent(ni.afts.ipv6Unicast) then length(ni.afts.ipv6Unicast.ipEntries) else 0
+  select {
+    deviceName: device.name,
+    vrf: ni.name,
+    ipv4Routes: v4,
+    ipv6Routes: v6
+  };
+

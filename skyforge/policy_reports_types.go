@@ -101,13 +101,15 @@ type PolicyReportPackDeltaRequest struct {
 }
 
 type PolicyReportPackDeltaCheck struct {
-	CheckID       string          `json:"checkId"`
-	BaselineTotal int             `json:"baselineTotal"`
-	CompareTotal  int             `json:"compareTotal"`
-	NewCount      int             `json:"newCount"`
-	ResolvedCount int             `json:"resolvedCount"`
-	NewSamples    json.RawMessage `json:"newSamples,omitempty"`
-	OldSamples    json.RawMessage `json:"oldSamples,omitempty"`
+	CheckID        string          `json:"checkId"`
+	BaselineTotal  int             `json:"baselineTotal"`
+	CompareTotal   int             `json:"compareTotal"`
+	NewCount       int             `json:"newCount"`
+	ResolvedCount  int             `json:"resolvedCount"`
+	ChangedCount   int             `json:"changedCount"`
+	NewSamples     json.RawMessage `json:"newSamples,omitempty"`
+	OldSamples     json.RawMessage `json:"oldSamples,omitempty"`
+	ChangedSamples json.RawMessage `json:"changedSamples,omitempty"`
 }
 
 type PolicyReportPackDeltaResponse struct {

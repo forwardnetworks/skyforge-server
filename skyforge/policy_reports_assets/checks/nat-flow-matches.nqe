@@ -1,0 +1,56 @@
+/**
+ * @intent NAT flow matches: list NAT entries that match a given flow tuple
+ * @description
+ *  Uses modeled NAT entries (device.natEntries) and evaluates a simple match predicate.
+ *  This is an explainability helper for NAT-aware reasoning and change planning demos.
+ *
+ *  Notes:
+ *  - Empty match fields are treated as "any".
+ *  - ipProto/dstPort are optional: pass -1 to ignore.
+ */
+
+containsIp(subnets, ip) =
+  length(subnets) == 0 ||
+  ip in ipAddressSet(subnets);
+
+containsIntRange(ranges, v) =
+  length(ranges) == 0 ||
+  any(foreach r in ranges
+      select r.start <= v && v <= r.end);
+
+@query
+natFlowMatches(
+  srcIp : String,
+  dstIp : String,
+  ipProto : Integer,
+  dstPort : Integer
+) =
+  let src = ipAddress(srcIp)
+  let dst = ipAddress(dstIp)
+  foreach device in network.devices
+  let rules = device.natEntries
+  foreach idx in fromTo(0, length(rules) - 1)
+  let natEntry = rules[idx]
+  let h = natEntry.headerMatches
+
+  where containsIp(h.ipv4Src, src)
+  where containsIp(h.ipv4Dst, dst)
+  where ipProto < 0 || containsIntRange(h.ipProtocol, ipProto)
+  where dstPort < 0 || containsIntRange(h.tpDst, dstPort)
+
+  select {
+    match: true,
+    device: device.name,
+    ruleIndex: idx,
+    rule: natEntry.name,
+    description: natEntry.description,
+    evidence: sourceConfigText(natEntry.name),
+    ipv4Src: h.ipv4Src,
+    ipv4Dst: h.ipv4Dst,
+    ipProto: h.ipProtocol,
+    tpDst: h.tpDst,
+    ingress: natEntry.metadataMatches.ingressInterfaces,
+    egress: natEntry.metadataMatches.egressInterfaces,
+    rewrites: natEntry.rewrites
+  };
+

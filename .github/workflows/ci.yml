@@ -25,4 +25,6 @@ jobs:
       - name: Test
         env:
           ENCORE_DISABLE_UPDATE_CHECK: "1"
-        run: encore test ./...
+        run: |
+          bash scripts/validate-policy-reports.sh
+          encore test ./...

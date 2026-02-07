@@ -1,0 +1,70 @@
+/**
+ * @intent Cloud policy risk (AWS): Security Group egress to internet (any-service)
+ * @description
+ *  Flags PERMIT egress rules where the destination is effectively 0.0.0.0/0 (or unspecified)
+ *  and the service match is effectively "any" (protocol and destination port unspecified).
+ *
+ *  This can be used as an exfiltration posture signal.
+ */
+
+isAnyIpv4(subnets) =
+  length(subnets) == 0 ||
+  ipSubnet("0.0.0.0/0") in subnets;
+
+isAnyService(h) =
+  length(h.ipProtocol) == 0 &&
+  length(h.tpDst) == 0;
+
+awsSgAttachedIfaceIds(vpc, sgId) =
+  foreach subnet in vpc.subnets
+  foreach iface in subnet.ifaces
+  where sgId in iface.securityGroupIds
+  select iface.id;
+
+awsSgAttachedInstances(vpc, ifaceIds) =
+  foreach inst in vpc.computeInstances
+  where max(foreach ii in inst.instanceIfaces
+            select ii.ifaceId in ifaceIds)
+  select {
+    id: inst.id,
+    name: inst.name,
+    type: inst.instanceType
+  };
+
+@query
+awsSgEgressAnyService =
+  foreach acct in network.cloudAccounts
+  where acct.cloudType == CloudType.AWS
+  where acct.collected
+  foreach vpc in acct.vpcs
+  foreach sg in vpc.securityGroups
+  foreach idx in fromTo(0, length(sg.egressRules) - 1)
+  let rule = sg.egressRules[idx]
+  let h = rule.match
+  where rule.action == SecurityRuleAction.PERMIT
+  where isAnyIpv4(h.ipv4Dst)
+  where isAnyService(h)
+  let attachedIfaceIds = awsSgAttachedIfaceIds(vpc, sg.id)
+  let attachedInstances = awsSgAttachedInstances(vpc, attachedIfaceIds)
+  select {
+    violation: true,
+    cloudType: acct.cloudType,
+    cloudAccount: acct.name,
+    cloudAccountId: acct.id,
+    vpc: vpc.name,
+    vpcId: vpc.id,
+    securityGroup: sg.name,
+    securityGroupId: sg.id,
+    securityGroupGroupName: sg.groupName,
+    ruleIndex: idx,
+    action: rule.action,
+    ipv4Src: h.ipv4Src,
+    ipv4Dst: h.ipv4Dst,
+    ipProto: h.ipProtocol,
+    tpDst: h.tpDst,
+    overApproximated: h.overApproximated,
+    attachedIfaceCount: length(attachedIfaceIds),
+    attachedInstanceCount: length(attachedInstances),
+    attachedInstances: attachedInstances
+  };
+

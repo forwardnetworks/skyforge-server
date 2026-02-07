@@ -80,11 +80,10 @@ DNS: {
 		ProjectID: ""
 		Location: "us-central1"
 		// Model name for Vertex AI (publisher "google").
-		// Example: "gemini-3-pro-preview" or "gemini-3-flash-preview"
-		Model: "gemini-3-pro-preview"
+		Model: "gemini-3.0-pro"
 		// Fallback model used when Model isn't available in the configured
 		// project/location (common with preview rollouts).
-		FallbackModel: "gemini-3-flash-preview"
+		FallbackModel: "gemini-3.0-flash"
 	}
 
 AI: {
@@ -163,6 +162,12 @@ Features: {
 	NetboxEnabled: false
 	NautobotEnabled: false
 	DNSEnabled: false
+	ElasticEnabled: false
+}
+
+Elastic: {
+	URL: ""
+	IndexPrefix: "skyforge"
 }
 
 Kubernetes: {

@@ -17,6 +17,13 @@ type IntegrationDefaultsConfig struct {
 	YaadeInternalBaseURL    string
 }
 
+type ElasticDefaultsConfig struct {
+	// URL is the base URL for the in-cluster Elasticsearch endpoint (no trailing slash).
+	URL string
+	// IndexPrefix is the prefix used for Skyforge-managed indices.
+	IndexPrefix string
+}
+
 type OIDCDefaultsConfig struct {
 	IssuerURL    string
 	DiscoveryURL string
@@ -137,6 +144,7 @@ type FeaturesDefaultsConfig struct {
 	NetboxEnabled    bool
 	NautobotEnabled  bool
 	DNSEnabled       bool
+	ElasticEnabled   bool
 }
 
 type EncoreConfig struct {
@@ -175,6 +183,7 @@ type EncoreConfig struct {
 
 	Netlab           NetlabDefaultsConfig
 	Integrations     IntegrationDefaultsConfig
+	Elastic          ElasticDefaultsConfig
 	UI               UIDefaultsConfig
 	OIDC             OIDCDefaultsConfig
 	LDAP             LDAPDefaultsConfig
@@ -213,6 +222,7 @@ type WorkerConfig struct {
 	Forward          ForwardDefaultsConfig
 	ForwardCollector ForwardCollectorDefaultsConfig
 	Features         FeaturesDefaultsConfig
+	Elastic          ElasticDefaultsConfig
 	NetlabGenerator  NetlabGeneratorDefaultsConfig
 	Kubernetes       KubernetesDefaultsConfig
 }

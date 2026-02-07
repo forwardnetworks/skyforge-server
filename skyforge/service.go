@@ -2623,7 +2623,18 @@ func adminUsernameForClaims(claims *SessionClaims) string {
 }
 
 func isAdminForClaims(cfg Config, claims *SessionClaims) bool {
-	return isAdminUser(cfg, adminUsernameForClaims(claims))
+	// Defensive: some auth paths can populate ActorUsername unexpectedly.
+	// Treat the session as admin if either the effective actor OR the user is admin.
+	if claims == nil {
+		return false
+	}
+	if isAdminUser(cfg, strings.TrimSpace(claims.Username)) {
+		return true
+	}
+	if strings.TrimSpace(claims.ActorUsername) != "" && isAdminUser(cfg, strings.TrimSpace(claims.ActorUsername)) {
+		return true
+	}
+	return false
 }
 
 func isImpersonating(claims *SessionClaims) bool {

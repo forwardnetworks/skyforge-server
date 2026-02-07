@@ -207,3 +207,13 @@ func policyReportsNormalizeNQEResponse(body []byte) (*PolicyReportNQEResponse, e
 		Results:    results,
 	}, nil
 }
+
+func policyReportsNormalizeNQEResponseForCheck(checkID string, body []byte) (*PolicyReportNQEResponse, error) {
+	out, err := policyReportsNormalizeNQEResponse(body)
+	if err != nil || out == nil {
+		return out, err
+	}
+	aug, _ := policyReportsAugmentResults(checkID, out.Results)
+	out.Results = aug
+	return out, nil
+}

@@ -325,7 +325,7 @@ func (s *Service) RunWorkspacePolicyReportCheck(ctx context.Context, id string, 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, errs.B().Code(errs.Unavailable).Msg("Forward NQE failed").Meta("upstream", strings.TrimSpace(string(body))).Err()
 	}
-	out, err := policyReportsNormalizeNQEResponse(body)
+	out, err := policyReportsNormalizeNQEResponseForCheck(checkID, body)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("invalid Forward response").Err()
 	}
@@ -417,7 +417,7 @@ func (s *Service) RunWorkspacePolicyReportPack(ctx context.Context, id string, r
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			return nil, errs.B().Code(errs.Unavailable).Msg("Forward NQE failed").Meta("checkId", checkID).Meta("upstream", strings.TrimSpace(string(body))).Err()
 		}
-		out, err := policyReportsNormalizeNQEResponse(body)
+		out, err := policyReportsNormalizeNQEResponseForCheck(checkID, body)
 		if err != nil {
 			return nil, errs.B().Code(errs.Unavailable).Msg("invalid Forward response").Meta("checkId", checkID).Err()
 		}
@@ -506,8 +506,8 @@ func (s *Service) RunWorkspacePolicyReportPackDelta(ctx context.Context, id stri
 		base := baseResp.Results[chk]
 		comp := compResp.Results[chk]
 
-		baseItems := []any{}
-		compItems := []any{}
+		baseItems := []json.RawMessage{}
+		compItems := []json.RawMessage{}
 		if base != nil && len(base.Results) > 0 {
 			_ = json.Unmarshal(base.Results, &baseItems)
 		}
@@ -517,22 +517,35 @@ func (s *Service) RunWorkspacePolicyReportPackDelta(ctx context.Context, id stri
 
 		baseSet := map[string]json.RawMessage{}
 		compSet := map[string]json.RawMessage{}
-		for _, it := range baseItems {
-			b, _ := json.Marshal(it)
-			baseSet[string(b)] = b
+		for _, raw := range baseItems {
+			id := policyReportsExtractFindingID(raw)
+			if id == "" {
+				id = policyReportsComputeFindingID(chk, raw)
+			}
+			baseSet[id] = raw
 		}
-		for _, it := range compItems {
-			b, _ := json.Marshal(it)
-			compSet[string(b)] = b
+		for _, raw := range compItems {
+			id := policyReportsExtractFindingID(raw)
+			if id == "" {
+				id = policyReportsComputeFindingID(chk, raw)
+			}
+			compSet[id] = raw
 		}
 
 		newSamples := make([]json.RawMessage, 0, maxSamples)
 		oldSamples := make([]json.RawMessage, 0, maxSamples)
+		type changedSample struct {
+			FindingID string          `json:"findingId"`
+			Baseline  json.RawMessage `json:"baseline"`
+			Compare   json.RawMessage `json:"compare"`
+		}
+		changedSamples := make([]changedSample, 0, maxSamples)
 		newCount := 0
 		resolvedCount := 0
+		changedCount := 0
 
-		for k, v := range compSet {
-			if _, ok := baseSet[k]; ok {
+		for id, v := range compSet {
+			if _, ok := baseSet[id]; ok {
 				continue
 			}
 			newCount++
@@ -540,8 +553,8 @@ func (s *Service) RunWorkspacePolicyReportPackDelta(ctx context.Context, id stri
 				newSamples = append(newSamples, v)
 			}
 		}
-		for k, v := range baseSet {
-			if _, ok := compSet[k]; ok {
+		for id, v := range baseSet {
+			if _, ok := compSet[id]; ok {
 				continue
 			}
 			resolvedCount++
@@ -550,8 +563,30 @@ func (s *Service) RunWorkspacePolicyReportPackDelta(ctx context.Context, id stri
 			}
 		}
 
+		ignore := map[string]bool{"findingId": true}
+		for id, baseRaw := range baseSet {
+			compRaw, ok := compSet[id]
+			if !ok {
+				continue
+			}
+			baseHash := policyReportsCanonicalJSONHash(baseRaw, ignore)
+			compHash := policyReportsCanonicalJSONHash(compRaw, ignore)
+			if baseHash == compHash {
+				continue
+			}
+			changedCount++
+			if len(changedSamples) < maxSamples {
+				changedSamples = append(changedSamples, changedSample{
+					FindingID: id,
+					Baseline:  baseRaw,
+					Compare:   compRaw,
+				})
+			}
+		}
+
 		newJSON, _ := json.Marshal(newSamples)
 		oldJSON, _ := json.Marshal(oldSamples)
+		changedJSON, _ := json.Marshal(changedSamples)
 		baselineTotal := 0
 		compareTotal := 0
 		if base != nil {
@@ -562,13 +597,15 @@ func (s *Service) RunWorkspacePolicyReportPackDelta(ctx context.Context, id stri
 		}
 
 		deltas = append(deltas, PolicyReportPackDeltaCheck{
-			CheckID:       chk,
-			BaselineTotal: baselineTotal,
-			CompareTotal:  compareTotal,
-			NewCount:      newCount,
-			ResolvedCount: resolvedCount,
-			NewSamples:    newJSON,
-			OldSamples:    oldJSON,
+			CheckID:        chk,
+			BaselineTotal:  baselineTotal,
+			CompareTotal:   compareTotal,
+			NewCount:       newCount,
+			ResolvedCount:  resolvedCount,
+			ChangedCount:   changedCount,
+			NewSamples:     newJSON,
+			OldSamples:     oldJSON,
+			ChangedSamples: changedJSON,
 		})
 	}
 

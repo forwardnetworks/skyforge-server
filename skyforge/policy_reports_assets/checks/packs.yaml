@@ -5,6 +5,14 @@ version: "1"
 # not a replacement for Forward's built-in security analysis features.
 
 packs:
+  - id: "cloud-policy"
+    title: "Cloud Policy Pack (AWS SG)"
+    description: "CSPM-lite network posture checks for AWS Security Groups."
+    checks:
+      - id: "aws-sg-ingress-sensitive-ports.nqe"
+      - id: "aws-sg-ingress-any-service.nqe"
+      - id: "aws-sg-egress-any-service.nqe"
+
   - id: "policy-risk"
     title: "Policy Risk Pack"
     description: "High-signal modeled ACL risks that map to common audit questions."
@@ -17,6 +25,14 @@ packs:
     title: "Policy Analytics Pack"
     description: "Rulebase analytics for hygiene and intent: flow lookup, shadowing, redundancy, and conflicts."
     checks:
+      - id: "acl-flow-decision.nqe"
+        parameters:
+          srcIp: "10.0.0.1"
+          dstIp: "10.0.0.2"
+          ipProto: 6
+          dstPort: 443
+          firewallsOnly: true
+          includeImplicitDefault: false
       - id: "acl-flow-to-rules.nqe"
         parameters:
           srcIp: "10.0.0.1"
@@ -26,8 +42,16 @@ packs:
           firewallsOnly: true
           includeImplicitDefault: false
       - id: "acl-shadowed-rules.nqe"
+      - id: "acl-partial-shadowed-rules.nqe"
+      - id: "acl-unreachable-rules.nqe"
       - id: "acl-redundant-rules.nqe"
       - id: "acl-overlap-conflicts.nqe"
+      - id: "nat-flow-matches.nqe"
+        parameters:
+          srcIp: "10.0.0.1"
+          dstIp: "10.0.0.2"
+          ipProto: 6
+          dstPort: 443
 
   - id: "policy-recert"
     title: "Policy Recert Pack"

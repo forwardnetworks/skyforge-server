@@ -163,7 +163,7 @@ func (e *Engine) runContainerlabTask(ctx context.Context, spec containerlabRunSp
 				} else {
 					_, _ = e.syncForwardTopologyGraphDevices(ctx, spec.TaskID, spec.WorkspaceCtx, dep, graph, forwardSyncOptions{
 						StartConnectivity: true,
-						StartCollection: true,
+						StartCollection:   true,
 					})
 				}
 			}

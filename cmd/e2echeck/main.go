@@ -45,11 +45,11 @@ type workspaceResponse struct {
 }
 
 type createdWorkspaceRecord struct {
-	BaseURL        string `json:"baseUrl"`
-	WorkspaceID    string `json:"workspaceId"`
-	WorkspaceSlug  string `json:"workspaceSlug"`
-	WorkspaceName  string `json:"workspaceName"`
-	CreatedAt      string `json:"createdAt"`
+	BaseURL       string `json:"baseUrl"`
+	WorkspaceID   string `json:"workspaceId"`
+	WorkspaceSlug string `json:"workspaceSlug"`
+	WorkspaceName string `json:"workspaceName"`
+	CreatedAt     string `json:"createdAt"`
 }
 
 type listWorkspacesResponse struct {
@@ -1882,11 +1882,11 @@ func run() int {
 
 	if wsReuseID == "" {
 		_ = appendCreatedWorkspace(statusDir, createdWorkspaceRecord{
-			BaseURL:         strings.TrimRight(baseURL, "/"),
-			WorkspaceID:     ws.ID,
-			WorkspaceSlug:   ws.Slug,
-			WorkspaceName:   ws.Name,
-			CreatedAt:       time.Now().UTC().Format(time.RFC3339),
+			BaseURL:       strings.TrimRight(baseURL, "/"),
+			WorkspaceID:   ws.ID,
+			WorkspaceSlug: ws.Slug,
+			WorkspaceName: ws.Name,
+			CreatedAt:     time.Now().UTC().Format(time.RFC3339),
 		})
 	}
 

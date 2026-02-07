@@ -1,5 +1,28 @@
 version: "1"
 checks:
+  - id: "aws-sg-ingress-sensitive-ports.nqe"
+    title: "AWS SG: Internet ingress to sensitive ports"
+    category: "cloud-policy-risk"
+    severity: "high"
+    description: "Flags AWS Security Group ingress PERMIT rules allowing 0.0.0.0/0 (or unspecified) to reach sensitive TCP/UDP ports."
+    params:
+      - name: "sensitivePorts"
+        type: "List<Integer>"
+        default: [22, 23, 3389, 445, 1433, 1521, 3306, 5432, 6379, 9200, 27017]
+        description: "Ports considered sensitive when exposed to the internet."
+
+  - id: "aws-sg-ingress-any-service.nqe"
+    title: "AWS SG: Internet ingress any-service"
+    category: "cloud-policy-risk"
+    severity: "high"
+    description: "Flags AWS Security Group ingress PERMIT rules allowing 0.0.0.0/0 (or unspecified) on any protocol/port."
+
+  - id: "aws-sg-egress-any-service.nqe"
+    title: "AWS SG: Internet egress any-service"
+    category: "cloud-policy-risk"
+    severity: "medium"
+    description: "Flags AWS Security Group egress PERMIT rules allowing 0.0.0.0/0 (or unspecified) on any protocol/port (exfil posture signal)."
+
   - id: "acl-any-any-permit.nqe"
     title: "PERMIT any-to-any (modeled ACL)"
     category: "policy-risk"
@@ -108,11 +131,68 @@ checks:
         default: false
         description: "Include implicit/default rules."
 
+  - id: "acl-flow-decision.nqe"
+    title: "Flow decision (first match) (modeled ACL)"
+    category: "policy-analytics"
+    severity: "low"
+    description: "Given a flow tuple, compute the first matching modeled ACL entry per device (effective decision)."
+    params:
+      - name: "srcIp"
+        type: "String"
+        description: "Source IP address (IPv4)."
+        required: true
+      - name: "dstIp"
+        type: "String"
+        description: "Destination IP address (IPv4)."
+        required: true
+      - name: "ipProto"
+        type: "Integer"
+        default: -1
+        description: "IP protocol number (6 TCP, 17 UDP). Use -1 to ignore."
+      - name: "dstPort"
+        type: "Integer"
+        default: -1
+        description: "Destination port. Use -1 to ignore."
+      - name: "firewallsOnly"
+        type: "Bool"
+        default: true
+        description: "Limit to devices typed as FIREWALL."
+      - name: "includeImplicitDefault"
+        type: "Bool"
+        default: false
+        description: "Include implicit/default rules."
+
   - id: "acl-shadowed-rules.nqe"
     title: "Shadowed rules (modeled ACL)"
     category: "policy-analytics"
     severity: "medium"
     description: "Flags rules fully shadowed by earlier rules with same action."
+    params:
+      - name: "firewallsOnly"
+        type: "Bool"
+        default: true
+      - name: "includeImplicitDefault"
+        type: "Bool"
+        default: false
+
+  - id: "acl-partial-shadowed-rules.nqe"
+    title: "Partially shadowed rules (modeled ACL)"
+    category: "policy-analytics"
+    severity: "medium"
+    description: "Flags rules that overlap earlier rules with the same action but are not fully shadowed."
+    params:
+      - name: "firewallsOnly"
+        type: "Bool"
+        default: true
+      - name: "includeImplicitDefault"
+        type: "Bool"
+        default: false
+
+  - id: "acl-unreachable-rules.nqe"
+    title: "Unreachable rules (modeled ACL)"
+    category: "policy-analytics"
+    severity: "high"
+    description: "Flags rules that can never be effective because an earlier rule fully covers their match region (first-match)."
     params:
       - name: "firewallsOnly"
         type: "Bool"
@@ -158,3 +238,26 @@ checks:
     category: "routing-hardening"
     severity: "low"
     description: "Flags OSPF processes missing 'passive-interface default' in router ospf stanzas."
+
+  - id: "nat-flow-matches.nqe"
+    title: "NAT flow matches (modeled NAT)"
+    category: "policy-analytics"
+    severity: "low"
+    description: "Given a flow tuple, list modeled NAT entries that match it (ordered)."
+    params:
+      - name: "srcIp"
+        type: "String"
+        description: "Source IP address (IPv4)."
+        required: true
+      - name: "dstIp"
+        type: "String"
+        description: "Destination IP address (IPv4)."
+        required: true
+      - name: "ipProto"
+        type: "Integer"
+        default: -1
+        description: "IP protocol number (6 TCP, 17 UDP). Use -1 to ignore."
+      - name: "dstPort"
+        type: "Integer"
+        default: -1
+        description: "Destination port. Use -1 to ignore."

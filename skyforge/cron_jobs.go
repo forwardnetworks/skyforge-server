@@ -2,10 +2,15 @@ package skyforge
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"encore.app/internal/skyforgeconfig"
+	"encore.app/internal/taskqueue"
+	"encore.app/internal/taskstore"
 	"encore.dev/cron"
+	"encore.dev/rlog"
 )
 
 // Cron jobs
@@ -33,6 +38,115 @@ var (
 		Title:    "Refresh task queue metrics",
 		Endpoint: CronRefreshTaskQueueMetrics,
 		Every:    1 * cron.Minute,
+	})
+)
+
+// Capacity rollups
+//
+// This job enqueues per-deployment rollup tasks for deployments that have Forward enabled.
+
+//encore:api private method=POST path=/internal/cron/capacity/rollups
+func CronEnqueueCapacityRollups(ctx context.Context) error {
+	db, err := openSkyforgeDB(ctx)
+	if err != nil || db == nil {
+		return err
+	}
+	ctxReq, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	cfg := skyforgeconfig.LoadConfig(skyforgeEncoreCfg, getSecrets())
+	_ = cfg // reserved for future knobs (rate limits, enable flags, etc.)
+
+	type depRow struct {
+		workspaceID      string
+		deploymentID     string
+		createdBy        string
+		forwardNetworkID string
+	}
+	rows, err := db.QueryContext(ctxReq, `SELECT workspace_id, id::text, created_by, COALESCE(config->>'forwardNetworkId','')
+FROM sf_deployments
+WHERE COALESCE(config->>'forwardEnabled','false') IN ('true','1','yes')
+  AND COALESCE(config->>'forwardNetworkId','') <> ''
+ORDER BY updated_at DESC
+LIMIT 500`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	enqueued := 0
+	for rows.Next() {
+		var r depRow
+		if scanErr := rows.Scan(&r.workspaceID, &r.deploymentID, &r.createdBy, &r.forwardNetworkID); scanErr != nil {
+			continue
+		}
+		r.workspaceID = strings.TrimSpace(r.workspaceID)
+		r.deploymentID = strings.TrimSpace(r.deploymentID)
+		r.createdBy = strings.TrimSpace(r.createdBy)
+		if r.workspaceID == "" || r.deploymentID == "" || r.createdBy == "" {
+			continue
+		}
+
+		meta, _ := toJSONMap(map[string]any{"deploymentId": r.deploymentID, "cron": true})
+		msg := fmt.Sprintf("Capacity rollup (cron)")
+		task, err := createTaskAllowActive(ctx, db, r.workspaceID, &r.deploymentID, "capacity-rollup", msg, r.createdBy, meta)
+		if err != nil || task == nil || task.ID <= 0 {
+			continue
+		}
+
+		key := fmt.Sprintf("%s:%s", r.workspaceID, r.deploymentID)
+		if _, err := taskQueueBackgroundTopic.Publish(ctx, &taskqueue.TaskEnqueuedEvent{TaskID: task.ID, Key: key}); err != nil {
+			_ = taskstore.AppendTaskEvent(context.Background(), db, task.ID, "task.enqueue.publish_failed", map[string]any{
+				"topic": "background",
+				"err":   err.Error(),
+			})
+			rlog.Error("capacity rollup enqueue publish failed", "task_id", task.ID, "err", err)
+			continue
+		}
+		enqueued++
+	}
+	rlog.Info("capacity rollups enqueued", "count", enqueued)
+	return nil
+}
+
+var (
+	_ = cron.NewJob("skyforge-capacity-rollups", cron.JobConfig{
+		Title:    "Enqueue capacity rollups",
+		Endpoint: CronEnqueueCapacityRollups,
+		Every:    1 * cron.Hour,
+	})
+)
+
+// Capacity cleanup
+//
+// Retain enough history for useful trending while keeping the database bounded.
+
+//encore:api private method=POST path=/internal/cron/capacity/cleanup
+func CronCleanupCapacity(ctx context.Context) error {
+	db, err := openSkyforgeDB(ctx)
+	if err != nil || db == nil {
+		return err
+	}
+	ctxReq, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	// Rollups: keep 90d of hourly rollups (covers 30d windows with margin).
+	if _, err := db.ExecContext(ctxReq, `DELETE FROM sf_capacity_rollups WHERE period_end < now() - interval '90 days'`); err != nil {
+		return err
+	}
+
+	// NQE cache: typically upserted to a single "latest" row (snapshot_id = ''), but keep a guardrail.
+	if _, err := db.ExecContext(ctxReq, `DELETE FROM sf_capacity_nqe_cache WHERE created_at < now() - interval '30 days'`); err != nil {
+		return err
+	}
+	return nil
+}
+
+var (
+	_ = cron.NewJob("skyforge-capacity-cleanup", cron.JobConfig{
+		Title:    "Cleanup capacity history",
+		Endpoint: CronCleanupCapacity,
+		Every:    24 * cron.Hour,
 	})
 )
 

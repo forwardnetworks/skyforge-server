@@ -64,6 +64,12 @@ Features: {
 	NetboxEnabled: false
 	NautobotEnabled: false
 	DNSEnabled: false
+	ElasticEnabled: false
+}
+
+Elastic: {
+	URL: ""
+	IndexPrefix: "skyforge"
 }
 
 Kubernetes: {
