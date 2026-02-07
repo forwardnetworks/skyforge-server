@@ -4,15 +4,22 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"os"
 	"strings"
 
 	"encore.app/internal/taskqueue"
 	"encore.dev/pubsub"
 )
 
-var _ = pubsub.NewSubscription(taskqueue.StatusTopic, "skyforge-task-status-handler", pubsub.SubscriptionConfig[*taskqueue.TaskStatusEvent]{
-	Handler: pubsub.MethodHandler((*Service).handleTaskStatus),
-})
+var _ = func() *pubsub.Subscription[*taskqueue.TaskStatusEvent] {
+	// In plain `go test` the Encore SDK stubs panic. Avoid that by disabling subscriptions.
+	if os.Getenv("ENCORE_CFG") == "" {
+		return nil
+	}
+	return pubsub.NewSubscription(taskqueue.StatusTopic, "skyforge-task-status-handler", pubsub.SubscriptionConfig[*taskqueue.TaskStatusEvent]{
+		Handler: pubsub.MethodHandler((*Service).handleTaskStatus),
+	})
+}()
 
 func (s *Service) handleTaskStatus(ctx context.Context, msg *taskqueue.TaskStatusEvent) error {
 	if s == nil || s.db == nil {

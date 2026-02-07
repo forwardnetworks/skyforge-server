@@ -2631,6 +2631,11 @@ func isAdminForClaims(cfg Config, claims *SessionClaims) bool {
 	if isAdminUser(cfg, strings.TrimSpace(claims.Username)) {
 		return true
 	}
+	// Some OIDC setups use opaque usernames; the email is typically stable and is already
+	// allowed in `skyforge.adminUsers`.
+	if isAdminUser(cfg, strings.TrimSpace(claims.Email)) {
+		return true
+	}
 	if strings.TrimSpace(claims.ActorUsername) != "" && isAdminUser(cfg, strings.TrimSpace(claims.ActorUsername)) {
 		return true
 	}

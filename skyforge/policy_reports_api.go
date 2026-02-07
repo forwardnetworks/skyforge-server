@@ -12,16 +12,43 @@ import (
 	"encore.dev/beta/errs"
 )
 
-func (s *Service) policyReportsForwardClient(ctx context.Context, workspaceID string) (*forwardClient, error) {
+func (s *Service) policyReportsForwardClient(ctx context.Context, workspaceID, username, forwardNetworkID string) (*forwardClient, error) {
 	if s == nil || s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("server unavailable").Err()
 	}
-	rec, err := getWorkspaceForwardCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), workspaceID)
+	box := newSecretBox(s.cfg.SessionSecret)
+
+	// Preferred: per-user per-network credentials (Policy Reports specific).
+	if strings.TrimSpace(username) != "" && strings.TrimSpace(forwardNetworkID) != "" {
+		if pr, err := getPolicyReportForwardCreds(ctx, s.db, box, workspaceID, username, forwardNetworkID); err == nil && pr != nil {
+			return newForwardClient(forwardCredentials{
+				BaseURL:       pr.BaseURL,
+				SkipTLSVerify: pr.SkipTLSVerify,
+				Username:      pr.Username,
+				Password:      pr.Password,
+			})
+		}
+	}
+
+	// Fallback: legacy per-user Forward credentials.
+	if strings.TrimSpace(username) != "" {
+		if urec, err := getUserForwardCredentials(ctx, s.db, box, strings.ToLower(strings.TrimSpace(username))); err == nil && urec != nil {
+			return newForwardClient(forwardCredentials{
+				BaseURL:       urec.BaseURL,
+				SkipTLSVerify: urec.SkipTLSVerify,
+				Username:      urec.ForwardUsername,
+				Password:      urec.ForwardPassword,
+			})
+		}
+	}
+
+	// Final fallback: workspace-level Forward credentials.
+	rec, err := getWorkspaceForwardCredentials(ctx, s.db, box, workspaceID)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward credentials").Err()
 	}
 	if rec == nil {
-		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward is not configured for this workspace").Err()
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward is not configured for this user/network or workspace").Err()
 	}
 	client, err := newForwardClient(*rec)
 	if err != nil {
@@ -190,7 +217,7 @@ func (s *Service) GetWorkspacePolicyReportSnapshots(ctx context.Context, id stri
 		maxResults = 50
 	}
 
-	client, err := s.policyReportsForwardClient(ctx, pc.workspace.ID)
+	client, err := s.policyReportsForwardClient(ctx, pc.workspace.ID, pc.claims.Username, strings.TrimSpace(req.NetworkID))
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +259,7 @@ func (s *Service) RunWorkspacePolicyReportNQE(ctx context.Context, id string, re
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("query is required").Err()
 	}
 
-	client, err := s.policyReportsForwardClient(ctx, pc.workspace.ID)
+	client, err := s.policyReportsForwardClient(ctx, pc.workspace.ID, pc.claims.Username, networkID)
 	if err != nil {
 		return nil, err
 	}
@@ -301,7 +328,7 @@ func (s *Service) RunWorkspacePolicyReportCheck(ctx context.Context, id string, 
 		params[k] = v
 	}
 
-	client, err := s.policyReportsForwardClient(ctx, pc.workspace.ID)
+	client, err := s.policyReportsForwardClient(ctx, pc.workspace.ID, pc.claims.Username, networkID)
 	if err != nil {
 		return nil, err
 	}
@@ -373,7 +400,7 @@ func (s *Service) RunWorkspacePolicyReportPack(ctx context.Context, id string, r
 	}
 
 	// Reuse one Forward client for the whole pack.
-	fwdClient, err := s.policyReportsForwardClient(ctx, pc.workspace.ID)
+	fwdClient, err := s.policyReportsForwardClient(ctx, pc.workspace.ID, pc.claims.Username, networkID)
 	if err != nil {
 		return nil, err
 	}

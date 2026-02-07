@@ -3,6 +3,7 @@ package skyforge
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -12,6 +13,14 @@ import (
 	"encore.dev/cron"
 	"encore.dev/rlog"
 )
+
+func newJob(id string, cfg cron.JobConfig) *cron.Job {
+	// In plain `go test` the Encore SDK stubs panic. Avoid that by returning nil.
+	if os.Getenv("ENCORE_CFG") == "" {
+		return nil
+	}
+	return cron.NewJob(id, cfg)
+}
 
 // Cron jobs
 //
@@ -34,7 +43,7 @@ func CronRefreshTaskQueueMetrics(ctx context.Context) error {
 }
 
 var (
-	_ = cron.NewJob("skyforge-task-queue-metrics", cron.JobConfig{
+	_ = newJob("skyforge-task-queue-metrics", cron.JobConfig{
 		Title:    "Refresh task queue metrics",
 		Endpoint: CronRefreshTaskQueueMetrics,
 		Every:    1 * cron.Minute,
@@ -105,12 +114,64 @@ LIMIT 500`)
 		}
 		enqueued++
 	}
+	// Also enqueue rollups for user-managed Forward networks (not tied to deployments).
+	//
+	// This allows capacity monitoring to be driven directly by Forward Network ID.
+	type netRow struct {
+		workspaceID       string
+		forwardNetworkID  string
+		collectorConfigID string
+		createdBy         string
+	}
+	nrows, err := db.QueryContext(ctxReq, `SELECT workspace_id, forward_network_id, COALESCE(collector_config_id,''), created_by
+FROM sf_policy_report_forward_networks
+ORDER BY updated_at DESC
+LIMIT 500`)
+	if err == nil {
+		defer nrows.Close()
+		for nrows.Next() {
+			var r netRow
+			if scanErr := nrows.Scan(&r.workspaceID, &r.forwardNetworkID, &r.collectorConfigID, &r.createdBy); scanErr != nil {
+				continue
+			}
+			r.workspaceID = strings.TrimSpace(r.workspaceID)
+			r.forwardNetworkID = strings.TrimSpace(r.forwardNetworkID)
+			r.collectorConfigID = strings.TrimSpace(r.collectorConfigID)
+			r.createdBy = strings.TrimSpace(r.createdBy)
+			if r.workspaceID == "" || r.forwardNetworkID == "" || r.createdBy == "" {
+				continue
+			}
+
+			metaAny := map[string]any{
+				"forwardNetworkId":  r.forwardNetworkID,
+				"collectorConfigId": r.collectorConfigID,
+				"cron":              true,
+			}
+			meta, _ := toJSONMap(metaAny)
+			msg := fmt.Sprintf("Capacity rollup (cron)")
+			task, err := createTaskAllowActive(ctx, db, r.workspaceID, nil, "capacity-rollup-forward-network", msg, r.createdBy, meta)
+			if err != nil || task == nil || task.ID <= 0 {
+				continue
+			}
+
+			key := fmt.Sprintf("%s:%s", r.workspaceID, r.forwardNetworkID)
+			if _, err := taskQueueBackgroundTopic.Publish(ctx, &taskqueue.TaskEnqueuedEvent{TaskID: task.ID, Key: key}); err != nil {
+				_ = taskstore.AppendTaskEvent(context.Background(), db, task.ID, "task.enqueue.publish_failed", map[string]any{
+					"topic": "background",
+					"err":   err.Error(),
+				})
+				rlog.Error("capacity rollup enqueue publish failed", "task_id", task.ID, "err", err)
+				continue
+			}
+			enqueued++
+		}
+	}
 	rlog.Info("capacity rollups enqueued", "count", enqueued)
 	return nil
 }
 
 var (
-	_ = cron.NewJob("skyforge-capacity-rollups", cron.JobConfig{
+	_ = newJob("skyforge-capacity-rollups", cron.JobConfig{
 		Title:    "Enqueue capacity rollups",
 		Endpoint: CronEnqueueCapacityRollups,
 		Every:    1 * cron.Hour,
@@ -143,7 +204,7 @@ func CronCleanupCapacity(ctx context.Context) error {
 }
 
 var (
-	_ = cron.NewJob("skyforge-capacity-cleanup", cron.JobConfig{
+	_ = newJob("skyforge-capacity-cleanup", cron.JobConfig{
 		Title:    "Cleanup capacity history",
 		Endpoint: CronCleanupCapacity,
 		Every:    24 * cron.Hour,
@@ -181,13 +242,13 @@ func CronCleanupGovernanceUsage(ctx context.Context) error {
 }
 
 var (
-	_ = cron.NewJob("skyforge-governance-usage-snapshot", cron.JobConfig{
+	_ = newJob("skyforge-governance-usage-snapshot", cron.JobConfig{
 		Title:    "Snapshot governance usage",
 		Endpoint: CronSnapshotGovernanceUsage,
 		Every:    5 * cron.Minute,
 	})
 
-	_ = cron.NewJob("skyforge-governance-usage-cleanup", cron.JobConfig{
+	_ = newJob("skyforge-governance-usage-cleanup", cron.JobConfig{
 		Title:    "Cleanup governance usage history",
 		Endpoint: CronCleanupGovernanceUsage,
 		Every:    24 * cron.Hour,

@@ -1,0 +1,43 @@
+/**
+ * @intent Capacity hardware: normalize TCAM usage from custom command output across vendors.
+ *
+ * This query looks at CUSTOM command outputs (device.outputs.commands) and attempts to extract a
+ * "used / total" style TCAM figure. The result is one row per device (best match by max total).
+ *
+ * Notes:
+ * - Requires users to enable the relevant custom command collection in Forward.
+ * - Vendor outputs vary; this intentionally starts with broad matching + evidence capture.
+ */
+
+tcamUsedTotalRegex = re`(?mi)(?<used:Integer>\d+)\s*(?:/|of)\s*(?<total:Integer>\d+)`;
+
+getTotal(c) = c.total;
+
+@query
+capacityHardwareTcam =
+  foreach device in network.devices
+  let outputs = device.outputs
+  let candidates =
+    foreach command in outputs.commands
+    where command.commandType == CommandType.CUSTOM
+    let cmdText = if isPresent(command.commandText) then command.commandText else ""
+    where hasMatch(toLowerCase(cmdText), re`.*tcam.*`)
+    foreach m in regexMatches(command.response, tcamUsedTotalRegex)
+    select {
+      used: m.data.used,
+      total: m.data.total,
+      commandText: cmdText,
+      evidence: m.string
+    }
+  let best = maxBy(candidates, getTotal)
+  where isPresent(best)
+  select {
+    deviceName: device.name,
+    vendor: device.platform.vendor,
+    os: device.platform.os,
+    model: device.platform.model,
+    tcamUsed: best.used,
+    tcamTotal: best.total,
+    commandText: best.commandText,
+    evidence: best.evidence
+  };

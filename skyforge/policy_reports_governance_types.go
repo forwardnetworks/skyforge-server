@@ -56,6 +56,7 @@ type PolicyReportRecertAssignment struct {
 type PolicyReportException struct {
 	ID            string     `json:"id"`
 	WorkspaceID   string     `json:"workspaceId"`
+	ForwardNetwork string    `json:"forwardNetworkId"`
 	FindingID     string     `json:"findingId"`
 	CheckID       string     `json:"checkId"`
 	Status        string     `json:"status"`
@@ -123,6 +124,7 @@ type PolicyReportAttestAssignmentRequest struct {
 }
 
 type PolicyReportCreateExceptionRequest struct {
+	ForwardNetwork string `json:"forwardNetworkId"`
 	FindingID     string `json:"findingId"`
 	CheckID       string `json:"checkId"`
 	Justification string `json:"justification"`
@@ -131,6 +133,7 @@ type PolicyReportCreateExceptionRequest struct {
 }
 
 type PolicyReportListExceptionsRequest struct {
+	ForwardNetwork string `query:"forwardNetworkId" encore:"optional"`
 	Status string `query:"status" encore:"optional"`
 	Limit  int    `query:"limit" encore:"optional"`
 }

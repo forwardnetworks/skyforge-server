@@ -34,6 +34,7 @@ const defaultForwardBaseURL = "https://fwd.app"
 
 type forwardCredentials struct {
 	BaseURL        string
+	SkipTLSVerify  bool
 	Username       string
 	Password       string
 	CollectorUser  string

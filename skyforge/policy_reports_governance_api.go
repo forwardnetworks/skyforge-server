@@ -198,7 +198,7 @@ func (s *Service) GenerateWorkspacePolicyReportRecertAssignments(ctx context.Con
 		maxTotal = 5000
 	}
 
-	fwdClient, err := s.policyReportsForwardClient(ctx, pc.workspace.ID)
+	fwdClient, err := s.policyReportsForwardClient(ctx, pc.workspace.ID, pc.claims.Username, strings.TrimSpace(campaign.ForwardNetwork))
 	if err != nil {
 		return nil, err
 	}
@@ -404,6 +404,7 @@ func (s *Service) CreateWorkspacePolicyReportException(ctx context.Context, id s
 		"exceptionId": out.ID,
 		"findingId":   out.FindingID,
 		"checkId":     out.CheckID,
+		"networkId":   out.ForwardNetwork,
 	})
 	return out, nil
 }

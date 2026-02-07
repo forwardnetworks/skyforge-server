@@ -402,6 +402,10 @@ func createPolicyReportException(ctx context.Context, db *sql.DB, workspaceID st
 	if workspaceID == "" || actor == "" || req == nil {
 		return nil, fmt.Errorf("invalid input")
 	}
+	networkID := strings.TrimSpace(req.ForwardNetwork)
+	if networkID == "" {
+		return nil, fmt.Errorf("forwardNetworkId is required")
+	}
 	findingID := strings.TrimSpace(req.FindingID)
 	checkID := strings.TrimSpace(req.CheckID)
 	just := strings.TrimSpace(req.Justification)
@@ -422,15 +426,16 @@ func createPolicyReportException(ctx context.Context, db *sql.DB, workspaceID st
 	policyReportsEnsureUser(ctx, db, actor)
 	_, err := db.ExecContext(ctx, `
 INSERT INTO sf_policy_report_exceptions (
-  id, workspace_id, finding_id, check_id, status, justification, ticket_url, expires_at, created_by
-) VALUES ($1,$2,$3,$4,'PROPOSED',$5,NULLIF($6,''),$7,$8)
-`, id, workspaceID, findingID, checkID, just, strings.TrimSpace(req.TicketURL), expiresAt, actor)
+  id, workspace_id, forward_network_id, finding_id, check_id, status, justification, ticket_url, expires_at, created_by
+) VALUES ($1,$2,$3,$4,$5,'PROPOSED',$6,NULLIF($7,''),$8,$9)
+`, id, workspaceID, networkID, findingID, checkID, just, strings.TrimSpace(req.TicketURL), expiresAt, actor)
 	if err != nil {
 		return nil, err
 	}
 	var out PolicyReportException
 	out.ID = id
 	out.WorkspaceID = workspaceID
+	out.ForwardNetwork = networkID
 	out.FindingID = findingID
 	out.CheckID = checkID
 	out.Status = "PROPOSED"
@@ -453,9 +458,11 @@ func listPolicyReportExceptions(ctx context.Context, db *sql.DB, workspaceID str
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace id required")
 	}
+	networkID := ""
 	status := ""
 	limit := 100
 	if req != nil {
+		networkID = strings.TrimSpace(req.ForwardNetwork)
 		status = strings.ToUpper(strings.TrimSpace(req.Status))
 		if req.Limit > 0 && req.Limit <= 500 {
 			limit = req.Limit
@@ -463,13 +470,17 @@ func listPolicyReportExceptions(ctx context.Context, db *sql.DB, workspaceID str
 	}
 
 	query := `
-SELECT id, workspace_id, finding_id, check_id, status, justification, COALESCE(ticket_url,''), expires_at,
+SELECT id, workspace_id, forward_network_id, finding_id, check_id, status, justification, COALESCE(ticket_url,''), expires_at,
        created_by, COALESCE(approved_by,''), created_at, updated_at
   FROM sf_policy_report_exceptions
  WHERE workspace_id=$1`
 	args := []any{workspaceID}
+	if networkID != "" {
+		query += " AND forward_network_id=$2"
+		args = append(args, networkID)
+	}
 	if status != "" {
-		query += " AND status=$2"
+		query += " AND status=$" + fmt.Sprintf("%d", len(args)+1)
 		args = append(args, status)
 	}
 	query += " ORDER BY updated_at DESC LIMIT $" + fmt.Sprintf("%d", len(args)+1)
@@ -487,12 +498,14 @@ SELECT id, workspace_id, finding_id, check_id, status, justification, COALESCE(t
 	var out []PolicyReportException
 	for rows.Next() {
 		var e PolicyReportException
+		var network string
 		var ticket string
 		var approved string
 		var expires sql.NullTime
-		if err := rows.Scan(&e.ID, &e.WorkspaceID, &e.FindingID, &e.CheckID, &e.Status, &e.Justification, &ticket, &expires, &e.CreatedBy, &approved, &e.CreatedAt, &e.UpdatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.WorkspaceID, &network, &e.FindingID, &e.CheckID, &e.Status, &e.Justification, &ticket, &expires, &e.CreatedBy, &approved, &e.CreatedAt, &e.UpdatedAt); err != nil {
 			return nil, err
 		}
+		e.ForwardNetwork = strings.TrimSpace(network)
 		e.TicketURL = strings.TrimSpace(ticket)
 		e.ApprovedBy = strings.TrimSpace(approved)
 		if expires.Valid {
