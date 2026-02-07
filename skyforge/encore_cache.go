@@ -1,7 +1,6 @@
 package skyforge
 
 import (
-	"os"
 	"strings"
 	"time"
 
@@ -34,38 +33,32 @@ type encoreCaches struct {
 	netlabTemplatesVer  *cache.IntKeyspace[netlabTemplatesVersionKey]
 }
 
-var encoreCacheCluster = func() *cache.Cluster {
-	// In plain `go test` the Encore SDK stubs panic. Avoid that by leaving caches disabled.
-	if os.Getenv("ENCORE_CFG") == "" {
+var encoreCacheCluster = cache.NewCluster("default", cache.ClusterConfig{})
+
+var encoreCachesInst = &encoreCaches{
+	giteaDefaultBranch: cache.NewStringKeyspace[giteaDefaultBranchKey](encoreCacheCluster, cache.KeyspaceConfig{
+		KeyPattern:    "gitea/default-branch/:Owner/:Repo",
+		DefaultExpiry: cache.ExpireIn(10 * time.Minute),
+	}),
+	netlabTemplates: cache.NewStringKeyspace[netlabTemplatesKey](encoreCacheCluster, cache.KeyspaceConfig{
+		KeyPattern:    "netlab/templates/:Owner/:Repo/:Branch/:Version/:Dir",
+		DefaultExpiry: cache.ExpireIn(10 * time.Minute),
+	}),
+	netlabTemplatesLock: cache.NewStringKeyspace[netlabTemplatesKey](encoreCacheCluster, cache.KeyspaceConfig{
+		KeyPattern:    "netlab/templates-lock/:Owner/:Repo/:Branch/:Version/:Dir",
+		DefaultExpiry: cache.ExpireIn(10 * time.Second),
+	}),
+	netlabTemplatesVer: cache.NewIntKeyspace[netlabTemplatesVersionKey](encoreCacheCluster, cache.KeyspaceConfig{
+		KeyPattern: "netlab/templates-version/:Owner/:Repo/:Branch",
+	}),
+}
+
+func getEncoreCachesSafe() *encoreCaches {
+	if envDisableEncoreCache() {
 		return nil
 	}
-	return cache.NewCluster("default", cache.ClusterConfig{})
-}()
-
-var encoreCachesInst = func() *encoreCaches {
-	if encoreCacheCluster == nil {
-		return nil
-	}
-	return &encoreCaches{
-		giteaDefaultBranch: cache.NewStringKeyspace[giteaDefaultBranchKey](encoreCacheCluster, cache.KeyspaceConfig{
-			KeyPattern:    "gitea/default-branch/:Owner/:Repo",
-			DefaultExpiry: cache.ExpireIn(10 * time.Minute),
-		}),
-		netlabTemplates: cache.NewStringKeyspace[netlabTemplatesKey](encoreCacheCluster, cache.KeyspaceConfig{
-			KeyPattern:    "netlab/templates/:Owner/:Repo/:Branch/:Version/:Dir",
-			DefaultExpiry: cache.ExpireIn(10 * time.Minute),
-		}),
-		netlabTemplatesLock: cache.NewStringKeyspace[netlabTemplatesKey](encoreCacheCluster, cache.KeyspaceConfig{
-			KeyPattern:    "netlab/templates-lock/:Owner/:Repo/:Branch/:Version/:Dir",
-			DefaultExpiry: cache.ExpireIn(10 * time.Second),
-		}),
-		netlabTemplatesVer: cache.NewIntKeyspace[netlabTemplatesVersionKey](encoreCacheCluster, cache.KeyspaceConfig{
-			KeyPattern: "netlab/templates-version/:Owner/:Repo/:Branch",
-		}),
-	}
-}()
-
-func getEncoreCachesSafe() *encoreCaches { return encoreCachesInst }
+	return encoreCachesInst
+}
 
 func cacheDirKey(dir string) string {
 	dir = strings.Trim(strings.TrimSpace(dir), "/")

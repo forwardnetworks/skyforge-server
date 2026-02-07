@@ -2,10 +2,8 @@ package storage
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"os"
 	"sync"
 
 	"encore.dev/rlog"
@@ -30,25 +28,14 @@ var (
 	initErr  error
 
 	StorageBucketName  = "skyforge"
-	StorageFilesBucket = newBucket("skyforge", objects.BucketConfig{
+	StorageFilesBucket = objects.NewBucket("skyforge", objects.BucketConfig{
 		Versioned: false,
 	})
 )
 
-func newBucket(name string, cfg objects.BucketConfig) *objects.Bucket {
-	// In plain `go test` the Encore SDK stubs panic. Avoid that by returning nil.
-	if os.Getenv("ENCORE_CFG") == "" {
-		return nil
-	}
-	return objects.NewBucket(name, cfg)
-}
-
 // initService initializes the Storage service.
 func initService() (*Service, error) {
 	rlog.Info("initializing storage service")
-	if StorageFilesBucket == nil {
-		return nil, errors.New("storage service requires Encore runtime")
-	}
 	service := &Service{
 		bucket: objects.BucketRef[StoragePerms](StorageFilesBucket),
 	}
