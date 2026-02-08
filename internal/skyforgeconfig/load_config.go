@@ -117,6 +117,20 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 
 	elasticURL := strings.TrimRight(strings.TrimSpace(enc.Elastic.URL), "/")
 	elasticIndexPrefix := strings.TrimSpace(enc.Elastic.IndexPrefix)
+	elasticIndexingMode := strings.ToLower(strings.TrimSpace(enc.Elastic.IndexingMode))
+	switch elasticIndexingMode {
+	case "", "instance":
+		elasticIndexingMode = "instance"
+	case "per_user", "per-user", "peruser":
+		elasticIndexingMode = "per_user"
+	default:
+		elasticIndexingMode = "instance"
+	}
+	elasticToolsAutosleepEnabled := enc.Elastic.ToolsAutosleepEnabled
+	elasticToolsAutosleepIdleMinutes := enc.Elastic.ToolsAutosleepIdleMinutes
+	if elasticToolsAutosleepIdleMinutes <= 0 {
+		elasticToolsAutosleepIdleMinutes = 30
+	}
 	if elasticURL == "" && enc.Features.ElasticEnabled {
 		elasticURL = "http://elasticsearch:9200"
 	}
@@ -226,6 +240,12 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 	netlabGeneratorPullPolicy := strings.TrimSpace(enc.NetlabGenerator.PullPolicy)
 	netlabApplierImage := strings.TrimSpace(enc.NetlabGenerator.ApplierImage)
 	netlabApplierPullPolicy := strings.TrimSpace(enc.NetlabGenerator.ApplierPullPolicy)
+	netlabC9sDefaultSetOverrides := make([]string, 0, len(enc.NetlabGenerator.C9sDefaultSetOverrides))
+	for _, raw := range enc.NetlabGenerator.C9sDefaultSetOverrides {
+		if v := strings.TrimSpace(raw); v != "" {
+			netlabC9sDefaultSetOverrides = append(netlabC9sDefaultSetOverrides, v)
+		}
+	}
 
 	featuresCfg := skyforgecore.FeaturesConfig{
 		GiteaEnabled:     enc.Features.GiteaEnabled,
@@ -254,8 +274,11 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		elasticURL = "http://elasticsearch:9200"
 	}
 	elasticCfg := skyforgecore.ElasticConfig{
-		URL:         elasticURL,
-		IndexPrefix: elasticIndexPrefix,
+		URL:                       elasticURL,
+		IndexPrefix:               elasticIndexPrefix,
+		IndexingMode:              elasticIndexingMode,
+		ToolsAutosleepEnabled:     elasticToolsAutosleepEnabled,
+		ToolsAutosleepIdleMinutes: elasticToolsAutosleepIdleMinutes,
 	}
 
 	uiCfg := skyforgecore.UIConfig{
@@ -416,7 +439,6 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		ContainerlabSkipTLSVerify: enc.Containerlab.SkipTLSVerify,
 		Forward: skyforgecore.ForwardConfig{
 			SNMPPlaceholderEnabled: enc.Forward.SNMPPlaceholderEnabled,
-			SNMPCommunity:          strings.TrimSpace(enc.Forward.SNMPCommunity),
 		},
 		PKICACert: strings.TrimSpace(sec.PKICACert),
 		PKICAKey:  strings.TrimSpace(sec.PKICAKey),
@@ -454,6 +476,7 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		ForwardCollectorImagePullSecretNamespace: forwardCollectorPullSecretNamespace,
 		ForwardCollectorHeapSizeGB:               forwardCollectorHeapSizeGB,
 		NetlabC9sGeneratorMode:                   netlabC9sGeneratorMode,
+		NetlabC9sDefaultSetOverrides:             netlabC9sDefaultSetOverrides,
 		NetlabGeneratorImage:                     netlabGeneratorImage,
 		NetlabGeneratorPullPolicy:                netlabGeneratorPullPolicy,
 		NetlabApplierImage:                       netlabApplierImage,
@@ -551,6 +574,12 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 	netlabGeneratorPullPolicy := strings.TrimSpace(enc.NetlabGenerator.PullPolicy)
 	netlabApplierImage := strings.TrimSpace(enc.NetlabGenerator.ApplierImage)
 	netlabApplierPullPolicy := strings.TrimSpace(enc.NetlabGenerator.ApplierPullPolicy)
+	netlabC9sDefaultSetOverrides := make([]string, 0, len(enc.NetlabGenerator.C9sDefaultSetOverrides))
+	for _, raw := range enc.NetlabGenerator.C9sDefaultSetOverrides {
+		if v := strings.TrimSpace(raw); v != "" {
+			netlabC9sDefaultSetOverrides = append(netlabC9sDefaultSetOverrides, v)
+		}
+	}
 
 	featuresCfg := skyforgecore.FeaturesConfig{
 		GiteaEnabled:     enc.Features.GiteaEnabled,
@@ -575,6 +604,20 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 
 	elasticURL := strings.TrimRight(strings.TrimSpace(enc.Elastic.URL), "/")
 	elasticIndexPrefix := strings.TrimSpace(enc.Elastic.IndexPrefix)
+	elasticIndexingMode := strings.ToLower(strings.TrimSpace(enc.Elastic.IndexingMode))
+	switch elasticIndexingMode {
+	case "", "instance":
+		elasticIndexingMode = "instance"
+	case "per_user", "per-user", "peruser":
+		elasticIndexingMode = "per_user"
+	default:
+		elasticIndexingMode = "instance"
+	}
+	elasticToolsAutosleepEnabled := enc.Elastic.ToolsAutosleepEnabled
+	elasticToolsAutosleepIdleMinutes := enc.Elastic.ToolsAutosleepIdleMinutes
+	if elasticToolsAutosleepIdleMinutes <= 0 {
+		elasticToolsAutosleepIdleMinutes = 30
+	}
 	if elasticIndexPrefix == "" {
 		elasticIndexPrefix = "skyforge"
 	}
@@ -582,8 +625,11 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		elasticURL = "http://elasticsearch:9200"
 	}
 	elasticCfg := skyforgecore.ElasticConfig{
-		URL:         elasticURL,
-		IndexPrefix: elasticIndexPrefix,
+		URL:                       elasticURL,
+		IndexPrefix:               elasticIndexPrefix,
+		IndexingMode:              elasticIndexingMode,
+		ToolsAutosleepEnabled:     elasticToolsAutosleepEnabled,
+		ToolsAutosleepIdleMinutes: elasticToolsAutosleepIdleMinutes,
 	}
 
 	// Note: Worker does not need OIDC, LDAP, DNS, UI, or admin users.
@@ -605,6 +651,7 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		ForwardCollectorImagePullSecretNamespace: forwardCollectorPullSecretNamespace,
 		ForwardCollectorHeapSizeGB:               forwardCollectorHeapSizeGB,
 		NetlabC9sGeneratorMode:                   netlabC9sGeneratorMode,
+		NetlabC9sDefaultSetOverrides:             netlabC9sDefaultSetOverrides,
 		NetlabGeneratorImage:                     netlabGeneratorImage,
 		NetlabGeneratorPullPolicy:                netlabGeneratorPullPolicy,
 		NetlabApplierImage:                       netlabApplierImage,
@@ -613,7 +660,6 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		ElasticIndexPrefix:                       elasticIndexPrefix,
 		Forward: skyforgecore.ForwardConfig{
 			SNMPPlaceholderEnabled: enc.Forward.SNMPPlaceholderEnabled,
-			SNMPCommunity:          strings.TrimSpace(enc.Forward.SNMPCommunity),
 		},
 		PKICACert: strings.TrimSpace(sec.PKICACert),
 		PKICAKey:  strings.TrimSpace(sec.PKICAKey),

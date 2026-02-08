@@ -22,6 +22,13 @@ type ElasticDefaultsConfig struct {
 	URL string
 	// IndexPrefix is the prefix used for Skyforge-managed indices.
 	IndexPrefix string
+	// IndexingMode controls how Skyforge names indices (instance vs per-user).
+	IndexingMode string
+
+	// ToolsAutosleepEnabled enables demo-friendly autosleep for in-cluster Elastic tools.
+	ToolsAutosleepEnabled bool
+	// ToolsAutosleepIdleMinutes is the idle timeout (minutes) before autosleep scales to 0.
+	ToolsAutosleepIdleMinutes int
 }
 
 type OIDCDefaultsConfig struct {
@@ -72,6 +79,9 @@ type NetlabGeneratorDefaultsConfig struct {
 	PullPolicy        string
 	ApplierImage      string
 	ApplierPullPolicy string
+	// C9sDefaultSetOverrides are netlab `--set` overrides applied by default
+	// for netlab-c9s generator/applier runs. User-provided overrides win.
+	C9sDefaultSetOverrides []string
 }
 
 type KubernetesDefaultsConfig struct {
@@ -111,7 +121,6 @@ type TerraformDefaultsConfig struct {
 
 type ForwardDefaultsConfig struct {
 	SNMPPlaceholderEnabled bool
-	SNMPCommunity          string
 }
 
 type ForwardCollectorDefaultsConfig struct {
