@@ -64,6 +64,12 @@ Features: {
 	NetboxEnabled: false
 	NautobotEnabled: false
 	DNSEnabled: false
+	ElasticEnabled: false
+}
+
+Elastic: {
+	URL: ""
+	IndexPrefix: "skyforge"
 }
 
 Kubernetes: {
@@ -76,7 +82,7 @@ NetlabGenerator: {
 	C9sGeneratorMode: "k8s"
 	// Default to the public generator image so netlab validation works out-of-the-box
 	// in local/dev setups even if ENCORE_CFG_WORKER isn't wired up yet.
-	GeneratorImage:   "ghcr.io/forwardnetworks/skyforge-netlab-generator:20260127-b8947318"
+	GeneratorImage:   "ghcr.io/forwardnetworks/skyforge-netlab-generator:20260206-netlaboutput"
 	PullPolicy:       "IfNotPresent"
 	ApplierImage:     "ghcr.io/forwardnetworks/skyforge-netlab-applier:latest"
 	ApplierPullPolicy: "IfNotPresent"

@@ -5,3 +5,6 @@ encore.gen.cue
 /encore.gen
 .env.local
 .env.*.local
+__pycache__/
+*.pyc
+.e2e-status/

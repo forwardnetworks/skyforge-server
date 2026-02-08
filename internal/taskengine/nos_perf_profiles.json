@@ -1,5 +1,9 @@
 {
   "profilesByKind": {
+    "ceos": {
+      "cpuRequest": "1000m",
+      "memoryRequest": "2Gi"
+    },
     "vr-vmx": {
       "cpuRequest": "4000m",
       "memoryRequest": "6Gi"
@@ -28,6 +32,14 @@
       "cpuRequest": "2000m",
       "memoryRequest": "4Gi"
     },
+    "vr-csr": {
+      "cpuRequest": "2000m",
+      "memoryRequest": "4Gi"
+    },
+    "cisco_c8000v": {
+      "cpuRequest": "4000m",
+      "memoryRequest": "8Gi"
+    },
     "vr-fortios": {
       "cpuRequest": "2000m",
       "memoryRequest": "4Gi"
@@ -43,6 +55,10 @@
     "juniper_vsrx": {
       "cpuRequest": "2000m",
       "memoryRequest": "4Gi"
+    },
+    "mikrotik_routeros": {
+      "cpuRequest": "1000m",
+      "memoryRequest": "2Gi"
     },
     "openbsd_openbsd": {
       "cpuRequest": "500m",

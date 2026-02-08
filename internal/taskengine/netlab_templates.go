@@ -280,16 +280,24 @@ func (e *Engine) buildNetlabTopologyBundleB64(ctx context.Context, pc *workspace
 	if err != nil {
 		return "", err
 	}
+	// normalizeNetlabTemplateSelectionWithSource returns `templatePath=templatesDir/templateFile`.
+	// The UI often passes a directory selection (e.g. "_e2e/minimal") rather than a file.
+	// In that case, treat the selected directory as the template root and use `topology.yml`
+	// inside it as the primary topology file to rename to `topology.yml` at the tar root.
 	templatePath = strings.TrimPrefix(path.Join(templatesDir, templateFile), "/")
 	if templatePath == "" {
 		return "", fmt.Errorf("template path is required")
 	}
 
 	templateDir := strings.Trim(strings.TrimSpace(path.Dir(templatePath)), "/")
-	if templateDir == "" || templateDir == "." {
-		templateDir = strings.Trim(strings.TrimSpace(templatesDir), "/")
+	// If templatePath is a directory selection (no .yml/.yaml), walk that directory.
+	// Example: templateFile="_e2e/minimal" => templateDir="netlab/_e2e/minimal" and
+	// templatePath="netlab/_e2e/minimal/topology.yml".
+	if !(strings.HasSuffix(strings.ToLower(templatePath), ".yml") || strings.HasSuffix(strings.ToLower(templatePath), ".yaml")) {
+		templateDir = strings.Trim(strings.TrimSpace(templatePath), "/")
+		templatePath = strings.TrimPrefix(path.Join(templateDir, "topology.yml"), "/")
 	}
-	if templateDir == "" {
+	if templateDir == "" || templateDir == "." {
 		return "", fmt.Errorf("template dir is required")
 	}
 

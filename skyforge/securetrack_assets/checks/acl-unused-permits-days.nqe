@@ -1,0 +1,48 @@
+/**
+ * @intent Policy recertification: unused PERMIT rules older than N days (firewalls).
+ * @description
+ *  Uses modeled ACL entry lifecycle telemetry when present.
+ *  Flags PERMIT rules whose lastUsed is older than daysWindow. Optionally includes rules with no usage telemetry.
+ */
+
+@query
+aclUnusedPermits(daysWindow : Integer, includeUnknownUsage : Bool) =
+  foreach device in network.devices
+  where device.platform.deviceType == DeviceType.FIREWALL
+  let now =
+    if isPresent(device.snapshotInfo.collectionTime)
+    then device.snapshotInfo.collectionTime
+    else device.snapshotInfo.backfillTime
+
+  foreach aclEntry in device.aclEntries
+  let h = aclEntry.headerMatches
+  where aclEntry.action == AclAction.PERMIT
+  where !aclEntry.implicitRule
+  where !aclEntry.defaultRule
+  let lastUsed = aclEntry.lifecycleData?.lastUsed
+  let hitCount = aclEntry.lifecycleData?.truncatedHitCount
+  let isStale = isPresent(lastUsed) && now - lastUsed > days(daysWindow)
+  let isUnknownUsage = includeUnknownUsage && !isPresent(lastUsed) && !isPresent(hitCount)
+  where isStale || isUnknownUsage
+
+  select {
+    violation: true,
+    device: device.name,
+    rule: aclEntry.name,
+    action: aclEntry.action,
+    reason: if isStale then "UNUSED_DAYS_WINDOW" else "NO_USAGE_DATA",
+    lastUsed: lastUsed,
+    age: if isPresent(lastUsed) then toString(now - lastUsed) else "unknown",
+    hitCount: hitCount,
+    createdAt: aclEntry.lifecycleData?.createdAt,
+    lastModified: aclEntry.lifecycleData?.lastModified,
+    ipv4Src: h.ipv4Src,
+    ipv4Dst: h.ipv4Dst,
+    ipProto: h.ipProtocol,
+    tpDst: h.tpDst,
+    ingress: aclEntry.metadataMatches.ingressInterfaces,
+    egress: aclEntry.metadataMatches.egressInterfaces,
+    os: device.platform.os,
+    vendor: device.platform.vendor,
+    tags: device.tagNames
+  };

@@ -14,6 +14,25 @@ import (
 	"time"
 )
 
+// url.PathEscape escapes '/' which breaks Gitea's contents endpoints for nested paths.
+// Escape path segments individually and re-join with '/'.
+func escapePathForGiteaContents(p string) string {
+	p = strings.TrimPrefix(strings.TrimSpace(p), "/")
+	if p == "" {
+		return ""
+	}
+	parts := strings.Split(p, "/")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		out = append(out, url.PathEscape(part))
+	}
+	return strings.Join(out, "/")
+}
+
 type Config struct {
 	APIURL        string
 	Username      string
@@ -242,7 +261,7 @@ type ContentEntry struct {
 
 func (c *Client) ListDirectory(owner, repo, dir, ref string) ([]ContentEntry, error) {
 	dir = strings.Trim(dir, "/")
-	path := fmt.Sprintf("/repos/%s/%s/contents/%s", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(dir))
+	path := fmt.Sprintf("/repos/%s/%s/contents/%s", url.PathEscape(owner), url.PathEscape(repo), escapePathForGiteaContents(dir))
 	if strings.TrimSpace(ref) != "" {
 		path += "?ref=" + url.QueryEscape(ref)
 	}
@@ -290,7 +309,8 @@ func (c *Client) EnsureFile(owner, repo, filePath, content, message, branch stri
 		refSuffix = "?ref=" + url.QueryEscape(branch)
 	}
 
-	resp, body, err := c.Do(http.MethodGet, fmt.Sprintf("/repos/%s/%s/contents/%s%s", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(filePath), refSuffix), nil)
+	escapedPath := escapePathForGiteaContents(filePath)
+	resp, body, err := c.Do(http.MethodGet, fmt.Sprintf("/repos/%s/%s/contents/%s%s", url.PathEscape(owner), url.PathEscape(repo), escapedPath, refSuffix), nil)
 	if err != nil {
 		return err
 	}
@@ -309,7 +329,7 @@ func (c *Client) EnsureFile(owner, repo, filePath, content, message, branch stri
 			createPayload["author"] = author
 			createPayload["committer"] = author
 		}
-		resp, body, err := c.Do(http.MethodPost, fmt.Sprintf("/repos/%s/%s/contents/%s", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(filePath)), createPayload)
+		resp, body, err := c.Do(http.MethodPost, fmt.Sprintf("/repos/%s/%s/contents/%s", url.PathEscape(owner), url.PathEscape(repo), escapedPath), createPayload)
 		if err != nil {
 			return err
 		}
@@ -351,7 +371,7 @@ func (c *Client) EnsureFile(owner, repo, filePath, content, message, branch stri
 			updatePayload["author"] = author
 			updatePayload["committer"] = author
 		}
-		resp, body, err := c.Do(http.MethodPut, fmt.Sprintf("/repos/%s/%s/contents/%s", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(filePath)), updatePayload)
+		resp, body, err := c.Do(http.MethodPut, fmt.Sprintf("/repos/%s/%s/contents/%s", url.PathEscape(owner), url.PathEscape(repo), escapedPath), updatePayload)
 		if err != nil {
 			return err
 		}

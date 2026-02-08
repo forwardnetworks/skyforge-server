@@ -18,11 +18,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"encore.dev"
 	"encore.dev/rlog"
 
+	elasticint "encore.app/integrations/elastic"
 	"encore.app/internal/secretbox"
 	"encore.app/internal/skyforgeconfig"
 	"encore.app/internal/skyforgedb"
@@ -2461,6 +2463,10 @@ type Service struct {
 	userStore      usersStore
 	box            *secretBox
 	db             *sql.DB
+
+	elasticOnce    sync.Once
+	elasticClient  *elasticint.Client
+	elasticInitErr error
 }
 
 func NewSessionManager(secret, cookie string, ttl time.Duration, secureMode, cookieDomain string) *SessionManager {

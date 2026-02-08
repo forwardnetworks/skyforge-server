@@ -1,0 +1,90 @@
+version: "1"
+checks:
+  - id: "acl-any-any-permit.nqe"
+    title: "PERMIT any-to-any (modeled ACL)"
+    category: "policy-risk"
+    severity: "high"
+    description: "Flags modeled ACL entries that permit 0.0.0.0/0 to 0.0.0.0/0."
+
+  - id: "acl-any-to-rfc1918-sensitive-ports.nqe"
+    title: "PERMIT any-to-RFC1918 on sensitive ports (modeled ACL)"
+    category: "policy-risk"
+    severity: "high"
+    description: "Flags modeled ACL entries that permit any source to RFC1918 destinations on sensitive TCP/UDP ports."
+    params:
+      - name: "sensitivePorts"
+        type: "List<Integer>"
+        default: [22, 23, 445, 3389, 1433, 1521, 3306, 5432, 6379, 9200, 27017]
+        description: "Ports considered sensitive when permitted to private address space."
+
+  - id: "acl-stale-permits-30d.nqe"
+    title: "Stale PERMIT rules (unused for N days)"
+    category: "policy-hygiene"
+    severity: "medium"
+    description: "Flags PERMIT rules with lastUsed older than N days relative to device snapshot collection time, or missing usage telemetry."
+    params:
+      - name: "daysWindow"
+        type: "Integer"
+        default: 30
+        description: "Staleness threshold (days)."
+
+  - id: "acl-new-permits-30d.nqe"
+    title: "New PERMIT rules (created in last N days)"
+    category: "policy-lifecycle"
+    severity: "low"
+    description: "Flags configured PERMIT rules created within N days of snapshot collection time (firewalls)."
+    params:
+      - name: "daysWindow"
+        type: "Integer"
+        default: 30
+        description: "Lookback window (days)."
+
+  - id: "acl-modified-permits-30d.nqe"
+    title: "Modified PERMIT rules (changed in last N days)"
+    category: "policy-lifecycle"
+    severity: "low"
+    description: "Flags configured PERMIT rules modified within N days of snapshot collection time (firewalls)."
+    params:
+      - name: "daysWindow"
+        type: "Integer"
+        default: 30
+        description: "Lookback window (days)."
+
+  - id: "acl-unused-permits-days.nqe"
+    title: "Unused PERMIT rules (older than N days)"
+    category: "policy-recert"
+    severity: "medium"
+    description: "Flags firewall PERMIT rules unused for N days (optionally includes missing usage telemetry)."
+    params:
+      - name: "daysWindow"
+        type: "Integer"
+        default: 30
+        description: "Lookback window (days)."
+      - name: "includeUnknownUsage"
+        type: "Bool"
+        default: true
+        description: "Include rules that have no lastUsed/hitCount telemetry."
+
+  - id: "acl-never-hit-permits.nqe"
+    title: "Never-hit PERMIT rules (hitCount == 0)"
+    category: "policy-recert"
+    severity: "medium"
+    description: "Flags firewall PERMIT rules with truncatedHitCount present and equal to zero."
+
+  - id: "acl-permit-any-service.nqe"
+    title: "PERMIT rules with any service match (any protocol and any port)"
+    category: "policy-risk"
+    severity: "high"
+    description: "Flags firewall PERMIT rules whose modeled service is effectively 'any'."
+
+  - id: "default-route-urpf-heuristic.nqe"
+    title: "Default route without obvious uRPF (config heuristic)"
+    category: "routing-hardening"
+    severity: "medium"
+    description: "Heuristic: device has a default route but no obvious uRPF line in config."
+
+  - id: "ospf-passive-default.nqe"
+    title: "OSPF passive-interface default missing (config heuristic)"
+    category: "routing-hardening"
+    severity: "low"
+    description: "Flags OSPF processes missing 'passive-interface default' in router ospf stanzas."

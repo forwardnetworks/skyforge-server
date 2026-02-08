@@ -137,6 +137,14 @@ type FeaturesDefaultsConfig struct {
 	NetboxEnabled    bool
 	NautobotEnabled  bool
 	DNSEnabled       bool
+	ElasticEnabled   bool
+}
+
+type ElasticDefaultsConfig struct {
+	// URL is the Elasticsearch base URL (for in-cluster: http://elasticsearch:9200).
+	URL string
+	// IndexPrefix is the prefix used for Skyforge-managed indices.
+	IndexPrefix string
 }
 
 type EncoreConfig struct {
@@ -188,6 +196,7 @@ type EncoreConfig struct {
 	Forward          ForwardDefaultsConfig
 	ForwardCollector ForwardCollectorDefaultsConfig
 	Features         FeaturesDefaultsConfig
+	Elastic          ElasticDefaultsConfig
 	NetlabGenerator  NetlabGeneratorDefaultsConfig
 	Kubernetes       KubernetesDefaultsConfig
 }
@@ -213,6 +222,7 @@ type WorkerConfig struct {
 	Forward          ForwardDefaultsConfig
 	ForwardCollector ForwardCollectorDefaultsConfig
 	Features         FeaturesDefaultsConfig
+	Elastic          ElasticDefaultsConfig
 	NetlabGenerator  NetlabGeneratorDefaultsConfig
 	Kubernetes       KubernetesDefaultsConfig
 }

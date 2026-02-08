@@ -462,3 +462,59 @@ tests:
       sshBanners: true
       sshTimeout: 12m
       cleanup: true
+
+  - name: netlab-validate-vmx
+    kind: netlab_validate
+    netlab_validate:
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: vmx
+      setOverrides: []
+      timeout: 10m
+
+  - name: netlab-deploy-vmx
+    kind: netlab_deploy
+    netlab_deploy:
+      type: netlab-c9s
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: vmx
+      setOverrides: []
+      timeout: 35m
+      sshBanners: true
+      sshTimeout: 25m
+      cleanup: true
+
+  - name: netlab-validate-vsrx
+    kind: netlab_validate
+    netlab_validate:
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: vsrx
+      setOverrides: []
+      timeout: 10m
+
+  - name: netlab-deploy-vsrx
+    kind: netlab_deploy
+    netlab_deploy:
+      type: netlab-c9s
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: vsrx
+      setOverrides: []
+      timeout: 35m
+      sshBanners: true
+      sshTimeout: 20m
+      cleanup: true

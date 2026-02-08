@@ -1,0 +1,148 @@
+---
+# Skyforge Netlab defaults
+#
+# This file is installed into the netlab generator container as:
+#   /etc/netlab/defaults.yml
+#
+# Goals:
+# - Prefer Containerlab (clab) as the provider when not explicitly set in a template.
+# - Ensure common device types have a clab image configured.
+# - Provide common configlets (ex: SNMP) without patching upstream netlab.
+#
+# NOTE: Netlab syntax matches the topology file, but without the `defaults.` prefix.
+provider: clab
+plugin: [ files ]
+
+# Apply SNMP config globally so collectors can discover devices out of the box.
+# Blueprints can still override by setting `config: []` explicitly if needed.
+config: [ snmp_config ]
+
+# Global configlets available to all blueprints.
+#
+# Configlets are only applied when referenced in a topology via `config: [ ... ]`.
+configlets:
+  snmp_config:
+    linux: |
+      # no-op (keep linux hosts SNMP-free by default)
+    eos: |
+      snmp-server community public ro
+    # Netlab device keys that behave like EOS but don't necessarily inherit its configlet.
+    # Keep explicit keys to avoid "fallback" behavior.
+    ceos: |
+      snmp-server community public ro
+    ios: |
+      snmp-server community public RO
+    iol: |
+      snmp-server community public RO
+    ioll2: |
+      snmp-server community public RO
+    iosv: |
+      snmp-server community public RO
+    iosvl2: |
+      snmp-server community public RO
+    iosxe: |
+      snmp-server community public RO
+    csr: |
+      snmp-server community public RO
+    cat8000v: |
+      snmp-server community public RO
+    iosxr: |
+      snmp-server community public RO
+    asa: |
+      snmp-server community public
+    junos: |
+      set snmp community public authorization read-only
+    vmx: |
+      set snmp community public authorization read-only
+    vsrx: |
+      set snmp community public authorization read-only
+    vjunos-router: |
+      set snmp community public authorization read-only
+    vjunos-switch: |
+      set snmp community public authorization read-only
+    vptx: |
+      set snmp community public authorization read-only
+    nxos: |
+      snmp-server community public group network-operator
+
+devices:
+  linux:
+    clab:
+      image: ghcr.io/forwardnetworks/skyforge-linux-host:20260127
+
+  eos:
+    clab:
+      image: ghcr.io/forwardnetworks/ceos:4.34.2F
+
+  # Cisco IOS-on-Linux (IOL) via vrnetlab
+  iol:
+    provider: clab
+    clab:
+      image: ghcr.io/forwardnetworks/vrnetlab/cisco_iol:17.16.01a
+
+  # Cisco IOL L2 via vrnetlab
+  ioll2:
+    provider: clab
+    clab:
+      image: ghcr.io/forwardnetworks/vrnetlab/cisco_iol:L2-17.16.01a
+
+  # Cisco vIOS/vIOS-L2 via vrnetlab
+  # Netlab device types are `iosv` and `iosvl2` (do not introduce new device keys here).
+  iosv:
+    clab:
+      image: ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge1
+  iosvl2:
+    clab:
+      image: ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge1
+
+  # Cisco CSR1000v via vrnetlab
+  csr:
+    provider: clab
+    clab:
+      image: ghcr.io/forwardnetworks/vrnetlab/vr-csr:17.03.04
+
+  # Cisco Nexus 9000v via vrnetlab
+  nxos:
+    provider: clab
+    clab:
+      image: ghcr.io/forwardnetworks/vrnetlab/vr-n9kv:9.3.8
+
+  # Cisco ASAv via vrnetlab
+  asav:
+    provider: clab
+    clab:
+      image: ghcr.io/forwardnetworks/vrnetlab/cisco_asav:9-16-4-57
+
+  # Cisco Catalyst 8000v via vrnetlab
+  cat8000v:
+    provider: clab
+    clab:
+      image: ghcr.io/forwardnetworks/vrnetlab/cisco_c8000v:17.16.01a
+
+  # Juniper vJunos via vrnetlab
+  vjunos-router:
+    provider: clab
+    clab:
+      image: ghcr.io/forwardnetworks/vrnetlab/juniper_vjunos-router:23.4R2-S2.1
+  vjunos-switch:
+    provider: clab
+    clab:
+      image: ghcr.io/forwardnetworks/vrnetlab/juniper_vjunos-switch:23.4R2-S2.1
+
+  # Juniper vJunos Evolved (vPTX) via vrnetlab
+  vptx:
+    provider: clab
+    clab:
+      image: ghcr.io/forwardnetworks/vrnetlab/juniper_vjunosevolved:25.2R1.8-EVO
+
+  # Juniper vMX (vrnetlab)
+  vmx:
+    provider: clab
+    clab:
+      image: ghcr.io/forwardnetworks/vrnetlab/vr-vmx:18.2R1.9
+
+  # Juniper vSRX (vrnetlab)
+  vsrx:
+    provider: clab
+    clab:
+      image: ghcr.io/forwardnetworks/vrnetlab/juniper_vsrx:21.3R1.9

@@ -163,6 +163,14 @@ Features: {
 	NetboxEnabled: false
 	NautobotEnabled: false
 	DNSEnabled: false
+	ElasticEnabled: false
+}
+
+Elastic: {
+	// When empty, Skyforge uses a provider default when ElasticEnabled=true.
+	// For in-cluster (Helm): http://elasticsearch:9200
+	URL: ""
+	IndexPrefix: "skyforge"
 }
 
 Kubernetes: {
@@ -183,7 +191,7 @@ NetlabGenerator: {
 
 	// Default to the public generator image so netlab validation works out-of-the-box
 	// in local/dev setups even if ENCORE_CFG_SKYFORGE isn't wired up yet.
-	GeneratorImage:    "ghcr.io/forwardnetworks/skyforge-netlab-generator:20260127-b8947318"
+	GeneratorImage:    "ghcr.io/forwardnetworks/skyforge-netlab-generator:20260206-netlaboutput"
 	PullPolicy:        "IfNotPresent"
 	ApplierImage:      "ghcr.io/forwardnetworks/skyforge-netlab-applier:latest"
 	ApplierPullPolicy: "IfNotPresent"

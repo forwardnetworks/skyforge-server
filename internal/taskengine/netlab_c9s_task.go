@@ -5,9 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"path"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -248,6 +248,12 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		return err
 	}
 
+	// Derive netlab `set` overrides to align netlab initial credentials with the NOS images
+	// running in-cluster. Without this, netlab initial can fail its SSH readiness check with
+	// "SSH server not ready after 100s" even when SSH banners are present (auth mismatch).
+	derivedOverrides := deriveNetlabC9sSetOverridesFromClabYAML(topologyBytes)
+	setOverrides := mergeNetlabSetOverrides(spec.SetOverrides, derivedOverrides)
+
 	// Persist the node name mapping (original ↔ sanitized) so post-deploy steps
 	// (netlab initial applier, debug tooling) can consistently address Kubernetes
 	// services while keeping netlab artifacts in original node names.
@@ -417,9 +423,24 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 					return err
 				}
 			}
+
+			// Netlab initial's built-in "SSH ready" check is effectively an authentication check.
+			// Some NOS images present a banner long before interactive logins work, which makes
+			// netlab initial fail with "SSH server not ready after 100s" even though port 22 is open.
+			//
+			// Gate on a real password authentication handshake using the exact credentials we
+			// derive for the deployed images so netlab initial starts only when config push is possible.
+			authReadySeconds := envInt(spec.Environment, "SKYFORGE_NETLAB_INITIAL_AUTH_READY_SECONDS", sshReadySeconds)
+			if authReadySeconds > 0 {
+				if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.ssh.auth.ready", func() error {
+					return waitForNetlabInitialSSHAuthReady(ctx, spec.TaskID, e, graph, topologyBytes, time.Duration(authReadySeconds)*time.Second, log)
+				}); err != nil {
+					return err
+				}
+			}
 		}
 		if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.apply", func() error {
-			return e.runNetlabC9sApplierJob(ctx, ns, topologyName, log)
+			return e.runNetlabC9sApplierJob(ctx, ns, topologyName, setOverrides, spec.Environment, log)
 		}); err != nil {
 			return err
 		}
@@ -516,6 +537,173 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	})
 
 	return nil
+}
+
+func mergeNetlabSetOverrides(userOverrides, derivedOverrides []string) []string {
+	keyOf := func(line string) string {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			return ""
+		}
+		if i := strings.Index(line, "="); i >= 0 {
+			return strings.TrimSpace(line[:i])
+		}
+		return ""
+	}
+
+	seen := map[string]bool{}
+	out := make([]string, 0, len(userOverrides)+len(derivedOverrides))
+	for _, raw := range userOverrides {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		out = append(out, line)
+		if k := keyOf(line); k != "" {
+			seen[k] = true
+		}
+	}
+	for _, raw := range derivedOverrides {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		k := keyOf(line)
+		if k != "" && seen[k] {
+			continue
+		}
+		out = append(out, line)
+		if k != "" {
+			seen[k] = true
+		}
+	}
+	return out
+}
+
+func deriveNetlabC9sSetOverridesFromClabYAML(clabYAML []byte) []string {
+	if len(clabYAML) == 0 {
+		return nil
+	}
+	var topo map[string]any
+	if err := yaml.Unmarshal(clabYAML, &topo); err != nil {
+		return nil
+	}
+	topology, _ := topo["topology"].(map[string]any)
+	nodesAny, _ := topology["nodes"].(map[string]any)
+	if len(nodesAny) == 0 {
+		return nil
+	}
+
+	type deviceInfo struct {
+		deviceKey string
+		image     string
+	}
+	byKey := map[string]deviceInfo{}
+	for _, nodeAny := range nodesAny {
+		cfg, ok := nodeAny.(map[string]any)
+		if !ok || cfg == nil {
+			continue
+		}
+		kind := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["kind"])))
+		image := strings.TrimSpace(fmt.Sprintf("%v", cfg["image"]))
+		deviceKey := netlabDeviceKeyForClabNode(kind, image)
+		if deviceKey == "" {
+			continue
+		}
+		if existing, ok := byKey[deviceKey]; ok && existing.image != "" {
+			continue
+		}
+		byKey[deviceKey] = deviceInfo{deviceKey: deviceKey, image: image}
+	}
+
+	keys := make([]string, 0, len(byKey))
+	for k := range byKey {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	lines := make([]string, 0, len(keys)*2)
+	for _, deviceKey := range keys {
+		info := byKey[deviceKey]
+		cred, ok := netlabCredentialForDevice(info.deviceKey, info.image)
+		if !ok {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("devices.%s.group_vars.ansible_user=%s", info.deviceKey, cred.Username))
+		lines = append(lines, fmt.Sprintf("devices.%s.group_vars.ansible_ssh_pass=%s", info.deviceKey, cred.Password))
+
+		// Netlab `initial --ready` uses an Ansible-side SSH readiness check that defaults to
+		// 20 retries * 5s delay = 100s. Several NOS images (especially EOS + VRNETLAB/QEMU-based)
+		// will present an SSH banner long before they accept successful interactive logins.
+		// When that happens, netlab initial reports "SSH server not ready after 100s" even
+		// though the pod is Running and port 22 is open.
+		//
+		// Increase the readiness window for known-slow devices based on the image we
+		// actually deployed, keeping the behavior closer to upstream netlab (which runs
+		// the same readiness checks) while avoiding flaky timeouts in-cluster.
+		if retries, delay, ok := netlabInitialReadyTuning(info.deviceKey); ok {
+			lines = append(lines, fmt.Sprintf("devices.%s.group_vars.netlab_check_retries=%d", info.deviceKey, retries))
+			lines = append(lines, fmt.Sprintf("devices.%s.group_vars.netlab_check_delay=%d", info.deviceKey, delay))
+		}
+	}
+	return lines
+}
+
+func netlabInitialReadyTuning(deviceKey string) (retries int, delaySeconds int, ok bool) {
+	switch strings.ToLower(strings.TrimSpace(deviceKey)) {
+	case "eos":
+		// cEOS can take a few minutes before auth succeeds even though the SSH banner is present.
+		return 60, 5, true // 5m
+	case "iol", "iosv", "iosvl2":
+		return 90, 5, true // 7.5m
+	case "csr", "cat8000v":
+		return 120, 5, true // 10m
+	case "nxos":
+		return 180, 5, true // 15m
+	case "vmx", "vsrx", "vjunos-router", "vjunos-switch", "vptx":
+		return 240, 5, true // 20m
+	default:
+		return 0, 0, false
+	}
+}
+
+// netlabDeviceKeyForClabNode attempts to map a containerlab node kind/image to the
+// netlab device key used by `--set devices.<device>.group_vars.*`.
+//
+// Example: containerlab kind "ceos" should map to netlab device "eos".
+func netlabDeviceKeyForClabNode(kind, image string) string {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	image = strings.ToLower(strings.TrimSpace(image))
+	image = strings.TrimPrefix(image, "ghcr.io/forwardnetworks/")
+
+	// Prefer a direct match against known netlab device keys.
+	if kind != "" {
+		for _, set := range netlabDefaults.Sets {
+			if set.Device != "" && strings.EqualFold(strings.TrimSpace(set.Device), kind) {
+				return strings.ToLower(strings.TrimSpace(set.Device))
+			}
+		}
+	}
+
+	// Otherwise, derive device key from the image prefix catalog.
+	if image != "" {
+		for _, set := range netlabDefaults.Sets {
+			if set.Device == "" || set.ImagePrefix == "" {
+				continue
+			}
+			if strings.HasPrefix(image, strings.ToLower(strings.TrimSpace(set.ImagePrefix))) {
+				return strings.ToLower(strings.TrimSpace(set.Device))
+			}
+		}
+	}
+
+	// Known containerlab kind -> netlab device aliases.
+	switch kind {
+	case "ceos":
+		return "eos"
+	}
+
+	return kind
 }
 
 func envInt(env map[string]string, key string, def int) int {
@@ -857,11 +1045,23 @@ func forwardSSHBannerReadyOnce(ctx context.Context, host string) bool {
 	defer conn.Close()
 
 	_ = conn.SetReadDeadline(time.Now().Add(750 * time.Millisecond))
-	buf := make([]byte, 4)
-	if _, err := io.ReadFull(conn, buf); err != nil {
+	// Some NOS images (notably certain IOS/CSR variants) may emit non-SSH bytes
+	// (e.g. NULs) before the SSH banner. Read a small prefix and look for "SSH-"
+	// rather than requiring it at offset 0.
+	buf := make([]byte, 64)
+	n, err := conn.Read(buf)
+	if err != nil || n <= 0 {
 		return false
 	}
-	return bytes.Equal(buf, []byte("SSH-"))
+	buf = buf[:n]
+	if bytes.HasPrefix(buf, []byte("SSH-")) {
+		return true
+	}
+	// Accept banners that start slightly later in the stream (after NUL/newlines).
+	if idx := bytes.Index(buf, []byte("SSH-")); idx >= 0 && idx <= 32 {
+		return true
+	}
+	return false
 }
 
 func (e *Engine) captureC9sTopologyArtifact(ctx context.Context, spec netlabC9sRunSpec, ns, topologyName, labName string, topologyYAML []byte, nodeNameMapping map[string]string, log Logger) (*TopologyGraph, error) {
@@ -1046,6 +1246,19 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 					cfg["image"] = rewritten
 					nodes[node] = cfg
 					rewrittenVrnetlabNodes++
+				}
+
+				// Some vrnetlab images rely on runtime args that containerlab normally injects.
+				// In clabernetes we run images "as-is", so provide minimal kind-specific cmd
+				// overrides needed for native mode.
+				//
+				// CSR 1000v: without `--connection-mode tc`, vrnetlab does not create tap netdevs
+				// (`-netdev ... id=p01`) and QEMU crashes with "can't find value 'p01'".
+				imgLower := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["image"])))
+				kindLower := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["kind"])))
+				if (kindLower == "csr" || strings.Contains(imgLower, "/vrnetlab/vr-csr")) && cfg["cmd"] == nil {
+					cfg["cmd"] = "--connection-mode tc"
+					nodes[node] = cfg
 				}
 			}
 			topology["nodes"] = nodes

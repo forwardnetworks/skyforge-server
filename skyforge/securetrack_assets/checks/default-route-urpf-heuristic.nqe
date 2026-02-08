@@ -1,0 +1,27 @@
+/**
+ * @intent Anti-spoofing hardening: devices with default route but no obvious uRPF config.
+ */
+@query
+defaultRouteWithoutUrpfHeuristic =
+  foreach device in network.devices
+  where isPresent(device.files.config)
+  where device.platform.os in [OS.IOS, OS.IOS_XE, OS.NXOS, OS.ARISTA_EOS, OS.JUNOS]
+
+  let iosDefault = `ip route 0.0.0.0 0.0.0.0 {rest:string}`
+  let junosDefault = `0.0.0.0/0 {rest:string}`
+  let defaultMatches = patternMatches(device.files.config, iosDefault) + patternMatches(device.files.config, junosDefault)
+  let hasDefaultRoute = length(defaultMatches) > 0
+
+  let urpf1 = `ip verify unicast source reachable-via {rest:string}`
+  let urpf2 = `rpf-check {rest:string}`
+  let urpfMatches = patternMatches(device.files.config, urpf1) + patternMatches(device.files.config, urpf2)
+  let hasUrpf = length(urpfMatches) > 0
+
+  where hasDefaultRoute
+  select {
+    violation: !hasUrpf,
+    device: device.name,
+    os: device.platform.os,
+    defaultRouteLines: foreach m in defaultMatches select m.line.text,
+    urpfLines: foreach m in urpfMatches select m.line.text
+  };
