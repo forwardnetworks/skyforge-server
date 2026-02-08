@@ -1,0 +1,43 @@
+/**
+ * @intent Policy hygiene: PERMIT rules unused for 30+ days.
+ * @description
+ *  Uses modelled ACL entry lifecycle data when present.
+ *  Flags PERMIT rules with lastUsed older than 30 days relative to device snapshot collection time.
+ */
+
+@query
+aclStalePermits(daysWindow : Integer) =
+  foreach device in network.devices
+  let now =
+    if isPresent(device.snapshotInfo.collectionTime)
+    then device.snapshotInfo.collectionTime
+    else device.snapshotInfo.backfillTime
+
+  foreach aclEntry in device.aclEntries
+  where aclEntry.action == AclAction.PERMIT
+  where !aclEntry.implicitRule
+  where !aclEntry.defaultRule
+  let lastUsed = aclEntry.lifecycleData?.lastUsed
+  let hitCount = aclEntry.lifecycleData?.truncatedHitCount
+
+  let isStale = isPresent(lastUsed) && now - lastUsed > days(daysWindow)
+  let isUnknownUsage = !isPresent(lastUsed) && !isPresent(hitCount)
+
+  where isStale || isUnknownUsage
+
+  select {
+    violation: true,
+    device: device.name,
+    rule: aclEntry.name,
+    action: aclEntry.action,
+    evidence: sourceConfigText(aclEntry.name),
+    lastUsed: lastUsed,
+    now: now,
+    age: if isPresent(lastUsed) then toString(now - lastUsed) else "unknown",
+    hitCount: hitCount,
+    reason: if isStale then "STALE_DAYS_WINDOW" else "NO_USAGE_DATA",
+    implicit: aclEntry.implicitRule,
+    defaultRule: aclEntry.defaultRule,
+    ingress: aclEntry.metadataMatches.ingressInterfaces,
+    egress: aclEntry.metadataMatches.egressInterfaces
+  };

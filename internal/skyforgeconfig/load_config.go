@@ -1,6 +1,8 @@
 package skyforgeconfig
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"log"
 	"os"
 	"sort"
@@ -36,11 +38,51 @@ func parseUserList(raw string) []string {
 	return out
 }
 
+func loadEncoreConfigOverrideFromEnv() (EncoreConfig, bool) {
+	raw := strings.TrimSpace(os.Getenv("ENCORE_CFG_SKYFORGE"))
+	if raw == "" {
+		return EncoreConfig{}, false
+	}
+
+	// `config.Load` should handle runtime config, but in some environments the injected
+	// loader may not pick up `ENCORE_CFG_SKYFORGE`. Treat this env var as a source of
+	// truth when present so Helm-provided typed config stays effective.
+	var cfg EncoreConfig
+	if strings.HasPrefix(raw, "{") {
+		if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+			log.Printf("invalid ENCORE_CFG_SKYFORGE JSON: %v", err)
+			return EncoreConfig{}, false
+		}
+		return cfg, true
+	}
+
+	// Helm stores the JSON as base64url without padding (Encore's legacy format).
+	// Accept both padded and unpadded.
+	enc := raw
+	if m := len(enc) % 4; m != 0 {
+		enc += strings.Repeat("=", 4-m)
+	}
+	decoded, err := base64.URLEncoding.DecodeString(enc)
+	if err != nil {
+		log.Printf("invalid ENCORE_CFG_SKYFORGE base64url: %v", err)
+		return EncoreConfig{}, false
+	}
+	if err := json.Unmarshal(decoded, &cfg); err != nil {
+		log.Printf("invalid ENCORE_CFG_SKYFORGE decoded JSON: %v", err)
+		return EncoreConfig{}, false
+	}
+	return cfg, true
+}
+
 // LoadConfig loads Skyforge runtime configuration from env, Encore config, and secrets.
 //
 // The Encore-managed config values must be passed in from a service package,
 // since config.Load cannot be called from a non-service library.
 func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config {
+	if override, ok := loadEncoreConfigOverrideFromEnv(); ok {
+		enc = override
+	}
+
 	sessionTTL := 8 * time.Hour
 	if raw := strings.TrimSpace(enc.SessionTTL); raw != "" {
 		if parsed, err := time.ParseDuration(raw); err == nil {
@@ -72,6 +114,15 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 	netboxInternalBaseURL := strings.TrimRight(strings.TrimSpace(enc.Integrations.NetboxInternalBaseURL), "/")
 	nautobotInternalBaseURL := strings.TrimRight(strings.TrimSpace(enc.Integrations.NautobotInternalBaseURL), "/")
 	yaadeInternalBaseURL := strings.TrimRight(strings.TrimSpace(enc.Integrations.YaadeInternalBaseURL), "/")
+
+	elasticURL := strings.TrimRight(strings.TrimSpace(enc.Elastic.URL), "/")
+	elasticIndexPrefix := strings.TrimSpace(enc.Elastic.IndexPrefix)
+	if elasticURL == "" && enc.Features.ElasticEnabled {
+		elasticURL = "http://elasticsearch:9200"
+	}
+	if elasticIndexPrefix == "" {
+		elasticIndexPrefix = "skyforge"
+	}
 
 	publicURL := strings.TrimRight(strings.TrimSpace(enc.PublicURL), "/")
 
@@ -175,6 +226,12 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 	netlabGeneratorPullPolicy := strings.TrimSpace(enc.NetlabGenerator.PullPolicy)
 	netlabApplierImage := strings.TrimSpace(enc.NetlabGenerator.ApplierImage)
 	netlabApplierPullPolicy := strings.TrimSpace(enc.NetlabGenerator.ApplierPullPolicy)
+	netlabC9sDefaultSetOverrides := make([]string, 0, len(enc.NetlabGenerator.C9sDefaultSetOverrides))
+	for _, raw := range enc.NetlabGenerator.C9sDefaultSetOverrides {
+		if v := strings.TrimSpace(raw); v != "" {
+			netlabC9sDefaultSetOverrides = append(netlabC9sDefaultSetOverrides, v)
+		}
+	}
 
 	featuresCfg := skyforgecore.FeaturesConfig{
 		GiteaEnabled:     enc.Features.GiteaEnabled,
@@ -189,15 +246,17 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		DNSEnabled:       enc.Features.DNSEnabled,
 		ElasticEnabled:   enc.Features.ElasticEnabled,
 	}
-
-	elasticURL := strings.TrimSpace(enc.Elastic.URL)
-	elasticIndexPrefix := strings.TrimSpace(enc.Elastic.IndexPrefix)
-	if elasticIndexPrefix == "" {
-		elasticIndexPrefix = "skyforge"
+	// "Forward Networks integrations" umbrella: keep Forward-specific integrations/tools
+	// (e.g. Forward Collector, ServiceNow demo, Elastic indexing) behind a single switch.
+	//
+	// NOTE: AI is intentionally not gated by this flag.
+	if !featuresCfg.ForwardEnabled {
+		featuresCfg.ElasticEnabled = false
 	}
+
 	// For the common "in-cluster Elastic" case, allow the feature flag to
 	// implicitly enable the default service name.
-	if elasticURL == "" && enc.Features.ElasticEnabled {
+	if elasticURL == "" && featuresCfg.ElasticEnabled {
 		elasticURL = "http://elasticsearch:9200"
 	}
 	elasticCfg := skyforgecore.ElasticConfig{
@@ -339,6 +398,8 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		NautobotInternalBaseURL: nautobotInternalBaseURL,
 		YaadeBaseURL:            yaadeBaseURL,
 		YaadeInternalBaseURL:    yaadeInternalBaseURL,
+		ElasticURL:              elasticURL,
+		ElasticIndexPrefix:      elasticIndexPrefix,
 		OIDC: skyforgecore.OIDCConfig{
 			IssuerURL:    oidcIssuerURL,
 			DiscoveryURL: oidcDiscoveryURL,
@@ -361,7 +422,6 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		ContainerlabSkipTLSVerify: enc.Containerlab.SkipTLSVerify,
 		Forward: skyforgecore.ForwardConfig{
 			SNMPPlaceholderEnabled: enc.Forward.SNMPPlaceholderEnabled,
-			SNMPCommunity:          strings.TrimSpace(enc.Forward.SNMPCommunity),
 		},
 		PKICACert: strings.TrimSpace(sec.PKICACert),
 		PKICAKey:  strings.TrimSpace(sec.PKICAKey),
@@ -399,6 +459,7 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		ForwardCollectorImagePullSecretNamespace: forwardCollectorPullSecretNamespace,
 		ForwardCollectorHeapSizeGB:               forwardCollectorHeapSizeGB,
 		NetlabC9sGeneratorMode:                   netlabC9sGeneratorMode,
+		NetlabC9sDefaultSetOverrides:             netlabC9sDefaultSetOverrides,
 		NetlabGeneratorImage:                     netlabGeneratorImage,
 		NetlabGeneratorPullPolicy:                netlabGeneratorPullPolicy,
 		NetlabApplierImage:                       netlabApplierImage,
@@ -496,6 +557,12 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 	netlabGeneratorPullPolicy := strings.TrimSpace(enc.NetlabGenerator.PullPolicy)
 	netlabApplierImage := strings.TrimSpace(enc.NetlabGenerator.ApplierImage)
 	netlabApplierPullPolicy := strings.TrimSpace(enc.NetlabGenerator.ApplierPullPolicy)
+	netlabC9sDefaultSetOverrides := make([]string, 0, len(enc.NetlabGenerator.C9sDefaultSetOverrides))
+	for _, raw := range enc.NetlabGenerator.C9sDefaultSetOverrides {
+		if v := strings.TrimSpace(raw); v != "" {
+			netlabC9sDefaultSetOverrides = append(netlabC9sDefaultSetOverrides, v)
+		}
+	}
 
 	featuresCfg := skyforgecore.FeaturesConfig{
 		GiteaEnabled:     enc.Features.GiteaEnabled,
@@ -510,13 +577,20 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		DNSEnabled:       enc.Features.DNSEnabled,
 		ElasticEnabled:   enc.Features.ElasticEnabled,
 	}
+	// "Forward Networks integrations" umbrella: keep Forward-specific integrations/tools
+	// (e.g. Forward Collector, ServiceNow demo, Elastic indexing) behind a single switch.
+	//
+	// NOTE: AI is intentionally not gated by this flag.
+	if !featuresCfg.ForwardEnabled {
+		featuresCfg.ElasticEnabled = false
+	}
 
-	elasticURL := strings.TrimSpace(enc.Elastic.URL)
+	elasticURL := strings.TrimRight(strings.TrimSpace(enc.Elastic.URL), "/")
 	elasticIndexPrefix := strings.TrimSpace(enc.Elastic.IndexPrefix)
 	if elasticIndexPrefix == "" {
 		elasticIndexPrefix = "skyforge"
 	}
-	if elasticURL == "" && enc.Features.ElasticEnabled {
+	if elasticURL == "" && featuresCfg.ElasticEnabled {
 		elasticURL = "http://elasticsearch:9200"
 	}
 	elasticCfg := skyforgecore.ElasticConfig{
@@ -543,13 +617,15 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		ForwardCollectorImagePullSecretNamespace: forwardCollectorPullSecretNamespace,
 		ForwardCollectorHeapSizeGB:               forwardCollectorHeapSizeGB,
 		NetlabC9sGeneratorMode:                   netlabC9sGeneratorMode,
+		NetlabC9sDefaultSetOverrides:             netlabC9sDefaultSetOverrides,
 		NetlabGeneratorImage:                     netlabGeneratorImage,
 		NetlabGeneratorPullPolicy:                netlabGeneratorPullPolicy,
 		NetlabApplierImage:                       netlabApplierImage,
 		NetlabApplierPullPolicy:                  netlabApplierPullPolicy,
+		ElasticURL:                               elasticURL,
+		ElasticIndexPrefix:                       elasticIndexPrefix,
 		Forward: skyforgecore.ForwardConfig{
 			SNMPPlaceholderEnabled: enc.Forward.SNMPPlaceholderEnabled,
-			SNMPCommunity:          strings.TrimSpace(enc.Forward.SNMPCommunity),
 		},
 		PKICACert: strings.TrimSpace(sec.PKICACert),
 		PKICAKey:  strings.TrimSpace(sec.PKICAKey),

@@ -80,11 +80,10 @@ DNS: {
 		ProjectID: ""
 		Location: "us-central1"
 		// Model name for Vertex AI (publisher "google").
-		// Example: "gemini-3-pro-preview" or "gemini-3-flash-preview"
-		Model: "gemini-3-pro-preview"
+		Model: "gemini-3.0-pro"
 		// Fallback model used when Model isn't available in the configured
 		// project/location (common with preview rollouts).
-		FallbackModel: "gemini-3-flash-preview"
+		FallbackModel: "gemini-3.0-flash"
 	}
 
 AI: {
@@ -134,8 +133,6 @@ Forward: {
 	// When enabled, Skyforge creates a placeholder SNMP credential in Forward for each
 	// deployment network so that enabling SNMP collection later doesn't require manual setup.
 	SNMPPlaceholderEnabled: true
-	// Default SNMPv2c community string used for the placeholder credential.
-	SNMPCommunity: "public"
 }
 
 ForwardCollector: {
@@ -195,4 +192,8 @@ NetlabGenerator: {
 	PullPolicy:        "IfNotPresent"
 	ApplierImage:      "ghcr.io/forwardnetworks/skyforge-netlab-applier:latest"
 	ApplierPullPolicy: "IfNotPresent"
+	// Keep API-side netlab validation consistent with worker netlab-c9s behavior.
+	C9sDefaultSetOverrides: [
+		"addressing.loopback.ipv4=172.31.0.0/16",
+	]
 }

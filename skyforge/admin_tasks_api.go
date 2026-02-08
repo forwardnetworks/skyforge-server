@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"encore.app/internal/taskqueue"
 	"encore.app/internal/taskheartbeats"
+	"encore.app/internal/taskqueue"
 	"encore.app/internal/taskreconcile"
 	"encore.app/internal/taskstore"
 	"encore.dev/beta/errs"

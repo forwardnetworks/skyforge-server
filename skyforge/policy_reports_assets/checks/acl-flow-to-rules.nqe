@@ -1,0 +1,66 @@
+/**
+ * @intent Flow-to-rules: list ACL entries that match a given flow tuple.
+ * @description
+ *  Uses modeled ACL entries (device.aclEntries) and evaluates a simple "does this flow match this rule" predicate.
+ *  This is designed for interactive Q&A and reporting ("what rule allows traffic from A to B on port P?").
+ *
+ *  Notes:
+ *  - Empty match fields are treated as "any".
+ *  - ipProto/dstPort are optional: pass -1 to ignore.
+ */
+
+containsIp(subnets, ip) =
+  length(subnets) == 0 ||
+  ip in ipAddressSet(subnets);
+
+containsIntRange(ranges, v) =
+  length(ranges) == 0 ||
+  any(foreach r in ranges
+      select r.start <= v && v <= r.end);
+
+@query
+aclFlowToRules(
+  srcIp : String,
+  dstIp : String,
+  ipProto : Integer,
+  dstPort : Integer,
+  firewallsOnly : Bool,
+  includeImplicitDefault : Bool
+) =
+  let src = ipAddress(srcIp)
+  let dst = ipAddress(dstIp)
+  foreach device in network.devices
+  where !firewallsOnly || device.platform.deviceType == DeviceType.FIREWALL
+  let rules = device.aclEntries
+  foreach idx in fromTo(0, length(rules) - 1)
+  let aclEntry = rules[idx]
+  let h = aclEntry.headerMatches
+
+  where includeImplicitDefault || (!aclEntry.implicitRule && !aclEntry.defaultRule)
+  where containsIp(h.ipv4Src, src)
+  where containsIp(h.ipv4Dst, dst)
+  where ipProto < 0 || containsIntRange(h.ipProtocol, ipProto)
+  where dstPort < 0 || containsIntRange(h.tpDst, dstPort)
+
+  select {
+    match: true,
+    device: device.name,
+    ruleIndex: idx,
+    rule: aclEntry.name,
+    action: aclEntry.action,
+    evidence: sourceConfigText(aclEntry.name),
+    ipv4Src: h.ipv4Src,
+    ipv4Dst: h.ipv4Dst,
+    ipProto: h.ipProtocol,
+    tpDst: h.tpDst,
+    ingress: aclEntry.metadataMatches.ingressInterfaces,
+    egress: aclEntry.metadataMatches.egressInterfaces,
+    implicit: aclEntry.implicitRule,
+    defaultRule: aclEntry.defaultRule,
+    overApproximated: h.overApproximated,
+    createdAt: aclEntry.lifecycleData?.createdAt,
+    lastModified: aclEntry.lifecycleData?.lastModified,
+    lastUsed: aclEntry.lifecycleData?.lastUsed,
+    hitCount: aclEntry.lifecycleData?.truncatedHitCount
+  };
+

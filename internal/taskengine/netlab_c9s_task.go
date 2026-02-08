@@ -227,6 +227,14 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		// When we pass a bundle, the netlab API server writes topology.yml in the workdir.
 		topologyPath = "topology.yml"
 	}
+
+	// Apply platform defaults for netlab `--set` before we run the generator.
+	// This is intentionally done before `netlab create` so generated startup-config
+	// snippets match what will run in-cluster.
+	if len(e.cfg.NetlabC9sDefaultSetOverrides) > 0 {
+		spec.SetOverrides = mergeNetlabSetOverrides(spec.SetOverrides, e.cfg.NetlabC9sDefaultSetOverrides)
+	}
+
 	var clabYAML []byte
 	var nodeMounts map[string][]c9sFileFromConfigMap
 	var generatorManifest *netlabC9sManifest
@@ -236,11 +244,6 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		return err
 	}); err != nil {
 		return err
-	}
-	if envBool(spec.Environment, "SKYFORGE_NETLAB_C9S_ENABLE_NETLAB_INITIAL", true) {
-		if generatorManifest == nil || generatorManifest.NetlabOutput == nil || len(generatorManifest.NetlabOutput.Chunks) == 0 {
-			return fmt.Errorf("netlab initial enabled but generator output missing netlabOutput artifacts")
-		}
 	}
 
 	topologyBytes, nodeMounts, nodeNameMapping, err := prepareC9sTopologyForDeploy(spec.TaskID, topologyName, labName, clabYAML, nodeMounts, e, log)
@@ -264,7 +267,9 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	// Prefer startup-config injection (instead of post-start exec hacks).
 	// This keeps netlab as the source-of-truth but lets Skyforge adapt the generated output
 	// for clabernetes-native execution (files are mounted into the launcher, not the NOS container).
-	enableStartupConfigInjection := envBool(spec.Environment, "SKYFORGE_NETLAB_C9S_ENABLE_STARTUP_CONFIG_INJECTION", false)
+	// Default to enabled: for our onboarded device types we apply netlab configs via
+	// startup-config injection (containerlab-native) rather than post-up netlab initial.
+	enableStartupConfigInjection := envBool(spec.Environment, "SKYFORGE_NETLAB_C9S_ENABLE_STARTUP_CONFIG_INJECTION", true)
 	if enableStartupConfigInjection {
 		if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.startup-config", func() error {
 			var err error
@@ -408,8 +413,20 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	//
 	// We run it after early Forward topology upload so Forward can start reachability
 	// checks while configuration is being applied, but before starting Forward collection.
-	enableNetlabInitial := envBool(spec.Environment, "SKYFORGE_NETLAB_C9S_ENABLE_NETLAB_INITIAL", true)
+	// Netlab initial can be explicitly enabled per-run via env. Additionally, we auto-enable it
+	// for vrnetlab IOS/Junos families where we intentionally skip startup-config injection
+	// to match the native netlab/containerlab + vrnetlab workflow.
+	enableNetlabInitial := envBool(spec.Environment, "SKYFORGE_NETLAB_C9S_ENABLE_NETLAB_INITIAL", false)
+	if !enableNetlabInitial && clabYAMLContainsVrnetlabIOSOrJunos(topologyBytes) {
+		enableNetlabInitial = true
+		if log != nil {
+			log.Infof("netlab initial: auto-enabled (vrnetlab ios/junos detected)")
+		}
+	}
 	if enableNetlabInitial {
+		if generatorManifest == nil || generatorManifest.NetlabOutput == nil || len(generatorManifest.NetlabOutput.Chunks) == 0 {
+			return fmt.Errorf("netlab initial enabled but generator output missing netlabOutput artifacts")
+		}
 		// Gate netlab initial on SSH readiness. Netlab initial relies on SSH/NETCONF access
 		// to push config. Many vrnetlab-based nodes become "Running" long before they accept
 		// SSH logins, and starting netlab initial too early results in authentication errors
@@ -665,6 +682,36 @@ func netlabInitialReadyTuning(deviceKey string) (retries int, delaySeconds int, 
 	default:
 		return 0, 0, false
 	}
+}
+
+func clabYAMLContainsVrnetlabIOSOrJunos(clabYAML []byte) bool {
+	if len(clabYAML) == 0 {
+		return false
+	}
+	var topo map[string]any
+	if err := yaml.Unmarshal(clabYAML, &topo); err != nil {
+		return false
+	}
+	topology, _ := topo["topology"].(map[string]any)
+	nodesAny, _ := topology["nodes"].(map[string]any)
+	if len(nodesAny) == 0 {
+		return false
+	}
+	for _, nodeAny := range nodesAny {
+		cfg, ok := nodeAny.(map[string]any)
+		if !ok || cfg == nil {
+			continue
+		}
+		kind := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["kind"])))
+		image := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["image"])))
+		if !strings.Contains(image, "/vrnetlab/") {
+			continue
+		}
+		if isVrnetlabIOSFamily(kind, image) || isVrnetlabJunosFamily(kind, image) {
+			return true
+		}
+	}
+	return false
 }
 
 // netlabDeviceKeyForClabNode attempts to map a containerlab node kind/image to the

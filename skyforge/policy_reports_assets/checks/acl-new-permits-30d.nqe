@@ -1,0 +1,39 @@
+/**
+ * @intent Policy lifecycle: newly created PERMIT rules in the last 30 days (firewalls).
+ * @description
+ *  Uses modelled ACL entry lifecycle data when present.
+ *  Flags configured PERMIT rules created within 30 days of snapshot collection time.
+ */
+
+@query
+aclNewPermits(daysWindow : Integer) =
+  foreach device in network.devices
+  where device.platform.deviceType == DeviceType.FIREWALL
+  let now =
+    if isPresent(device.snapshotInfo.collectionTime)
+    then device.snapshotInfo.collectionTime
+    else device.snapshotInfo.backfillTime
+
+  foreach aclEntry in device.aclEntries
+  where aclEntry.action == AclAction.PERMIT
+  where !aclEntry.implicitRule
+  where !aclEntry.defaultRule
+  let createdAt = aclEntry.lifecycleData?.createdAt
+  where isPresent(createdAt)
+  where now - createdAt < days(daysWindow)
+
+  select {
+    violation: true,
+    device: device.name,
+    rule: aclEntry.name,
+    action: aclEntry.action,
+    evidence: sourceConfigText(aclEntry.name),
+    createdAt: createdAt,
+    age: toString(now - createdAt),
+    lastModified: aclEntry.lifecycleData?.lastModified,
+    lastUsed: aclEntry.lifecycleData?.lastUsed,
+    hitCount: aclEntry.lifecycleData?.truncatedHitCount,
+    os: device.platform.os,
+    vendor: device.platform.vendor,
+    tags: device.tagNames
+  };

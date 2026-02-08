@@ -1,0 +1,17 @@
+/**
+ * @intent Capacity inventory: devices (vendor/model/OS) for enrichment and scale views.
+ */
+@query
+capacityDevices =
+  foreach device in network.devices
+  select {
+    deviceName: device.name,
+    tagNames: device.tagNames,
+    groupNames: device.groupNames,
+    deviceType: device.platform.deviceType,
+    vendor: device.platform.vendor,
+    os: device.platform.os,
+    model: device.platform.model,
+    osVersion: device.platform.osVersion,
+    locationName: device.locationName
+  };

@@ -55,6 +55,10 @@ func (e *Engine) DispatchTask(ctx context.Context, task *taskstore.TaskRecord, l
 		return true, e.dispatchForwardInitTask(ctx, task, taskLogAdapter(log))
 	case typ == skyforgecore.TaskTypeForwardSync:
 		return true, e.dispatchForwardSyncTask(ctx, task, taskLogAdapter(log))
+	case typ == skyforgecore.TaskTypeCapacityRollup:
+		return true, e.dispatchCapacityRollupTask(ctx, task, taskLogAdapter(log))
+	case typ == skyforgecore.TaskTypeCapacityRollupForwardNetwork:
+		return true, e.dispatchCapacityRollupForwardNetworkTask(ctx, task, taskLogAdapter(log))
 	default:
 		return false, nil
 	}

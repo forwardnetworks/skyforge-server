@@ -1,0 +1,15 @@
+/**
+ * @intent Capacity inventory: map interfaces to VRFs (network instances) for perf-to-routing context joins.
+ */
+@query
+capacityInterfaceVrfs =
+  foreach device in network.devices
+  foreach vrf in device.networkInstances
+  foreach ifaceSubiface in vrf.interfaces
+  select {
+    deviceName: device.name,
+    vrf: vrf.name,
+    ifaceName: ifaceSubiface.ifaceName,
+    subIfaceName: ifaceSubiface.subIfaceName
+  };
+

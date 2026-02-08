@@ -70,6 +70,9 @@ const defaultServiceNowForwardBaseURL = "https://fwd.app/api"
 //
 //encore:api auth method=GET path=/api/user/integrations/servicenow
 func (s *Service) GetUserServiceNowConfig(ctx context.Context) (*UserServiceNowConfigResponse, error) {
+	if !s.cfg.Features.ForwardEnabled {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward Networks integrations are disabled").Err()
+	}
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -99,6 +102,9 @@ func (s *Service) GetUserServiceNowConfig(ctx context.Context) (*UserServiceNowC
 //
 //encore:api auth method=GET path=/api/user/integrations/servicenow/pdiStatus
 func (s *Service) GetUserServiceNowPDIStatus(ctx context.Context) (*ServiceNowPDIStatusResponse, error) {
+	if !s.cfg.Features.ForwardEnabled {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward Networks integrations are disabled").Err()
+	}
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -130,6 +136,9 @@ func (s *Service) GetUserServiceNowPDIStatus(ctx context.Context) (*ServiceNowPD
 //
 //encore:api auth method=GET path=/api/user/integrations/servicenow/schemaStatus
 func (s *Service) GetUserServiceNowSchemaStatus(ctx context.Context) (*ServiceNowSchemaStatusResponse, error) {
+	if !s.cfg.Features.ForwardEnabled {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward Networks integrations are disabled").Err()
+	}
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -188,6 +197,9 @@ func (s *Service) GetUserServiceNowSchemaStatus(ctx context.Context) (*ServiceNo
 //
 //encore:api auth method=POST path=/api/user/integrations/servicenow/wake
 func (s *Service) WakeServiceNowPDI(ctx context.Context) (*WakeServiceNowPDIResponse, error) {
+	if !s.cfg.Features.ForwardEnabled {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward Networks integrations are disabled").Err()
+	}
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -248,6 +260,9 @@ func (s *Service) WakeServiceNowPDI(ctx context.Context) (*WakeServiceNowPDIResp
 //
 //encore:api auth method=PUT path=/api/user/integrations/servicenow
 func (s *Service) PutUserServiceNowConfig(ctx context.Context, req *PutUserServiceNowConfigRequest) (*UserServiceNowConfigResponse, error) {
+	if !s.cfg.Features.ForwardEnabled {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward Networks integrations are disabled").Err()
+	}
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -340,6 +355,9 @@ type ConfigureForwardServiceNowTicketingResponse struct {
 //
 //encore:api auth method=POST path=/api/user/integrations/servicenow/configureForwardTicketing
 func (s *Service) ConfigureForwardServiceNowTicketing(ctx context.Context) (*ConfigureForwardServiceNowTicketingResponse, error) {
+	if !s.cfg.Features.ForwardEnabled {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward Networks integrations are disabled").Err()
+	}
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -379,6 +397,9 @@ func (s *Service) ConfigureForwardServiceNowTicketing(ctx context.Context) (*Con
 //
 //encore:api auth method=POST path=/api/user/integrations/servicenow/install
 func (s *Service) InstallUserServiceNowDemo(ctx context.Context) (*InstallUserServiceNowDemoResponse, error) {
+	if !s.cfg.Features.ForwardEnabled {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward Networks integrations are disabled").Err()
+	}
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err

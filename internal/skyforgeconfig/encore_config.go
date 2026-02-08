@@ -17,6 +17,13 @@ type IntegrationDefaultsConfig struct {
 	YaadeInternalBaseURL    string
 }
 
+type ElasticDefaultsConfig struct {
+	// URL is the base URL for the in-cluster Elasticsearch endpoint (no trailing slash).
+	URL string
+	// IndexPrefix is the prefix used for Skyforge-managed indices.
+	IndexPrefix string
+}
+
 type OIDCDefaultsConfig struct {
 	IssuerURL    string
 	DiscoveryURL string
@@ -65,6 +72,9 @@ type NetlabGeneratorDefaultsConfig struct {
 	PullPolicy        string
 	ApplierImage      string
 	ApplierPullPolicy string
+	// C9sDefaultSetOverrides are netlab `--set` overrides applied by default
+	// for netlab-c9s generator/applier runs. User-provided overrides win.
+	C9sDefaultSetOverrides []string
 }
 
 type KubernetesDefaultsConfig struct {
@@ -104,7 +114,6 @@ type TerraformDefaultsConfig struct {
 
 type ForwardDefaultsConfig struct {
 	SNMPPlaceholderEnabled bool
-	SNMPCommunity          string
 }
 
 type ForwardCollectorDefaultsConfig struct {
@@ -138,13 +147,6 @@ type FeaturesDefaultsConfig struct {
 	NautobotEnabled  bool
 	DNSEnabled       bool
 	ElasticEnabled   bool
-}
-
-type ElasticDefaultsConfig struct {
-	// URL is the Elasticsearch base URL (for in-cluster: http://elasticsearch:9200).
-	URL string
-	// IndexPrefix is the prefix used for Skyforge-managed indices.
-	IndexPrefix string
 }
 
 type EncoreConfig struct {
@@ -183,6 +185,7 @@ type EncoreConfig struct {
 
 	Netlab           NetlabDefaultsConfig
 	Integrations     IntegrationDefaultsConfig
+	Elastic          ElasticDefaultsConfig
 	UI               UIDefaultsConfig
 	OIDC             OIDCDefaultsConfig
 	LDAP             LDAPDefaultsConfig
@@ -196,7 +199,6 @@ type EncoreConfig struct {
 	Forward          ForwardDefaultsConfig
 	ForwardCollector ForwardCollectorDefaultsConfig
 	Features         FeaturesDefaultsConfig
-	Elastic          ElasticDefaultsConfig
 	NetlabGenerator  NetlabGeneratorDefaultsConfig
 	Kubernetes       KubernetesDefaultsConfig
 }

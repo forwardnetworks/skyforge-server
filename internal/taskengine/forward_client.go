@@ -3,6 +3,7 @@ package taskengine
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -124,12 +125,20 @@ func newForwardClient(cfg forwardCredentials) (*forwardClient, error) {
 	if username == "" || password == "" {
 		return nil, fmt.Errorf("forward credentials are required")
 	}
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	// Avoid env proxy variables for Forward traffic; in-cluster this often breaks.
+	transport.Proxy = func(*http.Request) (*url.URL, error) { return nil, nil }
+	if cfg.SkipTLSVerify {
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
 	return &forwardClient{
 		baseURL:  baseURL,
 		username: username,
 		password: password,
 		client: &http.Client{
-			Timeout: 15 * time.Second,
+			Timeout:   15 * time.Second,
+			Transport: transport,
 		},
 	}, nil
 }

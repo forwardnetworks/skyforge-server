@@ -154,6 +154,363 @@
         ],
         "type": "object"
       },
+      "skyforge.CapacityBgpNeighborRow": {
+        "properties": {
+          "advertisedPrefixes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "deviceName": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "neighborAddress": {
+            "type": "string"
+          },
+          "peerAs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "peerDeviceName": {
+            "type": "string"
+          },
+          "peerVrf": {
+            "type": "string"
+          },
+          "receivedPrefixes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sessionDurationSec": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sessionState": {
+            "type": "string"
+          },
+          "vrf": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deviceName",
+          "vrf",
+          "neighborAddress",
+          "peerDeviceName",
+          "peerVrf",
+          "peerAs",
+          "enabled",
+          "sessionState",
+          "receivedPrefixes",
+          "advertisedPrefixes",
+          "sessionDurationSec"
+        ],
+        "type": "object"
+      },
+      "skyforge.CapacityDeviceInventoryRow": {
+        "properties": {
+          "deviceName": {
+            "type": "string"
+          },
+          "deviceType": {
+            "type": "string"
+          },
+          "groupNames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "locationName": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "os": {
+            "type": "string"
+          },
+          "osVersion": {
+            "type": "string"
+          },
+          "tagNames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "vendor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deviceName",
+          "tagNames",
+          "groupNames",
+          "deviceType",
+          "vendor",
+          "os",
+          "model",
+          "osVersion",
+          "locationName"
+        ],
+        "type": "object"
+      },
+      "skyforge.CapacityGrowthRow": {
+        "properties": {
+          "deltaMax": {
+            "type": "number"
+          },
+          "deltaP95": {
+            "type": "number"
+          },
+          "deltaP95Gbps": {
+            "type": "number"
+          },
+          "metric": {
+            "type": "string"
+          },
+          "now": {
+            "$ref": "#/components/schemas/skyforge.CapacityRollupRow"
+          },
+          "objectId": {
+            "type": "string"
+          },
+          "objectType": {
+            "type": "string"
+          },
+          "prev": {
+            "$ref": "#/components/schemas/skyforge.CapacityRollupRow"
+          },
+          "window": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "objectType",
+          "objectId",
+          "metric",
+          "window",
+          "now",
+          "prev",
+          "deltaP95",
+          "deltaMax",
+          "deltaP95Gbps"
+        ],
+        "type": "object"
+      },
+      "skyforge.CapacityInterfaceInventoryRow": {
+        "properties": {
+          "adminStatus": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "deviceGroupNames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "deviceLocationName": {
+            "type": "string"
+          },
+          "deviceName": {
+            "type": "string"
+          },
+          "deviceTagNames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "interfaceName": {
+            "type": "string"
+          },
+          "interfaceType": {
+            "type": "string"
+          },
+          "layer": {
+            "type": "string"
+          },
+          "mtu": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "operStatus": {
+            "type": "string"
+          },
+          "speedMbps": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "deviceName",
+          "deviceLocationName",
+          "deviceTagNames",
+          "deviceGroupNames",
+          "interfaceName",
+          "description",
+          "adminStatus",
+          "operStatus",
+          "layer",
+          "interfaceType",
+          "mtu",
+          "speedMbps"
+        ],
+        "type": "object"
+      },
+      "skyforge.CapacityInterfaceVrfRow": {
+        "properties": {
+          "deviceName": {
+            "type": "string"
+          },
+          "ifaceName": {
+            "type": "string"
+          },
+          "subIfaceName": {
+            "type": "string"
+          },
+          "vrf": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deviceName",
+          "vrf",
+          "ifaceName",
+          "subIfaceName"
+        ],
+        "type": "object"
+      },
+      "skyforge.CapacityInterfaceWithDirection": {
+        "properties": {
+          "deviceName": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "interfaceName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deviceName",
+          "interfaceName",
+          "direction"
+        ],
+        "type": "object"
+      },
+      "skyforge.CapacityRollupRow": {
+        "properties": {
+          "avg": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "deploymentId": {
+            "type": "string"
+          },
+          "details": {
+            "$ref": "#/components/schemas/skyforge.JSONMap"
+          },
+          "forecastCrossingTs": {
+            "type": "string"
+          },
+          "forwardNetworkId": {
+            "type": "string"
+          },
+          "max": {
+            "type": "number"
+          },
+          "metric": {
+            "type": "string"
+          },
+          "objectId": {
+            "type": "string"
+          },
+          "objectType": {
+            "type": "string"
+          },
+          "p95": {
+            "type": "number"
+          },
+          "p99": {
+            "type": "number"
+          },
+          "periodEnd": {
+            "type": "string"
+          },
+          "samples": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "slopePerDay": {
+            "type": "number"
+          },
+          "threshold": {
+            "type": "number"
+          },
+          "window": {
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "objectType",
+          "objectId",
+          "metric",
+          "window",
+          "periodEnd",
+          "samples",
+          "avg",
+          "p95",
+          "p99",
+          "max",
+          "slopePerDay",
+          "forecastCrossingTs",
+          "threshold",
+          "details",
+          "createdAt",
+          "forwardNetworkId",
+          "deploymentId",
+          "workspaceId"
+        ],
+        "type": "object"
+      },
+      "skyforge.CapacityRouteScaleRow": {
+        "properties": {
+          "deviceName": {
+            "type": "string"
+          },
+          "ipv4Routes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ipv6Routes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "vrf": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deviceName",
+          "vrf",
+          "ipv4Routes",
+          "ipv6Routes"
+        ],
+        "type": "object"
+      },
       "skyforge.ClabernetesInfo": {
         "properties": {
           "configMaps": {
@@ -1307,6 +1664,577 @@
         ],
         "type": "object"
       },
+      "skyforge.PolicyReportCatalog": {
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/skyforge.PolicyReportCatalogCheck"
+            },
+            "type": "array"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "checks"
+        ],
+        "type": "object"
+      },
+      "skyforge.PolicyReportCatalogCheck": {
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "params": {
+            "items": {
+              "$ref": "#/components/schemas/skyforge.PolicyReportCatalogParam"
+            },
+            "type": "array"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "category",
+          "severity",
+          "description",
+          "params"
+        ],
+        "type": "object"
+      },
+      "skyforge.PolicyReportCatalogParam": {
+        "properties": {
+          "default": {
+            "type": "object"
+          },
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "default",
+          "description",
+          "required"
+        ],
+        "type": "object"
+      },
+      "skyforge.PolicyReportException": {
+        "properties": {
+          "approvedBy": {
+            "type": "string"
+          },
+          "checkId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "findingId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "justification": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "ticketUrl": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspaceId",
+          "findingId",
+          "checkId",
+          "status",
+          "justification",
+          "ticketUrl",
+          "expiresAt",
+          "createdBy",
+          "approvedBy",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "skyforge.PolicyReportFlowImpact": {
+        "properties": {
+          "afterDecision": {
+            "type": "string"
+          },
+          "afterIndex": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "afterRule": {
+            "type": "string"
+          },
+          "beforeDecision": {
+            "type": "string"
+          },
+          "beforeIndex": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "beforeRule": {
+            "type": "string"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "device": {
+            "type": "string"
+          },
+          "flow": {
+            "$ref": "#/components/schemas/skyforge.PolicyReportFlowTuple"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "device",
+          "flow",
+          "beforeDecision",
+          "afterDecision",
+          "beforeRule",
+          "afterRule",
+          "beforeIndex",
+          "afterIndex",
+          "changed",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "skyforge.PolicyReportFlowTuple": {
+        "properties": {
+          "dstIp": {
+            "type": "string"
+          },
+          "dstPort": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ipProto": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "srcIp": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "srcIp",
+          "dstIp",
+          "ipProto",
+          "dstPort"
+        ],
+        "type": "object"
+      },
+      "skyforge.PolicyReportNQEResponse": {
+        "properties": {
+          "results": {
+            "type": "object"
+          },
+          "snapshotId": {
+            "type": "string"
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "snapshotId",
+          "total",
+          "results"
+        ],
+        "type": "object"
+      },
+      "skyforge.PolicyReportPack": {
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/skyforge.PolicyReportPackCheck"
+            },
+            "type": "array"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "checks"
+        ],
+        "type": "object"
+      },
+      "skyforge.PolicyReportPackCheck": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "parameters": {
+            "$ref": "#/components/schemas/skyforge.JSONMap"
+          }
+        },
+        "required": [
+          "id",
+          "parameters"
+        ],
+        "type": "object"
+      },
+      "skyforge.PolicyReportPackDeltaCheck": {
+        "properties": {
+          "baselineTotal": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "changedCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "changedSamples": {
+            "type": "object"
+          },
+          "checkId": {
+            "type": "string"
+          },
+          "compareTotal": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "newCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "newSamples": {
+            "type": "object"
+          },
+          "oldSamples": {
+            "type": "object"
+          },
+          "resolvedCount": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "checkId",
+          "baselineTotal",
+          "compareTotal",
+          "newCount",
+          "resolvedCount",
+          "changedCount",
+          "newSamples",
+          "oldSamples",
+          "changedSamples"
+        ],
+        "type": "object"
+      },
+      "skyforge.PolicyReportProposedRule": {
+        "properties": {
+          "action": {
+            "title": "PERMIT or DENY\n",
+            "type": "string"
+          },
+          "index": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ipProto": {
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "title": "empty = any\n",
+            "type": "array"
+          },
+          "ipv4Dst": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "ipv4Src": {
+            "items": {
+              "type": "string"
+            },
+            "title": "CIDR strings, empty = any\n",
+            "type": "array"
+          },
+          "tpDst": {
+            "items": {
+              "type": "string"
+            },
+            "title": "entries like \"443\" or \"443-445\"; empty = any\n",
+            "type": "array"
+          }
+        },
+        "required": [
+          "index",
+          "action",
+          "ipv4Src",
+          "ipv4Dst",
+          "ipProto",
+          "tpDst"
+        ],
+        "type": "object"
+      },
+      "skyforge.PolicyReportRecertAssignment": {
+        "properties": {
+          "assigneeUsername": {
+            "type": "string"
+          },
+          "attestedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "campaignId": {
+            "type": "string"
+          },
+          "checkCategory": {
+            "type": "string"
+          },
+          "checkId": {
+            "type": "string"
+          },
+          "checkSeverity": {
+            "type": "string"
+          },
+          "checkTitle": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "finding": {
+            "type": "object"
+          },
+          "findingAssetKey": {
+            "type": "string"
+          },
+          "findingId": {
+            "type": "string"
+          },
+          "findingRiskReasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "findingRiskScore": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "justification": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "campaignId",
+          "workspaceId",
+          "findingId",
+          "checkId",
+          "assigneeUsername",
+          "status",
+          "justification",
+          "attestedAt",
+          "finding",
+          "createdAt",
+          "updatedAt",
+          "checkTitle",
+          "checkCategory",
+          "checkSeverity",
+          "findingRiskScore",
+          "findingRiskReasons",
+          "findingAssetKey"
+        ],
+        "type": "object"
+      },
+      "skyforge.PolicyReportRecertCampaign": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "dueAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "forwardNetworkId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "packId": {
+            "type": "string"
+          },
+          "snapshotId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspaceId",
+          "name",
+          "description",
+          "forwardNetworkId",
+          "snapshotId",
+          "packId",
+          "status",
+          "dueAt",
+          "createdBy",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "skyforge.PolicyReportRecertCampaignCounts": {
+        "properties": {
+          "attested": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "pending": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "waived": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "pending",
+          "attested",
+          "waived"
+        ],
+        "type": "object"
+      },
+      "skyforge.PolicyReportRecertCampaignWithCounts": {
+        "properties": {
+          "campaign": {
+            "$ref": "#/components/schemas/skyforge.PolicyReportRecertCampaign"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/skyforge.PolicyReportRecertCampaignCounts"
+          }
+        },
+        "required": [
+          "campaign",
+          "counts"
+        ],
+        "type": "object"
+      },
+      "skyforge.PolicyReportRuleChange": {
+        "properties": {
+          "op": {
+            "title": "ADD, REMOVE, MODIFY\n",
+            "type": "string"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/skyforge.PolicyReportProposedRule"
+          }
+        },
+        "required": [
+          "op",
+          "rule"
+        ],
+        "type": "object"
+      },
       "skyforge.ProviderCostBreakdown": {
         "properties": {
           "cost": {
@@ -2354,6 +3282,26 @@
         ],
         "type": "object"
       },
+      "skyforge.adminSSHProbeResult": {
+        "properties": {
+          "attempts": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "error",
+          "attempts"
+        ],
+        "type": "object"
+      },
       "skyforge.collectorRuntimeStatus": {
         "properties": {
           "deploymentName": {
@@ -2522,6 +3470,9 @@
           "dnsEnabled": {
             "type": "boolean"
           },
+          "elasticEnabled": {
+            "type": "boolean"
+          },
           "forwardEnabled": {
             "type": "boolean"
           },
@@ -2554,7 +3505,8 @@
           "forwardEnabled",
           "netboxEnabled",
           "nautobotEnabled",
-          "dnsEnabled"
+          "dnsEnabled",
+          "elasticEnabled"
         ],
         "type": "object"
       }
@@ -2562,7 +3514,7 @@
   },
   "info": {
     "description": "Generated by encore",
-    "title": "API for ewix8",
+    "title": "API for akhkw",
     "version": "1",
     "x-logo": {
       "altText": "Encore logo",
@@ -2796,6 +3748,142 @@
           }
         },
         "summary": "GetAdminEffectiveConfig returns the effective (non-secret) typed Encore config\n(admin only).\n"
+      }
+    },
+    "/api/admin/e2e/session": {
+      "post": {
+        "operationId": "POST:skyforge.AdminE2ESession",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "groups": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "username": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "username",
+                  "displayName",
+                  "email",
+                  "groups"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "cookie": {
+                      "type": "string"
+                    },
+                    "user": {
+                      "$ref": "#/components/schemas/skyforge.UserProfile"
+                    }
+                  },
+                  "required": [
+                    "cookie",
+                    "user"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "AdminE2ESession seeds a session cookie for CI/E2E flows without external SSO.\n"
+      }
+    },
+    "/api/admin/e2e/sshprobe": {
+      "post": {
+        "description": "This is primarily used by \\`cmd/e2echeck\\` so E2E tests can run without local kubectl access.\n\nNOTE: This does not authenticate to the target device; it only verifies TCP connect and an SSH-like banner prefix (\"SSH-\").\n",
+        "operationId": "POST:skyforge.AdminSSHProbe",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "hosts": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "port": {
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "tcpOnly": {
+                    "type": "boolean"
+                  },
+                  "timeoutSeconds": {
+                    "format": "int64",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "hosts",
+                  "port",
+                  "timeoutSeconds",
+                  "tcpOnly"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "results": {
+                      "additionalProperties": {
+                        "$ref": "#/components/schemas/skyforge.adminSSHProbeResult"
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "results"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "AdminSSHProbe runs an in-cluster TCP probe to validate SSH reachability of a\nlist of hosts.\n"
       }
     },
     "/api/admin/governance/costs": {
@@ -3558,6 +4646,69 @@
           }
         },
         "summary": "ListNodeMetrics returns a lightweight, live view of node metrics (admin only).\n"
+      }
+    },
+    "/api/admin/tasks/diag": {
+      "get": {
+        "description": "This is intended to answer: \"are tasks queued because of real backlog, or because queue event delivery/worker execution is broken?\"\n",
+        "operationId": "GET:skyforge.TaskQueueDiag",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "oldestQueuedAgeSec": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "publishFailures10m": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "publishFailuresLatest": {
+                      "type": "string"
+                    },
+                    "queued": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "running": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "workerEnabled": {
+                      "type": "boolean"
+                    },
+                    "workerHeartbeatAgeSec": {
+                      "format": "int64",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "queued",
+                    "running",
+                    "oldestQueuedAgeSec",
+                    "workerHeartbeatAgeSec",
+                    "workerEnabled",
+                    "publishFailures10m",
+                    "publishFailuresLatest"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "TaskQueueDiag provides admin diagnostics for the task queue.\n"
       }
     },
     "/api/admin/tasks/reconcile": {
@@ -6940,6 +8091,84 @@
         "summary": "SessionForwardAuthHead is a Skyforge SSO gate compatible endpoint used by\nTraefik forwardAuth (HEAD).\n"
       }
     },
+    "/api/session/forwardauth/envoy": {
+      "get": {
+        "description": "It behaves like SessionForwardAuth on success, but on unauthenticated requests it returns a 302 redirect to Skyforge login, preserving the original request URI via the \\`next\\` parameter.\n\nNOTE: Envoy's ext\\_authz filter commonly forwards the original request path in \\`x-envoy-original-path\\` (preferred) rather than \\`x-forwarded-uri\\`.\n",
+        "operationId": "GET:skyforge.SessionForwardAuthEnvoy",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "SessionForwardAuthEnvoy is a Skyforge SSO gate endpoint for Envoy ext_authz.\n"
+      },
+      "post": {
+        "operationId": "POST:skyforge.SessionForwardAuthEnvoyPost",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        }
+      }
+    },
+    "/api/session/forwardauth/envoy/{rest}": {
+      "get": {
+        "description": "configured prefix (e.g. \\`/api/session/forwardauth/envoy/\\`), so we also expose wildcard handlers.\n",
+        "operationId": "GET:skyforge.SessionForwardAuthEnvoyAny",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "rest",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "NOTE: Envoy's ext_authz `path_prefix` can append the original request path to\nthe\n"
+      },
+      "post": {
+        "operationId": "POST:skyforge.SessionForwardAuthEnvoyPostAny",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "rest",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        }
+      }
+    },
     "/api/snmp/traps/events": {
       "get": {
         "operationId": "GET:skyforge.ListSnmpTrapEvents",
@@ -7764,6 +8993,11 @@
                   "content": {
                     "type": "string"
                   },
+                  "filename": {
+                    "description": "from Kind + PathHint). If provided, it may include the expected extension. Examples: - netlab: \"bgp-demo\" or \"bgp-demo.yml\" - containerlab: \"dc1\" or \"dc1.clab.yml\"\n",
+                    "title": "Filename is an optional user-provided base filename (repo-relative name is\ncomputed\n",
+                    "type": "string"
+                  },
                   "kind": {
                     "$ref": "#/components/schemas/skyforge.AITemplateKind"
                   },
@@ -7778,6 +9012,7 @@
                   "kind",
                   "content",
                   "pathHint",
+                  "filename",
                   "message"
                 ],
                 "type": "object"
@@ -9005,6 +10240,246 @@
         "summary": "RotateUserGitDeployKey rotates the user's SSH deploy key.\n"
       }
     },
+    "/api/user/integrations/elastic": {
+      "get": {
+        "operationId": "GET:skyforge.GetUserElasticConfig",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "authType": {
+                      "title": "none | api_key | basic\n",
+                      "type": "string"
+                    },
+                    "basicUsername": {
+                      "type": "string"
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "defaultIndexPrefix": {
+                      "type": "string"
+                    },
+                    "defaultUrl": {
+                      "type": "string"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "hasApiKey": {
+                      "type": "boolean"
+                    },
+                    "hasBasicPassword": {
+                      "type": "boolean"
+                    },
+                    "indexPrefix": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "verifyTls": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "enabled",
+                    "configured",
+                    "url",
+                    "indexPrefix",
+                    "authType",
+                    "hasApiKey",
+                    "basicUsername",
+                    "hasBasicPassword",
+                    "verifyTls",
+                    "updatedAt",
+                    "defaultUrl",
+                    "defaultIndexPrefix"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetUserElasticConfig returns the current user's Elastic integration settings.\n"
+      },
+      "put": {
+        "operationId": "PUT:skyforge.PutUserElasticConfig",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "apiKey": {
+                    "type": "string"
+                  },
+                  "authType": {
+                    "title": "none | api_key | basic\n",
+                    "type": "string"
+                  },
+                  "basicPassword": {
+                    "type": "string"
+                  },
+                  "basicUsername": {
+                    "type": "string"
+                  },
+                  "indexPrefix": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  },
+                  "verifyTls": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "url",
+                  "indexPrefix",
+                  "authType",
+                  "apiKey",
+                  "basicUsername",
+                  "basicPassword",
+                  "verifyTls"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "authType": {
+                      "title": "none | api_key | basic\n",
+                      "type": "string"
+                    },
+                    "basicUsername": {
+                      "type": "string"
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "defaultIndexPrefix": {
+                      "type": "string"
+                    },
+                    "defaultUrl": {
+                      "type": "string"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "hasApiKey": {
+                      "type": "boolean"
+                    },
+                    "hasBasicPassword": {
+                      "type": "boolean"
+                    },
+                    "indexPrefix": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "verifyTls": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "enabled",
+                    "configured",
+                    "url",
+                    "indexPrefix",
+                    "authType",
+                    "hasApiKey",
+                    "basicUsername",
+                    "hasBasicPassword",
+                    "verifyTls",
+                    "updatedAt",
+                    "defaultUrl",
+                    "defaultIndexPrefix"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "PutUserElasticConfig upserts the user's Elastic integration settings.\n"
+      }
+    },
+    "/api/user/integrations/elastic/clear": {
+      "post": {
+        "operationId": "POST:skyforge.ClearUserElasticConfig",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ClearUserElasticConfig removes the user's Elastic integration settings.\n"
+      }
+    },
+    "/api/user/integrations/elastic/test": {
+      "post": {
+        "operationId": "POST:skyforge.TestUserElasticConfig",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "checkedAt": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "title": "ok | error\n",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "detail",
+                    "checkedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "TestUserElasticConfig does a lightweight health check of the configured Elastic\nendpoint.\n"
+      }
+    },
     "/api/user/integrations/gemini": {
       "get": {
         "operationId": "GET:skyforge.GetUserGeminiConfig",
@@ -9014,6 +10489,9 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "aiEnabled": {
+                      "type": "boolean"
+                    },
                     "configured": {
                       "type": "boolean"
                     },
@@ -9023,8 +10501,23 @@
                     "enabled": {
                       "type": "boolean"
                     },
+                    "fallbackModel": {
+                      "type": "string"
+                    },
                     "hasToken": {
                       "type": "boolean"
+                    },
+                    "location": {
+                      "type": "string"
+                    },
+                    "model": {
+                      "type": "string"
+                    },
+                    "oauthConfigured": {
+                      "type": "boolean"
+                    },
+                    "projectId": {
+                      "type": "string"
                     },
                     "redirectUrl": {
                       "type": "string"
@@ -9034,16 +10527,26 @@
                     },
                     "updatedAt": {
                       "type": "string"
+                    },
+                    "vertexConfigured": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "enabled",
+                    "aiEnabled",
+                    "oauthConfigured",
+                    "vertexConfigured",
                     "configured",
                     "email",
                     "scopes",
                     "hasToken",
                     "updatedAt",
-                    "redirectUrl"
+                    "redirectUrl",
+                    "projectId",
+                    "location",
+                    "model",
+                    "fallbackModel"
                   ],
                   "type": "object"
                 }
@@ -12461,6 +13964,17 @@
               "type": "boolean"
             },
             "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "description": "Alternate casing used by some UI clients.\n",
+            "explode": true,
+            "in": "query",
+            "name": "forwardDelete",
+            "schema": {
+              "type": "boolean"
+            },
+            "style": "form"
           }
         ],
         "responses": {
@@ -12710,6 +14224,998 @@
           }
         },
         "summary": "RunWorkspaceDeploymentAction runs a deployment operation with consistent UX\nverbs.\n"
+      }
+    },
+    "/api/workspaces/{id}/deployments/{deploymentID}/capacity/growth": {
+      "get": {
+        "description": "Intended for “top growers” views (week-over-week, day-over-day) without pulling Forward time series.\n",
+        "operationId": "GET:skyforge.GetWorkspaceDeploymentCapacityGrowth",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "deploymentID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "metric",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "window",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "objectType",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "compareHours",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "asOf": {
+                      "type": "string"
+                    },
+                    "compareAsOf": {
+                      "type": "string"
+                    },
+                    "compareHours": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "deploymentId": {
+                      "type": "string"
+                    },
+                    "metric": {
+                      "type": "string"
+                    },
+                    "objectType": {
+                      "type": "string"
+                    },
+                    "rows": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.CapacityGrowthRow"
+                      },
+                      "type": "array"
+                    },
+                    "window": {
+                      "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "workspaceId",
+                    "deploymentId",
+                    "metric",
+                    "window",
+                    "objectType",
+                    "asOf",
+                    "compareAsOf",
+                    "compareHours",
+                    "rows"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspaceDeploymentCapacityGrowth compares the latest rollup bucket to an\nearlier one and returns deltas.\n"
+      }
+    },
+    "/api/workspaces/{id}/deployments/{deploymentID}/capacity/inventory": {
+      "get": {
+        "operationId": "GET:skyforge.GetWorkspaceDeploymentCapacityInventory",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "deploymentID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "asOf": {
+                      "type": "string"
+                    },
+                    "bgpNeighbors": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.CapacityBgpNeighborRow"
+                      },
+                      "type": "array"
+                    },
+                    "deploymentId": {
+                      "type": "string"
+                    },
+                    "devices": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.CapacityDeviceInventoryRow"
+                      },
+                      "type": "array"
+                    },
+                    "forwardNetworkId": {
+                      "type": "string"
+                    },
+                    "interfaceVrfs": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.CapacityInterfaceVrfRow"
+                      },
+                      "type": "array"
+                    },
+                    "interfaces": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.CapacityInterfaceInventoryRow"
+                      },
+                      "type": "array"
+                    },
+                    "routeScale": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.CapacityRouteScaleRow"
+                      },
+                      "type": "array"
+                    },
+                    "snapshotId": {
+                      "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "workspaceId",
+                    "deploymentId",
+                    "forwardNetworkId",
+                    "asOf",
+                    "snapshotId",
+                    "devices",
+                    "interfaces",
+                    "interfaceVrfs",
+                    "routeScale",
+                    "bgpNeighbors"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspaceDeploymentCapacityInventory returns the latest cached NQE results\nfor inventory/routing scale.\n"
+      }
+    },
+    "/api/workspaces/{id}/deployments/{deploymentID}/capacity/perf/device-metrics": {
+      "get": {
+        "operationId": "GET:skyforge.GetWorkspaceDeploymentCapacityDeviceMetrics",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "deploymentID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "type",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "days",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "device",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "snapshotId",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "endTime",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "body": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "body"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspaceDeploymentCapacityDeviceMetrics proxies Forward's device-metrics\nendpoint.\n"
+      }
+    },
+    "/api/workspaces/{id}/deployments/{deploymentID}/capacity/perf/device-metrics-history": {
+      "post": {
+        "operationId": "POST:skyforge.PostWorkspaceDeploymentCapacityDeviceMetricsHistory",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "deploymentID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "days": {
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "devices": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "endTime": {
+                    "type": "string"
+                  },
+                  "maxSamples": {
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "startTime": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "days",
+                  "startTime",
+                  "endTime",
+                  "maxSamples",
+                  "devices"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "body": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "body"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "PostWorkspaceDeploymentCapacityDeviceMetricsHistory proxies Forward's\ndevice-metrics-history endpoint.\n"
+      }
+    },
+    "/api/workspaces/{id}/deployments/{deploymentID}/capacity/perf/interface-metrics": {
+      "get": {
+        "operationId": "GET:skyforge.GetWorkspaceDeploymentCapacityInterfaceMetrics",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "deploymentID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "type",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "days",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "direction",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "interface",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "interfaceFilter",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "snapshotId",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "endTime",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "body": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "body"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspaceDeploymentCapacityInterfaceMetrics proxies Forward's\ninterface-metrics endpoint.\n"
+      }
+    },
+    "/api/workspaces/{id}/deployments/{deploymentID}/capacity/perf/interface-metrics-history": {
+      "post": {
+        "operationId": "POST:skyforge.PostWorkspaceDeploymentCapacityInterfaceMetricsHistory",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "deploymentID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "days": {
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "endTime": {
+                    "type": "string"
+                  },
+                  "interfaces": {
+                    "items": {
+                      "$ref": "#/components/schemas/skyforge.CapacityInterfaceWithDirection"
+                    },
+                    "type": "array"
+                  },
+                  "maxSamples": {
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "startTime": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "days",
+                  "startTime",
+                  "endTime",
+                  "maxSamples",
+                  "interfaces"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "body": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "body"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "PostWorkspaceDeploymentCapacityInterfaceMetricsHistory proxies Forward's\ninterface-metrics-history endpoint.\n"
+      }
+    },
+    "/api/workspaces/{id}/deployments/{deploymentID}/capacity/perf/unhealthy-devices": {
+      "get": {
+        "operationId": "GET:skyforge.GetWorkspaceDeploymentCapacityUnhealthyDevices",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "deploymentID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "snapshotId",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "endTime",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "body": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "body"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspaceDeploymentCapacityUnhealthyDevices proxies Forward's\nunhealthy-devices endpoint.\n"
+      }
+    },
+    "/api/workspaces/{id}/deployments/{deploymentID}/capacity/perf/unhealthy-interfaces": {
+      "post": {
+        "operationId": "POST:skyforge.GetWorkspaceDeploymentCapacityUnhealthyInterfaces",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "deploymentID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "snapshotId",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "endTime",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "devices": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "devices"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "body": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "body"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspaceDeploymentCapacityUnhealthyInterfaces proxies Forward's\nunhealthy-interfaces endpoint.\n"
+      }
+    },
+    "/api/workspaces/{id}/deployments/{deploymentID}/capacity/rollups/refresh": {
+      "post": {
+        "operationId": "POST:skyforge.RefreshWorkspaceDeploymentCapacityRollups",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "deploymentID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "deploymentId": {
+                    "description": "Defaults to the deployment id in the path.\n",
+                    "title": "Optional override; primarily for debugging.\n",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "deploymentId"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "deploymentId": {
+                      "type": "string"
+                    },
+                    "run": {
+                      "$ref": "#/components/schemas/skyforge.JSONMap"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "workspaceId",
+                    "deploymentId",
+                    "run"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "RefreshWorkspaceDeploymentCapacityRollups enqueues a background rollup task for\nthe deployment.\n"
+      }
+    },
+    "/api/workspaces/{id}/deployments/{deploymentID}/capacity/summary": {
+      "get": {
+        "operationId": "GET:skyforge.GetWorkspaceDeploymentCapacitySummary",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "deploymentID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "asOf": {
+                      "type": "string"
+                    },
+                    "deploymentId": {
+                      "type": "string"
+                    },
+                    "forwardNetworkId": {
+                      "type": "string"
+                    },
+                    "rollups": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.CapacityRollupRow"
+                      },
+                      "type": "array"
+                    },
+                    "stale": {
+                      "type": "boolean"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "workspaceId",
+                    "deploymentId",
+                    "forwardNetworkId",
+                    "asOf",
+                    "rollups",
+                    "stale"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspaceDeploymentCapacitySummary returns the latest stored capacity rollups\nfor a deployment.\n"
       }
     },
     "/api/workspaces/{id}/deployments/{deploymentID}/destroy": {
@@ -16656,6 +19162,1563 @@
         "summary": "ValidateWorkspaceNetlabTemplate runs `netlab create` against a selected template\nbundle without deploying it.\n"
       }
     },
+    "/api/workspaces/{id}/policy-reports/catalog": {
+      "get": {
+        "operationId": "GET:skyforge.GetWorkspacePolicyReportCatalog",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "checks": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.PolicyReportCatalogCheck"
+                      },
+                      "type": "array"
+                    },
+                    "version": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "checks"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspacePolicyReportCatalog returns the embedded Policy Reports check\ncatalog.\n"
+      }
+    },
+    "/api/workspaces/{id}/policy-reports/change-planning/simulate": {
+      "post": {
+        "description": "This endpoint is intentionally stubbed for now. Earlier iterations depended on fast-changing NQE output shapes and would become brittle quickly.\n",
+        "operationId": "POST:skyforge.SimulateWorkspacePolicyReportChangePlanning",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "change": {
+                    "$ref": "#/components/schemas/skyforge.PolicyReportRuleChange"
+                  },
+                  "deviceName": {
+                    "title": "optional filter\n",
+                    "type": "string"
+                  },
+                  "firewallsOnly": {
+                    "type": "boolean"
+                  },
+                  "flows": {
+                    "items": {
+                      "$ref": "#/components/schemas/skyforge.PolicyReportFlowTuple"
+                    },
+                    "type": "array"
+                  },
+                  "includeImplicitDefault": {
+                    "type": "boolean"
+                  },
+                  "networkId": {
+                    "type": "string"
+                  },
+                  "snapshotId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "networkId",
+                  "snapshotId",
+                  "firewallsOnly",
+                  "includeImplicitDefault",
+                  "deviceName",
+                  "flows",
+                  "change"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "changedCount": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "impacts": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.PolicyReportFlowImpact"
+                      },
+                      "type": "array"
+                    },
+                    "totalDevices": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "totalFlows": {
+                      "format": "int64",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "totalFlows",
+                    "totalDevices",
+                    "changedCount",
+                    "impacts"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "SimulateWorkspacePolicyReportChangePlanning simulates a rule change against a\nset of flows (no config push).\n"
+      }
+    },
+    "/api/workspaces/{id}/policy-reports/checks": {
+      "get": {
+        "operationId": "GET:skyforge.GetWorkspacePolicyReportChecks",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "catalog": {
+                      "$ref": "#/components/schemas/skyforge.PolicyReportCatalog"
+                    },
+                    "checks": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.PolicyReportCatalogCheck"
+                      },
+                      "type": "array"
+                    },
+                    "files": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "catalog",
+                    "checks",
+                    "files"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspacePolicyReportChecks lists known checks (catalog + embedded .nqe\nfiles).\n"
+      }
+    },
+    "/api/workspaces/{id}/policy-reports/checks/run": {
+      "post": {
+        "operationId": "POST:skyforge.RunWorkspacePolicyReportCheck",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "checkId": {
+                    "type": "string"
+                  },
+                  "networkId": {
+                    "type": "string"
+                  },
+                  "parameters": {
+                    "$ref": "#/components/schemas/skyforge.JSONMap"
+                  },
+                  "queryOptions": {
+                    "$ref": "#/components/schemas/skyforge.JSONMap"
+                  },
+                  "snapshotId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "networkId",
+                  "snapshotId",
+                  "checkId",
+                  "parameters",
+                  "queryOptions"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "results": {
+                      "type": "object"
+                    },
+                    "snapshotId": {
+                      "type": "string"
+                    },
+                    "total": {
+                      "format": "int64",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "snapshotId",
+                    "total",
+                    "results"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "RunWorkspacePolicyReportCheck executes an embedded check (.nqe) and returns a\nnormalized response.\n"
+      }
+    },
+    "/api/workspaces/{id}/policy-reports/checks/{checkId}": {
+      "get": {
+        "operationId": "GET:skyforge.GetWorkspacePolicyReportCheck",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "checkId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "check": {
+                      "$ref": "#/components/schemas/skyforge.PolicyReportCatalogCheck"
+                    },
+                    "content": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "check",
+                    "content"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspacePolicyReportCheck returns the .nqe file content for a given check.\n"
+      }
+    },
+    "/api/workspaces/{id}/policy-reports/governance/assignments": {
+      "get": {
+        "operationId": "GET:skyforge.ListWorkspacePolicyReportRecertAssignments",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "campaignId",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "assignee",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "assignments": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.PolicyReportRecertAssignment"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "assignments"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ListWorkspacePolicyReportRecertAssignments lists assignments.\n"
+      }
+    },
+    "/api/workspaces/{id}/policy-reports/governance/assignments/{assignmentId}/attest": {
+      "post": {
+        "operationId": "POST:skyforge.AttestWorkspacePolicyReportRecertAssignment",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "assignmentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "justification": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "justification"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "AttestWorkspacePolicyReportRecertAssignment marks an assignment as attested.\n"
+      }
+    },
+    "/api/workspaces/{id}/policy-reports/governance/assignments/{assignmentId}/waive": {
+      "post": {
+        "operationId": "POST:skyforge.WaiveWorkspacePolicyReportRecertAssignment",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "assignmentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "justification": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "justification"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "WaiveWorkspacePolicyReportRecertAssignment marks an assignment as waived.\n"
+      }
+    },
+    "/api/workspaces/{id}/policy-reports/governance/campaigns": {
+      "get": {
+        "operationId": "GET:skyforge.ListWorkspacePolicyReportRecertCampaigns",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "campaigns": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.PolicyReportRecertCampaignWithCounts"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "campaigns"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ListWorkspacePolicyReportRecertCampaigns lists recertification campaigns.\n"
+      },
+      "post": {
+        "operationId": "POST:skyforge.CreateWorkspacePolicyReportRecertCampaign",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "description": {
+                    "type": "string"
+                  },
+                  "dueAt": {
+                    "title": "RFC3339\n",
+                    "type": "string"
+                  },
+                  "forwardNetworkId": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "packId": {
+                    "type": "string"
+                  },
+                  "snapshotId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "description",
+                  "forwardNetworkId",
+                  "snapshotId",
+                  "packId",
+                  "dueAt"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "campaign": {
+                      "$ref": "#/components/schemas/skyforge.PolicyReportRecertCampaign"
+                    },
+                    "counts": {
+                      "$ref": "#/components/schemas/skyforge.PolicyReportRecertCampaignCounts"
+                    }
+                  },
+                  "required": [
+                    "campaign",
+                    "counts"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "CreateWorkspacePolicyReportRecertCampaign creates a recertification campaign for\na given Forward network/snapshot/pack.\n"
+      }
+    },
+    "/api/workspaces/{id}/policy-reports/governance/campaigns/{campaignId}": {
+      "get": {
+        "operationId": "GET:skyforge.GetWorkspacePolicyReportRecertCampaign",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "campaignId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "campaign": {
+                      "$ref": "#/components/schemas/skyforge.PolicyReportRecertCampaign"
+                    },
+                    "counts": {
+                      "$ref": "#/components/schemas/skyforge.PolicyReportRecertCampaignCounts"
+                    }
+                  },
+                  "required": [
+                    "campaign",
+                    "counts"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspacePolicyReportRecertCampaign gets one campaign plus assignment counts.\n"
+      }
+    },
+    "/api/workspaces/{id}/policy-reports/governance/campaigns/{campaignId}/generate": {
+      "post": {
+        "operationId": "POST:skyforge.GenerateWorkspacePolicyReportRecertAssignments",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "campaignId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "assigneeUsername": {
+                    "type": "string"
+                  },
+                  "maxPerCheck": {
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "maxTotal": {
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "queryOptions": {
+                    "$ref": "#/components/schemas/skyforge.JSONMap"
+                  }
+                },
+                "required": [
+                  "assigneeUsername",
+                  "maxPerCheck",
+                  "maxTotal",
+                  "queryOptions"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "campaignId": {
+                      "type": "string"
+                    },
+                    "created": {
+                      "format": "int64",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "campaignId",
+                    "created"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GenerateWorkspacePolicyReportRecertAssignments runs the campaign pack and stores\nresulting findings as assignments.\n"
+      }
+    },
+    "/api/workspaces/{id}/policy-reports/governance/exceptions": {
+      "get": {
+        "operationId": "GET:skyforge.ListWorkspacePolicyReportExceptions",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "exceptions": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.PolicyReportException"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "exceptions"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ListWorkspacePolicyReportExceptions lists exceptions.\n"
+      },
+      "post": {
+        "operationId": "POST:skyforge.CreateWorkspacePolicyReportException",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "checkId": {
+                    "type": "string"
+                  },
+                  "expiresAt": {
+                    "title": "RFC3339\n",
+                    "type": "string"
+                  },
+                  "findingId": {
+                    "type": "string"
+                  },
+                  "justification": {
+                    "type": "string"
+                  },
+                  "ticketUrl": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "findingId",
+                  "checkId",
+                  "justification",
+                  "ticketUrl",
+                  "expiresAt"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "approvedBy": {
+                      "type": "string"
+                    },
+                    "checkId": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "createdBy": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "findingId": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "justification": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "ticketUrl": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "workspaceId",
+                    "findingId",
+                    "checkId",
+                    "status",
+                    "justification",
+                    "ticketUrl",
+                    "expiresAt",
+                    "createdBy",
+                    "approvedBy",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "CreateWorkspacePolicyReportException proposes an exception for a finding.\n"
+      }
+    },
+    "/api/workspaces/{id}/policy-reports/governance/exceptions/{exceptionId}/approve": {
+      "post": {
+        "operationId": "POST:skyforge.ApproveWorkspacePolicyReportException",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "exceptionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ApproveWorkspacePolicyReportException approves an exception (owner/admin only).\n"
+      }
+    },
+    "/api/workspaces/{id}/policy-reports/governance/exceptions/{exceptionId}/reject": {
+      "post": {
+        "operationId": "POST:skyforge.RejectWorkspacePolicyReportException",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "exceptionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "RejectWorkspacePolicyReportException rejects an exception (owner/admin only).\n"
+      }
+    },
+    "/api/workspaces/{id}/policy-reports/nqe": {
+      "post": {
+        "operationId": "POST:skyforge.RunWorkspacePolicyReportNQE",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "networkId": {
+                    "type": "string"
+                  },
+                  "parameters": {
+                    "$ref": "#/components/schemas/skyforge.JSONMap"
+                  },
+                  "query": {
+                    "type": "string"
+                  },
+                  "queryOptions": {
+                    "$ref": "#/components/schemas/skyforge.JSONMap"
+                  },
+                  "snapshotId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "networkId",
+                  "snapshotId",
+                  "query",
+                  "parameters",
+                  "queryOptions"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "results": {
+                      "type": "object"
+                    },
+                    "snapshotId": {
+                      "type": "string"
+                    },
+                    "total": {
+                      "format": "int64",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "snapshotId",
+                    "total",
+                    "results"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "RunWorkspacePolicyReportNQE executes an NQE query and returns a normalized\nresponse.\n"
+      }
+    },
+    "/api/workspaces/{id}/policy-reports/packs": {
+      "get": {
+        "operationId": "GET:skyforge.GetWorkspacePolicyReportPacks",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "packs": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.PolicyReportPack"
+                      },
+                      "type": "array"
+                    },
+                    "version": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "packs"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspacePolicyReportPacks returns the embedded Policy Reports packs\ndefinition.\n"
+      }
+    },
+    "/api/workspaces/{id}/policy-reports/packs/delta": {
+      "post": {
+        "operationId": "POST:skyforge.RunWorkspacePolicyReportPackDelta",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "baselineSnapshotId": {
+                    "type": "string"
+                  },
+                  "compareSnapshotId": {
+                    "type": "string"
+                  },
+                  "maxSamplesPerBucket": {
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "networkId": {
+                    "type": "string"
+                  },
+                  "packId": {
+                    "type": "string"
+                  },
+                  "queryOptions": {
+                    "$ref": "#/components/schemas/skyforge.JSONMap"
+                  }
+                },
+                "required": [
+                  "networkId",
+                  "packId",
+                  "baselineSnapshotId",
+                  "compareSnapshotId",
+                  "queryOptions",
+                  "maxSamplesPerBucket"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "baselineSnapshotId": {
+                      "type": "string"
+                    },
+                    "checks": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.PolicyReportPackDeltaCheck"
+                      },
+                      "type": "array"
+                    },
+                    "compareSnapshotId": {
+                      "type": "string"
+                    },
+                    "networkId": {
+                      "type": "string"
+                    },
+                    "packId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "packId",
+                    "networkId",
+                    "baselineSnapshotId",
+                    "compareSnapshotId",
+                    "checks"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "RunWorkspacePolicyReportPackDelta runs a pack on two snapshots and returns a\nper-check delta summary.\n"
+      }
+    },
+    "/api/workspaces/{id}/policy-reports/packs/run": {
+      "post": {
+        "operationId": "POST:skyforge.RunWorkspacePolicyReportPack",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "networkId": {
+                    "type": "string"
+                  },
+                  "packId": {
+                    "type": "string"
+                  },
+                  "queryOptions": {
+                    "$ref": "#/components/schemas/skyforge.JSONMap"
+                  },
+                  "snapshotId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "networkId",
+                  "snapshotId",
+                  "packId",
+                  "queryOptions"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "networkId": {
+                      "type": "string"
+                    },
+                    "packId": {
+                      "type": "string"
+                    },
+                    "results": {
+                      "additionalProperties": {
+                        "$ref": "#/components/schemas/skyforge.PolicyReportNQEResponse"
+                      },
+                      "type": "object"
+                    },
+                    "snapshotId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "packId",
+                    "networkId",
+                    "snapshotId",
+                    "results"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "RunWorkspacePolicyReportPack executes all checks in a pack (serially) and\nreturns per-check results.\n"
+      }
+    },
+    "/api/workspaces/{id}/policy-reports/snapshots": {
+      "get": {
+        "operationId": "GET:skyforge.GetWorkspacePolicyReportSnapshots",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "networkId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "maxResults",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "snapshotId",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "body": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "body"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspacePolicyReportSnapshots lists snapshots for a Forward network.\n"
+      }
+    },
     "/api/workspaces/{id}/runs/ansible-run": {
       "post": {
         "operationId": "POST:skyforge.RunWorkspaceAnsible",
@@ -18460,6 +22523,33 @@
         "summary": "CronWorkerHeartbeatBridge triggers the worker heartbeat task.\n"
       }
     },
+    "/internal/bridge/worker/tasks/poll": {
+      "post": {
+        "operationId": "POST:worker.CronProcessQueuedTasksFallbackBridge",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "header",
+            "name": "x-skyforge-internal-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "CronProcessQueuedTasksFallbackBridge triggers DB-backed fallback processing for\nqueued tasks.\n"
+      }
+    },
     "/internal/bridge/worker/tasks/reconcile": {
       "post": {
         "operationId": "POST:worker.CronReconcileQueuedTasksBridge",
@@ -18541,6 +22631,32 @@
         "summary": "CronWorkspaceSyncBridge triggers workspace sync maintenance.\n"
       }
     },
+    "/internal/cron/capacity/cleanup": {
+      "post": {
+        "operationId": "POST:skyforge.CronCleanupCapacity",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        }
+      }
+    },
+    "/internal/cron/capacity/rollups": {
+      "post": {
+        "operationId": "POST:skyforge.CronEnqueueCapacityRollups",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        }
+      }
+    },
     "/internal/cron/cloud/checks": {
       "post": {
         "operationId": "POST:worker.CronCloudCredentialChecks",
@@ -18619,6 +22735,21 @@
           }
         },
         "summary": "CronWorkerHeartbeat upserts a task worker heartbeat for this worker instance.\n"
+      }
+    },
+    "/internal/worker/tasks/poll": {
+      "post": {
+        "description": "appear stuck in \"queued\".\n\nThis avoids the \"queued forever\" failure mode when Pub/Sub delivery is delayed/unavailable. The primary mechanism is still Pub/Sub; this only kicks in after a minimum queued age.\n",
+        "operationId": "POST:worker.CronProcessQueuedTasksFallback",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "CronProcessQueuedTasksFallback is a DB-backed fallback that starts tasks\ndirectly when they\n"
       }
     },
     "/internal/worker/tasks/reconcile": {

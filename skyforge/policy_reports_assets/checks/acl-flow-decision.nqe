@@ -1,0 +1,71 @@
+/**
+ * @intent Flow-to-decision: determine the first-match rule (and effective decision) for a flow tuple.
+ * @description
+ *  Uses modeled ACL entries (device.aclEntries) and the list order as the evaluation order.
+ *
+ *  Notes:
+ *  - Empty match fields are treated as "any".
+ *  - ipProto/dstPort are optional: pass -1 to ignore.
+ */
+
+containsIp(subnets, ip) =
+  length(subnets) == 0 ||
+  ip in ipAddressSet(subnets);
+
+containsIntRange(ranges, v) =
+  length(ranges) == 0 ||
+  any(foreach r in ranges
+      select r.start <= v && v <= r.end);
+
+@query
+aclFlowDecision(
+  srcIp : String,
+  dstIp : String,
+  ipProto : Integer,
+  dstPort : Integer,
+  firewallsOnly : Bool,
+  includeImplicitDefault : Bool
+) =
+  let src = ipAddress(srcIp)
+  let dst = ipAddress(dstIp)
+  foreach device in network.devices
+  where !firewallsOnly || device.platform.deviceType == DeviceType.FIREWALL
+  let rules = device.aclEntries
+
+  // Find all matching rule indices in order.
+  let matchIdxs =
+    foreach idx in fromTo(0, length(rules) - 1)
+    let aclEntry = rules[idx]
+    let h = aclEntry.headerMatches
+    where includeImplicitDefault || (!aclEntry.implicitRule && !aclEntry.defaultRule)
+    where containsIp(h.ipv4Src, src)
+    where containsIp(h.ipv4Dst, dst)
+    where ipProto < 0 || containsIntRange(h.ipProtocol, ipProto)
+    where dstPort < 0 || containsIntRange(h.tpDst, dstPort)
+    select idx order by idx ascending
+
+  let hasMatch = length(matchIdxs) > 0
+  let firstIdx = if hasMatch then matchIdxs[0] else -1
+  let firstRule = if hasMatch then rules[firstIdx] else null
+
+  select {
+    device: device.name,
+    matchCount: length(matchIdxs),
+    decision: if hasMatch then toString(firstRule.action) else "NO_MATCH",
+    firstRuleIndex: firstIdx,
+    firstRule: if hasMatch then firstRule.name else "",
+    firstRuleEvidence: if hasMatch then sourceConfigText(firstRule.name) else "",
+    // Short explanation helpers.
+    srcAny: if hasMatch then length(firstRule.headerMatches.ipv4Src) == 0 else false,
+    dstAny: if hasMatch then length(firstRule.headerMatches.ipv4Dst) == 0 else false,
+    protoAny: if hasMatch then length(firstRule.headerMatches.ipProtocol) == 0 else false,
+    portAny: if hasMatch then length(firstRule.headerMatches.tpDst) == 0 else false,
+    overApproximated: if hasMatch then firstRule.headerMatches.overApproximated else false,
+    ingress: if hasMatch then firstRule.metadataMatches.ingressInterfaces else bag([]),
+    egress: if hasMatch then firstRule.metadataMatches.egressInterfaces else bag([]),
+    createdAt: if hasMatch then firstRule.lifecycleData?.createdAt else null,
+    lastModified: if hasMatch then firstRule.lifecycleData?.lastModified else null,
+    lastUsed: if hasMatch then firstRule.lifecycleData?.lastUsed else null,
+    hitCount: if hasMatch then firstRule.lifecycleData?.truncatedHitCount else null
+  };
+

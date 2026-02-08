@@ -1,0 +1,63 @@
+/**
+ * @intent Policy analytics: find overlapping ACL rules with conflicting actions.
+ * @description
+ *  Flags rule pairs that overlap on ipv4Src/ipv4Dst/ipProtocol/tpDst but have different actions.
+ *  This can reveal ambiguous policy intent and unexpected first-match behavior.
+ *
+ *  Notes:
+ *  - Empty match fields are treated as "any".
+ *  - Conservative: only considers ipv4Src/ipv4Dst/ipProtocol/tpDst.
+ */
+
+subnetsToSet(subnets) = ipAddressSet(subnets);
+
+subnetsOverlap(a, b) =
+  length(a) == 0 || length(b) == 0 ||
+  !isEmpty(intersect(subnetsToSet(a), subnetsToSet(b)));
+
+rangesOverlap(a, b) =
+  length(a) == 0 || length(b) == 0 ||
+  any(
+    foreach ra in a
+    foreach rb in b
+    select ra.start <= rb.end && rb.start <= ra.end
+  );
+
+headerOverlap(hA, hB) =
+  subnetsOverlap(hA.ipv4Src, hB.ipv4Src) &&
+  subnetsOverlap(hA.ipv4Dst, hB.ipv4Dst) &&
+  rangesOverlap(hA.ipProtocol, hB.ipProtocol) &&
+  rangesOverlap(hA.tpDst, hB.tpDst);
+
+@query
+aclOverlapConflicts(firewallsOnly : Bool, includeImplicitDefault : Bool) =
+  foreach device in network.devices
+  where !firewallsOnly || device.platform.deviceType == DeviceType.FIREWALL
+  let rules = device.aclEntries
+  foreach j in fromTo(0, length(rules) - 1)
+  let rj = rules[j]
+  where includeImplicitDefault || (!rj.implicitRule && !rj.defaultRule)
+
+  foreach i in fromTo(0, j - 1)
+  let ri = rules[i]
+  where includeImplicitDefault || (!ri.implicitRule && !ri.defaultRule)
+  where ri.action != rj.action
+
+  let hj = rj.headerMatches
+  let hi = ri.headerMatches
+  where headerOverlap(hj, hi)
+
+  select {
+    violation: true,
+    device: device.name,
+    earlierRuleIndex: i,
+    earlierRule: ri.name,
+    earlierAction: ri.action,
+    earlierEvidence: sourceConfigText(ri.name),
+    laterRuleIndex: j,
+    laterRule: rj.name,
+    laterAction: rj.action,
+    laterEvidence: sourceConfigText(rj.name),
+    overApproximated: hj.overApproximated || hi.overApproximated
+  };
+

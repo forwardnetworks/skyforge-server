@@ -149,9 +149,10 @@ tests:
       environment:
         NETLAB_DEVICE: csr
       setOverrides: []
-      timeout: 25m
+      # CSR is heavier than IOSv/IOL; allow extra time for boot + SSH readiness.
+      timeout: 45m
       sshBanners: true
-      sshTimeout: 12m
+      sshTimeout: 25m
       cleanup: true
 
   - name: netlab-validate-nxos
@@ -318,9 +319,10 @@ tests:
       environment:
         NETLAB_DEVICE: cat8000v
       setOverrides: []
-      timeout: 25m
+      # C8000v is heavier than IOSv/IOL; allow extra time for boot + SSH readiness.
+      timeout: 45m
       sshBanners: true
-      sshTimeout: 12m
+      sshTimeout: 25m
       cleanup: true
 
   - name: netlab-validate-arubacx
@@ -401,10 +403,14 @@ tests:
       template: topology.yml
       environment:
         NETLAB_DEVICE: vjunos-router
+        SKYFORGE_NETLAB_C9S_ENABLE_NETLAB_INITIAL: "true"
+        SKYFORGE_NETLAB_C9S_ENABLE_STARTUP_CONFIG_INJECTION: "false"
+        SKYFORGE_NETLAB_INITIAL_SSH_READY_SECONDS: "1800"
+        SKYFORGE_FORWARD_SSH_READY_SECONDS: "1800"
       setOverrides: []
-      timeout: 25m
+      timeout: 45m
       sshBanners: true
-      sshTimeout: 12m
+      sshTimeout: 25m
       cleanup: true
 
   - name: netlab-validate-vjunos-switch
@@ -429,10 +435,14 @@ tests:
       template: topology.yml
       environment:
         NETLAB_DEVICE: vjunos-switch
+        SKYFORGE_NETLAB_C9S_ENABLE_NETLAB_INITIAL: "true"
+        SKYFORGE_NETLAB_C9S_ENABLE_STARTUP_CONFIG_INJECTION: "false"
+        SKYFORGE_NETLAB_INITIAL_SSH_READY_SECONDS: "1800"
+        SKYFORGE_FORWARD_SSH_READY_SECONDS: "1800"
       setOverrides: []
-      timeout: 25m
+      timeout: 45m
       sshBanners: true
-      sshTimeout: 12m
+      sshTimeout: 25m
       cleanup: true
 
   - name: netlab-validate-vptx
@@ -457,10 +467,78 @@ tests:
       template: topology.yml
       environment:
         NETLAB_DEVICE: vptx
+        SKYFORGE_NETLAB_C9S_ENABLE_NETLAB_INITIAL: "true"
+        SKYFORGE_NETLAB_C9S_ENABLE_STARTUP_CONFIG_INJECTION: "false"
+        SKYFORGE_NETLAB_INITIAL_SSH_READY_SECONDS: "1800"
+        SKYFORGE_FORWARD_SSH_READY_SECONDS: "1800"
       setOverrides: []
-      timeout: 25m
+      timeout: 45m
       sshBanners: true
-      sshTimeout: 12m
+      sshTimeout: 25m
+      cleanup: true
+
+  - name: netlab-validate-vmx
+    kind: netlab_validate
+    netlab_validate:
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: vmx
+      setOverrides: []
+      timeout: 10m
+
+  - name: netlab-deploy-vmx
+    kind: netlab_deploy
+    netlab_deploy:
+      type: netlab-c9s
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: vmx
+        SKYFORGE_NETLAB_C9S_ENABLE_NETLAB_INITIAL: "true"
+        SKYFORGE_NETLAB_C9S_ENABLE_STARTUP_CONFIG_INJECTION: "false"
+        SKYFORGE_NETLAB_INITIAL_SSH_READY_SECONDS: "1800"
+        SKYFORGE_FORWARD_SSH_READY_SECONDS: "1800"
+      setOverrides: []
+      timeout: 45m
+      sshBanners: true
+      sshTimeout: 25m
+      cleanup: true
+
+  - name: netlab-validate-vsrx
+    kind: netlab_validate
+    netlab_validate:
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: vsrx
+      setOverrides: []
+      timeout: 10m
+
+  - name: netlab-deploy-vsrx
+    kind: netlab_deploy
+    netlab_deploy:
+      type: netlab-c9s
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: vsrx
+        SKYFORGE_NETLAB_C9S_ENABLE_NETLAB_INITIAL: "true"
+        SKYFORGE_NETLAB_C9S_ENABLE_STARTUP_CONFIG_INJECTION: "false"
+        SKYFORGE_NETLAB_INITIAL_SSH_READY_SECONDS: "1800"
+        SKYFORGE_FORWARD_SSH_READY_SECONDS: "1800"
+      setOverrides: []
+      timeout: 45m
+      sshBanners: true
+      sshTimeout: 25m
       cleanup: true
 
   - name: netlab-validate-vmx

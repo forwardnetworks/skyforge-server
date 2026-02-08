@@ -42,7 +42,6 @@ Terraform: {
 
 Forward: {
 	SNMPPlaceholderEnabled: true
-	SNMPCommunity: "public"
 }
 
 ForwardCollector: {
@@ -86,4 +85,11 @@ NetlabGenerator: {
 	PullPolicy:       "IfNotPresent"
 	ApplierImage:     "ghcr.io/forwardnetworks/skyforge-netlab-applier:latest"
 	ApplierPullPolicy: "IfNotPresent"
+	// Avoid the vrnetlab management subnet (10.0.0.0/24) which is used internally by
+	// vrnetlab QEMU-based devices (IOSv/IOSvL2/CSR/NX-OS/etc). Netlab's default
+	// loopback pool is in 10.0.0.0/24, which can overlap and prevent vrnetlab from
+	// bringing up its management interface (breaking SSH readiness).
+	C9sDefaultSetOverrides: [
+		"addressing.loopback.ipv4=172.31.0.0/16",
+	]
 }

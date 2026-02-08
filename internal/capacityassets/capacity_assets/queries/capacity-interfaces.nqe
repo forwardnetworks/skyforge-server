@@ -1,0 +1,21 @@
+/**
+ * @intent Capacity inventory: interfaces (speed/admin/oper) for enrichment and capacity views.
+ */
+@query
+capacityInterfaces =
+  foreach device in network.devices
+  foreach iface in device.interfaces
+  select {
+    deviceName: device.name,
+    deviceLocationName: device.locationName,
+    deviceTagNames: device.tagNames,
+    deviceGroupNames: device.groupNames,
+    interfaceName: iface.name,
+    description: iface.description,
+    adminStatus: iface.adminStatus,
+    operStatus: iface.operStatus,
+    layer: iface.layer,
+    interfaceType: iface.interfaceType,
+    mtu: iface.mtu,
+    speedMbps: iface.ethernet.speedMbps
+  };

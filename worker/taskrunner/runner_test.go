@@ -39,4 +39,3 @@ func TestRunner_ExecutesTask(t *testing.T) {
 		}
 	}
 }
-

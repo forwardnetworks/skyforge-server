@@ -49,4 +49,3 @@ func nosResourceProfileForKind(kind string) (nosResourceProfile, bool) {
 	p, ok := nosPerfProfilesByKind[kind]
 	return p, ok
 }
-

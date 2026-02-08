@@ -78,7 +78,7 @@ type UserAISaveRequest struct {
 	// - netlab: "bgp-demo" or "bgp-demo.yml"
 	// - containerlab: "dc1" or "dc1.clab.yml"
 	Filename string `json:"filename,omitempty"`
-	Message  string         `json:"message,omitempty"`
+	Message  string `json:"message,omitempty"`
 }
 
 type UserAISaveResponse struct {

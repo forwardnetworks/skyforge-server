@@ -11,11 +11,11 @@ import (
 )
 
 type userSettingsRecord struct {
-	UserID                       string
+	UserID                        string
 	DefaultForwardCollectorConfig string
-	DefaultEnvJSON               string
-	ExternalTemplateReposJSON    string
-	UpdatedAt                    time.Time
+	DefaultEnvJSON                string
+	ExternalTemplateReposJSON     string
+	UpdatedAt                     time.Time
 }
 
 func getUserSettings(ctx context.Context, db *sql.DB, userID string) (*userSettingsRecord, error) {

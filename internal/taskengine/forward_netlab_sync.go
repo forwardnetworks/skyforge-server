@@ -34,6 +34,7 @@ const defaultForwardBaseURL = "https://fwd.app"
 
 type forwardCredentials struct {
 	BaseURL        string
+	SkipTLSVerify  bool
 	Username       string
 	Password       string
 	CollectorUser  string
@@ -518,16 +519,17 @@ func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *work
 
 	snmpCredentialID := getString(forwardSnmpCredentialIDKey)
 	if snmpCredentialID == "" && e.cfg.Forward.SNMPPlaceholderEnabled {
-		community := strings.TrimSpace(e.cfg.Forward.SNMPCommunity)
-		if community != "" {
-			cred, err := forwardCreateSnmpCredential(ctx, client, networkID, community)
-			if err != nil {
-				log.Printf("forward snmp credential skipped: %v", err)
-			} else {
-				snmpCredentialID = cred.ID
-				cfgAny[forwardSnmpCredentialIDKey] = snmpCredentialID
-				changed = true
-			}
+		community, err := e.ensureUserSnmpTrapToken(ctx, pc.claims.Username)
+		if err != nil {
+			return cfgAny, err
+		}
+		cred, err := forwardCreateSnmpCredential(ctx, client, networkID, community)
+		if err != nil {
+			log.Printf("forward snmp credential skipped: %v", err)
+		} else {
+			snmpCredentialID = cred.ID
+			cfgAny[forwardSnmpCredentialIDKey] = snmpCredentialID
+			changed = true
 		}
 	}
 

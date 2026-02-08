@@ -76,6 +76,8 @@ func injectNetlabC9sVrnetlabStartupConfig(
 
 	const startupPath = "/config/startup-config.cfg"
 
+	modified := false
+
 	for node, nodeAny := range nodesAny {
 		nodeName := strings.TrimSpace(fmt.Sprintf("%v", node))
 		cfg, ok := nodeAny.(map[string]any)
@@ -87,11 +89,52 @@ func injectNetlabC9sVrnetlabStartupConfig(
 		image := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["image"])))
 
 		// vrnetlab qemu-based nodes use /config/startup-config.cfg as the loadable startup config.
-		// Keep IOS/IOL out of this path; their bootstrap is handled differently.
+		// Keep IOS-family and Junos-family out of the startup-config injection path to
+		// match the native netlab/containerlab + vrnetlab workflow:
+		// - vrnetlab bootstraps the device with baseline SSH enabled
+		// - Skyforge gates on SSH readiness and then runs netlab initial (when enabled)
+		//
+		// Injecting a partial netlab snippet as "startup-config" can accidentally disable
+		// SSH (no banner) and/or diverge from netlab's own apply logic, so we only inject
+		// startup-config for platforms where we explicitly want containerlab-style boot
+		// config mounting (for example, EOS/cEOS handled elsewhere).
 		if !strings.Contains(image, "/vrnetlab/") {
 			continue
 		}
 		if kind == "cisco_iol" || kind == "cisco_ioll2" {
+			continue
+		}
+		if isVrnetlabIOSFamily(kind, image) {
+			// Prefer our "skyforge" vrnetlab builds for IOSv/IOSvL2. These are tuned to
+			// reliably enable SSH (keygen/bootstrap) in containerized/K8s environments.
+			// Keep the netlab-facing device kind the same; only rewrite the image tag.
+			//
+			// Note: We intentionally do not rewrite CSR/C8000v here.
+			if strings.Contains(image, "/cisco_vios:15.9.3") && !strings.Contains(image, "-skyforge") {
+				cfg["image"] = "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge8"
+				modified = true
+			}
+			if strings.Contains(image, "/cisco_viosl2:15.2") && !strings.Contains(image, "-skyforge") {
+				cfg["image"] = "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge8"
+				modified = true
+			}
+			// Ensure the generated topology does not reference a startup-config file we
+			// are not going to mount/inject.
+			if _, ok := cfg["startup-config"]; ok {
+				delete(cfg, "startup-config")
+				modified = true
+			}
+			nodesAny[node] = cfg
+			continue
+		}
+		if isVrnetlabJunosFamily(kind, image) {
+			// Ensure the generated topology does not reference a startup-config file we
+			// are not going to mount/inject.
+			if _, ok := cfg["startup-config"]; ok {
+				delete(cfg, "startup-config")
+				modified = true
+			}
+			nodesAny[node] = cfg
 			continue
 		}
 
@@ -147,6 +190,13 @@ func injectNetlabC9sVrnetlabStartupConfig(
 	}
 
 	if len(overrideData) == 0 {
+		if modified {
+			out, err := yaml.Marshal(topo)
+			if err != nil {
+				return nil, nil, err
+			}
+			return out, nodeMounts, nil
+		}
 		return topologyYAML, nodeMounts, nil
 	}
 	if err := kubeUpsertConfigMap(ctx, ns, overrideCM, overrideData, labels); err != nil {
@@ -162,6 +212,31 @@ func injectNetlabC9sVrnetlabStartupConfig(
 	}
 
 	return out, nodeMounts, nil
+}
+
+func isVrnetlabIOSFamily(kind, image string) bool {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	image = strings.ToLower(strings.TrimSpace(image))
+	return kind == "cisco_vios" || kind == "cisco_viosl2" || kind == "vr-csr" || kind == "cisco_c8000v" ||
+		strings.Contains(image, "/cisco_vios") || strings.Contains(image, "/cisco_viosl2") ||
+		strings.Contains(image, "/vr-csr") || strings.Contains(image, "/cisco_c8000v")
+}
+
+func isVrnetlabJunosFamily(kind, image string) bool {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	image = strings.ToLower(strings.TrimSpace(image))
+
+	if kind == "vr-vmx" || kind == "vr-vsrx" {
+		return true
+	}
+	if strings.Contains(kind, "junos") || strings.Contains(kind, "vjunos") || strings.Contains(kind, "vqfx") || strings.Contains(kind, "vsrx") {
+		return true
+	}
+	// Match on common vrnetlab Juniper image names.
+	if strings.Contains(image, "/juniper_") || strings.Contains(image, "/vr-vmx") || strings.Contains(image, "/juniper_vsrx") {
+		return true
+	}
+	return false
 }
 
 func stripNetlabJunosDeleteDirectives(kind, startupConfig string) string {

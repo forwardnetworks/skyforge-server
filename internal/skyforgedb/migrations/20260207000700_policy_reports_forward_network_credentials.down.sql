@@ -1,0 +1,3 @@
+DROP INDEX IF EXISTS sf_pr_fwd_net_creds_ws_user_updated_idx;
+DROP TABLE IF EXISTS sf_policy_report_forward_network_credentials;
+

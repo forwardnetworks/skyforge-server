@@ -37,8 +37,8 @@ type GovernancePolicy struct {
 
 func defaultGovernancePolicy() GovernancePolicy {
 	return GovernancePolicy{
-		MaxDeploymentsPerUser: 0,
-		MaxCollectorsPerUser:  0,
+		MaxDeploymentsPerUser:            0,
+		MaxCollectorsPerUser:             0,
 		AllowUserByosNetlabServers:       true,
 		AllowUserByosContainerlabServers: true,
 		AllowUserExternalTemplateRepos:   true,

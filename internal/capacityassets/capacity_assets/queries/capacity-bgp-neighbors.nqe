@@ -1,0 +1,24 @@
+/**
+ * @intent Capacity BGP scale: neighbor state and prefix counts.
+ */
+@query
+capacityBgpNeighbors =
+  foreach device in network.devices
+  foreach ni in device.networkInstances
+  foreach proto in ni.protocols
+  where proto.identifier == RoutingProtocolType.BGP
+  foreach n in proto.bgp.neighbors
+  select {
+    deviceName: device.name,
+    vrf: ni.name,
+    neighborAddress: n.neighborAddress,
+    peerDeviceName: n.peerDeviceName,
+    peerVrf: n.peerVrf,
+    peerAs: n.peerAS,
+    enabled: n.enabled,
+    sessionState: n.sessionState,
+    receivedPrefixes: n.statistics?.receivedPrefixes,
+    advertisedPrefixes: n.statistics?.advertisedPrefixes,
+    sessionDurationSec: n.statistics?.sessionDurationInSeconds
+  };
+
