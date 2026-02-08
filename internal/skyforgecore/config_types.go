@@ -58,7 +58,10 @@ type Config struct {
 	// NetlabC9sGeneratorMode controls how netlab-c9s artifacts are generated:
 	// - "remote": use a BYOS netlab API server
 	// - "k8s": run a netlab generator Job in-cluster
-	NetlabC9sGeneratorMode                   string
+	NetlabC9sGeneratorMode string
+	// NetlabC9sDefaultSetOverrides are netlab `--set` overrides applied by default
+	// for netlab-c9s generator/applier runs. User-provided overrides win.
+	NetlabC9sDefaultSetOverrides             []string
 	NetlabGeneratorImage                     string
 	NetlabGeneratorPullPolicy                string
 	NetlabApplierImage                       string
@@ -97,7 +100,6 @@ type Config struct {
 
 type ForwardConfig struct {
 	SNMPPlaceholderEnabled bool
-	SNMPCommunity          string
 }
 
 type ElasticConfig struct {

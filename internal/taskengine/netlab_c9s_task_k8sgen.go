@@ -276,7 +276,7 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 					enabled = strings.EqualFold(s, "true") || s == "1" || strings.EqualFold(s, "yes")
 				}
 			}
-			if enabled {
+			if enabled && e.cfg.Forward.SNMPPlaceholderEnabled {
 				community, tokErr := e.ensureUserSnmpTrapToken(ctx, strings.TrimSpace(spec.WorkspaceCtx.claims.Username))
 				if tokErr != nil {
 					return nil, nil, nil, tokErr

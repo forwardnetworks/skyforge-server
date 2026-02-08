@@ -72,6 +72,9 @@ type NetlabGeneratorDefaultsConfig struct {
 	PullPolicy        string
 	ApplierImage      string
 	ApplierPullPolicy string
+	// C9sDefaultSetOverrides are netlab `--set` overrides applied by default
+	// for netlab-c9s generator/applier runs. User-provided overrides win.
+	C9sDefaultSetOverrides []string
 }
 
 type KubernetesDefaultsConfig struct {
@@ -111,7 +114,6 @@ type TerraformDefaultsConfig struct {
 
 type ForwardDefaultsConfig struct {
 	SNMPPlaceholderEnabled bool
-	SNMPCommunity          string
 }
 
 type ForwardCollectorDefaultsConfig struct {

@@ -133,8 +133,6 @@ Forward: {
 	// When enabled, Skyforge creates a placeholder SNMP credential in Forward for each
 	// deployment network so that enabling SNMP collection later doesn't require manual setup.
 	SNMPPlaceholderEnabled: true
-	// Default SNMPv2c community string used for the placeholder credential.
-	SNMPCommunity: "public"
 }
 
 ForwardCollector: {
@@ -194,4 +192,8 @@ NetlabGenerator: {
 	PullPolicy:        "IfNotPresent"
 	ApplierImage:      "ghcr.io/forwardnetworks/skyforge-netlab-applier:latest"
 	ApplierPullPolicy: "IfNotPresent"
+	// Keep API-side netlab validation consistent with worker netlab-c9s behavior.
+	C9sDefaultSetOverrides: [
+		"addressing.loopback.ipv4=172.31.0.0/16",
+	]
 }

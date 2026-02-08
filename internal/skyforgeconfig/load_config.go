@@ -226,6 +226,12 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 	netlabGeneratorPullPolicy := strings.TrimSpace(enc.NetlabGenerator.PullPolicy)
 	netlabApplierImage := strings.TrimSpace(enc.NetlabGenerator.ApplierImage)
 	netlabApplierPullPolicy := strings.TrimSpace(enc.NetlabGenerator.ApplierPullPolicy)
+	netlabC9sDefaultSetOverrides := make([]string, 0, len(enc.NetlabGenerator.C9sDefaultSetOverrides))
+	for _, raw := range enc.NetlabGenerator.C9sDefaultSetOverrides {
+		if v := strings.TrimSpace(raw); v != "" {
+			netlabC9sDefaultSetOverrides = append(netlabC9sDefaultSetOverrides, v)
+		}
+	}
 
 	featuresCfg := skyforgecore.FeaturesConfig{
 		GiteaEnabled:     enc.Features.GiteaEnabled,
@@ -416,7 +422,6 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		ContainerlabSkipTLSVerify: enc.Containerlab.SkipTLSVerify,
 		Forward: skyforgecore.ForwardConfig{
 			SNMPPlaceholderEnabled: enc.Forward.SNMPPlaceholderEnabled,
-			SNMPCommunity:          strings.TrimSpace(enc.Forward.SNMPCommunity),
 		},
 		PKICACert: strings.TrimSpace(sec.PKICACert),
 		PKICAKey:  strings.TrimSpace(sec.PKICAKey),
@@ -454,6 +459,7 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		ForwardCollectorImagePullSecretNamespace: forwardCollectorPullSecretNamespace,
 		ForwardCollectorHeapSizeGB:               forwardCollectorHeapSizeGB,
 		NetlabC9sGeneratorMode:                   netlabC9sGeneratorMode,
+		NetlabC9sDefaultSetOverrides:             netlabC9sDefaultSetOverrides,
 		NetlabGeneratorImage:                     netlabGeneratorImage,
 		NetlabGeneratorPullPolicy:                netlabGeneratorPullPolicy,
 		NetlabApplierImage:                       netlabApplierImage,
@@ -551,6 +557,12 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 	netlabGeneratorPullPolicy := strings.TrimSpace(enc.NetlabGenerator.PullPolicy)
 	netlabApplierImage := strings.TrimSpace(enc.NetlabGenerator.ApplierImage)
 	netlabApplierPullPolicy := strings.TrimSpace(enc.NetlabGenerator.ApplierPullPolicy)
+	netlabC9sDefaultSetOverrides := make([]string, 0, len(enc.NetlabGenerator.C9sDefaultSetOverrides))
+	for _, raw := range enc.NetlabGenerator.C9sDefaultSetOverrides {
+		if v := strings.TrimSpace(raw); v != "" {
+			netlabC9sDefaultSetOverrides = append(netlabC9sDefaultSetOverrides, v)
+		}
+	}
 
 	featuresCfg := skyforgecore.FeaturesConfig{
 		GiteaEnabled:     enc.Features.GiteaEnabled,
@@ -605,6 +617,7 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		ForwardCollectorImagePullSecretNamespace: forwardCollectorPullSecretNamespace,
 		ForwardCollectorHeapSizeGB:               forwardCollectorHeapSizeGB,
 		NetlabC9sGeneratorMode:                   netlabC9sGeneratorMode,
+		NetlabC9sDefaultSetOverrides:             netlabC9sDefaultSetOverrides,
 		NetlabGeneratorImage:                     netlabGeneratorImage,
 		NetlabGeneratorPullPolicy:                netlabGeneratorPullPolicy,
 		NetlabApplierImage:                       netlabApplierImage,
@@ -613,7 +626,6 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		ElasticIndexPrefix:                       elasticIndexPrefix,
 		Forward: skyforgecore.ForwardConfig{
 			SNMPPlaceholderEnabled: enc.Forward.SNMPPlaceholderEnabled,
-			SNMPCommunity:          strings.TrimSpace(enc.Forward.SNMPCommunity),
 		},
 		PKICACert: strings.TrimSpace(sec.PKICACert),
 		PKICAKey:  strings.TrimSpace(sec.PKICAKey),

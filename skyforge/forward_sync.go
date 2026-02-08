@@ -450,21 +450,36 @@ func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *wor
 
 	snmpCredentialID := getString(forwardSnmpCredentialIDKey)
 	if snmpCredentialID == "" && s.cfg.Forward.SNMPPlaceholderEnabled {
-		community := strings.TrimSpace(s.cfg.Forward.SNMPCommunity)
-		if community != "" {
-			cred, err := forwardCreateSnmpCredential(ctx, client, networkID, credentialName, community)
+		rec, err := s.getSnmpTrapToken(ctx, pc.claims.Username)
+		if err != nil {
+			return cfgAny, err
+		}
+		community := ""
+		if rec != nil {
+			community = strings.TrimSpace(rec.Community)
+		}
+		if community == "" {
+			comm, err := generateCommunity(pc.claims.Username)
 			if err != nil {
-				if strings.Contains(err.Error(), "No collector configured") ||
-					strings.Contains(strings.ToLower(err.Error()), "not found") {
-					log.Printf("forward snmp credential skipped: %v", err)
-				} else {
-					return cfgAny, err
-				}
-			} else {
-				snmpCredentialID = cred.ID
-				cfgAny[forwardSnmpCredentialIDKey] = snmpCredentialID
-				changed = true
+				return cfgAny, err
 			}
+			if err := s.putSnmpTrapToken(ctx, pc.claims.Username, comm); err != nil {
+				return cfgAny, err
+			}
+			community = comm
+		}
+		cred, err := forwardCreateSnmpCredential(ctx, client, networkID, credentialName, community)
+		if err != nil {
+			if strings.Contains(err.Error(), "No collector configured") ||
+				strings.Contains(strings.ToLower(err.Error()), "not found") {
+				log.Printf("forward snmp credential skipped: %v", err)
+			} else {
+				return cfgAny, err
+			}
+		} else {
+			snmpCredentialID = cred.ID
+			cfgAny[forwardSnmpCredentialIDKey] = snmpCredentialID
+			changed = true
 		}
 	}
 
