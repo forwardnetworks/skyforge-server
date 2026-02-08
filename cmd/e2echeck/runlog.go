@@ -30,6 +30,9 @@ type e2eRunLogEntry struct {
 	DeployType string `json:"deployType,omitempty"`
 	TaskID     int    `json:"taskId,omitempty"`
 
+	VXLAN    string `json:"vxlan,omitempty"`    // pass|fail|skip|unknown
+	K8sNodes int    `json:"k8sNodes,omitempty"` // number of k8s nodes spanned by the topology (when known)
+
 	Status string `json:"status"` // pass|fail|skip|info
 	Error  string `json:"error,omitempty"`
 	Notes  string `json:"notes,omitempty"`

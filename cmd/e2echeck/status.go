@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -33,12 +34,110 @@ type e2eDeviceStat struct {
 	TaskID     int    `json:"taskId,omitempty"`
 	Error      string `json:"error,omitempty"`
 	Notes      string `json:"notes,omitempty"`
+
+	VXLAN    string `json:"vxlan,omitempty"`    // pass|fail|skip|unknown
+	K8sNodes int    `json:"k8sNodes,omitempty"` // number of k8s nodes spanned by the topology (when known)
 }
 
 type e2eStatusRecorder struct {
 	jsonPath string
 	mdPath   string
 	state    e2eStatusFile
+}
+
+// syncFromRunlog best-effort rebuilds per-device status from the persisted JSONL run log.
+// This makes the status file resilient if a prior e2echeck run was interrupted between
+// writing the run log and flushing the status summary.
+func (r *e2eStatusRecorder) syncFromRunlog(runlogPath string) {
+	if r == nil {
+		return
+	}
+	runlogPath = strings.TrimSpace(runlogPath)
+	if runlogPath == "" {
+		return
+	}
+	f, err := os.Open(runlogPath)
+	if err != nil {
+		return
+	}
+	defer func() { _ = f.Close() }()
+
+	type entry struct {
+		At        string `json:"at"`
+		Device    string `json:"device"`
+		Template  string `json:"template"`
+		DeployTyp string `json:"deployType"`
+		TaskID    int    `json:"taskId"`
+		VXLAN     string `json:"vxlan"`
+		K8sNodes  int    `json:"k8sNodes"`
+		Status    string `json:"status"`
+		Error     string `json:"error"`
+		Notes     string `json:"notes"`
+	}
+
+	latest := map[string]entry{}
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		ln := strings.TrimSpace(sc.Text())
+		if ln == "" {
+			continue
+		}
+		var e entry
+		if err := json.Unmarshal([]byte(ln), &e); err != nil {
+			continue
+		}
+		dev := strings.TrimSpace(e.Device)
+		if dev == "" {
+			continue
+		}
+		st := strings.ToLower(strings.TrimSpace(e.Status))
+		if st != "pass" && st != "fail" && st != "skip" {
+			continue
+		}
+		prev, ok := latest[dev]
+		// RFC3339 timestamps are lexicographically sortable.
+		if !ok || strings.TrimSpace(e.At) > strings.TrimSpace(prev.At) {
+			latest[dev] = e
+		}
+	}
+
+	for dev, e := range latest {
+		at := strings.TrimSpace(e.At)
+		if at == "" {
+			at = time.Now().UTC().Format(time.RFC3339)
+		}
+		prev := r.state.Devices[dev]
+		st := e2eDeviceStat{
+			Device:     dev,
+			Status:     strings.TrimSpace(e.Status),
+			UpdatedAt:  at,
+			LastOKAt:   prev.LastOKAt,
+			LastFailAt: prev.LastFailAt,
+			LastError:  prev.LastError,
+			Template:   strings.TrimSpace(e.Template),
+			DeployType: strings.TrimSpace(e.DeployTyp),
+			TaskID:     e.TaskID,
+			Error:      strings.TrimSpace(e.Error),
+			Notes:      strings.TrimSpace(e.Notes),
+			VXLAN:      prev.VXLAN,
+			K8sNodes:   prev.K8sNodes,
+		}
+		if strings.TrimSpace(e.VXLAN) != "" {
+			st.VXLAN = strings.TrimSpace(e.VXLAN)
+		}
+		if e.K8sNodes > 0 {
+			st.K8sNodes = e.K8sNodes
+		}
+		switch strings.ToLower(strings.TrimSpace(e.Status)) {
+		case "pass":
+			st.LastOKAt = at
+			st.LastError = ""
+		case "fail":
+			st.LastFailAt = at
+			st.LastError = strings.TrimSpace(e.Error)
+		}
+		r.state.Devices[dev] = st
+	}
 }
 
 func newE2EStatusRecorder(jsonPath, mdPath string) (*e2eStatusRecorder, error) {
@@ -72,7 +171,7 @@ func newE2EStatusRecorder(jsonPath, mdPath string) (*e2eStatusRecorder, error) {
 	return r, nil
 }
 
-func (r *e2eStatusRecorder) update(device string, status string, template string, deployType string, taskID int, errMsg string, notes string) {
+func (r *e2eStatusRecorder) update(device string, status string, template string, deployType string, taskID int, errMsg string, notes string, vxlan string, k8sNodes int) {
 	if r == nil {
 		return
 	}
@@ -95,6 +194,12 @@ func (r *e2eStatusRecorder) update(device string, status string, template string
 		TaskID:     taskID,
 		Error:      strings.TrimSpace(errMsg),
 		Notes:      strings.TrimSpace(notes),
+		VXLAN:      prev.VXLAN,
+		K8sNodes:   prev.K8sNodes,
+	}
+	if strings.TrimSpace(vxlan) != "" {
+		st.VXLAN = strings.TrimSpace(vxlan)
+		st.K8sNodes = k8sNodes
 	}
 	switch strings.ToLower(strings.TrimSpace(status)) {
 	case "pass", "ok", "success":
@@ -182,9 +287,9 @@ func renderE2EStatusMarkdown(s e2eStatusFile) string {
 	if strings.TrimSpace(s.GeneratedAt) != "" {
 		lines = append(lines, fmt.Sprintf("Last updated: %s", s.GeneratedAt), "")
 	}
-	lines = append(lines, "Scope: baseline **deploy + SSH reachability** for each onboarded Netlab device type (netlab-c9s → clabernetes + vrnetlab hybrid).", "")
+	lines = append(lines, "Scope: baseline **deploy + SSH reachability + VXLAN overlay** for each onboarded Netlab device type (netlab-c9s → clabernetes + vrnetlab hybrid).", "")
 	lines = append(lines, "Legend: ✅ pass · ❌ fail · ⏭ skipped · ❔ unknown", "")
-	lines = append(lines, "| Device type | Status | Updated | Notes |", "| --- | --- | --- | --- |")
+	lines = append(lines, "| Device type | Status | VXLAN | Updated | Notes |", "| --- | --- | --- | --- | --- |")
 
 	devs := make([]string, 0, len(s.Devices))
 	for d := range s.Devices {
@@ -202,16 +307,28 @@ func renderE2EStatusMarkdown(s e2eStatusFile) string {
 		case "skip", "skipped":
 			icon = "⏭"
 		}
+		vx := "❔"
+		switch strings.ToLower(strings.TrimSpace(st.VXLAN)) {
+		case "pass", "ok", "success":
+			vx = "✅"
+		case "fail", "failed", "error":
+			vx = "❌"
+		case "skip", "skipped":
+			vx = "⏭"
+		}
+		if vx == "✅" && st.K8sNodes > 0 {
+			vx = fmt.Sprintf("✅ (%dn)", st.K8sNodes)
+		}
 		notes := strings.TrimSpace(st.Notes)
 		if notes == "" {
 			notes = strings.TrimSpace(st.Error)
 		}
 		notes = strings.ReplaceAll(notes, "\n", " ")
-		lines = append(lines, fmt.Sprintf("| `%s` | %s | %s | %s |", d, icon, strings.TrimSpace(st.UpdatedAt), notes))
+		lines = append(lines, fmt.Sprintf("| `%s` | %s | %s | %s | %s |", d, icon, vx, strings.TrimSpace(st.UpdatedAt), notes))
 	}
 	lines = append(lines, "")
 	lines = append(lines, "## How to run", "")
-	lines = append(lines, "Run from `skyforge-private/server`:", "", "```bash", "SKYFORGE_E2E_DEPLOY=true \\")
+	lines = append(lines, "Run from `skyforge-server`:", "", "```bash", "SKYFORGE_E2E_DEPLOY=true \\")
 	lines = append(lines, "SKYFORGE_E2E_SSH_PROBE_MODE=api \\")
 	lines = append(lines, "SKYFORGE_E2E_DEVICE_SET=all \\")
 	lines = append(lines, "go run ./cmd/e2echeck --run-generated", "```", "")

@@ -398,6 +398,205 @@ func containsSetCI(set map[string]struct{}, v string) bool {
 	return false
 }
 
+func uniqueStrings(in []string) []string {
+	out := []string{}
+	seen := map[string]struct{}{}
+	for _, s := range in {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func vxlanSmokeEnabledForDevice(device string) bool {
+	if !getenvBool("SKYFORGE_E2E_VXLAN_SMOKE", false) {
+		return false
+	}
+	allow := splitCSVEnv("SKYFORGE_E2E_VXLAN_DEVICES")
+	if len(allow) == 0 {
+		// Default to all onboarded device types (vxlan smoke is intended to be a suite-level gate).
+		allow = map[string]struct{}{}
+		for _, d := range onboardedNetlabDevices() {
+			allow[d] = struct{}{}
+		}
+	}
+	// Allow a special "all" token.
+	if containsSetCI(allow, "all") || containsSetCI(allow, "*") {
+		return true
+	}
+	return containsSetCI(allow, device)
+}
+
+func vxlanSmokeCheck(ctx context.Context, namespace, topologyOwner string) (int, error) {
+	namespace = strings.TrimSpace(namespace)
+	topologyOwner = strings.TrimSpace(topologyOwner)
+	if namespace == "" || topologyOwner == "" {
+		return 0, fmt.Errorf("missing namespace/topologyOwner")
+	}
+	if err := kubectlAvailable(ctx); err != nil {
+		return 0, fmt.Errorf("kubectl not available: %w", err)
+	}
+
+	// Find pods for this topology. clabernetes labels pods with:
+	//   clabernetes/topologyOwner=<workspaceSlug>-<deploymentName>
+	selector := "clabernetes/topologyOwner=" + topologyOwner
+	cmd := exec.CommandContext(ctx, "kubectl", "-n", namespace, "get", "pods", "-l", selector, "-o", "json")
+	cmd.Env = kubectlEnv()
+	raw, err := cmd.Output()
+	if err != nil {
+		return 0, fmt.Errorf("kubectl get pods failed: %w", err)
+	}
+	var decoded struct {
+		Items []struct {
+			Metadata struct {
+				Name string `json:"name"`
+			} `json:"metadata"`
+			Spec struct {
+				NodeName string `json:"nodeName"`
+			} `json:"spec"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return 0, fmt.Errorf("parse pods json failed: %w", err)
+	}
+	if len(decoded.Items) == 0 {
+		return 0, fmt.Errorf("no pods found for selector %q", selector)
+	}
+
+	pods := make([]string, 0, len(decoded.Items))
+	nodes := make([]string, 0, len(decoded.Items))
+	for _, it := range decoded.Items {
+		pods = append(pods, strings.TrimSpace(it.Metadata.Name))
+		nodes = append(nodes, strings.TrimSpace(it.Spec.NodeName))
+	}
+	pods = uniqueStrings(pods)
+	nodes = uniqueStrings(nodes)
+
+	// This check is only meaningful if the topology spans >= 2 k8s nodes.
+	if len(nodes) < 2 {
+		return len(nodes), fmt.Errorf("vxlan smoke requires multi-node scheduling but got nodes=%d (selector=%q)", len(nodes), selector)
+	}
+
+	foundVXLAN := false
+	foundFDB := false
+	for _, pod := range pods {
+		if pod == "" {
+			continue
+		}
+		// clabernetes launcher runs as a sidecar container. It's where the link wiring happens.
+		//
+		// We check for:
+		// - presence of a vxlan device (overlay)
+		// - at least one remote FDB entry (dst <ip>), which indicates cross-node endpoints were learned
+		//
+		// This is a proxy for "router-to-router VXLAN tunnel exists" without needing NOS-specific
+		// CLI ping logic.
+		//
+		// Note: this assumes clabernetes uses VXLAN; if it switches to Geneve, update this probe.
+		check := `set -euo pipefail
+if ip -d link show type vxlan 2>/dev/null | grep -qi vxlan; then
+  echo "vxlan_present"
+fi
+if bridge fdb show 2>/dev/null | grep -q " dst "; then
+  echo "fdb_has_dst"
+fi
+`
+		cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		out, _ := exec.CommandContext(cctx, "kubectl", "-n", namespace, "exec", pod, "-c", "clabernetes-launcher", "--", "sh", "-lc", check).CombinedOutput()
+		cancel()
+		s := strings.ToLower(string(out))
+		if strings.Contains(s, "vxlan_present") {
+			foundVXLAN = true
+		}
+		if strings.Contains(s, "fdb_has_dst") {
+			foundFDB = true
+		}
+		if foundVXLAN && foundFDB {
+			break
+		}
+	}
+
+	if !foundVXLAN {
+		return len(nodes), fmt.Errorf("vxlan not detected in launcher containers (topology spans %d nodes)", len(nodes))
+	}
+	if !foundFDB {
+		return len(nodes), fmt.Errorf("vxlan detected but no remote FDB entries found (topology spans %d nodes)", len(nodes))
+	}
+	return len(nodes), nil
+}
+
+func dumpFailureArtifacts(ctx context.Context, statusDir, namespace, topologyOwner, device, testName string) {
+	statusDir = strings.TrimSpace(statusDir)
+	namespace = strings.TrimSpace(namespace)
+	topologyOwner = strings.TrimSpace(topologyOwner)
+	device = strings.TrimSpace(device)
+	testName = strings.TrimSpace(testName)
+	if statusDir == "" || namespace == "" || topologyOwner == "" {
+		return
+	}
+	if err := kubectlAvailable(ctx); err != nil {
+		return
+	}
+
+	ts := time.Now().UTC().Format("20060102-150405")
+	safe := func(s string) string {
+		s = strings.ToLower(strings.TrimSpace(s))
+		s = strings.ReplaceAll(s, " ", "-")
+		s = strings.ReplaceAll(s, "/", "-")
+		s = strings.ReplaceAll(s, ":", "-")
+		s = strings.ReplaceAll(s, "_", "-")
+		s = strings.Trim(s, "-")
+		if s == "" {
+			s = "unknown"
+		}
+		return s
+	}
+	dir := filepath.Join(statusDir, "failures", fmt.Sprintf("%s-%s-%s", ts, safe(device), safe(testName)))
+	_ = os.MkdirAll(dir, 0o755)
+
+	write := func(name string, b []byte) {
+		if len(b) == 0 {
+			return
+		}
+		_ = os.WriteFile(filepath.Join(dir, name), b, 0o644)
+	}
+	run := func(args ...string) []byte {
+		cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(cctx, "kubectl", args...)
+		cmd.Env = kubectlEnv()
+		out, _ := cmd.CombinedOutput()
+		return out
+	}
+
+	write("meta.txt", []byte(fmt.Sprintf("namespace=%s\ntopologyOwner=%s\ndevice=%s\ntest=%s\n", namespace, topologyOwner, device, testName)))
+	selector := "clabernetes/topologyOwner=" + topologyOwner
+	write("pods.json", run("-n", namespace, "get", "pods", "-l", selector, "-o", "json"))
+	write("pods.txt", run("-n", namespace, "get", "pods", "-l", selector, "-o", "wide"))
+	// Best-effort: clabernetes topology CR usually matches topologyOwner.
+	write("topology.yaml", run("-n", namespace, "get", "topologies.clabernetes.containerlab.dev", topologyOwner, "-o", "yaml"))
+
+	// Per-pod describe + launcher logs.
+	rawPods := run("-n", namespace, "get", "pods", "-l", selector, "-o", "jsonpath={.items[*].metadata.name}")
+	podNames := strings.Fields(string(rawPods))
+	for _, pod := range podNames {
+		pod = strings.TrimSpace(pod)
+		if pod == "" {
+			continue
+		}
+		write(fmt.Sprintf("pod-%s-describe.txt", pod), run("-n", namespace, "describe", "pod", pod))
+		write(fmt.Sprintf("pod-%s-launcher.log", pod), run("-n", namespace, "logs", pod, "-c", "clabernetes-launcher", "--tail=500"))
+	}
+}
+
 func ensureWorkspaceNetlabServer(client *http.Client, baseURL, cookie, workspaceID string) (string, error) {
 	apiURL := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_BYOS_NETLAB_API_URL"))
 	if apiURL == "" {
@@ -611,6 +810,15 @@ func generateMatrixFromCatalog(catalogPath string) (matrixFile, error) {
 				}
 				deployName := fmt.Sprintf("netlab-deploy-%s-%s", d, tmpl.Name)
 				deployTimeout, sshTimeout := deployTimeoutsForDevice(d)
+				env := map[string]string{
+					"NETLAB_DEVICE": d,
+				}
+				// If VXLAN smoke is enabled for this device, force multi-node scheduling so the
+				// overlay is actually exercised.
+				if vxlanSmokeEnabledForDevice(d) {
+					env["SKYFORGE_CLABERNETES_SCHEDULING_MODE"] = "spread"
+					env["SKYFORGE_CLABERNETES_POD_ANTI_AFFINITY_REQUIRED"] = "true"
+				}
 				tests = append(tests, matrixTest{
 					Name: deployName,
 					Kind: "netlab_deploy",
@@ -633,7 +841,7 @@ func generateMatrixFromCatalog(catalogPath string) (matrixFile, error) {
 						Dir:      tmpl.Dir,
 						Template: tmpl.Template,
 						Environment: map[string]string{
-							"NETLAB_DEVICE": d,
+							// populated below
 						},
 						SetOverrides: nil,
 						Timeout:      deployTimeout,
@@ -642,6 +850,7 @@ func generateMatrixFromCatalog(catalogPath string) (matrixFile, error) {
 						Cleanup:      true,
 					},
 				})
+				tests[len(tests)-1].NetlabDeploy.Environment = env
 			}
 		}
 	}
@@ -1692,6 +1901,7 @@ func run() int {
 	var (
 		flagGenerateMatrix = flag.Bool("generate-matrix", false, "Print a generated E2E matrix to stdout (does not run tests)")
 		flagRunGenerated   = flag.Bool("run-generated", false, "Generate an E2E matrix from the Skyforge netlab device catalog and run it")
+		flagRebuildStatus  = flag.Bool("rebuild-status", false, "Rebuild the device reachability status files from the persisted run log and exit (no API calls)")
 	)
 	flag.Parse()
 
@@ -1709,6 +1919,37 @@ func run() int {
 		enc.SetIndent(2)
 		_ = enc.Encode(gen)
 		_ = enc.Close()
+		return 0
+	}
+
+	if *flagRebuildStatus {
+		statusDir := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_STATUS_DIR"))
+		if statusDir == "" {
+			statusDir = "../docs"
+		}
+		if err := os.MkdirAll(statusDir, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to create statusDir %q: %v\n", statusDir, err)
+			return 2
+		}
+		rec, err := newE2EStatusRecorder(
+			filepath.Join(statusDir, "e2e-reachability-status.json"),
+			filepath.Join(statusDir, "e2e-reachability-status.md"),
+		)
+		if err != nil || rec == nil {
+			fmt.Fprintf(os.Stderr, "failed to init status recorder: %v\n", err)
+			return 2
+		}
+		rec.syncFromRunlog(filepath.Join(statusDir, "e2e-runlog.jsonl"))
+		rec.syncDeviceSet(onboardedNetlabDevices())
+		if err := rec.flush(); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to write status files: %v\n", err)
+			return 2
+		}
+		if abs, err := filepath.Abs(statusDir); err == nil {
+			fmt.Printf("OK rebuild-status: statusDir=%s\n", abs)
+		} else {
+			fmt.Printf("OK rebuild-status: statusDir=%s\n", statusDir)
+		}
 		return 0
 	}
 
@@ -1864,6 +2105,10 @@ func run() int {
 		}
 	}
 	if statusRec != nil {
+		// If the previous run was interrupted mid-flight, the status file can lag behind the run log.
+		// Reconcile before we append new results.
+		statusRec.syncFromRunlog(filepath.Join(statusDir, "e2e-runlog.jsonl"))
+
 		// Keep the status file aligned with the device types Skyforge exposes.
 		// This also prunes stale/renamed device keys from earlier runs.
 		statusRec.syncDeviceSet(onboardedNetlabDevices())
@@ -1988,7 +2233,8 @@ func run() int {
 					fmt.Printf("SKIP %s: device=%q filtered by SKYFORGE_E2E_DEVICES\n", name, device)
 				}
 				if statusRec != nil && device != "" {
-					statusRec.update(device, "skip", "", "", 0, "", "skipped by SKYFORGE_E2E_DEVICES filter")
+					statusRec.update(device, "skip", "", "", 0, "", "skipped by SKYFORGE_E2E_DEVICES filter", "", 0)
+					_ = statusRec.flush()
 				}
 				continue
 			}
@@ -2001,7 +2247,8 @@ func run() int {
 					fmt.Printf("SKIP %s: deploy disabled (set SKYFORGE_E2E_DEPLOY=true)\n", name)
 				}
 				if statusRec != nil && device != "" {
-					statusRec.update(device, "skip", "", "", 0, "", "deploy disabled (SKYFORGE_E2E_DEPLOY=false)")
+					statusRec.update(device, "skip", "", "", 0, "", "deploy disabled (SKYFORGE_E2E_DEPLOY=false)", "", 0)
+					_ = statusRec.flush()
 				}
 				continue
 			}
@@ -2010,7 +2257,8 @@ func run() int {
 					fmt.Printf("SKIP %s: deploy device=%q filtered by SKYFORGE_E2E_DEPLOY_DEVICES\n", name, device)
 				}
 				if statusRec != nil && device != "" {
-					statusRec.update(device, "skip", "", "", 0, "", "skipped by SKYFORGE_E2E_DEPLOY_DEVICES filter")
+					statusRec.update(device, "skip", "", "", 0, "", "skipped by SKYFORGE_E2E_DEPLOY_DEVICES filter", "", 0)
+					_ = statusRec.flush()
 				}
 				continue
 			}
@@ -2253,8 +2501,13 @@ func run() int {
 			default:
 				fmt.Fprintf(os.Stderr, "test %q: deployment task finished with status=%q error=%q\n", name, status, errMsg)
 				if statusRec != nil && device != "" {
-					statusRec.update(device, "fail", templateName, deployType, taskID, errMsg, "deployment failed")
+					statusRec.update(device, "fail", templateName, deployType, taskID, errMsg, "deployment failed", "unknown", 0)
 					_ = statusRec.flush()
+				}
+				{
+					ns := "ws-" + strings.TrimSpace(ws.Slug)
+					owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
+					dumpFailureArtifacts(context.Background(), statusDir, ns, owner, device, name)
 				}
 				if runLog != nil {
 					runLog.append(e2eRunLogEntry{
@@ -2269,6 +2522,7 @@ func run() int {
 						TaskID:      taskID,
 						Status:      "fail",
 						Error:       errMsg,
+						VXLAN:       "unknown",
 						Notes:       "deployment failed",
 					})
 				}
@@ -2308,13 +2562,23 @@ func run() int {
 							exitCode = 1
 							testFailed = true
 						} else {
+							sshOK := false
+							notes := ""
+							vxlanStatus := "skip"
+							k8sNodes := 0
+
 							switch sshProbeMode() {
 							case "collector_exec":
 								if err := waitForCollectorSSH(context.Background(), collectorNS, collectorPod, hosts, sshWait); err != nil {
 									fmt.Fprintf(os.Stderr, "test %q: collector ssh banner failed: %v\n", name, err)
 									if statusRec != nil && device != "" {
-										statusRec.update(device, "fail", templateName, deployType, taskID, err.Error(), "collector ssh probe failed")
+										statusRec.update(device, "fail", templateName, deployType, taskID, err.Error(), "collector ssh probe failed", "unknown", 0)
 										_ = statusRec.flush()
+									}
+									{
+										ns := "ws-" + strings.TrimSpace(ws.Slug)
+										owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
+										dumpFailureArtifacts(context.Background(), statusDir, ns, owner, device, name)
 									}
 									if runLog != nil {
 										runLog.append(e2eRunLogEntry{
@@ -2329,6 +2593,7 @@ func run() int {
 											TaskID:      taskID,
 											Status:      "fail",
 											Error:       err.Error(),
+											VXLAN:       "unknown",
 											Notes:       "collector ssh probe failed",
 										})
 									}
@@ -2336,25 +2601,8 @@ func run() int {
 									testFailed = true
 								} else {
 									fmt.Printf("OK %s: collector ssh ok (hosts=%d)\n", name, len(hosts))
-									if statusRec != nil && device != "" {
-										statusRec.update(device, "pass", templateName, deployType, taskID, "", "deploy+collector-ssh ok")
-										_ = statusRec.flush()
-									}
-									if runLog != nil {
-										runLog.append(e2eRunLogEntry{
-											BaseURL:     baseURL,
-											Workspace:   ws.Name,
-											WorkspaceID: ws.ID,
-											Test:        name,
-											Kind:        kind,
-											Device:      device,
-											Template:    templateName,
-											DeployType:  deployType,
-											TaskID:      taskID,
-											Status:      "pass",
-											Notes:       "deploy+collector-ssh ok",
-										})
-									}
+									sshOK = true
+									notes = "deploy+collector-ssh ok"
 								}
 							case "job":
 								probeNS := strings.TrimSpace(collectorNS)
@@ -2364,8 +2612,13 @@ func run() int {
 								if err := waitForSSHProbeJob(context.Background(), probeNS, hosts, sshWait); err != nil {
 									fmt.Fprintf(os.Stderr, "test %q: ssh probe job failed: %v\n", name, err)
 									if statusRec != nil && device != "" {
-										statusRec.update(device, "fail", templateName, deployType, taskID, err.Error(), "ssh probe job failed")
+										statusRec.update(device, "fail", templateName, deployType, taskID, err.Error(), "ssh probe job failed", "unknown", 0)
 										_ = statusRec.flush()
+									}
+									{
+										ns := "ws-" + strings.TrimSpace(ws.Slug)
+										owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
+										dumpFailureArtifacts(context.Background(), statusDir, ns, owner, device, name)
 									}
 									if runLog != nil {
 										runLog.append(e2eRunLogEntry{
@@ -2380,6 +2633,7 @@ func run() int {
 											TaskID:      taskID,
 											Status:      "fail",
 											Error:       err.Error(),
+											VXLAN:       "unknown",
 											Notes:       "ssh probe job failed",
 										})
 									}
@@ -2387,32 +2641,20 @@ func run() int {
 									testFailed = true
 								} else {
 									fmt.Printf("OK %s: ssh probe ok (namespace=%s hosts=%d)\n", name, probeNS, len(hosts))
-									if statusRec != nil && device != "" {
-										statusRec.update(device, "pass", templateName, deployType, taskID, "", "deploy+ssh probe job ok")
-										_ = statusRec.flush()
-									}
-									if runLog != nil {
-										runLog.append(e2eRunLogEntry{
-											BaseURL:     baseURL,
-											Workspace:   ws.Name,
-											WorkspaceID: ws.ID,
-											Test:        name,
-											Kind:        kind,
-											Device:      device,
-											Template:    templateName,
-											DeployType:  deployType,
-											TaskID:      taskID,
-											Status:      "pass",
-											Notes:       "deploy+ssh probe job ok",
-										})
-									}
+									sshOK = true
+									notes = "deploy+ssh probe job ok"
 								}
 							default:
 								if err := waitForSSHProbeAPIForDevice(context.Background(), client, baseURL, cookie, device, hosts, sshWait); err != nil {
 									fmt.Fprintf(os.Stderr, "test %q: ssh probe api failed: %v\n", name, err)
 									if statusRec != nil && device != "" {
-										statusRec.update(device, "fail", templateName, deployType, taskID, err.Error(), "ssh probe failed")
+										statusRec.update(device, "fail", templateName, deployType, taskID, err.Error(), "ssh probe failed", "unknown", 0)
 										_ = statusRec.flush()
+									}
+									{
+										ns := "ws-" + strings.TrimSpace(ws.Slug)
+										owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
+										dumpFailureArtifacts(context.Background(), statusDir, ns, owner, device, name)
 									}
 									if runLog != nil {
 										runLog.append(e2eRunLogEntry{
@@ -2427,6 +2669,7 @@ func run() int {
 											TaskID:      taskID,
 											Status:      "fail",
 											Error:       err.Error(),
+											VXLAN:       "unknown",
 											Notes:       "ssh probe api failed",
 										})
 									}
@@ -2434,10 +2677,25 @@ func run() int {
 									testFailed = true
 								} else {
 									fmt.Printf("OK %s: ssh probe ok (api hosts=%d)\n", name, len(hosts))
-									if statusRec != nil && device != "" {
-										statusRec.update(device, "pass", templateName, deployType, taskID, "", "deploy+ssh ok")
+									sshOK = true
+									notes = "deploy+ssh ok"
+								}
+							}
+
+							// Optional: smoke check that clabernetes cross-node overlay is wired up.
+							if !testFailed && sshOK && device != "" && vxlanSmokeEnabledForDevice(device) {
+								ns := "ws-" + strings.TrimSpace(ws.Slug)
+								owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
+								nodes, err := vxlanSmokeCheck(context.Background(), ns, owner)
+								k8sNodes = nodes
+								if err != nil {
+									vxlanStatus = "fail"
+									fmt.Fprintf(os.Stderr, "test %q: vxlan smoke failed: %v\n", name, err)
+									if statusRec != nil {
+										statusRec.update(device, "fail", templateName, deployType, taskID, err.Error(), "vxlan smoke failed", vxlanStatus, k8sNodes)
 										_ = statusRec.flush()
 									}
+									dumpFailureArtifacts(context.Background(), statusDir, ns, owner, device, name)
 									if runLog != nil {
 										runLog.append(e2eRunLogEntry{
 											BaseURL:     baseURL,
@@ -2449,11 +2707,45 @@ func run() int {
 											Template:    templateName,
 											DeployType:  deployType,
 											TaskID:      taskID,
-											Status:      "pass",
-											Notes:       "deploy+ssh ok",
+											Status:      "fail",
+											Error:       err.Error(),
+											VXLAN:       vxlanStatus,
+											K8sNodes:    k8sNodes,
+											Notes:       "vxlan smoke failed",
 										})
 									}
+									exitCode = 1
+									testFailed = true
+								} else {
+									vxlanStatus = "pass"
+									fmt.Printf("OK %s: vxlan smoke ok (owner=%s)\n", name, owner)
+									notes = fmt.Sprintf("%s; vxlan ok (nodes=%d)", notes, k8sNodes)
 								}
+							} else if !testFailed && sshOK && vxlanSmokeEnabledForDevice(device) {
+								// vxlan enabled but no device? should not happen, but keep status consistent.
+								vxlanStatus = "unknown"
+							}
+
+							if !testFailed && sshOK && statusRec != nil && device != "" {
+								statusRec.update(device, "pass", templateName, deployType, taskID, "", notes, vxlanStatus, k8sNodes)
+								_ = statusRec.flush()
+							}
+							if !testFailed && sshOK && runLog != nil {
+								runLog.append(e2eRunLogEntry{
+									BaseURL:     baseURL,
+									Workspace:   ws.Name,
+									WorkspaceID: ws.ID,
+									Test:        name,
+									Kind:        kind,
+									Device:      device,
+									Template:    templateName,
+									DeployType:  deployType,
+									TaskID:      taskID,
+									Status:      "pass",
+									VXLAN:       vxlanStatus,
+									K8sNodes:    k8sNodes,
+									Notes:       notes,
+								})
 							}
 						}
 					}

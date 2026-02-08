@@ -310,8 +310,9 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		if schedulingMode == "" {
 			schedulingMode = "pack"
 		}
+		requireAntiAffinity := envBool(spec.Environment, "SKYFORGE_CLABERNETES_POD_ANTI_AFFINITY_REQUIRED", false)
 		enableAntiAffinity := envBool(spec.Environment, "SKYFORGE_CLABERNETES_ENABLE_POD_ANTI_AFFINITY", schedulingMode == "spread")
-		if enableAntiAffinity {
+		if requireAntiAffinity || enableAntiAffinity {
 			specMap := payload["spec"].(map[string]any)
 			scheduling, ok := specMap["scheduling"].(map[string]any)
 			if !ok || scheduling == nil {
@@ -324,26 +325,38 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 				scheduling["affinity"] = affinity
 			}
 			if _, ok := affinity["podAntiAffinity"]; !ok {
-				affinity["podAntiAffinity"] = map[string]any{
-					"preferredDuringSchedulingIgnoredDuringExecution": []any{
-						map[string]any{
-							"weight": 100,
-							"podAffinityTerm": map[string]any{
-								"labelSelector": map[string]any{
-									"matchExpressions": []any{
-										map[string]any{
-											"key":      "clabernetes/topologyOwner",
-											"operator": "In",
-											"values":   []any{name},
-										},
-									},
-								},
-								"topologyKey": "kubernetes.io/hostname",
+				term := map[string]any{
+					"labelSelector": map[string]any{
+						"matchExpressions": []any{
+							map[string]any{
+								"key":      "clabernetes/topologyOwner",
+								"operator": "In",
+								"values":   []any{name},
 							},
 						},
 					},
+					"topologyKey": "kubernetes.io/hostname",
 				}
-				log.Infof("Clabernetes scheduling: prefer spreading pods (podAntiAffinity topologyOwner=%s)", name)
+				if requireAntiAffinity {
+					affinity["podAntiAffinity"] = map[string]any{
+						"requiredDuringSchedulingIgnoredDuringExecution": []any{
+							map[string]any{
+								"podAffinityTerm": term,
+							},
+						},
+					}
+					log.Infof("Clabernetes scheduling: require spreading pods (podAntiAffinity required topologyOwner=%s)", name)
+				} else {
+					affinity["podAntiAffinity"] = map[string]any{
+						"preferredDuringSchedulingIgnoredDuringExecution": []any{
+							map[string]any{
+								"weight": 100,
+								"podAffinityTerm": term,
+							},
+						},
+					}
+					log.Infof("Clabernetes scheduling: prefer spreading pods (podAntiAffinity topologyOwner=%s)", name)
+				}
 			}
 		}
 
