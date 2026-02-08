@@ -19,7 +19,8 @@ jobs:
 
       - name: Install Encore
         run: |
-          curl -L https://encore.dev/install.sh | bash
+          # Pin Encore CLI version to match local dev/build expectations.
+          curl -L https://encore.dev/install.sh | bash -s -- 1.54.0
           echo "$HOME/.encore/bin" >> "$GITHUB_PATH"
 
       - name: Test
@@ -28,3 +29,11 @@ jobs:
         run: |
           bash scripts/validate-policy-reports.sh
           encore test ./...
+
+      - name: Build (Docker, skip infra config)
+        env:
+          ENCORE_DISABLE_UPDATE_CHECK: "1"
+        run: |
+          # Ensures the app compiles under the Encore compiler in CI without
+          # requiring a full self-hosted infra config/secrets.
+          encore build docker skyforge-server-ci:${{ github.sha }} --skip-config -v

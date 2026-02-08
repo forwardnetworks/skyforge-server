@@ -1,8 +1,6 @@
 package taskqueue
 
 import (
-	"os"
-
 	"encore.dev/pubsub"
 )
 
@@ -24,29 +22,20 @@ type TaskStatusEvent struct {
 	Error  string `json:"error,omitempty"`
 }
 
-func newTopic[T any](name string, cfg pubsub.TopicConfig) *pubsub.Topic[T] {
-	// In plain `go test` the Encore SDK stubs panic. Avoid that by returning nil.
-	// These topics are only valid when built/run with `encore` (which provides ENCORE_CFG).
-	if os.Getenv("ENCORE_CFG") == "" {
-		return nil
-	}
-	return pubsub.NewTopic[T](name, cfg)
-}
-
-var InteractiveTopic = newTopic[*TaskEnqueuedEvent]("skyforge-task-queue-interactive", pubsub.TopicConfig{
+var InteractiveTopic = pubsub.NewTopic[*TaskEnqueuedEvent]("skyforge-task-queue-interactive", pubsub.TopicConfig{
 	DeliveryGuarantee: pubsub.AtLeastOnce,
 	OrderingAttribute: "key",
 })
 
-var BackgroundTopic = newTopic[*TaskEnqueuedEvent]("skyforge-task-queue-background", pubsub.TopicConfig{
+var BackgroundTopic = pubsub.NewTopic[*TaskEnqueuedEvent]("skyforge-task-queue-background", pubsub.TopicConfig{
 	DeliveryGuarantee: pubsub.AtLeastOnce,
 	OrderingAttribute: "key",
 })
 
-var StatusTopic = newTopic[*TaskStatusEvent]("skyforge-task-status", pubsub.TopicConfig{
+var StatusTopic = pubsub.NewTopic[*TaskStatusEvent]("skyforge-task-status", pubsub.TopicConfig{
 	DeliveryGuarantee: pubsub.AtLeastOnce,
 })
 
-var CancelTopic = newTopic[*TaskCancelEvent]("skyforge-task-cancel", pubsub.TopicConfig{
+var CancelTopic = pubsub.NewTopic[*TaskCancelEvent]("skyforge-task-cancel", pubsub.TopicConfig{
 	DeliveryGuarantee: pubsub.AtLeastOnce,
 })

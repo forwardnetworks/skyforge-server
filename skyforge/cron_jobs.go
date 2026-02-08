@@ -3,7 +3,6 @@ package skyforge
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -13,14 +12,6 @@ import (
 	"encore.dev/cron"
 	"encore.dev/rlog"
 )
-
-func newJob(id string, cfg cron.JobConfig) *cron.Job {
-	// In plain `go test` the Encore SDK stubs panic. Avoid that by returning nil.
-	if os.Getenv("ENCORE_CFG") == "" {
-		return nil
-	}
-	return cron.NewJob(id, cfg)
-}
 
 // Cron jobs
 //
@@ -43,7 +34,7 @@ func CronRefreshTaskQueueMetrics(ctx context.Context) error {
 }
 
 var (
-	_ = newJob("skyforge-task-queue-metrics", cron.JobConfig{
+	_ = cron.NewJob("skyforge-task-queue-metrics", cron.JobConfig{
 		Title:    "Refresh task queue metrics",
 		Endpoint: CronRefreshTaskQueueMetrics,
 		Every:    1 * cron.Minute,
@@ -171,7 +162,7 @@ LIMIT 500`)
 }
 
 var (
-	_ = newJob("skyforge-capacity-rollups", cron.JobConfig{
+	_ = cron.NewJob("skyforge-capacity-rollups", cron.JobConfig{
 		Title:    "Enqueue capacity rollups",
 		Endpoint: CronEnqueueCapacityRollups,
 		Every:    1 * cron.Hour,
@@ -204,7 +195,7 @@ func CronCleanupCapacity(ctx context.Context) error {
 }
 
 var (
-	_ = newJob("skyforge-capacity-cleanup", cron.JobConfig{
+	_ = cron.NewJob("skyforge-capacity-cleanup", cron.JobConfig{
 		Title:    "Cleanup capacity history",
 		Endpoint: CronCleanupCapacity,
 		Every:    24 * cron.Hour,
@@ -242,13 +233,13 @@ func CronCleanupGovernanceUsage(ctx context.Context) error {
 }
 
 var (
-	_ = newJob("skyforge-governance-usage-snapshot", cron.JobConfig{
+	_ = cron.NewJob("skyforge-governance-usage-snapshot", cron.JobConfig{
 		Title:    "Snapshot governance usage",
 		Endpoint: CronSnapshotGovernanceUsage,
 		Every:    5 * cron.Minute,
 	})
 
-	_ = newJob("skyforge-governance-usage-cleanup", cron.JobConfig{
+	_ = cron.NewJob("skyforge-governance-usage-cleanup", cron.JobConfig{
 		Title:    "Cleanup governance usage history",
 		Endpoint: CronCleanupGovernanceUsage,
 		Every:    24 * cron.Hour,

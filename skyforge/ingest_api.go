@@ -105,7 +105,7 @@ VALUES ($1, $2::inet, NULLIF($3,''), NULLIF($4,''), NULLIF($5,''), NULLIF($6,'')
 		_ = notifySyslogUpdatePG(ctx, s.db, owner)
 	}
 
-	s.indexElasticAsync("syslog", receivedAt, map[string]any{
+	s.indexElasticAsync(owner, "syslog", receivedAt, map[string]any{
 		"received_at": receivedAt.Format(time.RFC3339Nano),
 		"owner":       owner,
 		"source_ip":   sourceIP,
@@ -223,7 +223,7 @@ VALUES ($1, NULLIF($2,''), NULLIF($3,'')::inet, NULLIF($4,''), NULLIF($5,''), $6
 		_ = notifySnmpUpdatePG(ctx, s.db, username)
 	}
 
-	s.indexElasticAsync("snmp-trap", receivedAt, map[string]any{
+	s.indexElasticAsync(username, "snmp-trap", receivedAt, map[string]any{
 		"received_at": receivedAt.Format(time.RFC3339Nano),
 		"username":    username,
 		"source_ip":   sourceIP,

@@ -2467,6 +2467,9 @@ type Service struct {
 	elasticOnce    sync.Once
 	elasticClient  *elasticint.Client
 	elasticInitErr error
+
+	elasticUserPrefixCacheMu sync.Mutex
+	elasticUserPrefixCache   map[string]elasticUserPrefixCacheEntry
 }
 
 func NewSessionManager(secret, cookie string, ttl time.Duration, secureMode, cookieDomain string) *SessionManager {

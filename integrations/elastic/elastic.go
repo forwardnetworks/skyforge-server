@@ -50,6 +50,22 @@ func (c *Client) IndexDaily(ctx context.Context, category string, ts time.Time, 
 	return c.IndexDoc(ctx, index, doc)
 }
 
+// IndexDailyWithPrefix indexes a document into a daily index, overriding the client's
+// configured indexPrefix. This is used for per-user index routing on a shared cluster.
+func (c *Client) IndexDailyWithPrefix(ctx context.Context, indexPrefix, category string, ts time.Time, doc any) error {
+	indexPrefix = strings.TrimSpace(indexPrefix)
+	if indexPrefix == "" {
+		indexPrefix = c.indexPrefix
+	}
+	category = strings.TrimSpace(category)
+	if category == "" {
+		return fmt.Errorf("elastic category is required")
+	}
+	ts = ts.UTC()
+	index := fmt.Sprintf("%s-%s-%04d.%02d.%02d", indexPrefix, category, ts.Year(), ts.Month(), ts.Day())
+	return c.IndexDoc(ctx, index, doc)
+}
+
 func (c *Client) IndexDoc(ctx context.Context, index string, doc any) error {
 	index = strings.TrimSpace(index)
 	if index == "" {

@@ -364,7 +364,7 @@ VALUES ($1,$2,$3,$4,$5,$6,$7)
 	// Best-effort update signal for UI streaming (SSE).
 	_ = notifyWebhookUpdatePG(req.Context(), s.db, username)
 
-	s.indexElasticAsync("webhook", receivedAt, map[string]any{
+	s.indexElasticAsync(username, "webhook", receivedAt, map[string]any{
 		"received_at": receivedAt.Format(time.RFC3339Nano),
 		"username":    strings.ToLower(strings.TrimSpace(username)),
 		"token":       token,

@@ -117,6 +117,20 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 
 	elasticURL := strings.TrimRight(strings.TrimSpace(enc.Elastic.URL), "/")
 	elasticIndexPrefix := strings.TrimSpace(enc.Elastic.IndexPrefix)
+	elasticIndexingMode := strings.ToLower(strings.TrimSpace(enc.Elastic.IndexingMode))
+	switch elasticIndexingMode {
+	case "", "instance":
+		elasticIndexingMode = "instance"
+	case "per_user", "per-user", "peruser":
+		elasticIndexingMode = "per_user"
+	default:
+		elasticIndexingMode = "instance"
+	}
+	elasticToolsAutosleepEnabled := enc.Elastic.ToolsAutosleepEnabled
+	elasticToolsAutosleepIdleMinutes := enc.Elastic.ToolsAutosleepIdleMinutes
+	if elasticToolsAutosleepIdleMinutes <= 0 {
+		elasticToolsAutosleepIdleMinutes = 30
+	}
 	if elasticURL == "" && enc.Features.ElasticEnabled {
 		elasticURL = "http://elasticsearch:9200"
 	}
@@ -260,8 +274,11 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		elasticURL = "http://elasticsearch:9200"
 	}
 	elasticCfg := skyforgecore.ElasticConfig{
-		URL:         elasticURL,
-		IndexPrefix: elasticIndexPrefix,
+		URL:                       elasticURL,
+		IndexPrefix:               elasticIndexPrefix,
+		IndexingMode:              elasticIndexingMode,
+		ToolsAutosleepEnabled:     elasticToolsAutosleepEnabled,
+		ToolsAutosleepIdleMinutes: elasticToolsAutosleepIdleMinutes,
 	}
 
 	uiCfg := skyforgecore.UIConfig{
@@ -587,6 +604,20 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 
 	elasticURL := strings.TrimRight(strings.TrimSpace(enc.Elastic.URL), "/")
 	elasticIndexPrefix := strings.TrimSpace(enc.Elastic.IndexPrefix)
+	elasticIndexingMode := strings.ToLower(strings.TrimSpace(enc.Elastic.IndexingMode))
+	switch elasticIndexingMode {
+	case "", "instance":
+		elasticIndexingMode = "instance"
+	case "per_user", "per-user", "peruser":
+		elasticIndexingMode = "per_user"
+	default:
+		elasticIndexingMode = "instance"
+	}
+	elasticToolsAutosleepEnabled := enc.Elastic.ToolsAutosleepEnabled
+	elasticToolsAutosleepIdleMinutes := enc.Elastic.ToolsAutosleepIdleMinutes
+	if elasticToolsAutosleepIdleMinutes <= 0 {
+		elasticToolsAutosleepIdleMinutes = 30
+	}
 	if elasticIndexPrefix == "" {
 		elasticIndexPrefix = "skyforge"
 	}
@@ -594,8 +625,11 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		elasticURL = "http://elasticsearch:9200"
 	}
 	elasticCfg := skyforgecore.ElasticConfig{
-		URL:         elasticURL,
-		IndexPrefix: elasticIndexPrefix,
+		URL:                       elasticURL,
+		IndexPrefix:               elasticIndexPrefix,
+		IndexingMode:              elasticIndexingMode,
+		ToolsAutosleepEnabled:     elasticToolsAutosleepEnabled,
+		ToolsAutosleepIdleMinutes: elasticToolsAutosleepIdleMinutes,
 	}
 
 	// Note: Worker does not need OIDC, LDAP, DNS, UI, or admin users.

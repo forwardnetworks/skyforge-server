@@ -22,6 +22,13 @@ type ElasticDefaultsConfig struct {
 	URL string
 	// IndexPrefix is the prefix used for Skyforge-managed indices.
 	IndexPrefix string
+	// IndexingMode controls how Skyforge names indices (instance vs per-user).
+	IndexingMode string
+
+	// ToolsAutosleepEnabled enables demo-friendly autosleep for in-cluster Elastic tools.
+	ToolsAutosleepEnabled bool
+	// ToolsAutosleepIdleMinutes is the idle timeout (minutes) before autosleep scales to 0.
+	ToolsAutosleepIdleMinutes int
 }
 
 type OIDCDefaultsConfig struct {

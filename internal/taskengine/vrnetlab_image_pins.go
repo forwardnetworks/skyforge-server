@@ -14,14 +14,30 @@ var vrnetlabPinnedImages = map[string]string{
 	"ghcr.io/forwardnetworks/vrnetlab/vr-ftosv:10.6.1.0.24V": "ghcr.io/forwardnetworks/vrnetlab/vr-ftosv@sha256:1cde7dd305c5ebead38ecaba4d0ec694cb4ad4bb835dc8d11dcc46fee1279968",
 	"vrnetlab/vr-ftosv:10.6.1.0.24V":                         "ghcr.io/forwardnetworks/vrnetlab/vr-ftosv@sha256:1cde7dd305c5ebead38ecaba4d0ec694cb4ad4bb835dc8d11dcc46fee1279968",
 
-	// Cisco IOSv/vIOS and IOSvL2/vIOS-L2: ensure SSH is enabled reliably by using Skyforge-patched tags.
-	// Older tags can fail to generate RSA keys (SSH never starts), causing both netlab initial and Forward connectivity to fail.
-	"ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3": "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge1",
-	"vrnetlab/cisco_vios:15.9.3":                         "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge1",
-	"docker.io/vrnetlab/cisco_vios:15.9.3":               "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge1",
-	"ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2": "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge1",
-	"vrnetlab/cisco_viosl2:15.2":                         "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge1",
-	"docker.io/vrnetlab/cisco_viosl2:15.2":               "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge1",
+	// IOSv / IOSvL2 (vrnetlab) must set a management IP compatible with QEMU hostfwd.
+	// Older tags used a router-style Gi0/0 IP assignment even for IOSvL2, causing SSH readiness
+	// to hang forever (TCP connects, but no SSH banner from the guest).
+	"ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3":  "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge8",
+	"vrnetlab/cisco_vios:15.9.3":                          "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge8",
+	"docker.io/vrnetlab/cisco_vios:15.9.3":                "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge8",
+	"ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2":  "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge8",
+	"vrnetlab/cisco_viosl2:15.2":                          "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge8",
+	"docker.io/vrnetlab/cisco_viosl2:15.2":                "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge8",
+
+	// Also rewrite older Skyforge-stamped tags we produced during bring-up so older blueprints
+	// (or cached generator artifacts) don't get stuck on a broken build.
+	"ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge2":  "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge8",
+	"ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge3":  "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge8",
+	"ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge4":  "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge8",
+	"ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge5":  "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge8",
+	"ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge6":  "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge8",
+	"ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge7":  "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge8",
+	"ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge2":  "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge8",
+	"ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge3":  "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge8",
+	"ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge4":  "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge8",
+	"ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge5":  "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge8",
+	"ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge6":  "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge8",
+	"ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge7":  "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge8",
 }
 
 func rewritePinnedVrnetlabImage(image string) (string, bool) {

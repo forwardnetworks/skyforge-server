@@ -114,6 +114,21 @@ type ElasticConfig struct {
 	//   <prefix>-snmp-trap-YYYY.MM.DD
 	//   <prefix>-webhook-YYYY.MM.DD
 	IndexPrefix string
+	// IndexingMode controls how Skyforge names indices.
+	//
+	// Allowed values:
+	// - "instance": legacy instance-scoped indices (<IndexPrefix>-<category>-YYYY.MM.DD)
+	// - "per_user": per-user indices (<IndexPrefix>-u-<username>-<category>-YYYY.MM.DD)
+	//
+	// Empty is treated as "instance" for backwards compatibility.
+	IndexingMode string
+
+	// ToolsAutosleepEnabled enables demo-friendly autosleep for in-cluster Elastic tools
+	// (Elasticsearch StatefulSet + Kibana Deployment).
+	ToolsAutosleepEnabled bool
+	// ToolsAutosleepIdleMinutes is the idle timeout (minutes) before autosleep scales
+	// Elastic tools to 0 replicas.
+	ToolsAutosleepIdleMinutes int
 }
 
 type FeaturesConfig struct {

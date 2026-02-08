@@ -76,7 +76,7 @@ func (c *userElasticConfig) toAPI(defaultURL, defaultIndexPrefix string, enabled
 	}
 	resp := &UserElasticConfigResponse{
 		Enabled:            enabled,
-		Configured:         strings.TrimSpace(c.URL) != "",
+		Configured:         true,
 		URL:                c.URL,
 		IndexPrefix:        c.IndexPrefix,
 		AuthType:           c.AuthType,
@@ -298,6 +298,8 @@ func (s *Service) GetUserElasticConfig(ctx context.Context) (*UserElasticConfigR
 	if err != nil {
 		return nil, err
 	}
+	// Treat visiting the Elastic integration page as "activity" for autosleep.
+	s.touchElasticToolsActivity(ctx)
 
 	enabled := s.cfg.Features.ElasticEnabled
 	defaultURL := strings.TrimSpace(s.cfg.ElasticURL)
@@ -382,6 +384,8 @@ func (s *Service) TestUserElasticConfig(ctx context.Context) (*UserElasticTestRe
 	if err != nil {
 		return nil, err
 	}
+	// "Test" is an explicit user action; treat it as autosleep activity.
+	s.touchElasticToolsActivity(ctx)
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
