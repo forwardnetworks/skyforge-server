@@ -299,13 +299,14 @@ func (e *Engine) buildNetlabTopologyBundleB64(ctx context.Context, pc *workspace
 		var buf bytes.Buffer
 		gz := gzip.NewWriter(&buf)
 		tw := tar.NewWriter(gz)
+		written := map[string]bool{}
 		defer func() {
 			_ = tw.Close()
 			_ = gz.Close()
 		}()
 
-		var walkDir func(repoDir string) error
-		walkDir = func(repoDir string) error {
+		var walkDir func(repoDir string, stripPrefix string, renameTopology bool) error
+		walkDir = func(repoDir string, stripPrefix string, renameTopology bool) error {
 			entries, err := e.listGiteaDirectory(ref.Owner, ref.Repo, repoDir, ref.Branch)
 			if err != nil {
 				return err
@@ -321,7 +322,7 @@ func (e *Engine) buildNetlabTopologyBundleB64(ctx context.Context, pc *workspace
 				entryPath := strings.TrimPrefix(strings.TrimSpace(entry.Path), "/")
 				switch entry.Type {
 				case "dir":
-					if err := walkDir(entryPath); err != nil {
+					if err := walkDir(entryPath, stripPrefix, renameTopology); err != nil {
 						return err
 					}
 				case "file":
@@ -329,14 +330,17 @@ func (e *Engine) buildNetlabTopologyBundleB64(ctx context.Context, pc *workspace
 					if err != nil {
 						return err
 					}
-					rel := strings.TrimPrefix(entryPath, templateDir)
+					rel := strings.TrimPrefix(entryPath, stripPrefix)
 					rel = strings.TrimPrefix(rel, "/")
 					tarName := rel
-					if entryPath == templatePath {
+					if renameTopology && entryPath == templatePath {
 						tarName = "topology.yml"
 					}
 					tarName = path.Clean(strings.TrimPrefix(tarName, "/"))
 					if tarName == "." || tarName == "" || strings.HasPrefix(tarName, "..") {
+						continue
+					}
+					if written[tarName] {
 						continue
 					}
 					hdr := &tar.Header{
@@ -351,6 +355,7 @@ func (e *Engine) buildNetlabTopologyBundleB64(ctx context.Context, pc *workspace
 					if _, err := tw.Write(data); err != nil {
 						return err
 					}
+					written[tarName] = true
 				default:
 					continue
 				}
@@ -358,9 +363,22 @@ func (e *Engine) buildNetlabTopologyBundleB64(ctx context.Context, pc *workspace
 			return nil
 		}
 
-		if err := walkDir(templateDir); err != nil {
+		if err := walkDir(templateDir, templateDir, true); err != nil {
 			return err
 		}
+
+		overlayRoot := strings.Trim(strings.TrimSpace(templatesDir), "/")
+		if overlayRoot != "" && overlayRoot != "." {
+			overlayDir := strings.TrimPrefix(path.Join(overlayRoot, "_skyforge"), "/")
+			if overlayDir != "" {
+				if entries, err := e.listGiteaDirectory(ref.Owner, ref.Repo, overlayDir, ref.Branch); err == nil && len(entries) > 0 {
+					if err := walkDir(overlayDir, overlayDir, false); err != nil {
+						return err
+					}
+				}
+			}
+		}
+
 		if err := tw.Close(); err != nil {
 			return err
 		}
