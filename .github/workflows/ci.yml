@@ -1,8 +1,9 @@
 name: CI
 
 on:
-  push:
-  pull_request:
+  # Disabled automatic runs to reduce noise.
+  # Re-enable push/pull_request when ready.
+  workflow_dispatch:
 
 jobs:
   test:
