@@ -254,13 +254,22 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 			payload["spec"].(map[string]any)["connectivity"] = connectivity
 		}
 
+		// clabernetes expects scheduling overrides under spec.deployment.scheduling (not spec.scheduling).
+		// We accumulate them here and attach to the deployment block later.
+		var deploymentScheduling map[string]any
+		ensureDeploymentScheduling := func() map[string]any {
+			if deploymentScheduling == nil {
+				deploymentScheduling = map[string]any{}
+			}
+			return deploymentScheduling
+		}
+
 		// Optional: pin topology pods to a specific Kubernetes node (hard requirement).
 		// clabernetes exposes this as a "scheduling" block.
 		if node := envString(spec.Environment, "SKYFORGE_CLABERNETES_NODE_SELECTOR_HOSTNAME"); node != "" {
-			payload["spec"].(map[string]any)["scheduling"] = map[string]any{
-				"nodeSelector": map[string]any{
-					"kubernetes.io/hostname": node,
-				},
+			s := ensureDeploymentScheduling()
+			s["nodeSelector"] = map[string]any{
+				"kubernetes.io/hostname": node,
 			}
 		}
 
@@ -268,12 +277,7 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		// This is useful to co-locate workloads with a per-user sidecar/collector when possible,
 		// while still allowing normal cluster spreading.
 		if node := envString(spec.Environment, "SKYFORGE_CLABERNETES_PREFERRED_NODE_HOSTNAME"); node != "" {
-			specMap := payload["spec"].(map[string]any)
-			scheduling, ok := specMap["scheduling"].(map[string]any)
-			if !ok || scheduling == nil {
-				scheduling = map[string]any{}
-				specMap["scheduling"] = scheduling
-			}
+			scheduling := ensureDeploymentScheduling()
 			scheduling["affinity"] = map[string]any{
 				"nodeAffinity": map[string]any{
 					"preferredDuringSchedulingIgnoredDuringExecution": []any{
@@ -313,12 +317,7 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		requireAntiAffinity := envBool(spec.Environment, "SKYFORGE_CLABERNETES_POD_ANTI_AFFINITY_REQUIRED", false)
 		enableAntiAffinity := envBool(spec.Environment, "SKYFORGE_CLABERNETES_ENABLE_POD_ANTI_AFFINITY", schedulingMode == "spread")
 		if requireAntiAffinity || enableAntiAffinity {
-			specMap := payload["spec"].(map[string]any)
-			scheduling, ok := specMap["scheduling"].(map[string]any)
-			if !ok || scheduling == nil {
-				scheduling = map[string]any{}
-				specMap["scheduling"] = scheduling
-			}
+			scheduling := ensureDeploymentScheduling()
 			affinity, ok := scheduling["affinity"].(map[string]any)
 			if !ok || affinity == nil {
 				affinity = map[string]any{}
@@ -414,6 +413,10 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 			if len(files) > 0 {
 				deployment["filesFromConfigMap"] = files
 			}
+		}
+
+		if deploymentScheduling != nil && len(deploymentScheduling) > 0 {
+			deployment["scheduling"] = deploymentScheduling
 		}
 
 		// Optional: apply per-node Kubernetes resource requests for common NOS kinds.
