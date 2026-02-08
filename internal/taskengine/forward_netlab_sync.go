@@ -519,16 +519,19 @@ func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *work
 
 	snmpCredentialID := getString(forwardSnmpCredentialIDKey)
 	if snmpCredentialID == "" && e.cfg.Forward.SNMPPlaceholderEnabled {
-		community := strings.TrimSpace(e.cfg.Forward.SNMPCommunity)
-		if community != "" {
-			cred, err := forwardCreateSnmpCredential(ctx, client, networkID, community)
-			if err != nil {
-				log.Printf("forward snmp credential skipped: %v", err)
-			} else {
-				snmpCredentialID = cred.ID
-				cfgAny[forwardSnmpCredentialIDKey] = snmpCredentialID
-				changed = true
-			}
+		// Use the per-user trap token as the single community for both polling and traps.
+		// This keeps behavior consistent across vendors (esp. Junos) and avoids "public" drift.
+		community, err := e.ensureUserSnmpTrapToken(ctx, pc.claims.Username)
+		if err != nil {
+			return cfgAny, err
+		}
+		cred, err := forwardCreateSnmpCredential(ctx, client, networkID, community)
+		if err != nil {
+			log.Printf("forward snmp credential skipped: %v", err)
+		} else {
+			snmpCredentialID = cred.ID
+			cfgAny[forwardSnmpCredentialIDKey] = snmpCredentialID
+			changed = true
 		}
 	}
 
