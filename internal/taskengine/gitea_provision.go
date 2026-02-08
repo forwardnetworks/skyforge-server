@@ -147,8 +147,10 @@ defaults:
 
 nodes:
   r1: {}
+  r2: {}
 
-links: []
+links:
+  - r1-r2
 `) + "\n"
 	_ = ensureGiteaFile(cfg, owner, repo, "netlab/_e2e/minimal/topology.yml", netlabMinimal, "test: add netlab minimal e2e topology", "main", nil)
 
