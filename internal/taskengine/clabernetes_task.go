@@ -340,9 +340,7 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 				if requireAntiAffinity {
 					affinity["podAntiAffinity"] = map[string]any{
 						"requiredDuringSchedulingIgnoredDuringExecution": []any{
-							map[string]any{
-								"podAffinityTerm": term,
-							},
+							term,
 						},
 					}
 					log.Infof("Clabernetes scheduling: require spreading pods (podAntiAffinity required topologyOwner=%s)", name)
