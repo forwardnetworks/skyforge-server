@@ -288,6 +288,7 @@ func (e *Engine) getUserForwardCredentials(ctx context.Context, username string,
 
 	collectorConfigID = strings.TrimSpace(collectorConfigID)
 	type row struct {
+		credID        sql.NullString
 		baseURL       sql.NullString
 		fwdUser       sql.NullString
 		fwdPass       sql.NullString
@@ -297,36 +298,111 @@ func (e *Engine) getUserForwardCredentials(ctx context.Context, username string,
 	}
 	var r row
 	if collectorConfigID != "" {
-		err := e.db.QueryRowContext(ctx, `SELECT base_url, forward_username, forward_password,
+		err := e.db.QueryRowContext(ctx, `SELECT COALESCE(credential_id,''),
+  base_url, forward_username, forward_password,
   COALESCE(collector_username, ''), COALESCE(authorization_key, ''),
   COALESCE(skip_tls_verify, false)
 FROM sf_user_forward_collectors WHERE username=$1 AND id=$2`, username, collectorConfigID).Scan(
-			&r.baseURL, &r.fwdUser, &r.fwdPass, &r.collectorUser, &r.authKey, &r.skipTLSVerify,
+			&r.credID, &r.baseURL, &r.fwdUser, &r.fwdPass, &r.collectorUser, &r.authKey, &r.skipTLSVerify,
 		)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil, nil
 			}
 			if isMissingDBRelation(err) {
-				return e.getUserForwardCredentialsLegacy(ctx, username)
+				return nil, nil
 			}
 			return nil, err
 		}
 	} else {
-		err := e.db.QueryRowContext(ctx, `SELECT base_url, forward_username, forward_password,
+		err := e.db.QueryRowContext(ctx, `SELECT COALESCE(credential_id,''),
+  base_url, forward_username, forward_password,
   COALESCE(collector_username, ''), COALESCE(authorization_key, ''),
   COALESCE(skip_tls_verify, false)
 FROM sf_user_forward_collectors WHERE username=$1
 ORDER BY is_default DESC, updated_at DESC
 LIMIT 1`, username).Scan(
-			&r.baseURL, &r.fwdUser, &r.fwdPass, &r.collectorUser, &r.authKey, &r.skipTLSVerify,
+			&r.credID, &r.baseURL, &r.fwdUser, &r.fwdPass, &r.collectorUser, &r.authKey, &r.skipTLSVerify,
 		)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) || isMissingDBRelation(err) {
-				return e.getUserForwardCredentialsLegacy(ctx, username)
+				return nil, nil
 			}
 			return nil, err
 		}
+	}
+
+	credID := strings.TrimSpace(r.credID.String)
+	if credID != "" {
+		// Preferred: shared credentials table (ciphertext stored as enc:...).
+		var baseURLEnc sql.NullString
+		var userEnc, passEnc sql.NullString
+		var collectorUserEnc, authKeyEnc sql.NullString
+		var deviceUserEnc, devicePassEnc sql.NullString
+		var jumpHostEnc, jumpUserEnc, jumpKeyEnc, jumpCertEnc sql.NullString
+		var skipTLSVerify sql.NullBool
+		err := e.db.QueryRowContext(ctx, `
+SELECT
+  COALESCE(base_url_enc, ''), COALESCE(skip_tls_verify, false),
+  COALESCE(forward_username_enc, ''), COALESCE(forward_password_enc, ''),
+  COALESCE(collector_username_enc, ''), COALESCE(authorization_key_enc, ''),
+  COALESCE(device_username_enc, ''), COALESCE(device_password_enc, ''),
+  COALESCE(jump_host_enc, ''), COALESCE(jump_username_enc, ''), COALESCE(jump_private_key_enc, ''), COALESCE(jump_cert_enc, '')
+FROM sf_credentials
+WHERE id=$1 AND provider='forward' AND owner_username=$2 AND workspace_id IS NULL
+`, credID, username).Scan(
+			&baseURLEnc, &skipTLSVerify,
+			&userEnc, &passEnc,
+			&collectorUserEnc, &authKeyEnc,
+			&deviceUserEnc, &devicePassEnc,
+			&jumpHostEnc, &jumpUserEnc, &jumpKeyEnc, &jumpCertEnc,
+		)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		dec := func(v sql.NullString) (string, error) { return e.box.decrypt(v.String) }
+		baseURLValue, err := dec(baseURLEnc)
+		if err != nil {
+			return nil, fmt.Errorf("forward credentials could not be decrypted; re-save Forward settings")
+		}
+		usernameValue, err := dec(userEnc)
+		if err != nil {
+			return nil, fmt.Errorf("forward credentials could not be decrypted; re-save Forward settings")
+		}
+		passwordValue, err := dec(passEnc)
+		if err != nil {
+			return nil, fmt.Errorf("forward credentials could not be decrypted; re-save Forward settings")
+		}
+		collectorUserValue, _ := dec(collectorUserEnc)
+		authKeyValue, _ := dec(authKeyEnc)
+		if strings.TrimSpace(collectorUserValue) == "" && strings.TrimSpace(authKeyValue) != "" {
+			if before, _, ok := strings.Cut(strings.TrimSpace(authKeyValue), ":"); ok {
+				collectorUserValue = before
+			}
+		}
+		deviceUserValue, _ := dec(deviceUserEnc)
+		devicePassValue, _ := dec(devicePassEnc)
+		jumpHostValue, _ := dec(jumpHostEnc)
+		jumpUserValue, _ := dec(jumpUserEnc)
+		jumpKeyValue, _ := dec(jumpKeyEnc)
+		jumpCertValue, _ := dec(jumpCertEnc)
+
+		return &forwardCredentials{
+			BaseURL:        strings.TrimSpace(baseURLValue),
+			SkipTLSVerify:  skipTLSVerify.Valid && skipTLSVerify.Bool,
+			Username:       strings.TrimSpace(usernameValue),
+			Password:       strings.TrimSpace(passwordValue),
+			CollectorUser:  strings.TrimSpace(collectorUserValue),
+			DeviceUsername: strings.TrimSpace(deviceUserValue),
+			DevicePassword: strings.TrimSpace(devicePassValue),
+			JumpHost:       strings.TrimSpace(jumpHostValue),
+			JumpUsername:   strings.TrimSpace(jumpUserValue),
+			JumpPrivateKey: strings.TrimSpace(jumpKeyValue),
+			JumpCert:       strings.TrimSpace(jumpCertValue),
+		}, nil
 	}
 
 	dec := func(v sql.NullString) (string, error) {
@@ -354,74 +430,10 @@ LIMIT 1`, username).Scan(
 
 	return &forwardCredentials{
 		BaseURL:       strings.TrimSpace(baseURLValue),
+		SkipTLSVerify: r.skipTLSVerify.Valid && r.skipTLSVerify.Bool,
 		Username:      strings.TrimSpace(usernameValue),
 		Password:      strings.TrimSpace(passwordValue),
 		CollectorUser: strings.TrimSpace(collectorUserValue),
-	}, nil
-}
-
-func (e *Engine) getUserForwardCredentialsLegacy(ctx context.Context, username string) (*forwardCredentials, error) {
-	var baseURL, fwdUser, fwdPass sql.NullString
-	var collectorUser sql.NullString
-	var deviceUser, devicePass sql.NullString
-	var jumpHost, jumpUser, jumpKey, jumpCert sql.NullString
-	err := e.db.QueryRowContext(ctx, `SELECT base_url, forward_username, forward_password,
-  COALESCE(collector_username, ''),
-  COALESCE(device_username, ''), COALESCE(device_password, ''),
-  COALESCE(jump_host, ''), COALESCE(jump_username, ''), COALESCE(jump_private_key, ''), COALESCE(jump_cert, '')
-FROM sf_user_forward_credentials WHERE username=$1`, username).Scan(
-		&baseURL,
-		&fwdUser,
-		&fwdPass,
-		&collectorUser,
-		&deviceUser,
-		&devicePass,
-		&jumpHost,
-		&jumpUser,
-		&jumpKey,
-		&jumpCert,
-	)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	dec := func(v sql.NullString) (string, error) {
-		return e.box.decrypt(v.String)
-	}
-	baseURLValue, err := dec(baseURL)
-	if err != nil {
-		return nil, fmt.Errorf("forward credentials could not be decrypted; re-save Forward settings")
-	}
-	usernameValue, err := dec(fwdUser)
-	if err != nil {
-		return nil, fmt.Errorf("forward credentials could not be decrypted; re-save Forward settings")
-	}
-	passwordValue, err := dec(fwdPass)
-	if err != nil {
-		return nil, fmt.Errorf("forward credentials could not be decrypted; re-save Forward settings")
-	}
-	collectorUserValue, _ := dec(collectorUser)
-	deviceUserValue, _ := dec(deviceUser)
-	devicePassValue, _ := dec(devicePass)
-	jumpHostValue, _ := dec(jumpHost)
-	jumpUserValue, _ := dec(jumpUser)
-	jumpKeyValue, _ := dec(jumpKey)
-	jumpCertValue, _ := dec(jumpCert)
-
-	return &forwardCredentials{
-		BaseURL:        strings.TrimSpace(baseURLValue),
-		Username:       strings.TrimSpace(usernameValue),
-		Password:       strings.TrimSpace(passwordValue),
-		CollectorUser:  strings.TrimSpace(collectorUserValue),
-		DeviceUsername: strings.TrimSpace(deviceUserValue),
-		DevicePassword: strings.TrimSpace(devicePassValue),
-		JumpHost:       strings.TrimSpace(jumpHostValue),
-		JumpUsername:   strings.TrimSpace(jumpUserValue),
-		JumpPrivateKey: strings.TrimSpace(jumpKeyValue),
-		JumpCert:       strings.TrimSpace(jumpCertValue),
 	}, nil
 }
 

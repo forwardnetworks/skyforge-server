@@ -143,32 +143,7 @@ func forwardConfigForUser(ctx context.Context, db *sql.DB, sessionSecret string,
 	} else if err != nil {
 		return nil, err
 	}
-
-	// Backward-compat: legacy per-user Forward credentials (sf_user_forward_credentials).
-	rec, err := getUserForwardCredentials(ctx, db, newSecretBox(sessionSecret), username)
-	if err != nil || rec == nil {
-		return nil, err
-	}
-	baseURL := strings.TrimSpace(rec.BaseURL)
-	if baseURL == "" {
-		baseURL = defaultForwardBaseURL
-	}
-	if strings.TrimSpace(rec.ForwardUsername) == "" || strings.TrimSpace(rec.ForwardPassword) == "" {
-		return nil, nil
-	}
-	collectorUser := strings.TrimSpace(rec.CollectorUsername)
-	if collectorUser == "" && strings.TrimSpace(rec.AuthorizationKey) != "" {
-		if before, _, ok := strings.Cut(rec.AuthorizationKey, ":"); ok {
-			collectorUser = strings.TrimSpace(before)
-		}
-	}
-	return &forwardCredentials{
-		BaseURL:       baseURL,
-		SkipTLSVerify: rec.SkipTLSVerify,
-		Username:      strings.TrimSpace(rec.ForwardUsername),
-		Password:      strings.TrimSpace(rec.ForwardPassword),
-		CollectorUser: collectorUser,
-	}, nil
+	return nil, nil
 }
 
 func forwardConfigForUserCollectorConfigID(ctx context.Context, db *sql.DB, sessionSecret string, username, collectorConfigID string) (*forwardCredentials, error) {

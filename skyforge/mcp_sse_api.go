@@ -328,3 +328,37 @@ func (s *Service) MCPForwardMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mcpMessage(w, r, user, id, netID)
 }
+
+// MCPForwardNetworkSSE exposes an SSE-based transport for Forward-scoped MCP calls without a workspace context.
+//
+//encore:api auth raw method=GET path=/api/mcp/forward/:forwardNetworkId/sse
+func (s *Service) MCPForwardNetworkSSE(w http.ResponseWriter, r *http.Request) {
+	user, err := s.mcpAuthFromRequest(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	netID := strings.TrimSpace(r.PathValue("forwardNetworkId"))
+	if netID == "" {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	s.mcpSSE(w, r, user, "", netID)
+}
+
+// MCPForwardNetworkMessage receives JSON-RPC messages for an unscoped Forward SSE session.
+//
+//encore:api auth raw method=POST path=/api/mcp/forward/:forwardNetworkId/message
+func (s *Service) MCPForwardNetworkMessage(w http.ResponseWriter, r *http.Request) {
+	user, err := s.mcpAuthFromRequest(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	netID := strings.TrimSpace(r.PathValue("forwardNetworkId"))
+	if netID == "" {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	s.mcpMessage(w, r, user, "", netID)
+}

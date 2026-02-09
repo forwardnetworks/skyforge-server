@@ -193,7 +193,7 @@ func (s *Service) mcpToolsList(workspaceID, forwardNetworkID string) []mcpTool {
 		},
 	}
 
-	if strings.TrimSpace(workspaceID) != "" && strings.TrimSpace(forwardNetworkID) != "" {
+	if strings.TrimSpace(forwardNetworkID) != "" {
 		// Forward parity tool names (mostly pass-through to Forward API). Some are stubs.
 		tools = append(tools, forwardMCPToolCatalog()...)
 	}
@@ -291,7 +291,7 @@ func (s *Service) mcpToolsCall(ctx context.Context, user *AuthUser, workspaceID,
 		return out, nil
 	default:
 		// Forward tools only exist on the forward-scoped endpoint.
-		if strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(forwardNetworkID) == "" {
+		if strings.TrimSpace(forwardNetworkID) == "" {
 			return "", errs.B().Code(errs.NotFound).Msg("tool not found").Err()
 		}
 		return s.mcpForwardToolsCall(ctx, user, workspaceID, forwardNetworkID, name, args)
@@ -438,4 +438,27 @@ func (s *Service) MCPForwardRPC(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(context.WithValue(r.Context(), ctxKeyMCPForwardCredentialID, credID))
 	}
 	s.mcpHandleRPC(w, r, user, id, forwardNetworkId)
+}
+
+// MCPForwardNetworkRPC exposes a Forward-scoped MCP JSON-RPC endpoint without requiring a workspace context.
+//
+// This is useful for connecting MCP clients to an arbitrary Forward network id, using the caller's
+// saved credential sets (or user default collector config).
+//
+//encore:api auth raw method=POST path=/api/mcp/forward/:forwardNetworkId/rpc
+func (s *Service) MCPForwardNetworkRPC(w http.ResponseWriter, r *http.Request) {
+	user, err := s.mcpAuthFromRequest(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	netID := strings.TrimSpace(r.PathValue("forwardNetworkId"))
+	if netID == "" {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	if credID := strings.TrimSpace(r.Header.Get("X-Forward-Credential-Id")); credID != "" {
+		r = r.WithContext(context.WithValue(r.Context(), ctxKeyMCPForwardCredentialID, credID))
+	}
+	s.mcpHandleRPC(w, r, user, "", netID)
 }

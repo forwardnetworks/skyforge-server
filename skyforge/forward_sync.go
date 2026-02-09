@@ -251,36 +251,7 @@ func (s *Service) forwardConfigForUser(ctx context.Context, username string) (*f
 	if cfg, err := forwardConfigForUserPreferredCollector(ctx, s.db, s.cfg.SessionSecret, username); err == nil && cfg != nil {
 		return cfg, nil
 	}
-
-	// Fallback: legacy per-user Forward credentials (sf_user_forward_credentials).
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	rec, err := getUserForwardCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), username)
-	if err != nil || rec == nil {
-		return nil, err
-	}
-
-	if strings.TrimSpace(rec.BaseURL) == "" {
-		rec.BaseURL = defaultForwardBaseURL
-	}
-	if strings.TrimSpace(rec.ForwardUsername) == "" || strings.TrimSpace(rec.ForwardPassword) == "" {
-		return nil, nil
-	}
-
-	collectorUser := strings.TrimSpace(rec.CollectorUsername)
-	if collectorUser == "" && strings.TrimSpace(rec.AuthorizationKey) != "" {
-		if before, _, ok := strings.Cut(rec.AuthorizationKey, ":"); ok {
-			collectorUser = strings.TrimSpace(before)
-		}
-	}
-
-	return &forwardCredentials{
-		BaseURL:       rec.BaseURL,
-		SkipTLSVerify: rec.SkipTLSVerify,
-		Username:      rec.ForwardUsername,
-		Password:      rec.ForwardPassword,
-		CollectorUser: collectorUser,
-	}, nil
+	return nil, nil
 }
 
 func (s *Service) forwardConfigForUserCollectorConfigID(ctx context.Context, username, collectorConfigID string) (*forwardCredentials, error) {

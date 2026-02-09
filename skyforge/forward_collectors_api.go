@@ -33,20 +33,23 @@ func (s *Service) ListForwardCollectors(ctx context.Context) (*ListForwardCollec
 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	rec, err := getUserForwardCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), user.Username)
+	rec, err := resolveForwardCredentialsFor(ctx, s.db, s.cfg.SessionSecret, "", user.Username, "", forwardCredResolveOpts{})
 	if err != nil {
+		if errs.Code(err) == errs.FailedPrecondition {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward credentials required").Err()
+		}
 		log.Printf("forward collectors get creds: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward credentials").Err()
 	}
-	if rec == nil || strings.TrimSpace(rec.ForwardUsername) == "" || strings.TrimSpace(rec.ForwardPassword) == "" {
+	if rec == nil || strings.TrimSpace(rec.Username) == "" || strings.TrimSpace(rec.Password) == "" {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward credentials required").Err()
 	}
 
 	client, err := newForwardClient(forwardCredentials{
 		BaseURL:       rec.BaseURL,
 		SkipTLSVerify: rec.SkipTLSVerify,
-		Username:      rec.ForwardUsername,
-		Password:      rec.ForwardPassword,
+		Username:      rec.Username,
+		Password:      rec.Password,
 	})
 	if err != nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid Forward config").Err()
