@@ -15,9 +15,10 @@ import (
 
 func main() {
 	var (
-		baseURL   = flag.String("url", strings.TrimSpace(os.Getenv("SKYFORGE_MCP_URL")), "Skyforge MCP endpoint URL (e.g. https://host/api/mcp/rpc or /api/workspaces/<ws>/mcp/forward/<net>/rpc)")
-		apiToken  = flag.String("token", strings.TrimSpace(os.Getenv("SKYFORGE_API_TOKEN")), "Skyforge API token (Authorization: Bearer ...)")
-		timeout   = flag.Duration("timeout", 60*time.Second, "HTTP timeout")
+		baseURL       = flag.String("url", strings.TrimSpace(os.Getenv("SKYFORGE_MCP_URL")), "Skyforge MCP endpoint URL (e.g. https://host/api/mcp/rpc or /api/workspaces/<ws>/mcp/forward/<net>/rpc)")
+		apiToken      = flag.String("token", strings.TrimSpace(os.Getenv("SKYFORGE_API_TOKEN")), "Skyforge API token (Authorization: Bearer ...)")
+		forwardCredID = flag.String("forward-credential-id", strings.TrimSpace(os.Getenv("SKYFORGE_FORWARD_CREDENTIAL_ID")), "Optional Forward credential set id (sent as X-Forward-Credential-Id; only meaningful for Forward-scoped MCP endpoints)")
+		timeout       = flag.Duration("timeout", 60*time.Second, "HTTP timeout")
 	)
 	flag.Parse()
 
@@ -41,7 +42,7 @@ func main() {
 			}
 			fatalf("read: %v", err)
 		}
-		respBody, err := httpPostJSON(client, *baseURL, *apiToken, msg)
+		respBody, err := httpPostJSON(client, *baseURL, *apiToken, *forwardCredID, msg)
 		if err != nil {
 			// Best-effort JSON-RPC error passthrough.
 			respBody = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":null,"error":{"code":-32000,"message":%q}}`, err.Error()))
@@ -52,13 +53,16 @@ func main() {
 	}
 }
 
-func httpPostJSON(c *http.Client, url, token string, body []byte) ([]byte, error) {
+func httpPostJSON(c *http.Client, url, token, forwardCredID string, body []byte) ([]byte, error) {
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
+	if strings.TrimSpace(forwardCredID) != "" {
+		req.Header.Set("X-Forward-Credential-Id", strings.TrimSpace(forwardCredID))
+	}
 	resp, err := c.Do(req)
 	if err != nil {
 		return nil, err
@@ -124,4 +128,3 @@ func fatalf(format string, args ...any) {
 	_, _ = fmt.Fprintf(os.Stderr, format+"\n", args...)
 	os.Exit(1)
 }
-
