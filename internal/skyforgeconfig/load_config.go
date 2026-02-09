@@ -182,29 +182,10 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 	}
 	dnsUserZoneSuffix = strings.TrimPrefix(dnsUserZoneSuffix, ".")
 
-	taskWorkerEnabled := enc.TaskWorkerEnabled
+		taskWorkerEnabled := enc.TaskWorkerEnabled
 
-	aiEnabled := enc.AI.Enabled
-
-	geminiEnabled := enc.Gemini.Enabled
-	geminiClientID := strings.TrimSpace(enc.Gemini.ClientID)
-	geminiRedirectURL := strings.TrimSpace(enc.Gemini.RedirectURL)
-	if geminiRedirectURL == "" && strings.TrimSpace(enc.PublicURL) != "" {
-		geminiRedirectURL = strings.TrimRight(strings.TrimSpace(enc.PublicURL), "/") + "/api/user/integrations/gemini/callback"
-	}
-	geminiProjectID := strings.TrimSpace(enc.Gemini.ProjectID)
-	geminiLocation := strings.TrimSpace(enc.Gemini.Location)
-	if geminiLocation == "" {
-		geminiLocation = "us-central1"
-	}
-	geminiModel := strings.TrimSpace(enc.Gemini.Model)
-	geminiFallbackModel := strings.TrimSpace(enc.Gemini.FallbackModel)
-	if geminiModel == "" {
-		geminiModel = "gemini-3.0-pro"
-	}
-	if geminiFallbackModel == "" {
-		geminiFallbackModel = "gemini-3.0-flash"
-	}
+		mcpEnabled := enc.MCP.Enabled
+		mcpForwardAllowWrites := enc.MCP.ForwardAllowWrites
 
 	imagePullSecretName := strings.TrimSpace(enc.Kubernetes.ImagePullSecretName)
 	imagePullSecretNamespace := strings.TrimSpace(enc.Kubernetes.ImagePullSecretNamespace)
@@ -455,19 +436,10 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 			}
 			return 30
 		}(),
-		DNSURL:                                   dnsURL,
-		DNSAdminUsername:                         dnsAdminUsername,
-		DNSUserZoneSuffix:                        dnsUserZoneSuffix,
-		AIEnabled:                                aiEnabled,
-		GeminiEnabled:                            geminiEnabled,
-		GeminiClientID:                           geminiClientID,
-		GeminiClientSecret:                       strings.TrimSpace(sec.GeminiClientSecret),
-		GeminiRedirectURL:                        geminiRedirectURL,
-		GeminiProjectID:                          geminiProjectID,
-		GeminiLocation:                           geminiLocation,
-		GeminiModel:                              geminiModel,
-		GeminiFallbackModel:                      geminiFallbackModel,
-		TaskWorkerEnabled:                        taskWorkerEnabled,
+			DNSURL:                                   dnsURL,
+			DNSAdminUsername:                         dnsAdminUsername,
+			DNSUserZoneSuffix:                        dnsUserZoneSuffix,
+			TaskWorkerEnabled:                        taskWorkerEnabled,
 		ImagePullSecretName:                      imagePullSecretName,
 		ImagePullSecretNamespace:                 imagePullSecretNamespace,
 		ForwardCollectorImage:                    forwardCollectorImage,
@@ -481,10 +453,14 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		NetlabGeneratorPullPolicy:                netlabGeneratorPullPolicy,
 		NetlabApplierImage:                       netlabApplierImage,
 		NetlabApplierPullPolicy:                  netlabApplierPullPolicy,
-		Features:                                 featuresCfg,
-		Elastic:                                  elasticCfg,
+			Features:                                 featuresCfg,
+			Elastic:                                  elasticCfg,
+			MCP: skyforgecore.MCPConfig{
+				Enabled:           mcpEnabled,
+				ForwardAllowWrites: mcpForwardAllowWrites,
+			},
+		}
 	}
-}
 
 // LoadWorkerConfig loads a subset of configuration required for the worker service.
 func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.Config {
@@ -662,9 +638,13 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 			SNMPPlaceholderEnabled: enc.Forward.SNMPPlaceholderEnabled,
 		},
 		PKICACert: strings.TrimSpace(sec.PKICACert),
-		PKICAKey:  strings.TrimSpace(sec.PKICAKey),
-		SSHCAKey:  strings.TrimSpace(sec.SSHCAKey),
-		Features:  featuresCfg,
-		Elastic:   elasticCfg,
+			PKICAKey:  strings.TrimSpace(sec.PKICAKey),
+			SSHCAKey:  strings.TrimSpace(sec.SSHCAKey),
+			Features:  featuresCfg,
+			Elastic:   elasticCfg,
+			MCP: skyforgecore.MCPConfig{
+				Enabled:           false,
+				ForwardAllowWrites: false,
+			},
+		}
 	}
-}

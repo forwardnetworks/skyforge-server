@@ -7,7 +7,7 @@ import "time"
 // This package is a non-service library so it can be shared by both the API service
 // and the worker service without creating a Go-package dependency on the skyforge
 // service package implementation.
-type Config struct {
+	type Config struct {
 	ListenAddr                string
 	SessionSecret             string
 	SessionTTL                time.Duration
@@ -72,20 +72,11 @@ type Config struct {
 	SSHCAKey                                 string
 	SSHCADefaultDays                         int
 	DNSURL                                   string
-	DNSAdminUsername                         string
-	DNSUserZoneSuffix                        string
-	AIEnabled                                bool
-	GeminiEnabled                            bool
-	GeminiClientID                           string
-	GeminiClientSecret                       string
-	GeminiRedirectURL                        string
-	GeminiProjectID                          string
-	GeminiLocation                           string
-	GeminiModel                              string
-	GeminiFallbackModel                      string
-	TaskWorkerEnabled                        bool
-	ImagePullSecretName                      string
-	ImagePullSecretNamespace                 string
+		DNSAdminUsername                         string
+		DNSUserZoneSuffix                        string
+		TaskWorkerEnabled                        bool
+		ImagePullSecretName                      string
+		ImagePullSecretNamespace                 string
 	ForwardCollectorImage                    string
 	ForwardCollectorPullPolicy               string
 	ForwardCollectorImagePullSecretName      string
@@ -93,16 +84,17 @@ type Config struct {
 	// ForwardCollectorHeapSizeGB sets COLLECTOR_HEAP_SIZE for the in-cluster
 	// collector container. When 0, the image default is used.
 	ForwardCollectorHeapSizeGB int
-	Forward                    ForwardConfig
-	Features                   FeaturesConfig
-	Elastic                    ElasticConfig
-}
+		Forward                    ForwardConfig
+		Features                   FeaturesConfig
+		Elastic                    ElasticConfig
+		MCP                        MCPConfig
+	}
 
 type ForwardConfig struct {
 	SNMPPlaceholderEnabled bool
 }
 
-type ElasticConfig struct {
+	type ElasticConfig struct {
 	// URL is the Elasticsearch base URL (e.g. http://elasticsearch:9200).
 	//
 	// When empty, Skyforge treats Elasticsearch indexing as disabled even if the
@@ -129,7 +121,12 @@ type ElasticConfig struct {
 	// ToolsAutosleepIdleMinutes is the idle timeout (minutes) before autosleep scales
 	// Elastic tools to 0 replicas.
 	ToolsAutosleepIdleMinutes int
-}
+	}
+
+	type MCPConfig struct {
+		Enabled           bool
+		ForwardAllowWrites bool
+	}
 
 type FeaturesConfig struct {
 	GiteaEnabled     bool `json:"giteaEnabled"`
@@ -264,7 +261,7 @@ type ExternalTemplateRepo struct {
 	DefaultBranch string `json:"defaultBranch,omitempty"`
 }
 
-type Secrets struct {
+	type Secrets struct {
 	SessionSecret          string
 	AdminPassword          string
 	E2EAdminToken          string
@@ -282,7 +279,6 @@ type Secrets struct {
 	ContainerlabJWTSecret  string
 	PKICACert              string
 	PKICAKey               string
-	SSHCAKey               string
-	YaadeAdminPassword     string
-	GeminiClientSecret     string
-}
+		SSHCAKey               string
+		YaadeAdminPassword     string
+	}

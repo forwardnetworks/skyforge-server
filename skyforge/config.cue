@@ -64,35 +64,21 @@ UI: {
 
 PublicURL: ""
 
-DNS: {
-	URL: "http://technitium-dns:5380"
-	AdminUsername: "admin"
-	UserZoneSuffix: "skyforge"
-}
-
-	Gemini: {
-		Enabled: false
-		ClientID: ""
-		// When empty, Skyforge derives the callback URL from PublicURL:
-		//   {PublicURL}/api/user/integrations/gemini/callback
-		RedirectURL: ""
-		// Vertex AI settings for Gemini calls (non-secret).
-		ProjectID: ""
-		Location: "us-central1"
-		// Model name for Vertex AI (publisher "google").
-		Model: "gemini-3.0-pro"
-		// Fallback model used when Model isn't available in the configured
-		// project/location (common with preview rollouts).
-		FallbackModel: "gemini-3.0-flash"
+	DNS: {
+		URL: "http://technitium-dns:5380"
+		AdminUsername: "admin"
+		UserZoneSuffix: "skyforge"
 	}
 
-AI: {
-	Enabled: false
-}
+	MCP: {
+		// Enables Skyforge-hosted MCP endpoints (HTTP JSON-RPC).
+		Enabled: true
+		ForwardAllowWrites: false
+	}
 
-OIDC: {
-	IssuerURL: ""
-	DiscoveryURL: ""
+	OIDC: {
+		IssuerURL: ""
+		DiscoveryURL: ""
 	RedirectURL: ""
 }
 
@@ -133,8 +119,6 @@ Forward: {
 	// When enabled, Skyforge creates a placeholder SNMP credential in Forward for each
 	// deployment network so that enabling SNMP collection later doesn't require manual setup.
 	SNMPPlaceholderEnabled: true
-	// Default SNMPv2c community string used for the placeholder credential.
-	SNMPCommunity: "public"
 }
 
 ForwardCollector: {
@@ -170,6 +154,14 @@ Elastic: {
 	// For in-cluster (Helm): http://elasticsearch:9200
 	URL: ""
 	IndexPrefix: "skyforge"
+	// IndexingMode controls how indices are named:
+	// - "instance": shared indices (default)
+	// - "per_user": separate indices per user
+	IndexingMode: "instance"
+	// ToolsAutosleepEnabled enables autosleep for Elastic tooling (kibana, etc).
+	ToolsAutosleepEnabled: false
+	// ToolsAutosleepIdleMinutes is the idle timeout before autosleep scales to 0.
+	ToolsAutosleepIdleMinutes: 30
 }
 
 Kubernetes: {
@@ -194,4 +186,8 @@ NetlabGenerator: {
 	PullPolicy:        "IfNotPresent"
 	ApplierImage:      "ghcr.io/forwardnetworks/skyforge-netlab-applier:latest"
 	ApplierPullPolicy: "IfNotPresent"
+	// Keep API-side netlab validation consistent with worker netlab-c9s behavior.
+	C9sDefaultSetOverrides: [
+		"addressing.loopback.ipv4=172.31.0.0/16",
+	]
 }

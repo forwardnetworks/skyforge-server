@@ -12,8 +12,9 @@ import (
 
 // AuthParams defines the parameters for authentication.
 type AuthParams struct {
-	Cookie      string `header:"Cookie"`
-	CurrentRole string `header:"X-Current-Role"`
+	Cookie        string `header:"Cookie"`
+	Authorization string `header:"Authorization"`
+	CurrentRole   string `header:"X-Current-Role"`
 }
 
 // AuthUser represents the authenticated user data stored in auth.Data().
@@ -32,6 +33,22 @@ type AuthUser struct {
 //
 //encore:authhandler
 func (s *Service) AuthHandler(ctx context.Context, p *AuthParams) (auth.UID, *AuthUser, error) {
+	authz := strings.TrimSpace(p.Authorization)
+	if strings.HasPrefix(strings.ToLower(authz), "bearer ") {
+		token := strings.TrimSpace(authz[len("bearer "):])
+		if token != "" {
+			user, err := s.authUserFromAPIToken(ctx, token)
+			if err == nil && user != nil {
+				applySelectedRole(s.cfg, user, p.CurrentRole)
+				return auth.UID(user.Username), user, nil
+			}
+			// If bearer auth fails but a cookie is present, fall through to cookie auth.
+			if strings.TrimSpace(p.Cookie) == "" {
+				return "", nil, err
+			}
+		}
+	}
+
 	cookieHeader := strings.TrimSpace(p.Cookie)
 	if cookieHeader == "" {
 		return "", nil, &errs.Error{
@@ -61,7 +78,16 @@ func (s *Service) AuthHandler(ctx context.Context, p *AuthParams) (auth.UID, *Au
 		SelectedRole:  "",
 	}
 
-	selectedRole := strings.ToUpper(strings.TrimSpace(p.CurrentRole))
+	applySelectedRole(s.cfg, user, p.CurrentRole)
+
+	return auth.UID(user.Username), user, nil
+}
+
+func applySelectedRole(cfg Config, user *AuthUser, selectedRoleHeader string) {
+	if user == nil {
+		return
+	}
+	selectedRole := strings.ToUpper(strings.TrimSpace(selectedRoleHeader))
 	if selectedRole == "" {
 		if user.IsAdmin {
 			selectedRole = "ADMIN"
@@ -73,6 +99,4 @@ func (s *Service) AuthHandler(ctx context.Context, p *AuthParams) (auth.UID, *Au
 		selectedRole = "USER"
 	}
 	user.SelectedRole = selectedRole
-
-	return auth.UID(user.Username), user, nil
 }
