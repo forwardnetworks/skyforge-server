@@ -34,12 +34,13 @@ type ListUserForwardCollectorConfigsResponse struct {
 }
 
 type CreateUserForwardCollectorConfigRequest struct {
-	Name          string `json:"name"`
-	BaseURL       string `json:"baseUrl"`
-	SkipTLSVerify bool   `json:"skipTlsVerify"`
-	Username      string `json:"username"`
-	Password      string `json:"password"`
-	SetDefault    bool   `json:"setDefault"`
+	Name               string `json:"name"`
+	BaseURL            string `json:"baseUrl"`
+	SkipTLSVerify      bool   `json:"skipTlsVerify"`
+	Username           string `json:"username"`
+	Password           string `json:"password"`
+	SetDefault         bool   `json:"setDefault"`
+	SourceCredentialID string `json:"sourceCredentialId,omitempty"`
 }
 
 type DeleteUserForwardCollectorConfigResponse struct {
@@ -427,15 +428,41 @@ func (s *Service) CreateUserForwardCollectorConfig(ctx context.Context, req *Cre
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("name is required").Err()
 	}
 	baseURL := strings.TrimSpace(req.BaseURL)
-	if baseURL == "" {
-		baseURL = defaultForwardBaseURL
-	}
+	skipTLSVerify := req.SkipTLSVerify
 	fwdUser := strings.TrimSpace(req.Username)
 	fwdPass := strings.TrimSpace(req.Password)
+
+	// Optional: use a saved credential set as the source for Forward API auth.
+	if srcID := strings.TrimSpace(req.SourceCredentialID); srcID != "" {
+		box := newSecretBox(s.cfg.SessionSecret)
+		ctxReq, cancelReq := context.WithTimeout(ctx, 5*time.Second)
+		defer cancelReq()
+		set, err := getUserForwardCredentialSet(ctxReq, s.db, box, user.Username, srcID)
+		if err != nil {
+			log.Printf("collector create: failed to load source credential set: %v", err)
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to load credential set").Err()
+		}
+		if set == nil {
+			return nil, errs.B().Code(errs.NotFound).Msg("credential set not found").Err()
+		}
+		if strings.TrimSpace(set.Username) == "" || strings.TrimSpace(set.Password) == "" {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("credential set is missing username/password").Err()
+		}
+		// Prefer the set's base URL and TLS mode (request can still override baseURL if provided).
+		if strings.TrimSpace(set.BaseURL) != "" {
+			baseURL = strings.TrimSpace(set.BaseURL)
+		}
+		skipTLSVerify = set.SkipTLSVerify
+		fwdUser = strings.TrimSpace(set.Username)
+		fwdPass = strings.TrimSpace(set.Password)
+	}
+
+	if strings.TrimSpace(baseURL) == "" {
+		baseURL = defaultForwardBaseURL
+	}
 	if fwdUser == "" || fwdPass == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("username and password are required").Err()
 	}
-	skipTLSVerify := req.SkipTLSVerify
 
 	box := newSecretBox(s.cfg.SessionSecret)
 	// Keep request-scoped work bounded, but do NOT let a short timeout abort the
