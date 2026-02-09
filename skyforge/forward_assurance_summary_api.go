@@ -655,8 +655,12 @@ func (s *Service) GetWorkspaceForwardNetworkAssuranceSummary(ctx context.Context
 
 	var snap forwardSnapshotInfo
 	haveSnap := parseJSONBytesInto(inputs.snapshotBody, &snap) == nil
-	if strings.TrimSpace(snap.ID) == "" {
+	// Some Forward deployments may return a minimal payload (or parsing may fail
+	// due to unexpected extra fields). We still treat snapshot id as "present"
+	// because downstream tiles only require the id for correlation.
+	if strings.TrimSpace(snap.ID) == "" && inputs.snapshotID != "" {
 		snap.ID = inputs.snapshotID
+		haveSnap = true
 	}
 
 	var met forwardSnapshotMetrics
@@ -782,4 +786,3 @@ LIMIT $4
 	}
 	return &ForwardAssuranceHistoryResponse{Items: items}, nil
 }
-
