@@ -43,22 +43,35 @@ func resolveForwardCredsForServiceNow(
 		return "", "", errForwardCredsUnavailable
 	}
 
-	row := db.QueryRowContext(ctx, `SELECT forward_username, forward_password
+	row := db.QueryRowContext(ctx, `SELECT COALESCE(credential_id,''), forward_username, forward_password
 FROM sf_user_forward_collectors
 WHERE username=$1 AND id=$2`, username, forwardCollectorConfigID)
-	var cipherUser, cipherPass string
-	if err := row.Scan(&cipherUser, &cipherPass); err != nil {
+	var credID sql.NullString
+	var cipherUser, cipherPass sql.NullString
+	if err := row.Scan(&credID, &cipherUser, &cipherPass); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", "", fmt.Errorf("%w: selected collector not found", errForwardCredsUnavailable)
 		}
 		return "", "", fmt.Errorf("%w: failed to load collector creds", errForwardCredsUnavailable)
 	}
 
-	plainUser, err := box.decrypt(cipherUser)
+	if strings.TrimSpace(credID.String) != "" {
+		if set, err := getUserForwardCredentialSet(ctx, db, box, username, strings.TrimSpace(credID.String)); err == nil && set != nil {
+			plainUser := strings.TrimSpace(set.Username)
+			plainPass := strings.TrimSpace(set.Password)
+			if plainUser == "" || plainPass == "" {
+				return "", "", errForwardCredsUnavailable
+			}
+			return plainUser, plainPass, nil
+		}
+		return "", "", errForwardCredsUnavailable
+	}
+
+	plainUser, err := box.decrypt(cipherUser.String)
 	if err != nil {
 		return "", "", fmt.Errorf("%w: failed to decrypt collector username", errForwardCredsUnavailable)
 	}
-	plainPass, err := box.decrypt(cipherPass)
+	plainPass, err := box.decrypt(cipherPass.String)
 	if err != nil {
 		return "", "", fmt.Errorf("%w: failed to decrypt collector password", errForwardCredsUnavailable)
 	}

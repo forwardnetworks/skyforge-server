@@ -10,9 +10,9 @@ type PolicyReportForwardCredentialsStatus struct {
 }
 
 type PolicyReportPutForwardCredentialsRequest struct {
+	CredentialID  string `json:"credentialId,omitempty"`
 	BaseURL       string `json:"baseUrl"`
 	SkipTLSVerify bool   `json:"skipTlsVerify"`
 	Username      string `json:"username"`
 	Password      string `json:"password,omitempty"`
 }
-

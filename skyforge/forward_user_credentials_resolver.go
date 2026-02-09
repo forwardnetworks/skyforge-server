@@ -68,15 +68,17 @@ func forwardConfigForUserPreferredCollector(ctx context.Context, db *sql.DB, ses
 	defer cancel()
 
 	// sf_user_forward_collectors stores encrypted values (base_url, forward_username, forward_password, etc).
+	var credID sql.NullString
 	var baseURLEnc, fwdUserEnc, fwdPassEnc string
 	var collectorUserEnc, authKeyEnc string
 	var skipTLSVerify bool
-	err = db.QueryRowContext(ctxReq, `SELECT base_url, COALESCE(skip_tls_verify, false),
+	err = db.QueryRowContext(ctxReq, `SELECT COALESCE(credential_id,''),
+  COALESCE(base_url,''), COALESCE(skip_tls_verify, false),
   forward_username, forward_password,
   COALESCE(collector_username, ''), COALESCE(authorization_key, '')
 FROM sf_user_forward_collectors
 WHERE username=$1 AND id=$2`, username, cfgID).Scan(
-		&baseURLEnc, &skipTLSVerify, &fwdUserEnc, &fwdPassEnc, &collectorUserEnc, &authKeyEnc,
+		&credID, &baseURLEnc, &skipTLSVerify, &fwdUserEnc, &fwdPassEnc, &collectorUserEnc, &authKeyEnc,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) || isMissingDBRelation(err) {
@@ -86,6 +88,25 @@ WHERE username=$1 AND id=$2`, username, cfgID).Scan(
 	}
 
 	box := newSecretBox(sessionSecret)
+	if strings.TrimSpace(credID.String) != "" {
+		if set, err := getUserForwardCredentialSet(ctxReq, db, box, username, strings.TrimSpace(credID.String)); err == nil && set != nil {
+			if strings.TrimSpace(set.BaseURL) == "" {
+				set.BaseURL = defaultForwardBaseURL
+			}
+			if strings.TrimSpace(set.Username) == "" || strings.TrimSpace(set.Password) == "" {
+				return nil, nil
+			}
+			return &forwardCredentials{
+				BaseURL:       strings.TrimSpace(set.BaseURL),
+				SkipTLSVerify: set.SkipTLSVerify,
+				Username:      strings.TrimSpace(set.Username),
+				Password:      strings.TrimSpace(set.Password),
+				CollectorUser: strings.TrimSpace(set.CollectorUsername),
+			}, nil
+		}
+		return nil, nil
+	}
+
 	baseURL, err := box.decrypt(baseURLEnc)
 	if err != nil {
 		return nil, nil

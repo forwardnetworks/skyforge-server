@@ -50,6 +50,7 @@ type userForwardCollectorConfigRow struct {
 	ID                string
 	Username          string
 	Name              string
+	CredentialID      string
 	BaseURL           string
 	SkipTLSVerify     bool
 	ForwardUsername   string
@@ -74,6 +75,7 @@ func listUserForwardCollectorConfigRows(ctx context.Context, db *sql.DB, box *se
 		return nil, fmt.Errorf("username is required")
 	}
 	rows, err := db.QueryContext(ctx, `SELECT id, username, name,
+  COALESCE(credential_id, ''),
   base_url, COALESCE(skip_tls_verify, false), forward_username, forward_password,
   COALESCE(collector_id, ''), COALESCE(collector_username, ''), COALESCE(authorization_key, ''),
   updated_at, COALESCE(is_default, false)
@@ -90,20 +92,51 @@ ORDER BY is_default DESC, name ASC`, username)
 	out := []userForwardCollectorConfigRow{}
 	for rows.Next() {
 		var id, uname, name string
+		var credID sql.NullString
 		var baseURL, fwdUser, fwdPass sql.NullString
 		var collectorID, collectorUser, authKey sql.NullString
 		var skipTLSVerify sql.NullBool
 		var updatedAt sql.NullTime
 		var isDefault sql.NullBool
-		if err := rows.Scan(&id, &uname, &name, &baseURL, &skipTLSVerify, &fwdUser, &fwdPass, &collectorID, &collectorUser, &authKey, &updatedAt, &isDefault); err != nil {
+		if err := rows.Scan(&id, &uname, &name, &credID, &baseURL, &skipTLSVerify, &fwdUser, &fwdPass, &collectorID, &collectorUser, &authKey, &updatedAt, &isDefault); err != nil {
 			return nil, err
 		}
 		rec := userForwardCollectorConfigRow{
-			ID:        strings.TrimSpace(id),
-			Username:  strings.TrimSpace(uname),
-			Name:      strings.TrimSpace(name),
-			IsDefault: isDefault.Valid && isDefault.Bool,
+			ID:           strings.TrimSpace(id),
+			Username:     strings.TrimSpace(uname),
+			Name:         strings.TrimSpace(name),
+			CredentialID: strings.TrimSpace(credID.String),
+			IsDefault:    isDefault.Valid && isDefault.Bool,
 		}
+		rec.SkipTLSVerify = skipTLSVerify.Valid && skipTLSVerify.Bool
+		if updatedAt.Valid {
+			rec.UpdatedAt = updatedAt.Time
+		}
+
+		// Preferred: referenced credential set.
+		if strings.TrimSpace(rec.CredentialID) != "" {
+			if set, err := getUserForwardCredentialSet(ctx, db, box, username, rec.CredentialID); err == nil && set != nil {
+				rec.BaseURL = strings.TrimSpace(set.BaseURL)
+				rec.SkipTLSVerify = set.SkipTLSVerify
+				rec.ForwardUsername = strings.TrimSpace(set.Username)
+				rec.ForwardPassword = strings.TrimSpace(set.Password)
+				rec.CollectorID = strings.TrimSpace(set.CollectorID)
+				rec.CollectorUsername = strings.TrimSpace(set.CollectorUsername)
+				rec.AuthorizationKey = strings.TrimSpace(set.AuthorizationKey)
+			} else {
+				// Leave record present, but clear sensitive fields.
+				rec.BaseURL = ""
+				rec.ForwardUsername = ""
+				rec.ForwardPassword = ""
+				rec.CollectorID = ""
+				rec.CollectorUsername = ""
+				rec.AuthorizationKey = ""
+			}
+			out = append(out, rec)
+			continue
+		}
+
+		// Fallback: legacy inline columns (encrypted).
 		decOrEmpty := func(v sql.NullString) (string, bool) {
 			if strings.TrimSpace(v.String) == "" {
 				return "", false
@@ -148,10 +181,7 @@ ORDER BY is_default DESC, name ASC`, username)
 		} else {
 			rec.AuthorizationKey = v
 		}
-		rec.SkipTLSVerify = skipTLSVerify.Valid && skipTLSVerify.Bool
-		if updatedAt.Valid {
-			rec.UpdatedAt = updatedAt.Time
-		}
+
 		// Store decryption failure by clearing sensitive fields and leaving the record present.
 		if failed {
 			rec.BaseURL = ""
@@ -200,22 +230,51 @@ FROM sf_user_forward_credentials WHERE username=$1`, username).Scan(&baseURL, &f
 	}
 
 	id := uuid.NewString()
+	credID := uuid.NewString()
 	now := time.Now().UTC()
 	createdAt := now
 	if updatedAt.Valid {
 		createdAt = updatedAt.Time
 	}
-	_, err = db.ExecContext(ctx, `INSERT INTO sf_user_forward_collectors (
-  id, username, name,
-  base_url, skip_tls_verify, forward_username, forward_password,
-  collector_id, collector_username, authorization_key,
-  created_at, updated_at, is_default
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true)`,
-		id, username, "default",
+	tx, txErr := db.BeginTx(ctx, nil)
+	if txErr != nil {
+		return txErr
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Copy ciphertext as-is (no decrypt/re-encrypt) into the shared credentials table.
+	_, err = tx.ExecContext(ctx, `
+INSERT INTO sf_credentials (
+  id, owner_username, workspace_id, provider, name,
+  base_url_enc, skip_tls_verify, forward_username_enc, forward_password_enc,
+  collector_id_enc, collector_username_enc, authorization_key_enc,
+  created_at, updated_at
+) VALUES ($1,$2,NULL,'forward',$3,$4,$5,$6,$7,NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),$11,$12)
+ON CONFLICT (id) DO NOTHING
+`, credID, username, "default",
 		baseURL.String, (skipTLSVerify.Valid && skipTLSVerify.Bool), fwdUser.String, fwdPass.String,
 		collectorID.String, collectorUser.String, authKey.String,
 		createdAt, createdAt,
 	)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.ExecContext(ctx, `INSERT INTO sf_user_forward_collectors (
+  id, username, name,
+  credential_id,
+  base_url, skip_tls_verify, forward_username, forward_password,
+  collector_id, collector_username, authorization_key,
+  created_at, updated_at, is_default
+) VALUES ($1,$2,$3,$4,NULL,$5,NULL,NULL,NULL,NULL,NULL,$6,$7,true)`,
+		id, username, "default",
+		credID,
+		(skipTLSVerify.Valid && skipTLSVerify.Bool),
+		createdAt, createdAt,
+	)
+	if err == nil {
+		err = tx.Commit()
+	}
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
 			return nil
@@ -455,36 +514,21 @@ func (s *Service) CreateUserForwardCollectorConfig(ctx context.Context, req *Cre
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to create Forward collector").Err()
 	}
 
-	encBaseURL, err := encryptIfPlain(box, baseURL)
-	if err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to encrypt Forward config").Err()
-	}
-	encFwdUser, err := encryptIfPlain(box, fwdUser)
-	if err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to encrypt Forward config").Err()
-	}
-	encFwdPass, err := encryptIfPlain(box, fwdPass)
-	if err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to encrypt Forward config").Err()
-	}
-	encCollectorID, err := encryptIfPlain(box, strings.TrimSpace(created.ID))
-	if err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to encrypt Forward config").Err()
-	}
-	encCollectorUser, err := encryptIfPlain(box, strings.TrimSpace(created.Username))
-	if err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to encrypt Forward config").Err()
-	}
-	encAuthKey, err := encryptIfPlain(box, strings.TrimSpace(created.AuthorizationKey))
-	if err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to encrypt Forward config").Err()
-	}
-
 	tx, err := s.db.BeginTx(ctxReq, nil)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to save collector").Err()
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	credID := uuid.NewString()
+	if err := insertUserForwardCredentialSet(ctxReq, tx, box, credID, user.Username, s.forwardCredentialSetNameForCollectorConfig(name), forwardCredentials{
+		BaseURL:       baseURL,
+		SkipTLSVerify: skipTLSVerify,
+		Username:      fwdUser,
+		Password:      fwdPass,
+	}, strings.TrimSpace(created.ID), strings.TrimSpace(created.Username), strings.TrimSpace(created.AuthorizationKey)); err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to save collector").Err()
+	}
 
 	if req.SetDefault {
 		if _, err := tx.ExecContext(ctxReq, `UPDATE sf_user_forward_collectors SET is_default=false WHERE username=$1`, user.Username); err != nil {
@@ -494,13 +538,14 @@ func (s *Service) CreateUserForwardCollectorConfig(ctx context.Context, req *Cre
 
 	_, err = tx.ExecContext(ctxReq, `INSERT INTO sf_user_forward_collectors (
   id, username, name,
+  credential_id,
   base_url, skip_tls_verify, forward_username, forward_password,
   collector_id, collector_username, authorization_key,
   created_at, updated_at, is_default
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now(),now(),$11)`,
+) VALUES ($1,$2,$3,$4,NULL,$5,NULL,NULL,NULL,NULL,NULL,now(),now(),$6)`,
 		configID, user.Username, name,
-		encBaseURL, skipTLSVerify, encFwdUser, encFwdPass,
-		encCollectorID, encCollectorUser, encAuthKey,
+		credID,
+		skipTLSVerify,
 		req.SetDefault,
 	)
 	if err != nil {
@@ -695,12 +740,15 @@ func (s *Service) RestartUserForwardCollectorConfig(ctx context.Context, id stri
 	// "Restart" should act like "Deploy (if missing) then Restart".
 	var (
 		isDefault     bool
+		credID        sql.NullString
 		baseURLEnc    sql.NullString
 		skipTLSVerify sql.NullBool
 		authKeyEnc    sql.NullString
 	)
-	err = s.db.QueryRowContext(ctxReq, `SELECT COALESCE(is_default, false), base_url, COALESCE(skip_tls_verify, false), authorization_key
-FROM sf_user_forward_collectors WHERE id=$1 AND username=$2`, id, user.Username).Scan(&isDefault, &baseURLEnc, &skipTLSVerify, &authKeyEnc)
+	err = s.db.QueryRowContext(ctxReq, `SELECT COALESCE(is_default, false),
+  COALESCE(credential_id,''),
+  base_url, COALESCE(skip_tls_verify, false), authorization_key
+FROM sf_user_forward_collectors WHERE id=$1 AND username=$2`, id, user.Username).Scan(&isDefault, &credID, &baseURLEnc, &skipTLSVerify, &authKeyEnc)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, errs.B().Code(errs.NotFound).Msg("collector not found").Err()
@@ -715,26 +763,30 @@ FROM sf_user_forward_collectors WHERE id=$1 AND username=$2`, id, user.Username)
 		// If the Deployment doesn't exist, deploy it first and then return runtime.
 		if strings.Contains(strings.ToLower(err.Error()), "not deployed") {
 			box := newSecretBox(s.cfg.SessionSecret)
-			dec := func(v sql.NullString) (string, error) {
-				s := strings.TrimSpace(v.String)
-				if s == "" {
-					return "", nil
+			baseURL := ""
+			authKey := ""
+			// Preferred: referenced credential set.
+			if strings.TrimSpace(credID.String) != "" {
+				if set, err := getUserForwardCredentialSet(ctxReq, s.db, box, user.Username, strings.TrimSpace(credID.String)); err == nil && set != nil {
+					baseURL = strings.TrimSpace(set.BaseURL)
+					skipTLSVerify.Bool = set.SkipTLSVerify
+					skipTLSVerify.Valid = true
+					authKey = strings.TrimSpace(set.AuthorizationKey)
 				}
-				if strings.HasPrefix(s, "enc:") {
-					return box.decrypt(s)
-				}
-				return s, nil
 			}
-			baseURL, decErr := dec(baseURLEnc)
-			if decErr != nil {
-				return nil, errs.B().Code(errs.Unavailable).Msg("failed to decrypt collector config").Err()
+			// Fallback: legacy inline columns.
+			if strings.TrimSpace(baseURL) == "" && strings.TrimSpace(baseURLEnc.String) != "" {
+				if v, err := box.decrypt(baseURLEnc.String); err == nil {
+					baseURL = strings.TrimSpace(v)
+				}
 			}
 			if strings.TrimSpace(baseURL) == "" {
 				baseURL = defaultForwardBaseURL
 			}
-			authKey, decErr := dec(authKeyEnc)
-			if decErr != nil {
-				return nil, errs.B().Code(errs.Unavailable).Msg("failed to decrypt collector config").Err()
+			if strings.TrimSpace(authKey) == "" && strings.TrimSpace(authKeyEnc.String) != "" {
+				if v, err := box.decrypt(authKeyEnc.String); err == nil {
+					authKey = strings.TrimSpace(v)
+				}
 			}
 			if strings.TrimSpace(authKey) == "" {
 				return nil, errs.B().Code(errs.FailedPrecondition).Msg("collector authorization key missing").Err()

@@ -732,17 +732,20 @@ func getWorkspaceForwardCredentials(ctx context.Context, db *sql.DB, box *secret
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace id is required")
 	}
+	var credID sql.NullString
 	var baseURL, username, password sql.NullString
 	var collectorID, collectorUser sql.NullString
 	var deviceUser, devicePass sql.NullString
 	var jumpHost, jumpUser, jumpKey, jumpCert sql.NullString
 	var updatedAt sql.NullTime
-	err := db.QueryRowContext(ctx, `SELECT base_url, username, password,
+	err := db.QueryRowContext(ctx, `SELECT COALESCE(credential_id,''),
+  base_url, username, password,
   COALESCE(collector_id, ''), COALESCE(collector_username, ''),
   COALESCE(device_username, ''), COALESCE(device_password, ''),
   COALESCE(jump_host, ''), COALESCE(jump_username, ''), COALESCE(jump_private_key, ''), COALESCE(jump_cert, ''),
   updated_at
 FROM sf_workspace_forward_credentials WHERE workspace_id=$1`, workspaceID).Scan(
+		&credID,
 		&baseURL,
 		&username,
 		&password,
@@ -761,6 +764,32 @@ FROM sf_workspace_forward_credentials WHERE workspace_id=$1`, workspaceID).Scan(
 			return nil, nil
 		}
 		return nil, err
+	}
+
+	if strings.TrimSpace(credID.String) != "" {
+		if set, err := getWorkspaceForwardCredentialSet(ctx, db, box, workspaceID, strings.TrimSpace(credID.String)); err == nil && set != nil {
+			rec := &forwardCredentials{
+				BaseURL:        strings.TrimSpace(set.BaseURL),
+				SkipTLSVerify:  set.SkipTLSVerify,
+				Username:       strings.TrimSpace(set.Username),
+				Password:       strings.TrimSpace(set.Password),
+				CollectorID:    strings.TrimSpace(set.CollectorID),
+				CollectorUser:  strings.TrimSpace(set.CollectorUsername),
+				DeviceUsername: strings.TrimSpace(set.DeviceUsername),
+				DevicePassword: strings.TrimSpace(set.DevicePassword),
+				JumpHost:       strings.TrimSpace(set.JumpHost),
+				JumpUsername:   strings.TrimSpace(set.JumpUsername),
+				JumpPrivateKey: strings.TrimSpace(set.JumpPrivateKey),
+				JumpCert:       strings.TrimSpace(set.JumpCert),
+			}
+			if updatedAt.Valid {
+				rec.UpdatedAt = updatedAt.Time
+			} else if !set.UpdatedAt.IsZero() {
+				rec.UpdatedAt = set.UpdatedAt
+			}
+			return rec, nil
+		}
+		return nil, nil
 	}
 
 	baseURLValue, err := box.decrypt(baseURL.String)
@@ -840,84 +869,45 @@ func putWorkspaceForwardCredentials(ctx context.Context, db *sql.DB, box *secret
 	if baseURL == "" || username == "" || password == "" {
 		return fmt.Errorf("baseUrl, username, and password are required")
 	}
-	encBaseURL, err := encryptIfPlain(box, baseURL)
+
+	ctxReq, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	tx, err := db.BeginTx(ctxReq, nil)
 	if err != nil {
 		return err
 	}
-	encUser, err := encryptIfPlain(box, username)
-	if err != nil {
+	defer func() { _ = tx.Rollback() }()
+
+	var existingCredID sql.NullString
+	_ = tx.QueryRowContext(ctxReq, `SELECT COALESCE(credential_id,'') FROM sf_workspace_forward_credentials WHERE workspace_id=$1`, workspaceID).Scan(&existingCredID)
+	credID := strings.TrimSpace(existingCredID.String)
+	if credID == "" {
+		credID = uuid.NewString()
+	}
+
+	if err := upsertWorkspaceForwardCredentialSet(ctxReq, tx, box, credID, workspaceID, "workspace forward", rec); err != nil {
 		return err
 	}
-	encPass, err := encryptIfPlain(box, password)
-	if err != nil {
-		return err
-	}
-	encCollectorID, err := encryptIfPlain(box, rec.CollectorID)
-	if err != nil {
-		return err
-	}
-	encCollectorUser, err := encryptIfPlain(box, rec.CollectorUser)
-	if err != nil {
-		return err
-	}
-	encDeviceUser, err := encryptIfPlain(box, rec.DeviceUsername)
-	if err != nil {
-		return err
-	}
-	encDevicePass, err := encryptIfPlain(box, rec.DevicePassword)
-	if err != nil {
-		return err
-	}
-	encJumpHost, err := encryptIfPlain(box, rec.JumpHost)
-	if err != nil {
-		return err
-	}
-	encJumpUser, err := encryptIfPlain(box, rec.JumpUsername)
-	if err != nil {
-		return err
-	}
-	encJumpKey, err := encryptIfPlain(box, rec.JumpPrivateKey)
-	if err != nil {
-		return err
-	}
-	encJumpCert, err := encryptIfPlain(box, rec.JumpCert)
-	if err != nil {
-		return err
-	}
-	_, err = db.ExecContext(ctx, `INSERT INTO sf_workspace_forward_credentials (
-  workspace_id, base_url, username, password,
+
+	_, err = tx.ExecContext(ctxReq, `INSERT INTO sf_workspace_forward_credentials (
+  workspace_id, credential_id,
+  base_url, username, password,
   collector_id, collector_username,
   device_username, device_password,
   jump_host, jump_username, jump_private_key, jump_cert,
   updated_at
-) VALUES ($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),NULLIF($12,''),now())
+) VALUES ($1,$2,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,now())
 ON CONFLICT (workspace_id) DO UPDATE SET
-  base_url=excluded.base_url,
-  username=excluded.username,
-  password=excluded.password,
-  collector_id=excluded.collector_id,
-  collector_username=excluded.collector_username,
-  device_username=excluded.device_username,
-  device_password=excluded.device_password,
-  jump_host=excluded.jump_host,
-  jump_username=excluded.jump_username,
-  jump_private_key=excluded.jump_private_key,
-  jump_cert=excluded.jump_cert,
+  credential_id=excluded.credential_id,
   updated_at=now()`,
 		workspaceID,
-		encBaseURL,
-		encUser,
-		encPass,
-		encCollectorID,
-		encCollectorUser,
-		encDeviceUser,
-		encDevicePass,
-		encJumpHost,
-		encJumpUser,
-		encJumpKey,
-		encJumpCert,
+		credID,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func deleteWorkspaceForwardCredentials(ctx context.Context, db *sql.DB, workspaceID string) error {
@@ -928,8 +918,29 @@ func deleteWorkspaceForwardCredentials(ctx context.Context, db *sql.DB, workspac
 	if workspaceID == "" {
 		return nil
 	}
-	_, err := db.ExecContext(ctx, `DELETE FROM sf_workspace_forward_credentials WHERE workspace_id=$1`, workspaceID)
-	return err
+	ctxReq, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	tx, err := db.BeginTx(ctxReq, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var credID sql.NullString
+	_ = tx.QueryRowContext(ctxReq, `SELECT COALESCE(credential_id,'') FROM sf_workspace_forward_credentials WHERE workspace_id=$1`, workspaceID).Scan(&credID)
+
+	if _, err := tx.ExecContext(ctxReq, `DELETE FROM sf_workspace_forward_credentials WHERE workspace_id=$1`, workspaceID); err != nil {
+		return err
+	}
+	// Best-effort cleanup of the workspace-scoped credential set.
+	if strings.TrimSpace(credID.String) != "" {
+		if _, err := tx.ExecContext(ctxReq, `DELETE FROM sf_credentials WHERE id=$1 AND workspace_id=$2 AND provider='forward' AND owner_username IS NULL`, strings.TrimSpace(credID.String), workspaceID); err != nil {
+			// Ignore (may be referenced elsewhere or table missing).
+			_ = err
+		}
+	}
+	return tx.Commit()
 }
 
 func getWorkspaceAzureCredentials(ctx context.Context, db *sql.DB, box *secretBox, workspaceID string) (*azureServicePrincipal, error) {
