@@ -701,7 +701,7 @@ func (s *Service) GetWorkspaceForwardNetworkAssuranceSummary(ctx context.Context
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, networkRef)
+	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -836,7 +836,7 @@ func (s *Service) SeedWorkspaceForwardNetworkAssuranceDemo(ctx context.Context, 
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 	// Ensure network exists/accessible (even though we don't use it directly).
-	if _, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, networkRef); err != nil {
+	if _, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef); err != nil {
 		return nil, err
 	}
 
@@ -937,7 +937,7 @@ func (s *Service) ListWorkspaceForwardNetworkAssuranceSummaryHistory(ctx context
 	if !s.cfg.Features.ForwardEnabled {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward Networks integrations are disabled").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, networkRef)
+	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}

@@ -63,13 +63,14 @@ type resolveForwardNetworkRow struct {
 	CollectorConfigID string
 }
 
-func resolveWorkspaceForwardNetwork(ctx context.Context, db *sql.DB, workspaceID, networkRef string) (*resolveForwardNetworkRow, error) {
+func resolveWorkspaceForwardNetwork(ctx context.Context, db *sql.DB, workspaceID, username, networkRef string) (*resolveForwardNetworkRow, error) {
 	if db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 	workspaceID = strings.TrimSpace(workspaceID)
+	username = strings.ToLower(strings.TrimSpace(username))
 	networkRef = strings.TrimSpace(networkRef)
-	if workspaceID == "" || networkRef == "" {
+	if workspaceID == "" || username == "" || networkRef == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid identifiers").Err()
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -79,8 +80,9 @@ func resolveWorkspaceForwardNetwork(ctx context.Context, db *sql.DB, workspaceID
 	err := db.QueryRowContext(ctxReq, `
 SELECT id::text, forward_network_id, COALESCE(collector_config_id,'')
   FROM sf_policy_report_forward_networks
- WHERE workspace_id=$1 AND (id::text=$2 OR forward_network_id=$2)
- LIMIT 1`, workspaceID, networkRef).Scan(&id, &forwardID, &collectorConfigID)
+ WHERE (workspace_id=$1 OR owner_username=$2) AND (id::text=$3 OR forward_network_id=$3)
+ ORDER BY (workspace_id=$1) DESC, updated_at DESC
+ LIMIT 1`, workspaceID, username, networkRef).Scan(&id, &forwardID, &collectorConfigID)
 	if err != nil {
 		if err == sql.ErrNoRows || isMissingDBRelation(err) {
 			return nil, errs.B().Code(errs.NotFound).Msg("forward network not found").Err()
@@ -148,7 +150,7 @@ func (s *Service) GetWorkspaceForwardNetworkCapacitySummary(ctx context.Context,
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, networkRef)
+	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +194,7 @@ func (s *Service) RefreshWorkspaceForwardNetworkCapacityRollups(ctx context.Cont
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, networkRef)
+	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +247,7 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityInventory(ctx context.Contex
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, networkRef)
+	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -290,7 +292,7 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityGrowth(ctx context.Context, 
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, networkRef)
+	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -355,7 +357,7 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityInterfaceMetrics(ctx context
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, networkRef)
+	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -413,7 +415,7 @@ func (s *Service) PostWorkspaceForwardNetworkCapacityInterfaceMetricsHistory(ctx
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, networkRef)
+	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -465,7 +467,7 @@ func (s *Service) PostWorkspaceForwardNetworkCapacityDeviceMetricsHistory(ctx co
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, networkRef)
+	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -517,7 +519,7 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityUnhealthyDevices(ctx context
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, networkRef)
+	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -560,7 +562,7 @@ func (s *Service) PostWorkspaceForwardNetworkCapacityUnhealthyInterfaces(ctx con
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, networkRef)
+	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}

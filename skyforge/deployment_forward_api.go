@@ -23,6 +23,7 @@ type DeploymentForwardConfigResponse struct {
 	CollectorConfigID  string `json:"collectorConfigId,omitempty"`
 	CollectorUsername  string `json:"collectorUsername,omitempty"`
 	ForwardNetworkID   string `json:"forwardNetworkId,omitempty"`
+	ForwardNetworkRef  string `json:"forwardNetworkRef,omitempty"`
 	ForwardSnapshotURL string `json:"forwardSnapshotUrl,omitempty"`
 }
 
@@ -96,6 +97,9 @@ func (s *Service) UpdateWorkspaceDeploymentForwardConfig(ctx context.Context, id
 	}
 	if v, ok := cfgAny["forwardNetworkId"].(string); ok {
 		resp.ForwardNetworkID = strings.TrimSpace(v)
+	}
+	if v, ok := cfgAny["forwardNetworkRef"].(string); ok {
+		resp.ForwardNetworkRef = strings.TrimSpace(v)
 	}
 	return resp, nil
 }

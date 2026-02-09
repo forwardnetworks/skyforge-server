@@ -16,6 +16,7 @@ import (
 const (
 	forwardNetworkIDKey        = "forwardNetworkId"
 	forwardNetworkNameKey      = "forwardNetworkName"
+	forwardNetworkRefKey       = "forwardNetworkRef"
 	forwardCliCredentialIDKey  = "forwardCliCredentialId"
 	forwardCliCredentialMap    = "forwardCliCredentialIdsByDevice"
 	forwardSnmpCredentialIDKey = "forwardSnmpCredentialId"
@@ -396,6 +397,31 @@ func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *wor
 		cfgAny[forwardNetworkNameKey] = strings.TrimSpace(network.Name)
 		credentialName = strings.TrimSpace(network.Name)
 		changed = true
+	}
+
+	// Ensure the deployment's Forward network is registered in Skyforge's saved networks table.
+	// This is what backs capacity/assurance endpoints that use :networkRef.
+	if s != nil && s.db != nil {
+		collectorConfigID := strings.TrimSpace(getString("forwardCollectorId"))
+		name := strings.TrimSpace(getString(forwardNetworkNameKey))
+		if name == "" {
+			name = strings.TrimSpace(dep.Name)
+		}
+		if name == "" {
+			name = networkID
+		}
+		req := &PolicyReportCreateForwardNetworkRequest{
+			ForwardNetwork:    networkID,
+			Name:              name,
+			Description:       strings.TrimSpace(fmt.Sprintf("Deployment: %s", strings.TrimSpace(dep.Name))),
+			CollectorConfigID: collectorConfigID,
+		}
+		if saved, err := upsertUserPolicyReportForwardNetwork(ctx, s.db, pc.claims.Username, pc.claims.Username, req); err == nil && saved != nil {
+			if strings.TrimSpace(saved.ID) != "" && strings.TrimSpace(getString(forwardNetworkRefKey)) != strings.TrimSpace(saved.ID) {
+				cfgAny[forwardNetworkRefKey] = strings.TrimSpace(saved.ID)
+				changed = true
+			}
+		}
 	}
 
 	collectorUser := strings.TrimSpace(getString("forwardCollectorUsername"))

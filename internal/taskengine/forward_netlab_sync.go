@@ -15,11 +15,14 @@ import (
 	"time"
 
 	"encore.app/internal/taskstore"
+
+	"github.com/google/uuid"
 )
 
 const (
 	forwardNetworkIDKey        = "forwardNetworkId"
 	forwardNetworkNameKey      = "forwardNetworkName"
+	forwardNetworkRefKey       = "forwardNetworkRef"
 	forwardCliCredentialIDKey  = "forwardCliCredentialId"
 	forwardCliCredentialMap    = "forwardCliCredentialIdsByDevice"
 	forwardCliCredentialFPMap  = "forwardCliCredentialFingerprintsByDevice"
@@ -511,6 +514,56 @@ func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *work
 		cfgAny[forwardNetworkIDKey] = networkID
 		cfgAny[forwardNetworkNameKey] = strings.TrimSpace(network.Name)
 		changed = true
+	}
+
+	// Ensure the network is registered in Skyforge's saved networks table so capacity/assurance
+	// endpoints that use :networkRef have something to reference.
+	if e != nil && e.db != nil {
+		actor := strings.ToLower(strings.TrimSpace(pc.claims.Username))
+		name := strings.TrimSpace(getString(forwardNetworkNameKey))
+		if name == "" {
+			name = strings.TrimSpace(dep.Name)
+		}
+		if name == "" {
+			name = networkID
+		}
+		desc := ""
+		if strings.TrimSpace(dep.Name) != "" {
+			desc = strings.TrimSpace(fmt.Sprintf("Deployment: %s", strings.TrimSpace(dep.Name)))
+		}
+
+		ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+
+		// Best-effort ensure user exists for FK on created_by.
+		if actor != "" {
+			_, _ = e.db.ExecContext(ctxReq, `INSERT INTO sf_users(username) VALUES($1) ON CONFLICT DO NOTHING`, actor)
+		}
+
+		var networkRef string
+		err := e.db.QueryRowContext(ctxReq, `
+INSERT INTO sf_policy_report_forward_networks (
+  id, workspace_id, owner_username, forward_network_id, name, description, collector_config_id, created_by
+)
+VALUES ($1,NULL,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),$7)
+ON CONFLICT (owner_username, forward_network_id) WHERE owner_username IS NOT NULL
+DO UPDATE SET
+  name = EXCLUDED.name,
+  description = EXCLUDED.description,
+  collector_config_id = EXCLUDED.collector_config_id,
+  updated_at = now()
+WHERE sf_policy_report_forward_networks.name IS DISTINCT FROM EXCLUDED.name
+   OR sf_policy_report_forward_networks.description IS DISTINCT FROM EXCLUDED.description
+   OR sf_policy_report_forward_networks.collector_config_id IS DISTINCT FROM EXCLUDED.collector_config_id
+RETURNING id::text
+`, uuid.New().String(), actor, networkID, name, desc, collectorConfigID, actor).Scan(&networkRef)
+		if err == nil {
+			networkRef = strings.TrimSpace(networkRef)
+			if networkRef != "" && strings.TrimSpace(getString(forwardNetworkRefKey)) != networkRef {
+				cfgAny[forwardNetworkRefKey] = networkRef
+				changed = true
+			}
+		}
 	}
 
 	collectorUser := strings.TrimSpace(getString(forwardCollectorUserKey))
