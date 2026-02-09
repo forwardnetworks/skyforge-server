@@ -76,9 +76,18 @@ func (s *Service) mcpForwardToolsCall(ctx context.Context, user *AuthUser, works
 	if user == nil {
 		return "", errs.B().Code(errs.Unauthenticated).Msg("authentication required").Err()
 	}
-	client, err := s.policyReportsForwardClient(ctx, workspaceID, user.Username, forwardNetworkID)
+	explicitCredID, _ := ctx.Value(ctxKeyMCPForwardCredentialID).(string)
+	explicitCredID = strings.TrimSpace(explicitCredID)
+
+	rec, err := resolveForwardCredentialsFor(ctx, s.db, s.cfg.SessionSecret, workspaceID, user.Username, forwardNetworkID, forwardCredResolveOpts{
+		ExplicitCredentialID: explicitCredID,
+	})
 	if err != nil {
 		return "", err
+	}
+	client, err := newForwardClient(*rec)
+	if err != nil {
+		return "", errs.B().Code(errs.InvalidArgument).Msg("invalid Forward config").Err()
 	}
 
 	networkID := strings.TrimSpace(getStringArg(args, "network_id"))

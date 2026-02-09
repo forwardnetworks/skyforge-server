@@ -342,6 +342,67 @@ ON CONFLICT (id) DO UPDATE SET
 	return err
 }
 
+func upsertUserForwardCredentialSetWithCollector(ctx context.Context, tx *sql.Tx, box *secretBox, id, ownerUsername, name string, cfg forwardCredentials, collectorID, collectorUsername, authKey string) error {
+	if tx == nil || box == nil {
+		return fmt.Errorf("db is not configured")
+	}
+	id = strings.TrimSpace(id)
+	ownerUsername = strings.ToLower(strings.TrimSpace(ownerUsername))
+	name = strings.TrimSpace(name)
+	if id == "" || ownerUsername == "" || name == "" {
+		return fmt.Errorf("invalid input")
+	}
+	baseURL := strings.TrimSpace(cfg.BaseURL)
+	if baseURL == "" {
+		baseURL = defaultForwardBaseURL
+	}
+	encBase, err := encryptIfPlain(box, baseURL)
+	if err != nil {
+		return err
+	}
+	encUser, err := encryptIfPlain(box, strings.TrimSpace(cfg.Username))
+	if err != nil {
+		return err
+	}
+	encPass, err := encryptIfPlain(box, strings.TrimSpace(cfg.Password))
+	if err != nil {
+		return err
+	}
+	encCollectorID, err := encryptIfPlain(box, strings.TrimSpace(collectorID))
+	if err != nil {
+		return err
+	}
+	encCollectorUser, err := encryptIfPlain(box, strings.TrimSpace(collectorUsername))
+	if err != nil {
+		return err
+	}
+	encAuthKey, err := encryptIfPlain(box, strings.TrimSpace(authKey))
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.ExecContext(ctx, `
+INSERT INTO sf_credentials (
+  id, owner_username, workspace_id, provider, name,
+  base_url_enc, skip_tls_verify, forward_username_enc, forward_password_enc,
+  collector_id_enc, collector_username_enc, authorization_key_enc,
+  created_at, updated_at
+) VALUES ($1,$2,NULL,'forward',$3,$4,$5,$6,$7,NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),now(),now())
+ON CONFLICT (id) DO UPDATE SET
+  name=excluded.name,
+  base_url_enc=excluded.base_url_enc,
+  skip_tls_verify=excluded.skip_tls_verify,
+  forward_username_enc=excluded.forward_username_enc,
+  forward_password_enc=excluded.forward_password_enc,
+  collector_id_enc=excluded.collector_id_enc,
+  collector_username_enc=excluded.collector_username_enc,
+  authorization_key_enc=excluded.authorization_key_enc,
+  updated_at=now()
+WHERE sf_credentials.owner_username=excluded.owner_username AND sf_credentials.provider='forward' AND sf_credentials.workspace_id IS NULL
+`, id, ownerUsername, name, encBase, cfg.SkipTLSVerify, encUser, encPass, encCollectorID, encCollectorUser, encAuthKey)
+	return err
+}
+
 func upsertWorkspaceForwardCredentialSet(ctx context.Context, tx *sql.Tx, box *secretBox, id, workspaceID, name string, cfg forwardCredentials) error {
 	if tx == nil || box == nil {
 		return fmt.Errorf("db is not configured")

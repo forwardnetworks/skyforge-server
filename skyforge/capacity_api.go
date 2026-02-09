@@ -52,20 +52,17 @@ func (s *Service) capacityForwardClientForDeployment(ctx context.Context, userna
 		return nil, errs.B().Code(errs.Unauthenticated).Msg("unauthenticated").Err()
 	}
 	collectorID := strings.TrimSpace(fmt.Sprintf("%v", cfgAny["forwardCollectorId"]))
-	var fwdCfg *forwardCredentials
-	var err error
-	if collectorID != "" {
-		fwdCfg, err = s.forwardConfigForUserCollectorConfigID(ctx, username, collectorID)
-	} else {
-		fwdCfg, err = s.forwardConfigForUser(ctx, username)
-	}
+	rec, err := resolveForwardCredentialsFor(ctx, s.db, s.cfg.SessionSecret, "", username, "", forwardCredResolveOpts{
+		CollectorConfigID: collectorID,
+	})
 	if err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward credentials").Err()
+		// Keep capacity semantics: if nothing is configured for the user, surface that directly.
+		if errs.Code(err) == errs.FailedPrecondition {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward is not configured for this user").Err()
+		}
+		return nil, err
 	}
-	if fwdCfg == nil {
-		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward is not configured for this user").Err()
-	}
-	client, err := newForwardClient(*fwdCfg)
+	client, err := newForwardClient(*rec)
 	if err != nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid Forward config").Err()
 	}

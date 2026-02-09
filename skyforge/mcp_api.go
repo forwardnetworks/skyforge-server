@@ -25,9 +25,9 @@ type mcpJSONRPCError struct {
 }
 
 type mcpJSONRPCResponse struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      any             `json:"id,omitempty"`
-	Result  json.RawMessage `json:"result,omitempty"`
+	JSONRPC string           `json:"jsonrpc"`
+	ID      any              `json:"id,omitempty"`
+	Result  json.RawMessage  `json:"result,omitempty"`
 	Error   *mcpJSONRPCError `json:"error,omitempty"`
 }
 
@@ -47,6 +47,10 @@ type mcpToolCallParams struct {
 	Name      string         `json:"name"`
 	Arguments map[string]any `json:"arguments,omitempty"`
 }
+
+type ctxKey string
+
+const ctxKeyMCPForwardCredentialID ctxKey = "mcp_forward_credential_id"
 
 func (s *Service) handleMCPJSONRPC(ctx context.Context, user *AuthUser, workspaceID string, forwardNetworkID string, req mcpJSONRPCRequest) mcpJSONRPCResponse {
 	resp := mcpJSONRPCResponse{JSONRPC: "2.0", ID: req.ID}
@@ -134,6 +138,59 @@ func (s *Service) mcpToolsList(workspaceID, forwardNetworkID string) []mcpTool {
 				"additionalProperties": false,
 			},
 		},
+		{
+			Name:        "syslog_list_events",
+			Description: "List syslog inbox events for the current user.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"limit": map[string]any{"type": "integer", "description": "1..1000 (default 200)"},
+				},
+				"additionalProperties": false,
+			},
+		},
+		{
+			Name:        "snmp_list_trap_events",
+			Description: "List SNMP trap inbox events for the current user.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"limit": map[string]any{"type": "integer", "description": "1..1000 (default 200)"},
+				},
+				"additionalProperties": false,
+			},
+		},
+		{
+			Name:        "webhooks_list_events",
+			Description: "List webhook inbox events for the current user.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"limit": map[string]any{"type": "integer", "description": "1..1000 (default 200)"},
+				},
+				"additionalProperties": false,
+			},
+		},
+		{
+			Name:        "webhooks_get_token",
+			Description: "Get the per-user webhook ingest token.",
+			InputSchema: map[string]any{"type": "object", "additionalProperties": false},
+		},
+		{
+			Name:        "webhooks_rotate_token",
+			Description: "Rotate the per-user webhook ingest token.",
+			InputSchema: map[string]any{"type": "object", "additionalProperties": false},
+		},
+		{
+			Name:        "snmp_get_trap_token",
+			Description: "Get the per-user SNMP trap routing token (community string).",
+			InputSchema: map[string]any{"type": "object", "additionalProperties": false},
+		},
+		{
+			Name:        "snmp_rotate_trap_token",
+			Description: "Rotate the per-user SNMP trap routing token (community string).",
+			InputSchema: map[string]any{"type": "object", "additionalProperties": false},
+		},
 	}
 
 	if strings.TrimSpace(workspaceID) != "" && strings.TrimSpace(forwardNetworkID) != "" {
@@ -154,6 +211,84 @@ func (s *Service) mcpToolsCall(ctx context.Context, user *AuthUser, workspaceID,
 		out := map[string]any{"valid": len(errsList) == 0, "errors": errsList}
 		b, _ := json.Marshal(out)
 		return string(b), nil
+	case "syslog_list_events":
+		if user == nil {
+			return "", errs.B().Code(errs.Unauthenticated).Msg("authentication required").Err()
+		}
+		limit, ok := getIntArg(args, "limit")
+		if !ok || limit <= 0 || limit > 1000 {
+			limit = 200
+		}
+		evs, err := listSyslogEventsForUser(ctx, s.db, user.Username, limit)
+		if err != nil {
+			return "", errs.B().Code(errs.Unavailable).Msg("failed to list syslog events").Err()
+		}
+		b, _ := json.Marshal(map[string]any{"events": evs})
+		return string(b), nil
+	case "snmp_list_trap_events":
+		if user == nil {
+			return "", errs.B().Code(errs.Unauthenticated).Msg("authentication required").Err()
+		}
+		limit, ok := getIntArg(args, "limit")
+		if !ok || limit <= 0 || limit > 1000 {
+			limit = 200
+		}
+		evs, err := listSnmpTrapEventsForUser(ctx, s.db, user.Username, limit)
+		if err != nil {
+			return "", errs.B().Code(errs.Unavailable).Msg("failed to list snmp trap events").Err()
+		}
+		b, _ := json.Marshal(map[string]any{"events": evs})
+		return string(b), nil
+	case "webhooks_list_events":
+		if user == nil {
+			return "", errs.B().Code(errs.Unauthenticated).Msg("authentication required").Err()
+		}
+		limit, ok := getIntArg(args, "limit")
+		if !ok || limit <= 0 || limit > 1000 {
+			limit = 200
+		}
+		evs, err := listWebhookEventsForUser(ctx, s.db, user.Username, limit)
+		if err != nil {
+			return "", errs.B().Code(errs.Unavailable).Msg("failed to list webhook events").Err()
+		}
+		b, _ := json.Marshal(map[string]any{"events": evs})
+		return string(b), nil
+	case "webhooks_get_token":
+		if user == nil {
+			return "", errs.B().Code(errs.Unauthenticated).Msg("authentication required").Err()
+		}
+		out, err := s.mcpGetOrRotateWebhookToken(ctx, user.Username, false)
+		if err != nil {
+			return "", err
+		}
+		return out, nil
+	case "webhooks_rotate_token":
+		if user == nil {
+			return "", errs.B().Code(errs.Unauthenticated).Msg("authentication required").Err()
+		}
+		out, err := s.mcpGetOrRotateWebhookToken(ctx, user.Username, true)
+		if err != nil {
+			return "", err
+		}
+		return out, nil
+	case "snmp_get_trap_token":
+		if user == nil {
+			return "", errs.B().Code(errs.Unauthenticated).Msg("authentication required").Err()
+		}
+		out, err := s.mcpGetOrRotateSnmpToken(ctx, user.Username, false)
+		if err != nil {
+			return "", err
+		}
+		return out, nil
+	case "snmp_rotate_trap_token":
+		if user == nil {
+			return "", errs.B().Code(errs.Unauthenticated).Msg("authentication required").Err()
+		}
+		out, err := s.mcpGetOrRotateSnmpToken(ctx, user.Username, true)
+		if err != nil {
+			return "", err
+		}
+		return out, nil
 	default:
 		// Forward tools only exist on the forward-scoped endpoint.
 		if strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(forwardNetworkID) == "" {
@@ -297,6 +432,10 @@ func (s *Service) MCPForwardRPC(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.workspaceContextForUser(user, id); err != nil {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
+	}
+
+	if credID := strings.TrimSpace(r.Header.Get("X-Forward-Credential-Id")); credID != "" {
+		r = r.WithContext(context.WithValue(r.Context(), ctxKeyMCPForwardCredentialID, credID))
 	}
 	s.mcpHandleRPC(w, r, user, id, forwardNetworkId)
 }

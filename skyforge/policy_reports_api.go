@@ -16,40 +16,10 @@ func (s *Service) policyReportsForwardClient(ctx context.Context, workspaceID, u
 	if s == nil || s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("server unavailable").Err()
 	}
-	box := newSecretBox(s.cfg.SessionSecret)
 
-	// Preferred: per-user per-network credentials (Policy Reports specific).
-	if strings.TrimSpace(username) != "" && strings.TrimSpace(forwardNetworkID) != "" {
-		if pr, err := getPolicyReportForwardCreds(ctx, s.db, box, workspaceID, username, forwardNetworkID); err == nil && pr != nil {
-			return newForwardClient(forwardCredentials{
-				BaseURL:       pr.BaseURL,
-				SkipTLSVerify: pr.SkipTLSVerify,
-				Username:      pr.Username,
-				Password:      pr.Password,
-			})
-		}
-	}
-
-	// Fallback: legacy per-user Forward credentials.
-	if strings.TrimSpace(username) != "" {
-		// Prefer the user's default collector config if present; otherwise fall back to legacy per-user credentials.
-		if cfg, err := s.forwardConfigForUser(ctx, strings.ToLower(strings.TrimSpace(username))); err == nil && cfg != nil {
-			return newForwardClient(forwardCredentials{
-				BaseURL:       cfg.BaseURL,
-				SkipTLSVerify: cfg.SkipTLSVerify,
-				Username:      cfg.Username,
-				Password:      cfg.Password,
-			})
-		}
-	}
-
-	// Final fallback: workspace-level Forward credentials.
-	rec, err := getWorkspaceForwardCredentials(ctx, s.db, box, workspaceID)
+	rec, err := resolveForwardCredentialsFor(ctx, s.db, s.cfg.SessionSecret, workspaceID, username, forwardNetworkID, forwardCredResolveOpts{})
 	if err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward credentials").Err()
-	}
-	if rec == nil {
-		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward is not configured for this user/network or workspace").Err()
+		return nil, err
 	}
 	client, err := newForwardClient(*rec)
 	if err != nil {

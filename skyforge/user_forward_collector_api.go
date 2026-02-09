@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"encore.dev/beta/errs"
+
+	"github.com/google/uuid"
 )
 
 type UserForwardCollectorResponse struct {
@@ -310,6 +312,81 @@ func defaultCollectorNameForUser(username string) string {
 	return "skyforge-" + username
 }
 
+type legacyForwardCollectorResolved struct {
+	ConfigID   string
+	ConfigName string
+	IsDefault  bool
+	UpdatedAt  time.Time
+
+	CredentialID string
+	Set          *forwardCredentialSet
+
+	Legacy *userForwardCredentials
+}
+
+func (s *Service) resolveLegacyForwardCollectorConfig(ctx context.Context, username string) (*legacyForwardCollectorResolved, error) {
+	if s == nil || s.db == nil {
+		return nil, nil
+	}
+	username = strings.ToLower(strings.TrimSpace(username))
+	if username == "" {
+		return nil, nil
+	}
+
+	ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	cfgID, _ := preferredUserForwardCollectorConfigID(ctxReq, s.db, username)
+	cfgID = strings.TrimSpace(cfgID)
+
+	// If the user has no default configured, try a friendly fallback by name.
+	if cfgID == "" {
+		_ = s.db.QueryRowContext(ctxReq, `SELECT id FROM sf_user_forward_collectors WHERE username=$1 AND lower(name)=lower('Default') ORDER BY updated_at DESC LIMIT 1`, username).Scan(&cfgID)
+		cfgID = strings.TrimSpace(cfgID)
+	}
+
+	if cfgID != "" {
+		var name string
+		var isDefault bool
+		var credID string
+		var updatedAt time.Time
+		err := s.db.QueryRowContext(ctxReq, `SELECT name, COALESCE(is_default,false), COALESCE(credential_id,''), updated_at
+FROM sf_user_forward_collectors
+WHERE username=$1 AND id=$2`, username, cfgID).Scan(&name, &isDefault, &credID, &updatedAt)
+		if err == nil {
+			out := &legacyForwardCollectorResolved{
+				ConfigID:     cfgID,
+				ConfigName:   strings.TrimSpace(name),
+				IsDefault:    isDefault,
+				UpdatedAt:    updatedAt,
+				CredentialID: strings.TrimSpace(credID),
+			}
+			if out.CredentialID != "" {
+				box := newSecretBox(s.cfg.SessionSecret)
+				set, err := getUserForwardCredentialSet(ctxReq, s.db, box, username, out.CredentialID)
+				if err == nil && set != nil {
+					out.Set = set
+				}
+			}
+			// If we found a usable credential set, prefer it and don't touch legacy.
+			if out.Set != nil && strings.TrimSpace(out.Set.Username) != "" && strings.TrimSpace(out.Set.Password) != "" {
+				return out, nil
+			}
+		}
+	}
+
+	// Backward-compat: legacy single-collector table.
+	box := newSecretBox(s.cfg.SessionSecret)
+	legacy, err := getUserForwardCredentials(ctxReq, s.db, box, username)
+	if err != nil {
+		return nil, err
+	}
+	if legacy == nil {
+		return nil, nil
+	}
+	return &legacyForwardCollectorResolved{Legacy: legacy}, nil
+}
+
 // GetUserForwardCollector returns the authenticated user's Forward collector settings.
 //
 //encore:api auth method=GET path=/api/forward/collector
@@ -325,14 +402,14 @@ func (s *Service) GetUserForwardCollector(ctx context.Context) (*UserForwardColl
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	rec, err := getUserForwardCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), user.Username)
+	resolved, err := s.resolveLegacyForwardCollectorConfig(ctx, user.Username)
 	if err != nil {
 		log.Printf("user forward get: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward collector settings").Err()
 	}
-	if rec == nil {
+	if resolved == nil || (resolved.Set == nil && resolved.Legacy == nil) {
 		return &UserForwardCollectorResponse{
 			Configured:    false,
 			BaseURL:       defaultForwardBaseURL,
@@ -344,18 +421,53 @@ func (s *Service) GetUserForwardCollector(ctx context.Context) (*UserForwardColl
 		}, nil
 	}
 	updatedAt := ""
-	if !rec.UpdatedAt.IsZero() {
-		updatedAt = rec.UpdatedAt.UTC().Format(time.RFC3339)
+	baseURL := defaultForwardBaseURL
+	skipTLSVerify := false
+	forwardUser := ""
+	forwardPass := ""
+	collectorID := ""
+	collectorUsername := ""
+	authKey := ""
+	if resolved.Set != nil {
+		baseURL = strings.TrimSpace(resolved.Set.BaseURL)
+		if baseURL == "" {
+			baseURL = defaultForwardBaseURL
+		}
+		skipTLSVerify = resolved.Set.SkipTLSVerify
+		forwardUser = strings.TrimSpace(resolved.Set.Username)
+		forwardPass = strings.TrimSpace(resolved.Set.Password)
+		collectorID = strings.TrimSpace(resolved.Set.CollectorID)
+		collectorUsername = strings.TrimSpace(resolved.Set.CollectorUsername)
+		authKey = strings.TrimSpace(resolved.Set.AuthorizationKey)
+		if !resolved.UpdatedAt.IsZero() {
+			updatedAt = resolved.UpdatedAt.UTC().Format(time.RFC3339)
+		}
+	} else if resolved.Legacy != nil {
+		rec := resolved.Legacy
+		baseURL = strings.TrimSpace(rec.BaseURL)
+		if baseURL == "" {
+			baseURL = defaultForwardBaseURL
+		}
+		skipTLSVerify = rec.SkipTLSVerify
+		forwardUser = strings.TrimSpace(rec.ForwardUsername)
+		forwardPass = strings.TrimSpace(rec.ForwardPassword)
+		collectorID = strings.TrimSpace(rec.CollectorID)
+		collectorUsername = strings.TrimSpace(rec.CollectorUsername)
+		authKey = strings.TrimSpace(rec.AuthorizationKey)
+		if !rec.UpdatedAt.IsZero() {
+			updatedAt = rec.UpdatedAt.UTC().Format(time.RFC3339)
+		}
 	}
-	baseURL := strings.TrimSpace(rec.BaseURL)
-	if baseURL == "" {
-		baseURL = defaultForwardBaseURL
-	}
+
 	var runtime *collectorRuntimeStatus
 	{
 		ctx2, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
-		if st, err := getCollectorRuntimeStatus(ctx2, user.Username); err == nil {
+		if resolved != nil && strings.TrimSpace(resolved.ConfigID) != "" {
+			if st, err := getCollectorRuntimeStatusByName(ctx2, collectorDeploymentNameForConfig(user.Username, resolved.ConfigID, resolved.IsDefault)); err == nil {
+				runtime = st
+			}
+		} else if st, err := getCollectorRuntimeStatus(ctx2, user.Username); err == nil {
 			runtime = st
 		}
 	}
@@ -363,20 +475,18 @@ func (s *Service) GetUserForwardCollector(ctx context.Context) (*UserForwardColl
 	{
 		ctx2, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		box := newSecretBox(s.cfg.SessionSecret)
-		creds, err := getUserForwardCredentials(ctx2, s.db, box, user.Username)
-		if err == nil && creds != nil && strings.TrimSpace(creds.BaseURL) != "" && strings.TrimSpace(creds.ForwardUsername) != "" && strings.TrimSpace(creds.ForwardPassword) != "" && strings.TrimSpace(creds.CollectorID) != "" {
+		if strings.TrimSpace(baseURL) != "" && strings.TrimSpace(forwardUser) != "" && strings.TrimSpace(forwardPass) != "" && strings.TrimSpace(collectorID) != "" {
 			client, err := newForwardClient(forwardCredentials{
-				BaseURL:       creds.BaseURL,
-				SkipTLSVerify: creds.SkipTLSVerify,
-				Username:      creds.ForwardUsername,
-				Password:      creds.ForwardPassword,
+				BaseURL:       baseURL,
+				SkipTLSVerify: skipTLSVerify,
+				Username:      forwardUser,
+				Password:      forwardPass,
 			})
 			if err == nil {
 				if collectors, err := forwardListCollectors(ctx2, client); err == nil {
 					var match *forwardCollector
 					for i := range collectors {
-						if strings.EqualFold(strings.TrimSpace(collectors[i].ID), strings.TrimSpace(creds.CollectorID)) {
+						if strings.EqualFold(strings.TrimSpace(collectors[i].ID), strings.TrimSpace(collectorID)) {
 							match = &collectors[i]
 							break
 						}
@@ -415,16 +525,16 @@ func (s *Service) GetUserForwardCollector(ctx context.Context) (*UserForwardColl
 		}
 	}
 	return &UserForwardCollectorResponse{
-		Configured:        baseURL != "" && rec.ForwardUsername != "" && rec.ForwardPassword != "",
+		Configured:        baseURL != "" && forwardUser != "" && forwardPass != "",
 		BaseURL:           baseURL,
-		SkipTLSVerify:     rec.SkipTLSVerify,
-		Username:          rec.ForwardUsername,
-		CollectorID:       rec.CollectorID,
-		CollectorUsername: rec.CollectorUsername,
-		AuthorizationKey:  rec.AuthorizationKey,
+		SkipTLSVerify:     skipTLSVerify,
+		Username:          forwardUser,
+		CollectorID:       collectorID,
+		CollectorUsername: collectorUsername,
+		AuthorizationKey:  authKey,
 		Runtime:           runtime,
 		ForwardCollector:  fwdCollector,
-		HasPassword:       rec.ForwardPassword != "",
+		HasPassword:       forwardPass != "",
 		HasJumpKey:        false,
 		HasJumpCert:       false,
 		UpdatedAt:         updatedAt,
@@ -467,13 +577,17 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 
-	current, err := getUserForwardCredentials(ctx, s.db, box, user.Username)
+	currentResolved, err := s.resolveLegacyForwardCollectorConfig(ctx, user.Username)
 	if err != nil {
 		log.Printf("user forward get: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg(fmt.Sprintf("failed to load Forward collector settings: %v", err)).Err()
 	}
-	if forwardPass == "" && current != nil {
-		forwardPass = current.ForwardPassword
+	if forwardPass == "" && currentResolved != nil {
+		if currentResolved.Set != nil {
+			forwardPass = strings.TrimSpace(currentResolved.Set.Password)
+		} else if currentResolved.Legacy != nil {
+			forwardPass = strings.TrimSpace(currentResolved.Legacy.ForwardPassword)
+		}
 	}
 	if forwardPass == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("password is required").Err()
@@ -505,10 +619,16 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 	collectorID := ""
 	collectorUsername := ""
 	authKey := ""
-	if current != nil {
-		collectorID = strings.TrimSpace(current.CollectorID)
-		collectorUsername = strings.TrimSpace(current.CollectorUsername)
-		authKey = strings.TrimSpace(current.AuthorizationKey)
+	if currentResolved != nil {
+		if currentResolved.Set != nil {
+			collectorID = strings.TrimSpace(currentResolved.Set.CollectorID)
+			collectorUsername = strings.TrimSpace(currentResolved.Set.CollectorUsername)
+			authKey = strings.TrimSpace(currentResolved.Set.AuthorizationKey)
+		} else if currentResolved.Legacy != nil {
+			collectorID = strings.TrimSpace(currentResolved.Legacy.CollectorID)
+			collectorUsername = strings.TrimSpace(currentResolved.Legacy.CollectorUsername)
+			authKey = strings.TrimSpace(currentResolved.Legacy.AuthorizationKey)
+		}
 	}
 	name := defaultCollectorNameForUser(user.Username)
 	if collectorID == "" || collectorUsername == "" || authKey == "" {
@@ -552,24 +672,104 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 		authKey = strings.TrimSpace(collector.AuthorizationKey)
 	}
 
-	if err := putUserForwardCredentials(ctx, s.db, box, user.Username, userForwardCredentials{
-		BaseURL:           baseURL,
-		SkipTLSVerify:     skipTLSVerify,
-		ForwardUsername:   forwardUser,
-		ForwardPassword:   forwardPass,
-		CollectorID:       collectorID,
-		CollectorUsername: collectorUsername,
-		AuthorizationKey:  authKey,
-	}); err != nil {
-		log.Printf("user forward put: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg(fmt.Sprintf("failed to store Forward collector settings: %v", err)).Err()
+	// Persist into the unified tables: sf_credentials + sf_user_forward_collectors.
+	ctxSave, cancelSave := context.WithTimeout(ctx, 10*time.Second)
+	defer cancelSave()
+	tx, err := s.db.BeginTx(ctxSave, nil)
+	if err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to save Forward settings").Err()
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	configID := ""
+	configName := ""
+	credID := ""
+	if currentResolved != nil {
+		configID = strings.TrimSpace(currentResolved.ConfigID)
+		configName = strings.TrimSpace(currentResolved.ConfigName)
+		credID = strings.TrimSpace(currentResolved.CredentialID)
+	}
+	if configName == "" {
+		configName = "Default"
+	}
+	if configID == "" {
+		// Create (or reuse) a user collector config named "Default".
+		var existingID sql.NullString
+		_ = tx.QueryRowContext(ctxSave, `SELECT id FROM sf_user_forward_collectors WHERE username=$1 AND lower(name)=lower($2) ORDER BY updated_at DESC LIMIT 1`, user.Username, configName).Scan(&existingID)
+		if strings.TrimSpace(existingID.String) != "" {
+			configID = strings.TrimSpace(existingID.String)
+		} else {
+			configID = uuid.NewString()
+		}
+	}
+	if credID == "" {
+		credID = uuid.NewString()
+	}
+
+	// Ensure only one default collector config.
+	if _, err := tx.ExecContext(ctxSave, `UPDATE sf_user_forward_collectors SET is_default=false WHERE username=$1`, user.Username); err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to save Forward settings").Err()
+	}
+	if _, err := tx.ExecContext(ctxSave, `INSERT INTO sf_user_forward_collectors (
+  id, username, name,
+  credential_id,
+  base_url, skip_tls_verify, forward_username, forward_password,
+  collector_id, collector_username, authorization_key,
+  created_at, updated_at, is_default
+) VALUES ($1,$2,$3,$4,NULL,$5,NULL,NULL,NULL,NULL,NULL,now(),now(),true)
+ON CONFLICT (id) DO UPDATE SET
+  name=excluded.name,
+  credential_id=excluded.credential_id,
+  skip_tls_verify=excluded.skip_tls_verify,
+  updated_at=now(),
+  is_default=true
+`, configID, user.Username, configName, credID, skipTLSVerify); err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to save Forward settings").Err()
+	}
+
+	// Preserve existing user settings JSON blobs when setting default collector.
+	cur, _ := getUserSettings(ctxSave, s.db, user.Username)
+	defaultEnv := "[]"
+	extRepos := "[]"
+	if cur != nil {
+		if strings.TrimSpace(cur.DefaultEnvJSON) != "" {
+			defaultEnv = cur.DefaultEnvJSON
+		}
+		if strings.TrimSpace(cur.ExternalTemplateReposJSON) != "" {
+			extRepos = cur.ExternalTemplateReposJSON
+		}
+	}
+	if _, err := tx.ExecContext(ctxSave, `
+INSERT INTO sf_user_settings (user_id, default_forward_collector_config_id, default_env_json, external_template_repos_json)
+VALUES ($1,$2,$3,$4)
+ON CONFLICT(user_id) DO UPDATE SET
+  default_forward_collector_config_id=excluded.default_forward_collector_config_id,
+  default_env_json=excluded.default_env_json,
+  external_template_repos_json=excluded.external_template_repos_json,
+  updated_at=now()
+`, user.Username, configID, defaultEnv, extRepos); err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to save Forward settings").Err()
+	}
+
+	if err := upsertUserForwardCredentialSetWithCollector(ctxSave, tx, box, credID, user.Username, "Collector: "+configName, forwardCredentials{
+		BaseURL:       baseURL,
+		SkipTLSVerify: skipTLSVerify,
+		Username:      forwardUser,
+		Password:      forwardPass,
+	}, collectorID, collectorUsername, authKey); err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to save Forward settings").Err()
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to save Forward settings").Err()
 	}
 
 	var runtime *collectorRuntimeStatus
 	{
 		ctx2, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
-		if st, err := ensureCollectorDeployed(ctx2, s.cfg, user.Username, authKey, baseURL, skipTLSVerify); err != nil {
+		deployName := collectorDeploymentNameForConfig(user.Username, configID, true)
+		if st, err := ensureCollectorDeployedForName(ctx2, s.cfg, user.Username, deployName, authKey, baseURL, skipTLSVerify); err != nil {
 			log.Printf("collector deploy failed: %v", err)
 		} else {
 			runtime = st
@@ -612,19 +812,39 @@ func (s *Service) ResetUserForwardCollector(ctx context.Context) (*UserForwardCo
 	box := newSecretBox(s.cfg.SessionSecret)
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	current, err := getUserForwardCredentials(ctx, s.db, box, user.Username)
+	currentResolved, err := s.resolveLegacyForwardCollectorConfig(ctx, user.Username)
 	if err != nil {
 		log.Printf("user forward get: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward collector settings").Err()
 	}
-	if current == nil || strings.TrimSpace(current.ForwardUsername) == "" || strings.TrimSpace(current.ForwardPassword) == "" {
+	var baseURL, forwardUser, forwardPass string
+	var skipTLSVerify bool
+	var configID string
+	var credID string
+	if currentResolved != nil && currentResolved.Set != nil {
+		baseURL = strings.TrimSpace(currentResolved.Set.BaseURL)
+		forwardUser = strings.TrimSpace(currentResolved.Set.Username)
+		forwardPass = strings.TrimSpace(currentResolved.Set.Password)
+		skipTLSVerify = currentResolved.Set.SkipTLSVerify
+		configID = strings.TrimSpace(currentResolved.ConfigID)
+		credID = strings.TrimSpace(currentResolved.CredentialID)
+	} else if currentResolved != nil && currentResolved.Legacy != nil {
+		baseURL = strings.TrimSpace(currentResolved.Legacy.BaseURL)
+		forwardUser = strings.TrimSpace(currentResolved.Legacy.ForwardUsername)
+		forwardPass = strings.TrimSpace(currentResolved.Legacy.ForwardPassword)
+		skipTLSVerify = currentResolved.Legacy.SkipTLSVerify
+	}
+	if forwardUser == "" || forwardPass == "" {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward credentials required").Err()
 	}
+	if baseURL == "" {
+		baseURL = defaultForwardBaseURL
+	}
 	client, err := newForwardClient(forwardCredentials{
-		BaseURL:       current.BaseURL,
-		SkipTLSVerify: current.SkipTLSVerify,
-		Username:      current.ForwardUsername,
-		Password:      current.ForwardPassword,
+		BaseURL:       baseURL,
+		SkipTLSVerify: skipTLSVerify,
+		Username:      forwardUser,
+		Password:      forwardPass,
 	})
 	if err != nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid Forward config").Err()
@@ -661,19 +881,95 @@ func (s *Service) ResetUserForwardCollector(ctx context.Context) (*UserForwardCo
 		}
 	}
 
-	current.CollectorID = strings.TrimSpace(collector.ID)
-	current.CollectorUsername = strings.TrimSpace(collector.Username)
-	current.AuthorizationKey = strings.TrimSpace(collector.AuthorizationKey)
-	if err := putUserForwardCredentials(ctx, s.db, box, user.Username, *current); err != nil {
-		log.Printf("user forward put: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to store Forward collector settings").Err()
+	collectorID := strings.TrimSpace(collector.ID)
+	collectorUsername := strings.TrimSpace(collector.Username)
+	authKey := strings.TrimSpace(collector.AuthorizationKey)
+
+	// Persist rotated auth key into the unified tables.
+	ctxSave, cancelSave := context.WithTimeout(ctx, 10*time.Second)
+	defer cancelSave()
+	tx, err := s.db.BeginTx(ctxSave, nil)
+	if err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to save Forward settings").Err()
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	configName := "Default"
+	if currentResolved != nil && strings.TrimSpace(currentResolved.ConfigName) != "" {
+		configName = strings.TrimSpace(currentResolved.ConfigName)
+	}
+	if configID == "" {
+		configID = uuid.NewString()
+	}
+	if credID == "" {
+		credID = uuid.NewString()
+	}
+	if _, err := tx.ExecContext(ctxSave, `UPDATE sf_user_forward_collectors SET is_default=false WHERE username=$1`, user.Username); err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to save Forward settings").Err()
+	}
+	if _, err := tx.ExecContext(ctxSave, `INSERT INTO sf_user_forward_collectors (
+  id, username, name,
+  credential_id,
+  base_url, skip_tls_verify, forward_username, forward_password,
+  collector_id, collector_username, authorization_key,
+  created_at, updated_at, is_default
+) VALUES ($1,$2,$3,$4,NULL,$5,NULL,NULL,NULL,NULL,NULL,now(),now(),true)
+ON CONFLICT (id) DO UPDATE SET
+  name=excluded.name,
+  credential_id=excluded.credential_id,
+  skip_tls_verify=excluded.skip_tls_verify,
+  updated_at=now(),
+  is_default=true
+`, configID, user.Username, configName, credID, skipTLSVerify); err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to save Forward settings").Err()
+	}
+	// Preserve existing user settings JSON blobs.
+	cur, _ := getUserSettings(ctxSave, s.db, user.Username)
+	defaultEnv := "[]"
+	extRepos := "[]"
+	if cur != nil {
+		if strings.TrimSpace(cur.DefaultEnvJSON) != "" {
+			defaultEnv = cur.DefaultEnvJSON
+		}
+		if strings.TrimSpace(cur.ExternalTemplateReposJSON) != "" {
+			extRepos = cur.ExternalTemplateReposJSON
+		}
+	}
+	if _, err := tx.ExecContext(ctxSave, `
+INSERT INTO sf_user_settings (user_id, default_forward_collector_config_id, default_env_json, external_template_repos_json)
+VALUES ($1,$2,$3,$4)
+ON CONFLICT(user_id) DO UPDATE SET
+  default_forward_collector_config_id=excluded.default_forward_collector_config_id,
+  default_env_json=excluded.default_env_json,
+  external_template_repos_json=excluded.external_template_repos_json,
+  updated_at=now()
+`, user.Username, configID, defaultEnv, extRepos); err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to save Forward settings").Err()
+	}
+	if err := upsertUserForwardCredentialSetWithCollector(ctxSave, tx, box, credID, user.Username, "Collector: "+configName, forwardCredentials{
+		BaseURL:       baseURL,
+		SkipTLSVerify: skipTLSVerify,
+		Username:      forwardUser,
+		Password:      forwardPass,
+	}, collectorID, collectorUsername, authKey); err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to save Forward settings").Err()
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to save Forward settings").Err()
 	}
 
 	var runtime *collectorRuntimeStatus
 	{
 		ctx2, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
-		if st, err := ensureCollectorDeployed(ctx2, s.cfg, user.Username, current.AuthorizationKey, strings.TrimSpace(current.BaseURL), current.SkipTLSVerify); err != nil {
+		if strings.TrimSpace(configID) != "" {
+			deployName := collectorDeploymentNameForConfig(user.Username, configID, true)
+			if st, err := ensureCollectorDeployedForName(ctx2, s.cfg, user.Username, deployName, authKey, baseURL, skipTLSVerify); err != nil {
+				log.Printf("collector deploy failed: %v", err)
+			} else {
+				runtime = st
+			}
+		} else if st, err := ensureCollectorDeployed(ctx2, s.cfg, user.Username, authKey, baseURL, skipTLSVerify); err != nil {
 			log.Printf("collector deploy failed: %v", err)
 		} else {
 			runtime = st
@@ -682,12 +978,12 @@ func (s *Service) ResetUserForwardCollector(ctx context.Context) (*UserForwardCo
 
 	return &UserForwardCollectorResponse{
 		Configured:        true,
-		BaseURL:           strings.TrimSpace(current.BaseURL),
-		SkipTLSVerify:     current.SkipTLSVerify,
-		Username:          strings.TrimSpace(current.ForwardUsername),
-		CollectorID:       strings.TrimSpace(current.CollectorID),
-		CollectorUsername: strings.TrimSpace(current.CollectorUsername),
-		AuthorizationKey:  strings.TrimSpace(current.AuthorizationKey),
+		BaseURL:           baseURL,
+		SkipTLSVerify:     skipTLSVerify,
+		Username:          forwardUser,
+		CollectorID:       collectorID,
+		CollectorUsername: collectorUsername,
+		AuthorizationKey:  authKey,
 		Runtime:           runtime,
 		HasPassword:       true,
 		HasJumpKey:        false,
