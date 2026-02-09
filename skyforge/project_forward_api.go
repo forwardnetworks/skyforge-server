@@ -2,10 +2,14 @@ package skyforge
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 
 	"encore.dev/beta/errs"
 )
@@ -46,6 +50,10 @@ type WorkspaceForwardCollectorCreateResponse struct {
 	Name             string `json:"name"`
 	Username         string `json:"username"`
 	AuthorizationKey string `json:"authorizationKey"`
+}
+
+type ApplyWorkspaceForwardCredentialSetRequest struct {
+	CredentialID string `json:"credentialId"`
 }
 
 const defaultForwardBaseURL = "https://fwd.app"
@@ -343,4 +351,182 @@ func (s *Service) DeleteWorkspaceForwardConfig(ctx context.Context, id string) (
 		Configured: false,
 		BaseURL:    defaultForwardBaseURL,
 	}, nil
+}
+
+// ApplyWorkspaceForwardCredentialSet copies a user-owned Forward credential set into the workspace-scoped
+// Forward integration configuration (so the workspace can use it for Forward-backed features).
+//
+// This uses "copy" semantics: future changes to the user credential set do not affect the workspace.
+//
+//encore:api auth method=POST path=/api/workspaces/:id/integrations/forward/apply-credential-set
+func (s *Service) ApplyWorkspaceForwardCredentialSet(ctx context.Context, id string, req *ApplyWorkspaceForwardCredentialSetRequest) (*WorkspaceForwardConfigResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	pc, err := s.workspaceContextForUser(user, id)
+	if err != nil {
+		return nil, err
+	}
+	if pc.access != "admin" && pc.access != "owner" {
+		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	if req == nil || strings.TrimSpace(req.CredentialID) == "" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("credentialId is required").Err()
+	}
+	credID := strings.TrimSpace(req.CredentialID)
+
+	box := newSecretBox(s.cfg.SessionSecret)
+	ctxReq, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	tx, err := s.db.BeginTx(ctxReq, nil)
+	if err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to apply credential set").Err()
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Load source ciphertext row (user-scoped).
+	var (
+		srcName          string
+		srcBase          sql.NullString
+		srcSkipTLS       sql.NullBool
+		srcUser          sql.NullString
+		srcPass          sql.NullString
+		srcCollectorID   sql.NullString
+		srcCollectorUser sql.NullString
+		srcAuthKey       sql.NullString
+		srcDeviceUser    sql.NullString
+		srcDevicePass    sql.NullString
+		srcJumpHost      sql.NullString
+		srcJumpUser      sql.NullString
+		srcJumpKey       sql.NullString
+		srcJumpCert      sql.NullString
+	)
+	err = tx.QueryRowContext(ctxReq, `
+SELECT name,
+       COALESCE(base_url_enc,''), COALESCE(skip_tls_verify,false),
+       COALESCE(forward_username_enc,''), COALESCE(forward_password_enc,''),
+       COALESCE(collector_id_enc,''), COALESCE(collector_username_enc,''), COALESCE(authorization_key_enc,''),
+       COALESCE(device_username_enc,''), COALESCE(device_password_enc,''),
+       COALESCE(jump_host_enc,''), COALESCE(jump_username_enc,''), COALESCE(jump_private_key_enc,''), COALESCE(jump_cert_enc,'')
+  FROM sf_credentials
+ WHERE id=$1 AND provider='forward' AND owner_username=$2 AND workspace_id IS NULL
+`, credID, user.Username).Scan(
+		&srcName,
+		&srcBase, &srcSkipTLS,
+		&srcUser, &srcPass,
+		&srcCollectorID, &srcCollectorUser, &srcAuthKey,
+		&srcDeviceUser, &srcDevicePass,
+		&srcJumpHost, &srcJumpUser, &srcJumpKey, &srcJumpCert,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errs.B().Code(errs.NotFound).Msg("credential set not found").Err()
+		}
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load credential set").Err()
+	}
+
+	// Ensure source has username/password.
+	{
+		u, _ := decryptNullStringOrEmpty(box, srcUser)
+		p, _ := decryptNullStringOrEmpty(box, srcPass)
+		if strings.TrimSpace(u) == "" || strings.TrimSpace(p) == "" {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("credential set is missing username/password").Err()
+		}
+	}
+
+	// Destination: reuse existing workspace credential id if present.
+	var destID sql.NullString
+	_ = tx.QueryRowContext(ctxReq, `SELECT COALESCE(credential_id,'') FROM sf_workspace_forward_credentials WHERE workspace_id=$1`, pc.workspace.ID).Scan(&destID)
+	workspaceCredID := strings.TrimSpace(destID.String)
+	if workspaceCredID == "" {
+		workspaceCredID = uuid.NewString()
+	}
+
+	name := "workspace forward"
+	if strings.TrimSpace(srcName) != "" {
+		name = fmt.Sprintf("workspace forward (from %s)", strings.TrimSpace(srcName))
+	}
+
+	// Upsert workspace-scoped credential row by copying ciphertext directly.
+	_, err = tx.ExecContext(ctxReq, `
+INSERT INTO sf_credentials (
+  id, owner_username, workspace_id, provider, name,
+  base_url_enc, skip_tls_verify, forward_username_enc, forward_password_enc,
+  collector_id_enc, collector_username_enc, authorization_key_enc,
+  device_username_enc, device_password_enc,
+  jump_host_enc, jump_username_enc, jump_private_key_enc, jump_cert_enc,
+  created_at, updated_at
+) VALUES (
+  $1, NULL, $2, 'forward', $3,
+  NULLIF($4,''), $5, NULLIF($6,''), NULLIF($7,''),
+  NULLIF($8,''), NULLIF($9,''), NULLIF($10,''),
+  NULLIF($11,''), NULLIF($12,''),
+  NULLIF($13,''), NULLIF($14,''), NULLIF($15,''), NULLIF($16,''),
+  now(), now()
+)
+ON CONFLICT (id) DO UPDATE SET
+  name=excluded.name,
+  base_url_enc=excluded.base_url_enc,
+  skip_tls_verify=excluded.skip_tls_verify,
+  forward_username_enc=excluded.forward_username_enc,
+  forward_password_enc=excluded.forward_password_enc,
+  collector_id_enc=excluded.collector_id_enc,
+  collector_username_enc=excluded.collector_username_enc,
+  authorization_key_enc=excluded.authorization_key_enc,
+  device_username_enc=excluded.device_username_enc,
+  device_password_enc=excluded.device_password_enc,
+  jump_host_enc=excluded.jump_host_enc,
+  jump_username_enc=excluded.jump_username_enc,
+  jump_private_key_enc=excluded.jump_private_key_enc,
+  jump_cert_enc=excluded.jump_cert_enc,
+  updated_at=now()
+`, workspaceCredID, pc.workspace.ID, name,
+		strings.TrimSpace(srcBase.String),
+		(srcSkipTLS.Valid && srcSkipTLS.Bool),
+		strings.TrimSpace(srcUser.String),
+		strings.TrimSpace(srcPass.String),
+		strings.TrimSpace(srcCollectorID.String),
+		strings.TrimSpace(srcCollectorUser.String),
+		strings.TrimSpace(srcAuthKey.String),
+		strings.TrimSpace(srcDeviceUser.String),
+		strings.TrimSpace(srcDevicePass.String),
+		strings.TrimSpace(srcJumpHost.String),
+		strings.TrimSpace(srcJumpUser.String),
+		strings.TrimSpace(srcJumpKey.String),
+		strings.TrimSpace(srcJumpCert.String),
+	)
+	if err != nil {
+		log.Printf("workspace forward apply credential set: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to apply credential set").Err()
+	}
+
+	_, err = tx.ExecContext(ctxReq, `
+INSERT INTO sf_workspace_forward_credentials (
+  workspace_id, credential_id,
+  base_url, username, password,
+  collector_id, collector_username,
+  device_username, device_password,
+  jump_host, jump_username, jump_private_key, jump_cert,
+  updated_at
+) VALUES ($1,$2,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,now())
+ON CONFLICT (workspace_id) DO UPDATE SET
+  credential_id=excluded.credential_id,
+  updated_at=now()
+`, pc.workspace.ID, workspaceCredID)
+	if err != nil {
+		log.Printf("workspace forward apply credential set link: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to apply credential set").Err()
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to apply credential set").Err()
+	}
+
+	// Return current config (best-effort).
+	return s.GetWorkspaceForwardConfig(ctx, id)
 }

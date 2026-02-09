@@ -24,15 +24,32 @@ func resolveForwardCredsForServiceNow(
 	box *secretBox,
 	username string,
 	forwardCollectorConfigID string,
+	forwardCredentialID string,
 	customUsername string,
 	customPassword string,
 ) (string, string, error) {
 	username = strings.TrimSpace(username)
 	forwardCollectorConfigID = strings.TrimSpace(forwardCollectorConfigID)
+	forwardCredentialID = strings.TrimSpace(forwardCredentialID)
 	customUsername = strings.TrimSpace(customUsername)
 	customPassword = strings.TrimSpace(customPassword)
 
 	if forwardCollectorConfigID == "" {
+		if forwardCredentialID != "" {
+			if db == nil || box == nil {
+				return "", "", errForwardCredsUnavailable
+			}
+			set, err := getUserForwardCredentialSet(ctx, db, box, username, forwardCredentialID)
+			if err != nil || set == nil {
+				return "", "", errForwardCredsUnavailable
+			}
+			u := strings.TrimSpace(set.Username)
+			p := strings.TrimSpace(set.Password)
+			if u == "" || p == "" {
+				return "", "", errForwardCredsUnavailable
+			}
+			return u, p, nil
+		}
 		if customUsername == "" || customPassword == "" {
 			return "", "", errForwardCredsUnavailable
 		}
