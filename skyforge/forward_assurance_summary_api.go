@@ -25,6 +25,12 @@ type ForwardAssuranceHistoryParams struct {
 	Limit string `query:"limit" encore:"optional"`
 }
 
+type ForwardAssuranceSummaryParams struct {
+	// Fresh bypasses the short server-side cache and forces live Forward calls.
+	// Accepts 1/true/yes.
+	Fresh string `query:"fresh" encore:"optional"`
+}
+
 type ForwardAssuranceSummaryResponse struct {
 	WorkspaceID      string `json:"workspaceId"`
 	NetworkRef       string `json:"networkRef"`
@@ -480,6 +486,16 @@ func parseOptionalLimit(raw string, def, max int) int {
 	return v
 }
 
+func parseOptionalBoolQuery(raw string) bool {
+	raw = strings.ToLower(strings.TrimSpace(raw))
+	switch raw {
+	case "1", "t", "true", "y", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *Service) countLiveSignals(ctx context.Context, username string, windowMinutes int) (ForwardAssuranceLiveSignalsTile, []string) {
 	username = strings.TrimSpace(username)
 	if windowMinutes <= 0 {
@@ -568,6 +584,52 @@ WHERE username=$1 AND received_at >= $2
 	return out, warnings
 }
 
+func loadLatestForwardAssuranceSummary(ctx context.Context, db *sql.DB, workspaceID, forwardNetworkID, networkRef string) (ForwardAssuranceSummaryResponse, time.Time, bool, error) {
+	if db == nil {
+		return ForwardAssuranceSummaryResponse{}, time.Time{}, false, fmt.Errorf("db unavailable")
+	}
+	ctxQ, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	var generatedAt time.Time
+	var raw string
+	err := db.QueryRowContext(ctxQ, `
+SELECT generated_at, summary_json::text
+FROM sf_forward_assurance_summaries
+WHERE workspace_id=$1 AND forward_network_id=$2 AND network_ref=$3
+ORDER BY generated_at DESC, id DESC
+LIMIT 1
+`, strings.TrimSpace(workspaceID), strings.TrimSpace(forwardNetworkID), strings.TrimSpace(networkRef)).Scan(&generatedAt, &raw)
+	if err != nil {
+		return ForwardAssuranceSummaryResponse{}, time.Time{}, false, err
+	}
+	var sum ForwardAssuranceSummaryResponse
+	if err := parseJSONBytesInto([]byte(raw), &sum); err != nil {
+		return ForwardAssuranceSummaryResponse{}, time.Time{}, false, err
+	}
+	return sum, generatedAt.UTC(), true, nil
+}
+
+func shouldStoreForwardAssuranceSummary(ctx context.Context, db *sql.DB, workspaceID, forwardNetworkID, networkRef string, minAge time.Duration) bool {
+	if db == nil {
+		return false
+	}
+	ctxQ, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	var newest time.Time
+	err := db.QueryRowContext(ctxQ, `
+SELECT COALESCE(MAX(generated_at), 'epoch'::timestamptz)
+FROM sf_forward_assurance_summaries
+WHERE workspace_id=$1 AND forward_network_id=$2 AND network_ref=$3
+`, strings.TrimSpace(workspaceID), strings.TrimSpace(forwardNetworkID), strings.TrimSpace(networkRef)).Scan(&newest)
+	if err != nil {
+		return false
+	}
+	if newest.IsZero() || newest.Equal(time.Unix(0, 0).UTC()) {
+		return true
+	}
+	return time.Since(newest.UTC()) >= minAge
+}
+
 type forwardAssuranceLiveInputs struct {
 	snapshotBody []byte
 	metricsBody  []byte
@@ -624,7 +686,7 @@ func fetchForwardAssuranceLiveInputs(ctx context.Context, client *forwardClient,
 // GetWorkspaceForwardNetworkAssuranceSummary returns a demo-oriented assurance summary computed from live Forward calls.
 //
 //encore:api auth method=GET path=/api/workspaces/:id/forward-networks/:networkRef/assurance/summary
-func (s *Service) GetWorkspaceForwardNetworkAssuranceSummary(ctx context.Context, id, networkRef string) (*ForwardAssuranceSummaryResponse, error) {
+func (s *Service) GetWorkspaceForwardNetworkAssuranceSummary(ctx context.Context, id, networkRef string, params *ForwardAssuranceSummaryParams) (*ForwardAssuranceSummaryResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -642,6 +704,23 @@ func (s *Service) GetWorkspaceForwardNetworkAssuranceSummary(ctx context.Context
 	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, networkRef)
 	if err != nil {
 		return nil, err
+	}
+
+	// Short cache: avoids hammering Forward APIs during demos.
+	forceFresh := false
+	if params != nil {
+		forceFresh = parseOptionalBoolQuery(params.Fresh)
+	}
+	if !forceFresh && s.db != nil {
+		cached, generatedAt, ok, err := loadLatestForwardAssuranceSummary(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID, net.ID)
+		if err == nil && ok && time.Since(generatedAt) < 30*time.Second {
+			cached.LiveSignals, cached.Warnings = s.countLiveSignals(ctx, pc.claims.Username, 60)
+			cached.Warnings = append(cached.Warnings, "served cached forward summary")
+			return &cached, nil
+		}
+		if err != nil && (err == sql.ErrNoRows || isMissingDBRelation(err)) {
+			// No cache available; fall through to live compute.
+		}
 	}
 
 	client, err := s.capacityForwardClientForUserNetwork(ctx, pc.claims.Username, net.CollectorConfigID)
@@ -677,6 +756,14 @@ func (s *Service) GetWorkspaceForwardNetworkAssuranceSummary(ctx context.Context
 
 	sum := computeForwardAssuranceSummaryFromLive(time.Now(), pc.workspace.ID, net.ID, net.ForwardNetworkID, snap, haveSnap, met, haveMet, vul, haveVul, capAsOf, capRows, capErr)
 	sum.LiveSignals, sum.Warnings = s.countLiveSignals(ctx, pc.claims.Username, 60)
+
+	// Best-effort cache write (rate-limited).
+	if s.db != nil && shouldStoreForwardAssuranceSummary(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID, net.ID, 2*time.Minute) {
+		if err := saveForwardAssuranceSummary(ctx, s.db, sum); err != nil && !isMissingDBRelation(err) {
+			rlog.Error("failed to save forward assurance summary", "error", err)
+		}
+	}
+
 	return &sum, nil
 }
 
@@ -695,7 +782,7 @@ func (s *Service) RefreshWorkspaceForwardNetworkAssurance(ctx context.Context, i
 	if pc.access == "viewer" {
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
-	sum, err := s.GetWorkspaceForwardNetworkAssuranceSummary(ctx, id, networkRef)
+	sum, err := s.GetWorkspaceForwardNetworkAssuranceSummary(ctx, id, networkRef, &ForwardAssuranceSummaryParams{Fresh: "1"})
 	if err != nil {
 		return nil, err
 	}
@@ -717,6 +804,119 @@ func (s *Service) RefreshWorkspaceForwardNetworkAssurance(ctx context.Context, i
 	})
 
 	return sum, nil
+}
+
+type ForwardAssuranceDemoSeedResponse struct {
+	Status   string `json:"status"`
+	SyslogCIDR string `json:"syslogCidr"`
+	Inserted struct {
+		Syslog    int `json:"syslog"`
+		SnmpTraps int `json:"snmpTraps"`
+		Webhooks  int `json:"webhooks"`
+	} `json:"inserted"`
+}
+
+// SeedWorkspaceForwardNetworkAssuranceDemo inserts a small set of synthetic events for demo purposes.
+// Admin-only. It also claims a test CIDR for the current admin user so syslog counts show up.
+//
+//encore:api auth method=POST path=/api/workspaces/:id/forward-networks/:networkRef/assurance/demo/seed
+func (s *Service) SeedWorkspaceForwardNetworkAssuranceDemo(ctx context.Context, id, networkRef string) (*ForwardAssuranceDemoSeedResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	if !user.IsAdmin || user.SelectedRole != "ADMIN" {
+		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
+	}
+	pc, err := s.workspaceContextForUser(user, id)
+	if err != nil {
+		return nil, err
+	}
+	if s.db == nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	// Ensure network exists/accessible (even though we don't use it directly).
+	if _, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, networkRef); err != nil {
+		return nil, err
+	}
+
+	now := time.Now().UTC()
+	cidr := "192.0.2.0/24"
+	label := "demo-seed"
+
+	// Claim CIDR for this admin.
+	{
+		ctxQ, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		_, err := s.db.ExecContext(ctxQ, `
+INSERT INTO sf_syslog_routes (source_cidr, owner_username, label, created_at, updated_at)
+VALUES ($1::cidr, $2, NULLIF($3,''), now(), now())
+ON CONFLICT (source_cidr)
+DO UPDATE SET owner_username=EXCLUDED.owner_username, label=EXCLUDED.label, updated_at=now()
+`, cidr, user.Username, label)
+		if err != nil {
+			return nil, errs.B().Code(errs.Internal).Msg("failed to claim syslog route").Err()
+		}
+	}
+
+	// Insert a few events.
+	syslogCount := 0
+	snmpCount := 0
+	webhookCount := 0
+
+	{
+		ctxQ, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		_, err := s.db.ExecContext(ctxQ, `
+INSERT INTO sf_syslog_events (received_at, source_ip, hostname, app_name, severity, message, raw)
+VALUES
+  ($1, $2::inet, 'demo-router-1', 'demo', 2, 'CRITICAL demo syslog', 'demo-seed'),
+  ($1, $3::inet, 'demo-router-2', 'demo', 5, 'WARN demo syslog', 'demo-seed'),
+  ($1, $4::inet, 'demo-fw-1',     'demo', 6, 'INFO demo syslog', 'demo-seed')
+`, now, "192.0.2.10", "192.0.2.11", "192.0.2.12")
+		if err != nil {
+			return nil, errs.B().Code(errs.Internal).Msg("failed to insert syslog events").Err()
+		}
+		syslogCount = 3
+		_ = notifySyslogUpdatePG(ctxQ, s.db, user.Username)
+	}
+
+	{
+		ctxQ, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		_, err := s.db.ExecContext(ctxQ, `
+INSERT INTO sf_snmp_trap_events (received_at, username, source_ip, community, oid, vars_json, raw_hex)
+VALUES ($1, $2, $3::inet, 'public', '1.3.6.1.6.3.1.1.5.3', '{"demo":true}', '')
+`, now, user.Username, "192.0.2.20")
+		if err != nil {
+			return nil, errs.B().Code(errs.Internal).Msg("failed to insert snmp trap").Err()
+		}
+		snmpCount = 1
+		_ = notifySnmpUpdatePG(ctxQ, s.db, user.Username)
+	}
+
+	{
+		ctxQ, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		_, err := s.db.ExecContext(ctxQ, `
+INSERT INTO sf_webhook_events (received_at, username, token, method, path, source_ip, headers_json, body)
+VALUES ($1, $2, 'demo-seed', 'POST', 'demo', $3::inet, '{}', '{"demo":true}')
+`, now, user.Username, "192.0.2.30")
+		if err != nil {
+			return nil, errs.B().Code(errs.Internal).Msg("failed to insert webhook event").Err()
+		}
+		webhookCount = 1
+		_ = notifyWebhookUpdatePG(ctxQ, s.db, user.Username)
+	}
+
+	out := &ForwardAssuranceDemoSeedResponse{
+		Status:    "ok",
+		SyslogCIDR: cidr,
+	}
+	out.Inserted.Syslog = syslogCount
+	out.Inserted.SnmpTraps = snmpCount
+	out.Inserted.Webhooks = webhookCount
+	return out, nil
 }
 
 // ListWorkspaceForwardNetworkAssuranceSummaryHistory returns recent stored summaries (if enabled via migrations).
