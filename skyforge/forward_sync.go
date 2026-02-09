@@ -247,6 +247,12 @@ func (s *Service) forwardConfigForUser(ctx context.Context, username string) (*f
 		return nil, nil
 	}
 
+	// Preferred: per-user default Forward collector config (sf_user_forward_collectors).
+	if cfg, err := forwardConfigForUserPreferredCollector(ctx, s.db, s.cfg.SessionSecret, username); err == nil && cfg != nil {
+		return cfg, nil
+	}
+
+	// Fallback: legacy per-user Forward credentials (sf_user_forward_credentials).
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	rec, err := getUserForwardCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), username)

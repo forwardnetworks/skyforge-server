@@ -32,12 +32,13 @@ func (s *Service) policyReportsForwardClient(ctx context.Context, workspaceID, u
 
 	// Fallback: legacy per-user Forward credentials.
 	if strings.TrimSpace(username) != "" {
-		if urec, err := getUserForwardCredentials(ctx, s.db, box, strings.ToLower(strings.TrimSpace(username))); err == nil && urec != nil {
+		// Prefer the user's default collector config if present; otherwise fall back to legacy per-user credentials.
+		if cfg, err := s.forwardConfigForUser(ctx, strings.ToLower(strings.TrimSpace(username))); err == nil && cfg != nil {
 			return newForwardClient(forwardCredentials{
-				BaseURL:       urec.BaseURL,
-				SkipTLSVerify: urec.SkipTLSVerify,
-				Username:      urec.ForwardUsername,
-				Password:      urec.ForwardPassword,
+				BaseURL:       cfg.BaseURL,
+				SkipTLSVerify: cfg.SkipTLSVerify,
+				Username:      cfg.Username,
+				Password:      cfg.Password,
 			})
 		}
 	}
