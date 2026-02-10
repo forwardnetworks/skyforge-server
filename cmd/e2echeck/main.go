@@ -913,6 +913,14 @@ func generateMatrixFromCatalog(catalogPath string) (matrixFile, error) {
 				if !getenvBool("SKYFORGE_E2E_ADVANCED", false) && getenvBool("SKYFORGE_E2E_SMOKE_ONLY", true) {
 					env["SKYFORGE_NETLAB_C9S_ENABLE_NETLAB_INITIAL"] = "false"
 				}
+				// Match netlab/containerlab native behavior for Juniper vrnetlab kinds: let the
+				// NOS image boot with its own bootstrap config (SSH/user/etc), then apply netlab
+				// config post-boot via netlab initial (when enabled). Injecting netlab's generated
+				// config as a vrnetlab startup-config can override required bootstrap settings.
+				switch strings.ToLower(strings.TrimSpace(d)) {
+				case "vmx", "vsrx", "vjunos-router", "vjunos-switch", "vptx":
+					env["SKYFORGE_NETLAB_C9S_ENABLE_STARTUP_CONFIG_INJECTION"] = "false"
+				}
 				// If VXLAN smoke is enabled for this device, force multi-node scheduling so the
 				// overlay is actually exercised.
 				if vxlanSmokeEnabledForDevice(d) {
