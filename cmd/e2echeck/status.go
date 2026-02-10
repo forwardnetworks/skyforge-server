@@ -309,6 +309,9 @@ func (r *e2eStatusRecorder) flush() error {
 				st.Notes = "not yet run"
 			}
 		}
+		// Persist any normalization back into the device map; the markdown renderer
+		// uses r.state.Devices (not rows).
+		r.state.Devices[d] = st
 		rows = append(rows, st)
 	}
 	r.state.Rows = rows
