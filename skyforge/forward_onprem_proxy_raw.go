@@ -444,6 +444,14 @@ func (s *Service) forwardOnPremProxyRaw(w http.ResponseWriter, req *http.Request
 
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	origDirector := proxy.Director
+	origHost := strings.TrimSpace(req.Host)
+	if origHost == "" {
+		origHost = strings.TrimSpace(req.Header.Get("X-Forwarded-Host"))
+	}
+	publicScheme := ""
+	if u, err := url.Parse(strings.TrimSpace(s.cfg.PublicURL)); err == nil {
+		publicScheme = strings.TrimSpace(u.Scheme)
+	}
 	proxy.Director = func(r *http.Request) {
 		if origDirector != nil {
 			origDirector(r)
@@ -451,8 +459,37 @@ func (s *Service) forwardOnPremProxyRaw(w http.ResponseWriter, req *http.Request
 		r.URL.Path = upPath
 		r.URL.RawPath = ""
 		r.URL.RawQuery = upQuery
-		// Forward expects host-based routing sometimes; set Host to upstream.
-		r.Host = target.Host
+
+		// Important: do NOT set Host to the upstream service DNS name.
+		// When Host is the internal cluster.local name, Forward issues redirects to
+		// internal URLs (e.g. https://fwd-appserver.forward.svc.cluster.local:8443/)
+		// which the browser cannot resolve.
+		//
+		// Keep the external host so Forward generates browser-valid redirects.
+		extHost := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
+		if extHost == "" {
+			extHost = origHost
+		}
+		if extHost != "" {
+			r.Host = extHost
+			if strings.TrimSpace(r.Header.Get("X-Forwarded-Host")) == "" {
+				r.Header.Set("X-Forwarded-Host", extHost)
+			}
+		}
+
+		// Prefer propagating the external scheme so Forward doesn't bounce users to
+		// its internal HTTPS port (8443).
+		if strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")) == "" {
+			scheme := publicScheme
+			if scheme == "" {
+				// Skyforge is almost always served over HTTPS.
+				scheme = "https"
+			}
+			r.Header.Set("X-Forwarded-Proto", scheme)
+		}
+		if strings.TrimSpace(r.Header.Get("X-Forwarded-Port")) == "" && strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https") {
+			r.Header.Set("X-Forwarded-Port", "443")
+		}
 
 		// If Envoy already provided a prefix header, keep it. It helps Forward build absolute URLs.
 		if v := strings.TrimSpace(r.Header.Get("X-Forwarded-Prefix")); v == "" {
