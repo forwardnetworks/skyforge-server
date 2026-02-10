@@ -93,6 +93,12 @@ func (r *e2eStatusRecorder) syncFromRunlog(runlogPath string) {
 		if st != "pass" && st != "fail" && st != "skip" {
 			continue
 		}
+		// Skip entries are often emitted when a device was filtered out for a given
+		// run (e.g. SKYFORGE_E2E_DEVICES). They should not overwrite the last-known
+		// pass/fail status for a device.
+		if st == "skip" {
+			continue
+		}
 
 		at := strings.TrimSpace(e.At)
 		if at == "" {
@@ -196,6 +202,12 @@ func (r *e2eStatusRecorder) update(device string, status string, template string
 	}
 	device = strings.TrimSpace(device)
 	if device == "" {
+		return
+	}
+	// Skip updates are typically emitted when a device was filtered out for a
+	// given run. Don't let that clobber the last-known pass/fail status.
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "skip", "skipped":
 		return
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
