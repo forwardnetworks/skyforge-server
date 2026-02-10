@@ -40,6 +40,12 @@ checks:
         default: [22, 23, 445, 3389, 1433, 1521, 3306, 5432, 6379, 9200, 27017]
         description: "Ports considered sensitive when permitted to private address space."
 
+  - id: "acl-rfc1918-to-internet-any-service.nqe"
+    title: "PERMIT RFC1918 to internet any-service (modeled ACL)"
+    category: "policy-risk"
+    severity: "high"
+    description: "Flags firewall PERMIT rules where source overlaps RFC1918, destination is not restricted to RFC1918 (internet-facing), and the service match is effectively any-protocol + any-port."
+
   - id: "acl-any-to-zone-any-service.nqe"
     title: "PERMIT any-to-zone any-service (modeled ACL)"
     category: "segmentation"

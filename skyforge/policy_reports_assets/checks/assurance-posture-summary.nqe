@@ -92,6 +92,54 @@ aclAnyService =
     hitCount: aclEntry.lifecycleData?.truncatedHitCount
   };
 
+aclRfc1918ToInternetAnyService =
+  foreach device in network.devices
+  where device.platform.deviceType == DeviceType.FIREWALL
+  foreach aclEntry in device.aclEntries
+  let h = aclEntry.headerMatches
+  where aclEntry.action == AclAction.PERMIT
+  where !aclEntry.implicitRule
+  where !aclEntry.defaultRule
+
+  let srcOverlapsPrivate =
+    length(h.ipv4Src) == 0 ||
+    !isEmpty(intersect(ipAddressSet(h.ipv4Src), privateIpAddressSet))
+  let dstIsInternet =
+    length(h.ipv4Dst) == 0 ||
+    !(ipAddressSet(h.ipv4Dst) in privateIpAddressSet)
+
+  let isAnyProto =
+    length(h.ipProtocol) == 0 ||
+    any(foreach r in h.ipProtocol select r.start <= 0 && 255 <= r.end)
+  let isAnyPort =
+    length(h.tpDst) == 0 ||
+    any(foreach r in h.tpDst select r.start <= 0 && 65535 <= r.end)
+
+  where srcOverlapsPrivate
+  where dstIsInternet
+  where isAnyProto && isAnyPort
+  select {
+    violation: true,
+    checkId: "acl-rfc1918-to-internet-any-service.nqe",
+    checkTitle: "PERMIT RFC1918 to internet any-service (modeled ACL)",
+    category: "policy-risk",
+    severity: "high",
+    findingId: device.name + ":" + aclEntry.name + ":rfc1918-to-internet-any-service",
+    assetKey: device.name,
+
+    device: device.name,
+    rule: aclEntry.name,
+    action: aclEntry.action,
+    reason: "RFC1918_TO_INTERNET_ANY_SERVICE",
+    evidence: sourceConfigText(aclEntry.name),
+    ipv4Src: h.ipv4Src,
+    ipv4Dst: h.ipv4Dst,
+    ipProto: h.ipProtocol,
+    tpDst: h.tpDst,
+    lastUsed: aclEntry.lifecycleData?.lastUsed,
+    hitCount: aclEntry.lifecycleData?.truncatedHitCount
+  };
+
 aclAnyToRfc1918(sensitivePorts) =
   foreach device in network.devices
   foreach aclEntry in device.aclEntries
@@ -194,6 +242,7 @@ ospfPassiveDefaultMissing =
 assurancePostureSummary(sensitivePorts : List<Integer>) =
   aclAnyAny +
   aclAnyService +
+  aclRfc1918ToInternetAnyService +
   aclAnyToRfc1918(sensitivePorts) +
   defaultRouteNoUrpf +
   ospfPassiveDefaultMissing;

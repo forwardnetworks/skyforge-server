@@ -1,0 +1,72 @@
+/**
+ * @intent Policy risk: PERMIT RFC1918 to internet on any service (modeled ACL).
+ * @description
+ *  Uses modelled ACL entries (device.aclEntries) rather than config text.
+ *  Flags PERMIT rules where the source overlaps RFC1918 and the destination is not
+ *  restricted to RFC1918 (i.e., includes any public space, or is "any"),
+ *  AND the service match is effectively "any protocol" AND "any destination port".
+ *
+ *  This is a high-signal egress control gap conversation starter for competitive demos:
+ *  "Do you have any egress segmentation, or is internal -> internet broadly allowed?"
+ */
+
+privateSubnets =
+  [ipSubnet("10.0.0.0/8"),
+   ipSubnet("172.16.0.0/12"),
+   ipSubnet("192.168.0.0/16")
+  ];
+privateIpAddressSet = ipAddressSet(privateSubnets);
+
+@query
+aclRfc1918ToInternetAnyService =
+  foreach device in network.devices
+  where device.platform.deviceType == DeviceType.FIREWALL
+
+  foreach aclEntry in device.aclEntries
+  let h = aclEntry.headerMatches
+  where aclEntry.action == AclAction.PERMIT
+  where !aclEntry.implicitRule
+  where !aclEntry.defaultRule
+
+  let srcOverlapsPrivate =
+    length(h.ipv4Src) == 0 ||
+    !isEmpty(intersect(ipAddressSet(h.ipv4Src), privateIpAddressSet))
+
+  // Destination is considered "internet-facing" if it isn't restricted to RFC1918.
+  // Empty dst (any) counts as internet-facing.
+  let dstIsInternet =
+    length(h.ipv4Dst) == 0 ||
+    !(ipAddressSet(h.ipv4Dst) in privateIpAddressSet)
+
+  let isAnyProto =
+    length(h.ipProtocol) == 0 ||
+    any(foreach r in h.ipProtocol select r.start <= 0 && 255 <= r.end)
+  let isAnyPort =
+    length(h.tpDst) == 0 ||
+    any(foreach r in h.tpDst select r.start <= 0 && 65535 <= r.end)
+
+  where srcOverlapsPrivate
+  where dstIsInternet
+  where isAnyProto && isAnyPort
+  select {
+    violation: true,
+    device: device.name,
+    rule: aclEntry.name,
+    action: aclEntry.action,
+    reason: "RFC1918_TO_INTERNET_ANY_SERVICE",
+    evidence: sourceConfigText(aclEntry.name),
+    ipv4Src: h.ipv4Src,
+    ipv4Dst: h.ipv4Dst,
+    ipProto: h.ipProtocol,
+    tpDst: h.tpDst,
+    lastUsed: aclEntry.lifecycleData?.lastUsed,
+    hitCount: aclEntry.lifecycleData?.truncatedHitCount,
+    createdAt: aclEntry.lifecycleData?.createdAt,
+    lastModified: aclEntry.lifecycleData?.lastModified,
+    ingress: aclEntry.metadataMatches.ingressInterfaces,
+    egress: aclEntry.metadataMatches.egressInterfaces,
+    os: device.platform.os,
+    vendor: device.platform.vendor,
+    tags: device.tagNames
+  };
+

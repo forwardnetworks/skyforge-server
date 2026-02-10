@@ -195,6 +195,21 @@ DO UPDATE SET
 		}
 	}
 
+	if err := policyReportsResolveAgg(ctx, tx, run, finishedAt, presentByCheck, resolveChecks); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func policyReportsResolveAgg(ctx context.Context, tx *sql.Tx, run *PolicyReportRun, finishedAt time.Time, presentByCheck map[string]map[string]bool, resolveChecks map[string]policyReportsResolveSpec) error {
+	if tx == nil || run == nil {
+		return fmt.Errorf("invalid input")
+	}
+
 	// Mark resolved for checks where we are confident we saw the full set (no truncation).
 	for checkID, spec := range resolveChecks {
 		if !spec.CanResolve {
@@ -207,7 +222,7 @@ DO UPDATE SET
 		suiteKey := strings.TrimSpace(spec.SuiteKey)
 		current := presentByCheck[checkID]
 		if current == nil {
-			current = map[string]bool{} // empty set => resolve all actives for this check
+			current = map[string]bool{} // empty set => resolve all actives for this check (within suite, if provided)
 		}
 
 		var rows *sql.Rows
@@ -275,10 +290,6 @@ UPDATE sf_policy_report_findings_agg
 				return err
 			}
 		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return err
 	}
 	return nil
 }
