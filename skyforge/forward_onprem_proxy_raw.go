@@ -398,13 +398,32 @@ func (s *Service) forwardOnPremProxyRaw(w http.ResponseWriter, req *http.Request
 	forwardOnPremAutosleepState.mu.Unlock()
 
 	if enabled {
-		ctxWake, cancel := context.WithTimeout(req.Context(), wakeTimeout)
-		defer cancel()
-		if err := forwardOnPremEnsureAwake(ctxWake, wakeTimeout); err != nil {
-			rlog.Warn("forward onprem wake failed", "err", err)
-			w.Header().Set("Retry-After", "10")
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = w.Write([]byte("Forward is waking up; please retry.\n"))
+		// Always kick off a scale-up (idempotent) but avoid holding the browser
+		// request open for minutes. If Forward isn't ready quickly, return a
+		// small "waking up" response and let the browser retry.
+		ctxScale, cancel := context.WithTimeout(req.Context(), 30*time.Second)
+		if err := forwardOnPremScale(ctxScale, 1); err != nil {
+			cancel()
+			rlog.Warn("forward onprem wake failed (scale)", "err", err)
+			writeForwardOnPremWaking(w, req, err)
+			return
+		}
+		cancel()
+
+		blockWait := 5 * time.Second
+		if wakeTimeout > 0 && wakeTimeout < blockWait {
+			blockWait = wakeTimeout
+		}
+		if blockWait < 500*time.Millisecond {
+			blockWait = 500 * time.Millisecond
+		}
+
+		ctxWait, cancel := context.WithTimeout(req.Context(), blockWait)
+		err := forwardOnPremWaitReady(ctxWait)
+		cancel()
+		if err != nil {
+			rlog.Info("forward onprem waking up", "err", err, "block_wait", blockWait.String())
+			writeForwardOnPremWaking(w, req, err)
 			return
 		}
 	}
@@ -446,6 +465,52 @@ func (s *Service) forwardOnPremProxyRaw(w http.ResponseWriter, req *http.Request
 	}
 
 	proxy.ServeHTTP(w, req)
+}
+
+func writeForwardOnPremWaking(w http.ResponseWriter, req *http.Request, err error) {
+	// Encourage clients and intermediate caches not to store the transient wake response.
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Retry-After", "5")
+
+	accept := strings.ToLower(req.Header.Get("Accept"))
+	if strings.Contains(accept, "text/html") {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		// Keep HTML tiny and dependency-free; this is served before Forward is ready.
+		_, _ = w.Write([]byte(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="refresh" content="5" />
+  <title>Forward is waking up</title>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; padding: 32px; background: #0b1220; color: #e6edf7; }
+    .card { max-width: 720px; margin: 0 auto; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); border-radius: 14px; padding: 20px 18px; }
+    h1 { font-size: 18px; margin: 0 0 8px; }
+    p { margin: 0 0 10px; line-height: 1.4; color: rgba(230,237,247,0.85); }
+    a { color: #9dd7ff; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code { background: rgba(0,0,0,0.35); padding: 2px 6px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Forward is waking up</h1>
+    <p>Skyforge is starting the on-prem Forward workloads. This page will retry automatically in 5 seconds.</p>
+    <p>If it doesn’t load, click <a href="">Retry now</a>.</p>
+    <p style="opacity:0.7;font-size:12px;margin-top:12px;">(If this keeps repeating, check Forward pod readiness in the <code>forward</code> namespace.)</p>
+  </div>
+</body>
+</html>`))
+		return
+	}
+
+	// Non-browser clients (Forward XHR, CLI, etc).
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	_, _ = w.Write([]byte("Forward is waking up; please retry.\n"))
+	_ = err
 }
 
 // ForwardOnPremProxyGET proxies a Forward on-prem UI/API request under Skyforge SSO.
