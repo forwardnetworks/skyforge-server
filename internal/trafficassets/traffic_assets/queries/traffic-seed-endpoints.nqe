@@ -7,24 +7,60 @@ We intentionally keep this query vendor-agnostic and lightweight.
 Notes:
 - `device.platform.managementIps` may have multiple entries; we pick a deterministic
   single management IP per device (lexicographically smallest).
-- The Skyforge backend applies tag/name/deviceType filters (demo knobs).
+- Tag/name filters are substring matches (case-insensitive), mirroring the demo UI.
+- Device type filter is an exact match (case-insensitive), mirroring the demo UI.
 */
 
-@query
-trafficSeedEndpoints =
-  foreach device in network.devices
-  let ips =
-    foreach ip in device.platform.managementIps
-    let v = if isPresent(ip) then ip else ""
+asLower(s) =
+  toLowerCase(if isPresent(s) then s else "");
+
+nonEmptyLower(ss) =
+  (
+    foreach s in ss
+    let v = asLower(s)
     where v != ""
     select v
-    order by v ascending
-  where length(ips) > 0
-  let mgmtIp = ips[0]
+  );
+
+matchesAnyPart(hayLower, partsLower) =
+  length(partsLower) == 0 ||
+  any(foreach p in partsLower
+      // NQE `matches` behaves like a substring/regex predicate; we rely on
+      // the demo input being simple tokens (no escaping).
+      select p != "" && matches(hayLower, p));
+
+tagListMatchesAnyPart(tags, partsLower) =
+  length(partsLower) == 0 ||
+  any(foreach t in tags
+      let tl = asLower(t)
+      select matchesAnyPart(tl, partsLower));
+
+@query
+trafficSeedEndpoints(
+  tagParts : List<String>,
+  nameParts : List<String>,
+  deviceTypes : List<String>,
+  includeGroups : Bool
+) =
+  foreach device in network.devices
+  let tagPartsLower = nonEmptyLower(tagParts)
+  let namePartsLower = nonEmptyLower(nameParts)
+  let deviceTypesLower = nonEmptyLower(deviceTypes)
+  let devName = device.name
+  let dtLower = asLower(toString(device.platform.deviceType))
+  let tags = device.tagNames
+  where matchesAnyPart(asLower(devName), namePartsLower)
+  where length(deviceTypesLower) == 0 || dtLower in deviceTypesLower
+  where tagListMatchesAnyPart(tags, tagPartsLower) ||
+        (includeGroups && tagListMatchesAnyPart(device.groupNames, tagPartsLower))
+  foreach ip in device.platform.managementIps
+  let mgmtIp = if isPresent(ip) then toString(ip) else ""
+  where mgmtIp != ""
   select {
-    deviceName: device.name,
+    deviceName: devName,
     deviceType: device.platform.deviceType,
     tagNames: device.tagNames,
     groupNames: device.groupNames,
     mgmtIp: mgmtIp
-  };
+  }
+  order by devName ascending, mgmtIp ascending;

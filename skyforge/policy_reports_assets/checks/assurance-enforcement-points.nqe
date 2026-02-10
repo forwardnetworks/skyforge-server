@@ -16,17 +16,18 @@ asLower(s) =
   toLowerCase(if isPresent(s) then s else "");
 
 nonEmptyLower(ss) =
-  foreach s in ss
-  let v = asLower(s)
-  where v != ""
-  select v;
+  (
+    foreach s in ss
+    let v = asLower(s)
+    where v != ""
+    select v
+  );
 
 isDefaultEnforcementType(dt) =
-  let s = asLower(toString(dt))
-  s == "firewall" ||
-  s == "aws_network_firewall" ||
-  s == "azure_firewall" ||
-  s == "azure_virtual_appliance";
+  asLower(toString(dt)) in ["firewall",
+                            "aws_network_firewall",
+                            "azure_firewall",
+                            "azure_virtual_appliance"];
 
 typeMatches(dt, wantedLower) =
   (length(wantedLower) == 0 && isDefaultEnforcementType(dt)) ||
@@ -49,17 +50,16 @@ assuranceEnforcementPoints(
   enforcementTagParts : List<String>,
   includeGroups : Bool
 ) =
+  foreach device in network.devices
   let devTypesLower = nonEmptyLower(enforcementDeviceTypes)
   let namePartsLower = nonEmptyLower(enforcementDeviceNameParts)
   let tagPartsLower = nonEmptyLower(enforcementTagParts)
-  foreach device in network.devices
   let dt = device.platform.deviceType
   let tags = device.tagNames
-  let groups = if includeGroups then device.groupNames else bag([])
   where typeMatches(dt, devTypesLower) ||
         nameMatches(device.name, namePartsLower) ||
         tagMatches(tags, tagPartsLower) ||
-        tagMatches(groups, tagPartsLower)
+        (includeGroups && tagMatches(device.groupNames, tagPartsLower))
   select {
     deviceName: device.name,
     deviceType: toString(dt),

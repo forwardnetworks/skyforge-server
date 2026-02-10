@@ -215,32 +215,6 @@ func (s *Service) PostWorkspaceForwardNetworkAssuranceTrafficSeeds(ctx context.C
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load seed query").Err()
 	}
 
-	qv := url.Values{}
-	qv.Set("networkId", net.ForwardNetworkID)
-	if v := strings.TrimSpace(req.SnapshotID); v != "" {
-		qv.Set("snapshotId", v)
-	}
-	payload := map[string]any{"query": queryText}
-
-	rawPath := forwardAPIPathFor(client, "/nqe")
-	resp, body, err := client.doJSON(ctx, http.MethodPost, rawPath, qv, payload)
-	if err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("Forward request failed").Err()
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, errs.B().Code(errs.Unavailable).Msg("Forward NQE failed").Meta("upstream", strings.TrimSpace(string(body))).Err()
-	}
-
-	var nqeOut fwdNqeRunResult
-	if err := json.Unmarshal(body, &nqeOut); err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to decode Forward NQE response").Err()
-	}
-
-	rows := []trafficSeedEndpointRow{}
-	if err := json.Unmarshal(nqeOut.Items, &rows); err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to decode seed items").Err()
-	}
-
 	tagParts := normalizeParts(req.TagParts)
 	nameParts := normalizeParts(req.NameParts)
 	devTypes := normalizeParts(req.DeviceTypes)
@@ -253,6 +227,43 @@ func (s *Service) PostWorkspaceForwardNetworkAssuranceTrafficSeeds(ctx context.C
 	dstNameParts := normalizeParts(req.DstNameParts)
 	dstDevTypes := normalizeParts(req.DstDeviceTypes)
 
+	runSeed := func(tagParts, nameParts, devTypes []string) ([]trafficSeedEndpointRow, string, error) {
+		qv := url.Values{}
+		qv.Set("networkId", net.ForwardNetworkID)
+		if v := strings.TrimSpace(req.SnapshotID); v != "" {
+			qv.Set("snapshotId", v)
+		}
+		payload := map[string]any{
+			"query": queryText,
+			"parameters": map[string]any{
+				"tagParts":      tagParts,
+				"nameParts":     nameParts,
+				"deviceTypes":   devTypes,
+				"includeGroups": includeGroups,
+			},
+		}
+
+		rawPath := forwardAPIPathFor(client, "/nqe")
+		resp, body, err := client.doJSON(ctx, http.MethodPost, rawPath, qv, payload)
+		if err != nil {
+			return nil, "", errs.B().Code(errs.Unavailable).Msg("Forward request failed").Err()
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return nil, "", errs.B().Code(errs.Unavailable).Msg("Forward NQE failed").Meta("upstream", strings.TrimSpace(string(body))).Err()
+		}
+
+		var nqeOut fwdNqeRunResult
+		if err := json.Unmarshal(body, &nqeOut); err != nil {
+			return nil, "", errs.B().Code(errs.Unavailable).Msg("failed to decode Forward NQE response").Err()
+		}
+
+		rows := []trafficSeedEndpointRow{}
+		if err := json.Unmarshal(nqeOut.Items, &rows); err != nil {
+			return nil, "", errs.B().Code(errs.Unavailable).Msg("failed to decode seed items").Err()
+		}
+		return rows, strings.TrimSpace(nqeOut.SnapshotID), nil
+	}
+
 	toEndpoint := func(r trafficSeedEndpointRow) AssuranceTrafficEndpoint {
 		return AssuranceTrafficEndpoint{
 			DeviceName: strings.TrimSpace(r.DeviceName),
@@ -263,99 +274,82 @@ func (s *Service) PostWorkspaceForwardNetworkAssuranceTrafficSeeds(ctx context.C
 		}
 	}
 
-	matchesEndpoint := func(r trafficSeedEndpointRow, tagParts, nameParts, devTypes []string) bool {
-		dev := strings.TrimSpace(r.DeviceName)
-		if dev == "" || strings.TrimSpace(r.MgmtIP) == "" {
-			return false
-		}
-
-		if len(nameParts) > 0 {
-			hay := strings.ToLower(dev)
-			ok := false
-			for _, p := range nameParts {
-				if p != "" && strings.Contains(hay, p) {
-					ok = true
-					break
-				}
-			}
-			if !ok {
-				return false
-			}
-		}
-
-		if len(devTypes) > 0 {
-			hay := strings.ToLower(strings.TrimSpace(r.DeviceType))
-			ok := false
-			for _, p := range devTypes {
-				if p != "" && hay == p {
-					ok = true
-					break
-				}
-			}
-			if !ok {
-				return false
-			}
-		}
-
-		if len(tagParts) > 0 {
-			ok := false
-			for _, t := range r.TagNames {
-				tl := strings.ToLower(strings.TrimSpace(t))
-				for _, p := range tagParts {
-					if p != "" && strings.Contains(tl, p) {
-						ok = true
-						break
-					}
-				}
-				if ok {
-					break
-				}
-			}
-			if !ok && includeGroups {
-				for _, t := range r.GroupNames {
-					tl := strings.ToLower(strings.TrimSpace(t))
-					for _, p := range tagParts {
-						if p != "" && strings.Contains(tl, p) {
-							ok = true
-							break
-						}
-					}
-					if ok {
-						break
-					}
-				}
-			}
-			if !ok {
-				return false
-			}
-		}
-		return true
-	}
-
-	allEndpoints := make([]AssuranceTrafficEndpoint, 0, len(rows))
+	var snapshotOut string
+	endpoints := []AssuranceTrafficEndpoint{}
 	srcEndpoints := []AssuranceTrafficEndpoint{}
 	dstEndpoints := []AssuranceTrafficEndpoint{}
-	for _, r := range rows {
-		allEndpoints = append(allEndpoints, toEndpoint(r))
 
-		switch mode {
-		case "mesh":
-			if matchesEndpoint(r, tagParts, nameParts, devTypes) {
-				srcEndpoints = append(srcEndpoints, toEndpoint(r))
-				dstEndpoints = append(dstEndpoints, toEndpoint(r))
+	switch mode {
+	case "mesh":
+		rows, snap, err := runSeed(tagParts, nameParts, devTypes)
+		if err != nil {
+			return nil, err
+		}
+		snapshotOut = snap
+		endpoints = make([]AssuranceTrafficEndpoint, 0, len(rows))
+		seen := map[string]bool{}
+		for _, r := range rows {
+			ep := toEndpoint(r)
+			k := strings.ToLower(strings.TrimSpace(ep.DeviceName))
+			if k == "" || seen[k] {
+				continue
 			}
-		case "cross":
-			if matchesEndpoint(r, srcTagParts, srcNameParts, srcDevTypes) {
-				srcEndpoints = append(srcEndpoints, toEndpoint(r))
+			seen[k] = true
+			endpoints = append(endpoints, ep)
+		}
+		// Mesh mode: src==dst set. The portal reads `endpoints` for counts in mesh mode.
+		srcEndpoints = endpoints
+		dstEndpoints = endpoints
+	case "cross":
+		srcRows, snap1, err := runSeed(srcTagParts, srcNameParts, srcDevTypes)
+		if err != nil {
+			return nil, err
+		}
+		dstRows, snap2, err := runSeed(dstTagParts, dstNameParts, dstDevTypes)
+		if err != nil {
+			return nil, err
+		}
+		if snap1 != "" {
+			snapshotOut = snap1
+		} else {
+			snapshotOut = snap2
+		}
+
+		seenSrc := map[string]bool{}
+		for _, r := range srcRows {
+			ep := toEndpoint(r)
+			k := strings.ToLower(strings.TrimSpace(ep.DeviceName))
+			if k == "" || seenSrc[k] {
+				continue
 			}
-			if matchesEndpoint(r, dstTagParts, dstNameParts, dstDevTypes) {
-				dstEndpoints = append(dstEndpoints, toEndpoint(r))
+			seenSrc[k] = true
+			srcEndpoints = append(srcEndpoints, ep)
+		}
+		seenDst := map[string]bool{}
+		for _, r := range dstRows {
+			ep := toEndpoint(r)
+			k := strings.ToLower(strings.TrimSpace(ep.DeviceName))
+			if k == "" || seenDst[k] {
+				continue
 			}
+			seenDst[k] = true
+			dstEndpoints = append(dstEndpoints, ep)
+		}
+
+		// Return the union as a convenience (not required by the current portal flow).
+		seen := map[string]bool{}
+		for _, ep := range append(srcEndpoints, dstEndpoints...) {
+			k := strings.ToLower(strings.TrimSpace(ep.DeviceName))
+			if k == "" || seen[k] {
+				continue
+			}
+			seen[k] = true
+			endpoints = append(endpoints, ep)
 		}
 	}
 
-	sort.Slice(allEndpoints, func(i, j int) bool {
-		return strings.ToLower(allEndpoints[i].DeviceName) < strings.ToLower(allEndpoints[j].DeviceName)
+	sort.Slice(endpoints, func(i, j int) bool {
+		return strings.ToLower(endpoints[i].DeviceName) < strings.ToLower(endpoints[j].DeviceName)
 	})
 	sort.Slice(srcEndpoints, func(i, j int) bool {
 		return strings.ToLower(srcEndpoints[i].DeviceName) < strings.ToLower(srcEndpoints[j].DeviceName)
@@ -369,6 +363,27 @@ func (s *Service) PostWorkspaceForwardNetworkAssuranceTrafficSeeds(ctx context.C
 	}
 	if len(dstEndpoints) > maxDevices {
 		dstEndpoints = dstEndpoints[:maxDevices]
+	}
+
+	// Ensure the primary endpoint list reflects the effective endpoint sets used
+	// for demand generation (keeps mesh-mode UI semantics intuitive).
+	if mode == "mesh" {
+		endpoints = srcEndpoints
+	} else {
+		seen := map[string]bool{}
+		union := make([]AssuranceTrafficEndpoint, 0, len(srcEndpoints)+len(dstEndpoints))
+		for _, ep := range append(srcEndpoints, dstEndpoints...) {
+			k := strings.ToLower(strings.TrimSpace(ep.DeviceName))
+			if k == "" || seen[k] {
+				continue
+			}
+			seen[k] = true
+			union = append(union, ep)
+		}
+		sort.Slice(union, func(i, j int) bool {
+			return strings.ToLower(union[i].DeviceName) < strings.ToLower(union[j].DeviceName)
+		})
+		endpoints = union
 	}
 
 	demands := []AssuranceTrafficDemand{}
@@ -396,12 +411,17 @@ func (s *Service) PostWorkspaceForwardNetworkAssuranceTrafficSeeds(ctx context.C
 		}
 	}
 
+	snapOut := strings.TrimSpace(req.SnapshotID)
+	if snapOut == "" {
+		snapOut = snapshotOut
+	}
+
 	return &AssuranceTrafficSeedResponse{
 		WorkspaceID:      pc.workspace.ID,
 		NetworkRef:       net.ID,
 		ForwardNetworkID: net.ForwardNetworkID,
-		SnapshotID:       strings.TrimSpace(req.SnapshotID),
-		Endpoints:        allEndpoints,
+		SnapshotID:       snapOut,
+		Endpoints:        endpoints,
 		SrcEndpoints:     srcEndpoints,
 		DstEndpoints:     dstEndpoints,
 		Demands:          demands,
