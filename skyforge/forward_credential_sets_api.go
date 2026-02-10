@@ -180,6 +180,9 @@ func (s *Service) CreateUserForwardCredentialSet(ctx context.Context, req *Creat
 		Password:      fwdPass,
 	}, "", "", ""); err != nil {
 		log.Printf("forward credential set create: %v", err)
+		if isMissingDBRelation(err) {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("database migrations are pending (missing sf_credentials table)").Err()
+		}
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to save credential set").Err()
 	}
 	if err := tx.Commit(); err != nil {
@@ -287,6 +290,9 @@ UPDATE sf_credentials
 `, name, encBase, req.SkipTLSVerify, encUser, encPass, id, user.Username)
 	if err != nil {
 		log.Printf("forward credential set update: %v", err)
+		if isMissingDBRelation(err) {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("database migrations are pending (missing sf_credentials table)").Err()
+		}
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to update credential set").Err()
 	}
 	n, _ := res.RowsAffected()
@@ -340,6 +346,9 @@ DELETE FROM sf_credentials
  WHERE id=$1 AND provider='forward' AND owner_username=$2 AND workspace_id IS NULL
 `, id, user.Username)
 	if err != nil {
+		if isMissingDBRelation(err) {
+			return nil, errs.B().Code(errs.FailedPrecondition).Msg("database migrations are pending (missing sf_credentials table)").Err()
+		}
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to delete credential set").Err()
 	}
 	n, _ := res.RowsAffected()
