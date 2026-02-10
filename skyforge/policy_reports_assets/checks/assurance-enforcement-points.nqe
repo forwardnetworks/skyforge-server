@@ -7,9 +7,10 @@
  *  Notes:
  *  - This is intentionally conservative by default: if no explicit deviceTypes
  *    are provided, we match only explicit firewall-ish device types.
- *  - nameParts/tagParts are exact (case-insensitive) matches in NQE. The Go
- *    layer may still apply substring matching against hop metadata for UI
- *    convenience.
+ *  - nameParts/tagParts are substring (case-insensitive) matches in NQE, mirroring
+ *    the demo UI semantics.
+ *  - The Go layer treats the NQE-derived device set as authoritative when present,
+ *    and uses local substring matching only as a fallback if the helper query fails.
  */
 
 asLower(s) =
@@ -33,15 +34,17 @@ typeMatches(dt, wantedLower) =
   (length(wantedLower) == 0 && isDefaultEnforcementType(dt)) ||
   (length(wantedLower) > 0 && asLower(toString(dt)) in wantedLower);
 
-nameMatches(deviceName, namePartsLower) =
-  length(namePartsLower) > 0 &&
-  asLower(deviceName) in namePartsLower;
+matchesAnyPart(hayLower, partsLower) =
+  length(partsLower) > 0 &&
+  any(foreach p in partsLower
+      // NQE `matches` behaves like a substring/regex predicate; we rely on
+      // the demo input being simple tokens (no escaping).
+      select p != "" && matches(hayLower, p));
 
 tagMatches(tags, partsLower) =
-  length(partsLower) > 0 &&
   any(foreach t in tags
       let tl = asLower(t)
-      select tl != "" && tl in partsLower);
+      select tl != "" && matchesAnyPart(tl, partsLower));
 
 @query
 assuranceEnforcementPoints(
@@ -57,9 +60,9 @@ assuranceEnforcementPoints(
   let dt = device.platform.deviceType
   let tags = device.tagNames
   where typeMatches(dt, devTypesLower) ||
-        nameMatches(device.name, namePartsLower) ||
-        tagMatches(tags, tagPartsLower) ||
-        (includeGroups && tagMatches(device.groupNames, tagPartsLower))
+        matchesAnyPart(asLower(device.name), namePartsLower) ||
+        (length(tagPartsLower) > 0 && (tagMatches(tags, tagPartsLower) ||
+                                      (includeGroups && tagMatches(device.groupNames, tagPartsLower))))
   select {
     deviceName: device.name,
     deviceType: toString(dt),

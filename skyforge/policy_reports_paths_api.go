@@ -693,6 +693,13 @@ func hopIsEnforcement(h prFwdPathHop, matcher assuranceEnforcementMatcher, nameP
 			return true
 		}
 	}
+
+	// Fallback only: if the helper NQE didn't return a deviceName set, preserve
+	// older demo semantics by substring matching against hop metadata.
+	if matcher.deviceNameSet != nil {
+		return false
+	}
+
 	nameHay := strings.ToLower(strings.TrimSpace(h.DeviceName + " " + h.DisplayName))
 	for _, p := range nameParts {
 		if p != "" && strings.Contains(nameHay, p) {
