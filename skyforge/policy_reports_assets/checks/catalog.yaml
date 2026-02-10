@@ -345,3 +345,26 @@ checks:
         type: "Integer"
         default: -1
         description: "Destination port. Use -1 to ignore."
+
+  - id: "assurance-enforcement-points.nqe"
+    title: "Assurance helper: enforcement points"
+    category: "assurance"
+    severity: "low"
+    description: "Helper query: returns devices that should be treated as enforcement points (by device type and optional exact tag/name matches)."
+    params:
+      - name: "enforcementDeviceTypes"
+        type: "List<String>"
+        default: []
+        description: "Optional: explicit deviceType strings (case-insensitive). Empty uses conservative defaults."
+      - name: "enforcementDeviceNameParts"
+        type: "List<String>"
+        default: []
+        description: "Optional: exact (case-insensitive) device name matches. Go layer may still apply substring matching against hop metadata."
+      - name: "enforcementTagParts"
+        type: "List<String>"
+        default: []
+        description: "Optional: exact (case-insensitive) tag/group matches. Go layer may still apply substring matching against hop metadata."
+      - name: "includeGroups"
+        type: "Bool"
+        default: true
+        description: "If true, tag matching also considers groupNames."

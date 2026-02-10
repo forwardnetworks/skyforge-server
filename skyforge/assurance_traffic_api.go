@@ -586,22 +586,33 @@ func (s *Service) PostWorkspaceForwardNetworkAssuranceTrafficEvaluate(ctx contex
 	if req.Enforcement != nil && req.Enforcement.RequireEnforcement != nil {
 		requireEnf = *req.Enforcement.RequireEnforcement
 	}
-	typeSet := map[string]bool{}
 	nameParts := []string{}
 	tagParts := []string{}
-	if req.Enforcement == nil || len(req.Enforcement.DeviceTypes) == 0 {
-		typeSet = defaultEnforcementDeviceTypes()
-	} else {
-		for _, t := range req.Enforcement.DeviceTypes {
-			t = strings.ToUpper(strings.TrimSpace(t))
-			if t != "" {
-				typeSet[t] = true
-			}
-		}
-	}
 	if req.Enforcement != nil {
 		nameParts = normalizeParts(req.Enforcement.DeviceNameParts)
 		tagParts = normalizeParts(req.Enforcement.TagParts)
+	}
+	var matcher assuranceEnforcementMatcher
+	if req.Enforcement != nil {
+		matcher, _ = assuranceLoadEnforcementMatcherWithClient(
+			ctx,
+			client,
+			net.ForwardNetworkID,
+			strings.TrimSpace(req.SnapshotID),
+			req.Enforcement.DeviceTypes,
+			req.Enforcement.DeviceNameParts,
+			req.Enforcement.TagParts,
+		)
+	} else {
+		matcher, _ = assuranceLoadEnforcementMatcherWithClient(
+			ctx,
+			client,
+			net.ForwardNetworkID,
+			strings.TrimSpace(req.SnapshotID),
+			nil,
+			nil,
+			nil,
+		)
 	}
 
 	// Forward knobs.
@@ -702,7 +713,7 @@ func (s *Service) PostWorkspaceForwardNetworkAssuranceTrafficEvaluate(ctx contex
 		window,
 		threshold,
 		requireEnf,
-		typeSet,
+		matcher,
 		nameParts,
 		tagParts,
 		includeTags,
@@ -722,7 +733,7 @@ func assuranceTrafficEvaluateFromFwdOut(
 	window string,
 	threshold float64,
 	requireEnf bool,
-	typeSet map[string]bool,
+	matcher assuranceEnforcementMatcher,
 	nameParts []string,
 	tagParts []string,
 	includeTags bool,
@@ -771,7 +782,7 @@ func assuranceTrafficEvaluateFromFwdOut(
 
 			enfHops := 0
 			for _, h := range p.Hops {
-				if hopIsEnforcement(h, typeSet, nameParts, tagParts) {
+				if hopIsEnforcement(h, matcher, nameParts, tagParts) {
 					enfHops++
 				}
 			}

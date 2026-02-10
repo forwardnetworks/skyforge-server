@@ -1,0 +1,68 @@
+/**
+ * @intent Assurance helper: discover enforcement points
+ * @description
+ *  Returns a list of devices that should be treated as "enforcement points" for
+ *  Paths Assurance and other demo workflows.
+ *
+ *  Notes:
+ *  - This is intentionally conservative by default: if no explicit deviceTypes
+ *    are provided, we match only explicit firewall-ish device types.
+ *  - nameParts/tagParts are exact (case-insensitive) matches in NQE. The Go
+ *    layer may still apply substring matching against hop metadata for UI
+ *    convenience.
+ */
+
+asLower(s) =
+  toLowerCase(if isPresent(s) then s else "");
+
+nonEmptyLower(ss) =
+  foreach s in ss
+  let v = asLower(s)
+  where v != ""
+  select v;
+
+isDefaultEnforcementType(dt) =
+  dt == DeviceType.FIREWALL ||
+  dt == DeviceType.AWS_NETWORK_FIREWALL ||
+  dt == DeviceType.AZURE_FIREWALL ||
+  dt == DeviceType.AZURE_VIRTUAL_APPLIANCE;
+
+typeMatches(dt, wantedLower) =
+  (length(wantedLower) == 0 && isDefaultEnforcementType(dt)) ||
+  (length(wantedLower) > 0 && asLower(toString(dt)) in wantedLower);
+
+nameMatches(deviceName, namePartsLower) =
+  length(namePartsLower) > 0 &&
+  asLower(deviceName) in namePartsLower;
+
+tagMatches(tags, partsLower) =
+  length(partsLower) > 0 &&
+  any(foreach t in tags
+      let tl = asLower(t)
+      select tl != "" && tl in partsLower);
+
+@query
+assuranceEnforcementPoints(
+  enforcementDeviceTypes : List<String>,
+  enforcementDeviceNameParts : List<String>,
+  enforcementTagParts : List<String>,
+  includeGroups : Bool
+) =
+  let devTypesLower = nonEmptyLower(enforcementDeviceTypes)
+  let namePartsLower = nonEmptyLower(enforcementDeviceNameParts)
+  let tagPartsLower = nonEmptyLower(enforcementTagParts)
+  foreach device in network.devices
+  let dt = device.platform.deviceType
+  let tags = device.tagNames
+  let groups = if includeGroups then device.groupNames else bag([])
+  where typeMatches(dt, devTypesLower) ||
+        nameMatches(device.name, namePartsLower) ||
+        tagMatches(tags, tagPartsLower) ||
+        tagMatches(groups, tagPartsLower)
+  select {
+    deviceName: device.name,
+    deviceType: toString(dt),
+    tagNames: device.tagNames,
+    groupNames: device.groupNames
+  };
+

@@ -43,6 +43,7 @@ type ForwardAssuranceSummaryResponse struct {
 	Vulnerabilities  ForwardAssuranceVulnerabilitiesTile  `json:"vulnerabilities"`
 	Capacity         ForwardAssuranceCapacityTile         `json:"capacity"`
 	LiveSignals      ForwardAssuranceLiveSignalsTile      `json:"liveSignals"`
+	NQEPosture       *ForwardAssuranceNQEPosture          `json:"nqePosture,omitempty"`
 
 	Evidence ForwardAssuranceEvidence `json:"evidence"`
 	Warnings []string                 `json:"warnings,omitempty"`
@@ -119,6 +120,24 @@ type ForwardAssuranceLiveSyslog struct {
 
 type ForwardAssuranceLiveCount struct {
 	Total int `json:"total"`
+}
+
+type ForwardAssuranceNQEPosture struct {
+	PackID      string         `json:"packId"`
+	SnapshotID  string         `json:"snapshotId,omitempty"`
+	GeneratedAt string         `json:"generatedAt"`
+	TotalsBySeverity map[string]int `json:"totalsBySeverity,omitempty"`
+	TopFindings []ForwardAssuranceNQEPostureFinding `json:"topFindings,omitempty"`
+}
+
+type ForwardAssuranceNQEPostureFinding struct {
+	CheckID     string   `json:"checkId,omitempty"`
+	FindingID   string   `json:"findingId,omitempty"`
+	Severity    string   `json:"severity,omitempty"`
+	Category    string   `json:"category,omitempty"`
+	AssetKey    string   `json:"assetKey,omitempty"`
+	RiskScore   int      `json:"riskScore,omitempty"`
+	RiskReasons []string `json:"riskReasons,omitempty"`
 }
 
 type ForwardAssuranceEvidence struct {
@@ -683,6 +702,187 @@ func fetchForwardAssuranceLiveInputs(ctx context.Context, client *forwardClient,
 	}, nil
 }
 
+func computeAssuranceNQEPosture(ctx context.Context, client *forwardClient, forwardNetworkID, snapshotID string) (*ForwardAssuranceNQEPosture, error) {
+	if client == nil {
+		return nil, fmt.Errorf("invalid client")
+	}
+	forwardNetworkID = strings.TrimSpace(forwardNetworkID)
+	if forwardNetworkID == "" {
+		return nil, fmt.Errorf("forwardNetworkId required")
+	}
+	snapshotID = strings.TrimSpace(snapshotID)
+
+	packs, err := loadPolicyReportPacks()
+	if err != nil || packs == nil {
+		return nil, fmt.Errorf("policy report packs unavailable")
+	}
+
+	// Prefer the demo pack if present; otherwise fall back to the existing policy-risk pack.
+	packID := "assurance-demo"
+	var pack *PolicyReportPack
+	for i := range packs.Packs {
+		if strings.EqualFold(strings.TrimSpace(packs.Packs[i].ID), packID) {
+			pack = &packs.Packs[i]
+			break
+		}
+	}
+	if pack == nil {
+		packID = "policy-risk"
+		for i := range packs.Packs {
+			if strings.EqualFold(strings.TrimSpace(packs.Packs[i].ID), packID) {
+				pack = &packs.Packs[i]
+				break
+			}
+		}
+	}
+	if pack == nil {
+		return nil, fmt.Errorf("no posture pack found")
+	}
+
+	totals := map[string]int{}
+	findings := make([]ForwardAssuranceNQEPostureFinding, 0, 128)
+
+	for _, chk := range pack.Checks {
+		checkID := strings.TrimSpace(chk.ID)
+		if checkID == "" {
+			continue
+		}
+		queryText, err := policyReportsReadNQE(checkID)
+		if err != nil {
+			return nil, fmt.Errorf("missing check: %s", checkID)
+		}
+
+		params := JSONMap{}
+		for k, v := range policyReportsCatalogDefaultsFor(checkID) {
+			params[k] = v
+		}
+		for k, v := range chk.Parameters {
+			params[k] = v
+		}
+
+		q := url.Values{}
+		q.Set("networkId", forwardNetworkID)
+		if snapshotID != "" {
+			q.Set("snapshotId", snapshotID)
+		}
+
+		payload := map[string]any{"query": queryText}
+		if len(params) > 0 {
+			payload["parameters"] = params
+		}
+
+		rawPath := forwardAPIPathFor(client, "/nqe")
+		resp, body, err := client.doJSON(ctx, http.MethodPost, rawPath, q, payload)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return nil, fmt.Errorf("Forward NQE failed (%s)", checkID)
+		}
+
+		norm, err := policyReportsNormalizeNQEResponseForCheck(checkID, body)
+		if err != nil || norm == nil {
+			return nil, fmt.Errorf("invalid NQE response (%s)", checkID)
+		}
+
+		var rows []map[string]any
+		if err := json.Unmarshal(norm.Results, &rows); err != nil {
+			return nil, fmt.Errorf("invalid results (%s)", checkID)
+		}
+
+		for _, r := range rows {
+			// Only count/store violation rows when present.
+			if v, ok := r["violation"].(bool); ok && !v {
+				continue
+			}
+
+			sev := strings.TrimSpace(anyToString(r["severity"]))
+			if sev == "" {
+				sev = "unknown"
+			}
+			totals[sev]++
+
+			findings = append(findings, ForwardAssuranceNQEPostureFinding{
+				CheckID:     strings.TrimSpace(anyToString(r["checkId"])),
+				FindingID:   strings.TrimSpace(anyToString(r["findingId"])),
+				Severity:    sev,
+				Category:    strings.TrimSpace(anyToString(r["category"])),
+				AssetKey:    strings.TrimSpace(anyToString(r["assetKey"])),
+				RiskScore:   anyToInt(r["riskScore"]),
+				RiskReasons: anyToStringSlice(r["riskReasons"]),
+			})
+		}
+	}
+
+	sort.Slice(findings, func(i, j int) bool {
+		if findings[i].RiskScore != findings[j].RiskScore {
+			return findings[i].RiskScore > findings[j].RiskScore
+		}
+		if findings[i].Severity != findings[j].Severity {
+			return findings[i].Severity > findings[j].Severity
+		}
+		return findings[i].FindingID < findings[j].FindingID
+	})
+	if len(findings) > 10 {
+		findings = findings[:10]
+	}
+
+	return &ForwardAssuranceNQEPosture{
+		PackID:      packID,
+		SnapshotID:  snapshotID,
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		TotalsBySeverity: totals,
+		TopFindings: findings,
+	}, nil
+}
+
+func anyToString(v any) string {
+	switch t := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return t
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+func anyToInt(v any) int {
+	switch t := v.(type) {
+	case nil:
+		return 0
+	case int:
+		return t
+	case int64:
+		return int(t)
+	case float64:
+		return int(t)
+	case json.Number:
+		i, _ := t.Int64()
+		return int(i)
+	default:
+		return 0
+	}
+}
+
+func anyToStringSlice(v any) []string {
+	arr, ok := v.([]any)
+	if !ok || len(arr) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(arr))
+	for _, x := range arr {
+		s := strings.TrimSpace(anyToString(x))
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // GetWorkspaceForwardNetworkAssuranceSummary returns a demo-oriented assurance summary computed from live Forward calls.
 //
 //encore:api auth method=GET path=/api/workspaces/:id/forward-networks/:networkRef/assurance/summary
@@ -756,6 +956,18 @@ func (s *Service) GetWorkspaceForwardNetworkAssuranceSummary(ctx context.Context
 
 	sum := computeForwardAssuranceSummaryFromLive(time.Now(), pc.workspace.ID, net.ID, net.ForwardNetworkID, snap, haveSnap, met, haveMet, vul, haveVul, capAsOf, capRows, capErr)
 	sum.LiveSignals, sum.Warnings = s.countLiveSignals(ctx, pc.claims.Username, 60)
+
+	// Best-effort: attach an NQE posture summary (shows "NQE does the math").
+	if snapID := strings.TrimSpace(inputs.snapshotID); snapID != "" {
+		ctxPost, cancel := context.WithTimeout(ctx, 25*time.Second)
+		defer cancel()
+		posture, err := computeAssuranceNQEPosture(ctxPost, client, net.ForwardNetworkID, snapID)
+		if err != nil {
+			sum.Warnings = append(sum.Warnings, "nqe posture unavailable")
+		} else {
+			sum.NQEPosture = posture
+		}
+	}
 
 	// Best-effort cache write (rate-limited).
 	if s.db != nil && shouldStoreForwardAssuranceSummary(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID, net.ID, 2*time.Minute) {

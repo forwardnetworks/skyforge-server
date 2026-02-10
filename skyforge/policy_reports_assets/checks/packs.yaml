@@ -21,6 +21,16 @@ packs:
       - id: "acl-permit-any-service.nqe"
       - id: "acl-any-to-rfc1918-sensitive-ports.nqe"
 
+  - id: "assurance-demo"
+    title: "Assurance Demo Pack"
+    description: "High-signal posture checks used by assurance summary demos."
+    checks:
+      - id: "acl-any-any-permit.nqe"
+      - id: "acl-permit-any-service.nqe"
+      - id: "acl-any-to-rfc1918-sensitive-ports.nqe"
+      - id: "default-route-urpf-heuristic.nqe"
+      - id: "ospf-passive-default.nqe"
+
   - id: "segmentation"
     title: "Segmentation Pack"
     description: "Zone boundary and any-to-zone exposure checks (parameterized by zone CIDRs)."

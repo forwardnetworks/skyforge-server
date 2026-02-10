@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"sort"
@@ -143,7 +144,7 @@ type prFwdPath struct {
 // It returns the normalized response plus the suite-scoped checkId ("paths-enforcement-bypass:<hash12>").
 //
 // kept must be the subset of req.Queries that were actually included in the Forward request, in the same order.
-func policyReportsPathsEnforcementBypassEvalFromFwdOut(req *PolicyReportPathsEnforcementBypassRequest, kept []PolicyReportPathQuery, fwdOut []fwdPathSearchResponseFull) (*PolicyReportNQEResponse, string, error) {
+func policyReportsPathsEnforcementBypassEvalFromFwdOut(req *PolicyReportPathsEnforcementBypassRequest, kept []PolicyReportPathQuery, fwdOut []fwdPathSearchResponseFull, matcher assuranceEnforcementMatcher) (*PolicyReportNQEResponse, string, error) {
 	if req == nil {
 		return nil, "", errs.B().Code(errs.InvalidArgument).Msg("invalid input").Err()
 	}
@@ -167,17 +168,6 @@ func policyReportsPathsEnforcementBypassEvalFromFwdOut(req *PolicyReportPathsEnf
 		requireReturnEnf = *req.RequireReturnEnforcement
 	}
 
-	typeSet := map[string]bool{}
-	if len(req.EnforcementDeviceTypes) == 0 {
-		typeSet = defaultEnforcementDeviceTypes()
-	} else {
-		for _, t := range req.EnforcementDeviceTypes {
-			t = strings.ToUpper(strings.TrimSpace(t))
-			if t != "" {
-				typeSet[t] = true
-			}
-		}
-	}
 	nameParts := normalizeParts(req.EnforcementDeviceNameParts)
 	tagParts := normalizeParts(req.EnforcementTagParts)
 
@@ -274,7 +264,7 @@ func policyReportsPathsEnforcementBypassEvalFromFwdOut(req *PolicyReportPathsEnf
 			}
 			hopsOut = append(hopsOut, ho)
 
-			if hopIsEnforcement(h, typeSet, nameParts, tagParts) {
+			if hopIsEnforcement(h, matcher, nameParts, tagParts) {
 				enfHops = append(enfHops, ho)
 			}
 		}
@@ -313,7 +303,7 @@ func policyReportsPathsEnforcementBypassEvalFromFwdOut(req *PolicyReportPathsEnf
 					ho["acl"] = h.NetworkFunctions.ACL
 				}
 				retHopsOut = append(retHopsOut, ho)
-				if hopIsEnforcement(h, typeSet, nameParts, tagParts) {
+				if hopIsEnforcement(h, matcher, nameParts, tagParts) {
 					retEnfHops = append(retEnfHops, ho)
 				}
 			}
@@ -486,7 +476,18 @@ func policyReportsPathsEnforcementBypassEvalWithClient(ctx context.Context, clie
 	if err := json.Unmarshal(body, &fwdOut); err != nil {
 		return nil, "", errs.B().Code(errs.Unavailable).Msg("failed to decode Forward paths response").Err()
 	}
-	return policyReportsPathsEnforcementBypassEvalFromFwdOut(req, kept, fwdOut)
+
+	matcher, _ := assuranceLoadEnforcementMatcherWithClient(
+		ctx,
+		client,
+		networkID,
+		strings.TrimSpace(req.SnapshotID),
+		req.EnforcementDeviceTypes,
+		req.EnforcementDeviceNameParts,
+		req.EnforcementTagParts,
+	)
+
+	return policyReportsPathsEnforcementBypassEvalFromFwdOut(req, kept, fwdOut, matcher)
 }
 
 type prFwdPathHop struct {
@@ -558,9 +559,137 @@ func normalizeParts(ss []string) []string {
 	return out
 }
 
-func hopIsEnforcement(h prFwdPathHop, typeSet map[string]bool, nameParts, tagParts []string) bool {
-	if typeSet != nil {
-		if typeSet[strings.ToUpper(strings.TrimSpace(h.DeviceType))] {
+type assuranceEnforcementMatcher struct {
+	// If present, prefer device-name matching derived from NQE inventory.
+	// Keys are lower-cased.
+	deviceNameSet map[string]bool
+
+	// Optional fallback: match on hop.deviceType (upper-cased strings).
+	typeSet map[string]bool
+}
+
+type assuranceEnforcementPointRow struct {
+	DeviceName string `json:"deviceName"`
+}
+
+func assuranceBuildEnforcementTypeSet(deviceTypes []string) map[string]bool {
+	if len(deviceTypes) == 0 {
+		return defaultEnforcementDeviceTypes()
+	}
+	out := map[string]bool{}
+	for _, t := range deviceTypes {
+		t = strings.ToUpper(strings.TrimSpace(t))
+		if t != "" {
+			out[t] = true
+		}
+	}
+	return out
+}
+
+func assuranceLoadEnforcementMatcherWithClient(
+	ctx context.Context,
+	client *forwardClient,
+	forwardNetworkID string,
+	snapshotID string,
+	enforcementDeviceTypes []string,
+	enforcementDeviceNameParts []string,
+	enforcementTagParts []string,
+) (assuranceEnforcementMatcher, error) {
+	// Fallback behavior preserves the previous semantics if the helper NQE fails.
+	fallback := assuranceEnforcementMatcher{typeSet: assuranceBuildEnforcementTypeSet(enforcementDeviceTypes)}
+
+	if client == nil {
+		return fallback, errs.B().Code(errs.InvalidArgument).Msg("invalid input").Err()
+	}
+	forwardNetworkID = strings.TrimSpace(forwardNetworkID)
+	if forwardNetworkID == "" {
+		return fallback, errs.B().Code(errs.InvalidArgument).Msg("forwardNetworkId is required").Err()
+	}
+
+	// Run the embedded helper query via Forward /api/nqe.
+	queryText, err := policyReportsReadNQE("assurance-enforcement-points.nqe")
+	if err != nil {
+		return fallback, err
+	}
+
+	qv := url.Values{}
+	qv.Set("networkId", forwardNetworkID)
+	if v := strings.TrimSpace(snapshotID); v != "" {
+		qv.Set("snapshotId", v)
+	}
+
+	params := JSONMap{}
+	for k, v := range policyReportsCatalogDefaultsFor("assurance-enforcement-points.nqe") {
+		params[k] = v
+	}
+	// We still pass name/tag parts through for completeness, even though the
+	// Go layer continues to do substring matching on hop metadata.
+	//
+	// NQE matches these exactly (case-insensitive) today.
+	params["enforcementDeviceTypes"] = mustJSON(enforcementDeviceTypes)
+	params["enforcementDeviceNameParts"] = mustJSON(enforcementDeviceNameParts)
+	params["enforcementTagParts"] = mustJSON(enforcementTagParts)
+	// Ensure deterministic behavior even if catalog defaults change.
+	params["includeGroups"] = mustJSON(true)
+
+	payload := map[string]any{
+		"query":      queryText,
+		"parameters": params,
+	}
+	rawPath := forwardAPIPathFor(client, "/nqe")
+	resp, body, err := client.doJSON(ctx, http.MethodPost, rawPath, qv, payload)
+	if err != nil {
+		return fallback, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fallback, fmt.Errorf("Forward NQE failed: %s", strings.TrimSpace(string(body)))
+	}
+
+	norm, err := policyReportsNormalizeNQEResponse(body)
+	if err != nil || norm == nil {
+		return fallback, fmt.Errorf("invalid Forward NQE response")
+	}
+
+	var rows []assuranceEnforcementPointRow
+	if err := json.Unmarshal(norm.Results, &rows); err != nil {
+		return fallback, err
+	}
+	set := map[string]bool{}
+	for _, r := range rows {
+		n := strings.ToLower(strings.TrimSpace(r.DeviceName))
+		if n != "" {
+			set[n] = true
+		}
+	}
+
+	// Prefer NQE-derived device names when available, but keep the typeSet
+	// fallback so hop.deviceType matching remains stable even if device naming
+	// differs between inventory and Paths hop metadata.
+	return assuranceEnforcementMatcher{deviceNameSet: set, typeSet: fallback.typeSet}, nil
+}
+
+func mustJSON(v any) json.RawMessage {
+	b, err := json.Marshal(v)
+	if err != nil {
+		// This should be impossible for simple scalar/list values.
+		return json.RawMessage("null")
+	}
+	return b
+}
+
+func hopIsEnforcement(h prFwdPathHop, matcher assuranceEnforcementMatcher, nameParts, tagParts []string) bool {
+	if matcher.deviceNameSet != nil {
+		dn := strings.ToLower(strings.TrimSpace(h.DeviceName))
+		if dn != "" && matcher.deviceNameSet[dn] {
+			return true
+		}
+		dn = strings.ToLower(strings.TrimSpace(h.DisplayName))
+		if dn != "" && matcher.deviceNameSet[dn] {
+			return true
+		}
+	}
+	if matcher.typeSet != nil {
+		if matcher.typeSet[strings.ToUpper(strings.TrimSpace(h.DeviceType))] {
 			return true
 		}
 	}

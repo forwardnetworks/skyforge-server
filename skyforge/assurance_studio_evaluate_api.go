@@ -590,22 +590,33 @@ func assuranceStudioEvaluateWithClient(
 			if rt.Enforcement != nil && rt.Enforcement.RequireEnforcement != nil {
 				requireEnf = *rt.Enforcement.RequireEnforcement
 			}
-			typeSet := map[string]bool{}
 			nameParts := []string{}
 			tagParts := []string{}
-			if rt.Enforcement == nil || len(rt.Enforcement.DeviceTypes) == 0 {
-				typeSet = defaultEnforcementDeviceTypes()
-			} else {
-				for _, t := range rt.Enforcement.DeviceTypes {
-					t = strings.ToUpper(strings.TrimSpace(t))
-					if t != "" {
-						typeSet[t] = true
-					}
-				}
-			}
 			if rt.Enforcement != nil {
 				nameParts = normalizeParts(rt.Enforcement.DeviceNameParts)
 				tagParts = normalizeParts(rt.Enforcement.TagParts)
+			}
+			var matcher assuranceEnforcementMatcher
+			if rt.Enforcement != nil {
+				matcher, _ = assuranceLoadEnforcementMatcherWithClient(
+					ctx,
+					client,
+					forwardNetworkID,
+					strings.TrimSpace(rt.SnapshotID),
+					rt.Enforcement.DeviceTypes,
+					rt.Enforcement.DeviceNameParts,
+					rt.Enforcement.TagParts,
+				)
+			} else {
+				matcher, _ = assuranceLoadEnforcementMatcherWithClient(
+					ctx,
+					client,
+					forwardNetworkID,
+					strings.TrimSpace(rt.SnapshotID),
+					nil,
+					nil,
+					nil,
+				)
 			}
 
 			out.Routing = assuranceTrafficEvaluateFromFwdOut(
@@ -616,7 +627,7 @@ func assuranceStudioEvaluateWithClient(
 				window,
 				thr,
 				requireEnf,
-				typeSet,
+				matcher,
 				nameParts,
 				tagParts,
 				includeTags,
@@ -710,22 +721,33 @@ func assuranceStudioEvaluateWithClient(
 				if rtBase.Enforcement != nil && rtBase.Enforcement.RequireEnforcement != nil {
 					requireEnf = *rtBase.Enforcement.RequireEnforcement
 				}
-				typeSet := map[string]bool{}
 				nameParts := []string{}
 				tagParts := []string{}
-				if rtBase.Enforcement == nil || len(rtBase.Enforcement.DeviceTypes) == 0 {
-					typeSet = defaultEnforcementDeviceTypes()
-				} else {
-					for _, t := range rtBase.Enforcement.DeviceTypes {
-						t = strings.ToUpper(strings.TrimSpace(t))
-						if t != "" {
-							typeSet[t] = true
-						}
-					}
-				}
 				if rtBase.Enforcement != nil {
 					nameParts = normalizeParts(rtBase.Enforcement.DeviceNameParts)
 					tagParts = normalizeParts(rtBase.Enforcement.TagParts)
+				}
+				var matcher assuranceEnforcementMatcher
+				if rtBase.Enforcement != nil {
+					matcher, _ = assuranceLoadEnforcementMatcherWithClient(
+						ctx,
+						client,
+						forwardNetworkID,
+						strings.TrimSpace(rtBase.SnapshotID),
+						rtBase.Enforcement.DeviceTypes,
+						rtBase.Enforcement.DeviceNameParts,
+						rtBase.Enforcement.TagParts,
+					)
+				} else {
+					matcher, _ = assuranceLoadEnforcementMatcherWithClient(
+						ctx,
+						client,
+						forwardNetworkID,
+						strings.TrimSpace(rtBase.SnapshotID),
+						nil,
+						nil,
+						nil,
+					)
 				}
 
 				out.RoutingBaseline = assuranceTrafficEvaluateFromFwdOut(
@@ -736,7 +758,7 @@ func assuranceStudioEvaluateWithClient(
 					window,
 					thr,
 					requireEnf,
-					typeSet,
+					matcher,
 					nameParts,
 					tagParts,
 					includeTagsRt,
@@ -866,7 +888,16 @@ func assuranceStudioEvaluateWithClient(
 			kept = append(kept, q)
 		}
 		secReq.Queries = kept
-		resp, _, err := policyReportsPathsEnforcementBypassEvalFromFwdOut(secReq, kept, fwdOut)
+		matcher, _ := assuranceLoadEnforcementMatcherWithClient(
+			ctx,
+			client,
+			forwardNetworkID,
+			strings.TrimSpace(secReq.SnapshotID),
+			secReq.EnforcementDeviceTypes,
+			secReq.EnforcementDeviceNameParts,
+			secReq.EnforcementTagParts,
+		)
+		resp, _, err := policyReportsPathsEnforcementBypassEvalFromFwdOut(secReq, kept, fwdOut, matcher)
 		if err != nil {
 			out.Errors["security"] = err.Error()
 		} else {
