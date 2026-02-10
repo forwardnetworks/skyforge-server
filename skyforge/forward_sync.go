@@ -247,12 +247,9 @@ func (s *Service) forwardConfigForUser(ctx context.Context, username string) (*f
 	if username == "" {
 		return nil, nil
 	}
-
-	// Preferred: per-user default Forward collector config (sf_user_forward_collectors).
-	if cfg, err := forwardConfigForUserPreferredCollector(ctx, s.db, s.cfg.SessionSecret, username); err == nil && cfg != nil {
-		return cfg, nil
-	}
-	return nil, nil
+	// Delegate to the unified resolver helper so users can configure Forward
+	// once (e.g. via a default credential set) without requiring a collector config.
+	return forwardConfigForUser(ctx, s.db, s.cfg.SessionSecret, username)
 }
 
 func (s *Service) forwardConfigForUserCollectorConfigID(ctx context.Context, username, collectorConfigID string) (*forwardCredentials, error) {

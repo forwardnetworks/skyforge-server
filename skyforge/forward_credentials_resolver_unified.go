@@ -143,6 +143,41 @@ func forwardConfigForUser(ctx context.Context, db *sql.DB, sessionSecret string,
 	} else if err != nil {
 		return nil, err
 	}
+
+	// Fallback: explicit default Forward credential set in sf_user_settings.
+	{
+		ctxReq, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		defer cancel()
+		var credID sql.NullString
+		if err := db.QueryRowContext(ctxReq, `
+SELECT COALESCE(default_forward_credential_id,'')
+  FROM sf_user_settings
+ WHERE user_id=$1
+`, username).Scan(&credID); err == nil {
+			id := strings.TrimSpace(credID.String)
+			if id != "" {
+				box := newSecretBox(sessionSecret)
+				ctxReq2, cancel2 := context.WithTimeout(ctx, 2*time.Second)
+				defer cancel2()
+				if set, err := getUserForwardCredentialSet(ctxReq2, db, box, username, id); err == nil && set != nil {
+					baseURL := strings.TrimSpace(set.BaseURL)
+					if baseURL == "" {
+						baseURL = defaultForwardBaseURL
+					}
+					if strings.TrimSpace(set.Username) == "" || strings.TrimSpace(set.Password) == "" {
+						return nil, nil
+					}
+					return &forwardCredentials{
+						BaseURL:       baseURL,
+						SkipTLSVerify: set.SkipTLSVerify,
+						Username:      strings.TrimSpace(set.Username),
+						Password:      strings.TrimSpace(set.Password),
+						CollectorUser: strings.TrimSpace(set.CollectorUsername),
+					}, nil
+				}
+			}
+		}
+	}
 	return nil, nil
 }
 

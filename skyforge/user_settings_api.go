@@ -16,6 +16,8 @@ type UserEnvVar struct {
 
 type UserSettingsResponse struct {
 	DefaultForwardCollectorConfigID string                 `json:"defaultForwardCollectorConfigId,omitempty"`
+	DefaultForwardCredentialID      string                 `json:"defaultForwardCredentialId,omitempty"`
+	DefaultForwardNetworkID         string                 `json:"defaultForwardNetworkId,omitempty"`
 	DefaultEnv                      []UserEnvVar           `json:"defaultEnv,omitempty"`
 	ExternalTemplateRepos           []ExternalTemplateRepo `json:"externalTemplateRepos,omitempty"`
 	UpdatedAt                       string                 `json:"updatedAt,omitempty"`
@@ -23,6 +25,8 @@ type UserSettingsResponse struct {
 
 type PutUserSettingsRequest struct {
 	DefaultForwardCollectorConfigID string                 `json:"defaultForwardCollectorConfigId,omitempty"`
+	DefaultForwardCredentialID      string                 `json:"defaultForwardCredentialId,omitempty"`
+	DefaultForwardNetworkID         string                 `json:"defaultForwardNetworkId,omitempty"`
 	DefaultEnv                      []UserEnvVar           `json:"defaultEnv,omitempty"`
 	ExternalTemplateRepos           []ExternalTemplateRepo `json:"externalTemplateRepos,omitempty"`
 }
@@ -59,6 +63,8 @@ func (s *Service) GetUserSettings(ctx context.Context) (*UserSettingsResponse, e
 	}
 	return &UserSettingsResponse{
 		DefaultForwardCollectorConfigID: strings.TrimSpace(rec.DefaultForwardCollectorConfig),
+		DefaultForwardCredentialID:      strings.TrimSpace(rec.DefaultForwardCredentialID),
+		DefaultForwardNetworkID:         strings.TrimSpace(rec.DefaultForwardNetworkID),
 		DefaultEnv:                      env,
 		ExternalTemplateRepos:           repos,
 		UpdatedAt:                       rec.UpdatedAt.UTC().Format(time.RFC3339),
@@ -100,6 +106,8 @@ func (s *Service) PutUserSettings(ctx context.Context, req *PutUserSettingsReque
 	out, err := upsertUserSettings(ctx, s.db, userSettingsRecord{
 		UserID:                        user.Username,
 		DefaultForwardCollectorConfig: strings.TrimSpace(req.DefaultForwardCollectorConfigID),
+		DefaultForwardCredentialID:    strings.TrimSpace(req.DefaultForwardCredentialID),
+		DefaultForwardNetworkID:       strings.TrimSpace(req.DefaultForwardNetworkID),
 		DefaultEnvJSON:                string(envJSON),
 		ExternalTemplateReposJSON:     string(reposJSON),
 	})
@@ -112,6 +120,8 @@ func (s *Service) PutUserSettings(ctx context.Context, req *PutUserSettingsReque
 	_ = json.Unmarshal([]byte(out.ExternalTemplateReposJSON), &repos)
 	return &UserSettingsResponse{
 		DefaultForwardCollectorConfigID: strings.TrimSpace(out.DefaultForwardCollectorConfig),
+		DefaultForwardCredentialID:      strings.TrimSpace(out.DefaultForwardCredentialID),
+		DefaultForwardNetworkID:         strings.TrimSpace(out.DefaultForwardNetworkID),
 		DefaultEnv:                      env,
 		ExternalTemplateRepos:           repos,
 		UpdatedAt:                       out.UpdatedAt.UTC().Format(time.RFC3339),

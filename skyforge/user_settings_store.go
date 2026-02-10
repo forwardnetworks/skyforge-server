@@ -13,6 +13,8 @@ import (
 type userSettingsRecord struct {
 	UserID                        string
 	DefaultForwardCollectorConfig string
+	DefaultForwardCredentialID    string
+	DefaultForwardNetworkID       string
 	DefaultEnvJSON                string
 	ExternalTemplateReposJSON     string
 	UpdatedAt                     time.Time
@@ -28,11 +30,19 @@ func getUserSettings(ctx context.Context, db *sql.DB, userID string) (*userSetti
 	}
 	var rec userSettingsRecord
 	err := db.QueryRowContext(ctx, `
-		SELECT user_id, default_forward_collector_config_id, default_env_json, external_template_repos_json, updated_at
+		SELECT user_id,
+		       default_forward_collector_config_id,
+		       COALESCE(default_forward_credential_id,''),
+		       COALESCE(default_forward_network_id,''),
+		       default_env_json,
+		       external_template_repos_json,
+		       updated_at
 		FROM sf_user_settings
 		WHERE user_id = $1`, userID).Scan(
 		&rec.UserID,
 		&rec.DefaultForwardCollectorConfig,
+		&rec.DefaultForwardCredentialID,
+		&rec.DefaultForwardNetworkID,
 		&rec.DefaultEnvJSON,
 		&rec.ExternalTemplateReposJSON,
 		&rec.UpdatedAt,
@@ -72,14 +82,30 @@ func upsertUserSettings(ctx context.Context, db *sql.DB, rec userSettingsRecord)
 	}
 
 	_, err := db.ExecContext(ctx, `
-		INSERT INTO sf_user_settings (user_id, default_forward_collector_config_id, default_env_json, external_template_repos_json)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO sf_user_settings (
+		  user_id,
+		  default_forward_collector_config_id,
+		  default_forward_credential_id,
+		  default_forward_network_id,
+		  default_env_json,
+		  external_template_repos_json
+		)
+		VALUES ($1, $2, NULLIF($3,''), $4, $5, $6)
 		ON CONFLICT(user_id) DO UPDATE SET
 			default_forward_collector_config_id=excluded.default_forward_collector_config_id,
+			default_forward_credential_id=excluded.default_forward_credential_id,
+			default_forward_network_id=excluded.default_forward_network_id,
 			default_env_json=excluded.default_env_json,
 			external_template_repos_json=excluded.external_template_repos_json,
 			updated_at=now()
-	`, rec.UserID, strings.TrimSpace(rec.DefaultForwardCollectorConfig), rec.DefaultEnvJSON, rec.ExternalTemplateReposJSON)
+	`,
+		rec.UserID,
+		strings.TrimSpace(rec.DefaultForwardCollectorConfig),
+		strings.TrimSpace(rec.DefaultForwardCredentialID),
+		strings.TrimSpace(rec.DefaultForwardNetworkID),
+		rec.DefaultEnvJSON,
+		rec.ExternalTemplateReposJSON,
+	)
 	if err != nil {
 		return nil, err
 	}
