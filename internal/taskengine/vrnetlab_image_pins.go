@@ -13,31 +13,6 @@ var vrnetlabPinnedImages = map[string]string{
 	// Pin to the expected digest to ensure fresh pulls when the tag is updated.
 	"ghcr.io/forwardnetworks/vrnetlab/vr-ftosv:10.6.1.0.24V": "ghcr.io/forwardnetworks/vrnetlab/vr-ftosv@sha256:1cde7dd305c5ebead38ecaba4d0ec694cb4ad4bb835dc8d11dcc46fee1279968",
 	"vrnetlab/vr-ftosv:10.6.1.0.24V":                         "ghcr.io/forwardnetworks/vrnetlab/vr-ftosv@sha256:1cde7dd305c5ebead38ecaba4d0ec694cb4ad4bb835dc8d11dcc46fee1279968",
-
-	// IOSv / IOSvL2 (vrnetlab) must set a management IP compatible with QEMU hostfwd.
-	// Older tags used a router-style Gi0/0 IP assignment even for IOSvL2, causing SSH readiness
-	// to hang forever (TCP connects, but no SSH banner from the guest).
-	"ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3":  "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge8",
-	"vrnetlab/cisco_vios:15.9.3":                          "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge8",
-	"docker.io/vrnetlab/cisco_vios:15.9.3":                "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge8",
-	"ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2":  "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge8",
-	"vrnetlab/cisco_viosl2:15.2":                          "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge8",
-	"docker.io/vrnetlab/cisco_viosl2:15.2":                "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge8",
-
-	// Also rewrite older Skyforge-stamped tags we produced during bring-up so older blueprints
-	// (or cached generator artifacts) don't get stuck on a broken build.
-	"ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge2":  "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge8",
-	"ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge3":  "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge8",
-	"ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge4":  "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge8",
-	"ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge5":  "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge8",
-	"ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge6":  "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge8",
-	"ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge7":  "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge8",
-	"ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge2":  "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge8",
-	"ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge3":  "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge8",
-	"ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge4":  "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge8",
-	"ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge5":  "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge8",
-	"ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge6":  "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge8",
-	"ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge7":  "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge8",
 }
 
 func rewritePinnedVrnetlabImage(image string) (string, bool) {
@@ -45,6 +20,21 @@ func rewritePinnedVrnetlabImage(image string) (string, bool) {
 	if image == "" {
 		return "", false
 	}
+
+	// IOSv/IOSvL2: pin to the Skyforge-tuned tags that preserve upstream behavior while
+	// making SSH reachable reliably in Kubernetes (QEMU hostfwd bound to localhost + pod-IP proxy).
+	//
+	// This keeps templates using either upstream tags or older -skyforgeN tags working.
+	if strings.Contains(image, "vrnetlab/cisco_vios:15.9.3") {
+		// Pin to a digest so clusters with imagePullPolicy=IfNotPresent can't get stuck on an older
+		// locally cached tag. This digest corresponds to :15.9.3-skyforge19 linux/amd64.
+		return "ghcr.io/forwardnetworks/vrnetlab/cisco_vios@sha256:aa575d17f99775a71a6f076484c5998c2cf400c5524bd30d48dedbbf9e36f5c7", true
+	}
+	if strings.Contains(image, "vrnetlab/cisco_viosl2:15.2") {
+		// Digest corresponds to :15.2-skyforge18 linux/amd64.
+		return "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2@sha256:c8fccd0aef63187c371df881c094ab4ddca6d890c98f698365cafe0662a8442b", true
+	}
+
 	if pinned, ok := vrnetlabPinnedImages[image]; ok && strings.TrimSpace(pinned) != "" {
 		return pinned, true
 	}

@@ -228,6 +228,14 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		// When we pass a bundle, the netlab API server writes topology.yml in the workdir.
 		topologyPath = "topology.yml"
 	}
+
+	// Apply platform defaults for netlab `--set` before we run the generator.
+	// This is intentionally done before `netlab create` so generated startup-config
+	// snippets match what will run in-cluster.
+	if len(e.cfg.NetlabC9sDefaultSetOverrides) > 0 {
+		spec.SetOverrides = mergeNetlabSetOverrides(spec.SetOverrides, e.cfg.NetlabC9sDefaultSetOverrides)
+	}
+
 	var clabYAML []byte
 	var nodeMounts map[string][]c9sFileFromConfigMap
 	var generatorManifest *netlabC9sManifest
@@ -265,7 +273,10 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	// Prefer startup-config injection (instead of post-start exec hacks).
 	// This keeps netlab as the source-of-truth but lets Skyforge adapt the generated output
 	// for clabernetes-native execution (files are mounted into the launcher, not the NOS container).
-	enableStartupConfigInjection := envBool(spec.Environment, "SKYFORGE_NETLAB_C9S_ENABLE_STARTUP_CONFIG_INJECTION", false)
+	//
+	// Default enabled: without this, many netlab + clabernetes-native labs appear "ready"
+	// before NOS is actually reachable/configured, and post-up config application becomes flaky.
+	enableStartupConfigInjection := envBool(spec.Environment, "SKYFORGE_NETLAB_C9S_ENABLE_STARTUP_CONFIG_INJECTION", true)
 	if enableStartupConfigInjection {
 		if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.startup-config", func() error {
 			var err error
@@ -998,7 +1009,10 @@ func forwardSSHBannerReadyOnce(ctx context.Context, host string) bool {
 	}
 	defer conn.Close()
 
-	_ = conn.SetReadDeadline(time.Now().Add(750 * time.Millisecond))
+	// Some vrnetlab devices (notably QEMU usernet hostfwd -> guest ssh) can accept the TCP
+	// connection quickly but take >750ms before emitting the SSH banner. Use a slightly
+	// longer read deadline to avoid false negatives while still keeping probes fast.
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	buf := make([]byte, 4)
 	if _, err := io.ReadFull(conn, buf); err != nil {
 		return false
@@ -1199,6 +1213,13 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 				imgLower := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["image"])))
 				kindLower := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["kind"])))
 				if (kindLower == "csr" || strings.Contains(imgLower, "/vrnetlab/vr-csr")) && cfg["cmd"] == nil {
+					cfg["cmd"] = "--connection-mode tc"
+					nodes[node] = cfg
+				}
+				// NX-OSv 9Kv: the vrnetlab launcher defaults to `--connection-mode vrxcon`, which
+				// does not create tap netdevs for the container interfaces in our clabernetes
+				// native-mode model. Force tc datapath mode to match containerlab semantics.
+				if (kindLower == "nxos" || kindLower == "n9kv" || kindLower == "cisco_n9kv" || strings.Contains(imgLower, "/vrnetlab/vr-n9kv")) && cfg["cmd"] == nil {
 					cfg["cmd"] = "--connection-mode tc"
 					nodes[node] = cfg
 				}

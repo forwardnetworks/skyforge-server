@@ -316,44 +316,24 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		}
 		requireAntiAffinity := envBool(spec.Environment, "SKYFORGE_CLABERNETES_POD_ANTI_AFFINITY_REQUIRED", false)
 		enableAntiAffinity := envBool(spec.Environment, "SKYFORGE_CLABERNETES_ENABLE_POD_ANTI_AFFINITY", schedulingMode == "spread")
+		//
+		// NOTE: The upstream clabernetes Topology CRD in our deployment prunes affinity from
+		// spec.deployment.scheduling, so we cannot rely on writing affinity into the Topology
+		// spec and having it persist. Instead, we pass scheduling intent via a label and let
+		// our clabernetes-manager fork apply the corresponding Pod affinity at render time.
 		if requireAntiAffinity || enableAntiAffinity {
-			scheduling := ensureDeploymentScheduling()
-			affinity, ok := scheduling["affinity"].(map[string]any)
-			if !ok || affinity == nil {
-				affinity = map[string]any{}
-				scheduling["affinity"] = affinity
+			labelsAny, _ := payload["metadata"].(map[string]any)["labels"].(map[string]any)
+			if labelsAny == nil {
+				labelsAny = map[string]any{}
+				payload["metadata"].(map[string]any)["labels"] = labelsAny
 			}
-			if _, ok := affinity["podAntiAffinity"]; !ok {
-				term := map[string]any{
-					"labelSelector": map[string]any{
-						"matchExpressions": []any{
-							map[string]any{
-								"key":      "clabernetes/topologyOwner",
-								"operator": "In",
-								"values":   []any{name},
-							},
-						},
-					},
-					"topologyKey": "kubernetes.io/hostname",
-				}
-				if requireAntiAffinity {
-					affinity["podAntiAffinity"] = map[string]any{
-						"requiredDuringSchedulingIgnoredDuringExecution": []any{
-							term,
-						},
-					}
-					log.Infof("Clabernetes scheduling: require spreading pods (podAntiAffinity required topologyOwner=%s)", name)
-				} else {
-					affinity["podAntiAffinity"] = map[string]any{
-						"preferredDuringSchedulingIgnoredDuringExecution": []any{
-							map[string]any{
-								"weight": 100,
-								"podAffinityTerm": term,
-							},
-						},
-					}
-					log.Infof("Clabernetes scheduling: prefer spreading pods (podAntiAffinity topologyOwner=%s)", name)
-				}
+			const labelKey = "skyforge.forwardnetworks.com/scheduling"
+			if requireAntiAffinity {
+				labelsAny[labelKey] = "spread-required"
+				log.Infof("Clabernetes scheduling: require spreading pods (podAntiAffinity required topologyOwner=%s)", name)
+			} else {
+				labelsAny[labelKey] = "spread-preferred"
+				log.Infof("Clabernetes scheduling: prefer spreading pods (podAntiAffinity topologyOwner=%s)", name)
 			}
 		}
 
@@ -530,6 +510,17 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 						return err
 					}
 					log.Infof("Clabernetes native mode: verified")
+
+					// Optional: assert that cross-node VXLAN is actually being exercised. This is
+					// primarily used by E2E smoke to ensure we don't regress into node-local wiring.
+					if envBool(spec.Environment, "SKYFORGE_E2E_VXLAN_SMOKE", false) || envBool(spec.Environment, "SKYFORGE_CLABERNETES_VXLAN_SMOKE", false) {
+						log.Infof("Clabernetes vxlan smoke: checking overlay wiring")
+						nodes, err := kubeClabernetesVXLANSmokeCheck(ctx, ns, name)
+						if err != nil {
+							return err
+						}
+						log.Infof("Clabernetes vxlan smoke: ok (nodes=%d)", nodes)
+					}
 
 					// Capture a topology graph artifact after deploy so the UI can render resolved
 					// management IPs from clabernetes pods.

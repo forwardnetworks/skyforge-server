@@ -6,3 +6,4 @@ encore.gen.cue
 .e2e-status/
 .env.local
 .env.*.local
+skyforge.test

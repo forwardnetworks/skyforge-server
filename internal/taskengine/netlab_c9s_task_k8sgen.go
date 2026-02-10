@@ -1,13 +1,19 @@
 package taskengine
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"path"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 type netlabC9sManifest struct {
@@ -37,6 +43,158 @@ type netlabC9sManifest struct {
 }
 
 const defaultNetlabC9sGeneratorImage = "ghcr.io/forwardnetworks/skyforge-netlab-generator:latest"
+
+func patchNetlabTopologyYAMLForSnmp(topologyYAML []byte, community, trapHost string, trapPort int) ([]byte, error) {
+	var topo map[string]any
+	if err := yaml.Unmarshal(topologyYAML, &topo); err != nil {
+		return nil, fmt.Errorf("parse topology.yml: %w", err)
+	}
+	if topo == nil {
+		topo = map[string]any{}
+	}
+
+	ensureMap := func(parent map[string]any, key string) map[string]any {
+		if parent == nil {
+			return map[string]any{}
+		}
+		raw, ok := parent[key]
+		if !ok || raw == nil {
+			m := map[string]any{}
+			parent[key] = m
+			return m
+		}
+		if m, ok := raw.(map[string]any); ok {
+			return m
+		}
+		m := map[string]any{}
+		parent[key] = m
+		return m
+	}
+
+	// Append snmp_config to groups.all.config (do not overwrite).
+	groups := ensureMap(topo, "groups")
+	all := ensureMap(groups, "all")
+	rawCfg, _ := all["config"]
+	var hasSnmp func(v any) bool
+	hasSnmp = func(v any) bool {
+		switch vv := v.(type) {
+		case string:
+			return strings.TrimSpace(vv) == "snmp_config"
+		case []any:
+			for _, item := range vv {
+				if hasSnmp(item) {
+					return true
+				}
+			}
+		case []string:
+			for _, item := range vv {
+				if strings.TrimSpace(item) == "snmp_config" {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	switch v := rawCfg.(type) {
+	case nil:
+		all["config"] = []any{"snmp_config"}
+	case string:
+		if !hasSnmp(v) {
+			if strings.TrimSpace(v) == "" {
+				all["config"] = []any{"snmp_config"}
+			} else {
+				all["config"] = []any{strings.TrimSpace(v), "snmp_config"}
+			}
+		}
+	case []any:
+		if !hasSnmp(v) {
+			all["config"] = append(v, "snmp_config")
+		}
+	case []string:
+		if !hasSnmp(v) {
+			all["config"] = append(v, "snmp_config")
+		}
+	default:
+		all["config"] = []any{"snmp_config"}
+	}
+
+	defaults := ensureMap(topo, "defaults")
+	snmp := ensureMap(defaults, "snmp")
+	if strings.TrimSpace(community) != "" {
+		snmp["community"] = strings.TrimSpace(community)
+	}
+	// trap_host can be empty; templates should treat that as "poll-only".
+	snmp["trap_host"] = strings.TrimSpace(trapHost)
+	if trapPort > 0 {
+		snmp["trap_port"] = trapPort
+	}
+
+	out, err := yaml.Marshal(topo)
+	if err != nil {
+		return nil, fmt.Errorf("render topology.yml: %w", err)
+	}
+	return out, nil
+}
+
+func patchNetlabBundleB64(bundleB64 string, patchTopology func([]byte) ([]byte, error)) (string, error) {
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(bundleB64))
+	if err != nil {
+		return "", fmt.Errorf("decode bundle: %w", err)
+	}
+	gr, err := gzip.NewReader(bytes.NewReader(raw))
+	if err != nil {
+		return "", fmt.Errorf("gunzip bundle: %w", err)
+	}
+	defer gr.Close()
+	tr := tar.NewReader(gr)
+
+	var out bytes.Buffer
+	gw := gzip.NewWriter(&out)
+	tw := tar.NewWriter(gw)
+	defer func() {
+		_ = tw.Close()
+		_ = gw.Close()
+	}()
+
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", fmt.Errorf("read bundle tar: %w", err)
+		}
+		name := path.Clean(strings.TrimPrefix(strings.TrimSpace(hdr.Name), "/"))
+		if name == "" || name == "." || strings.HasPrefix(name, "..") {
+			continue
+		}
+		data, err := io.ReadAll(tr)
+		if err != nil {
+			return "", fmt.Errorf("read bundle file %s: %w", name, err)
+		}
+		if name == "topology.yml" && patchTopology != nil {
+			data, err = patchTopology(data)
+			if err != nil {
+				return "", err
+			}
+			hdr.Size = int64(len(data))
+		}
+		hdr.Name = name
+		if err := tw.WriteHeader(hdr); err != nil {
+			return "", fmt.Errorf("write bundle header %s: %w", name, err)
+		}
+		if _, err := tw.Write(data); err != nil {
+			return "", fmt.Errorf("write bundle file %s: %w", name, err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		return "", err
+	}
+	if err := gw.Close(); err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(out.Bytes()), nil
+}
 
 // runNetlabC9sTaskK8sGenerator runs a netlab generator job inside the workspace namespace,
 // waits for it to complete, then reads the generated manifest/configmaps.
@@ -99,6 +257,47 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 	}
 	if _, err := base64.StdEncoding.DecodeString(bundleB64); err != nil {
 		return nil, nil, nil, fmt.Errorf("invalid netlab topology bundle encoding: %w", err)
+	}
+
+	// Forward-synced deployments: enable netlab-native SNMP via custom config templates.
+	// We patch topology.yml in the bundle so netlab create validates/renders snmp_config templates.
+	if spec.WorkspaceCtx != nil && strings.TrimSpace(spec.DeploymentID) != "" {
+		dep, depErr := e.loadDeployment(ctx, strings.TrimSpace(spec.WorkspaceCtx.workspace.ID), strings.TrimSpace(spec.DeploymentID))
+		if depErr == nil && dep != nil {
+			cfgAny, _ := fromJSONMap(dep.Config)
+			enabled := false
+			if raw, ok := cfgAny[forwardEnabledKey]; ok {
+				switch v := raw.(type) {
+				case bool:
+					enabled = v
+				case string:
+					s := strings.TrimSpace(v)
+					enabled = strings.EqualFold(s, "true") || s == "1" || strings.EqualFold(s, "yes")
+				default:
+					s := strings.TrimSpace(fmt.Sprintf("%v", raw))
+					enabled = strings.EqualFold(s, "true") || s == "1" || strings.EqualFold(s, "yes")
+				}
+			}
+			if enabled {
+				community, tokErr := e.ensureUserSnmpTrapToken(ctx, strings.TrimSpace(spec.WorkspaceCtx.claims.Username))
+				if tokErr != nil {
+					return nil, nil, nil, tokErr
+				}
+				// Prefer an IP over DNS to avoid assumptions about NOS DNS.
+				trapHost := ""
+				if ip, found, ipErr := kubeGetServiceClusterIP(ctx, kubeNamespace(), "skyforge-snmp-trap"); ipErr == nil && found {
+					trapHost = strings.TrimSpace(ip)
+				}
+				trapPort := 162
+				patched, patchErr := patchNetlabBundleB64(bundleB64, func(b []byte) ([]byte, error) {
+					return patchNetlabTopologyYAMLForSnmp(b, community, trapHost, trapPort)
+				})
+				if patchErr != nil {
+					return nil, nil, nil, patchErr
+				}
+				bundleB64 = patched
+			}
+		}
 	}
 
 	if err := kubeEnsureNamespace(ctx, ns); err != nil {

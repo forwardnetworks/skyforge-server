@@ -36,6 +36,7 @@ tests:
       template: topology.yml
       environment:
         NETLAB_DEVICE: eos
+        SKYFORGE_NETLAB_C9S_ENABLE_STARTUP_CONFIG_INJECTION: "true"
       setOverrides: []
       timeout: 25m
       sshBanners: true
@@ -64,6 +65,7 @@ tests:
       template: topology.yml
       environment:
         NETLAB_DEVICE: iol
+        SKYFORGE_NETLAB_C9S_ENABLE_STARTUP_CONFIG_INJECTION: "true"
       setOverrides: []
       timeout: 25m
       sshBanners: true
@@ -92,6 +94,7 @@ tests:
       template: topology.yml
       environment:
         NETLAB_DEVICE: iosv
+        SKYFORGE_NETLAB_C9S_ENABLE_STARTUP_CONFIG_INJECTION: "true"
       setOverrides: []
       timeout: 25m
       sshBanners: true
@@ -120,6 +123,7 @@ tests:
       template: topology.yml
       environment:
         NETLAB_DEVICE: iosvl2
+        SKYFORGE_NETLAB_C9S_ENABLE_STARTUP_CONFIG_INJECTION: "true"
       setOverrides: []
       timeout: 25m
       sshBanners: true
@@ -148,6 +152,7 @@ tests:
       template: topology.yml
       environment:
         NETLAB_DEVICE: csr
+        SKYFORGE_NETLAB_C9S_ENABLE_STARTUP_CONFIG_INJECTION: "true"
       setOverrides: []
       timeout: 25m
       sshBanners: true
@@ -176,6 +181,7 @@ tests:
       template: topology.yml
       environment:
         NETLAB_DEVICE: nxos
+        SKYFORGE_NETLAB_C9S_ENABLE_STARTUP_CONFIG_INJECTION: "true"
       setOverrides: []
       timeout: 25m
       sshBanners: true
@@ -205,6 +211,7 @@ tests:
       template: topology.yml
       environment:
         NETLAB_DEVICE: cumulus
+        SKYFORGE_NETLAB_C9S_ENABLE_STARTUP_CONFIG_INJECTION: "true"
       setOverrides: []
       timeout: 25m
       sshBanners: true

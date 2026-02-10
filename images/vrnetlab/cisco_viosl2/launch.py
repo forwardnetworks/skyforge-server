@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 import datetime
+import json
 import logging
 import os
 import re
 import signal
+import socket
+import subprocess
 import sys
+import threading
 import time
+from typing import Optional
 
 import vrnetlab
 from scrapli.driver.core import IOSXEDriver
@@ -88,12 +93,15 @@ class VIOS_vm(vrnetlab.VM):
             self.start()
             return
 
-        device_prompt = b"Switch>" if self.device_type == "switch" else b"Router>"
+        # IOSv/IOSvL2 sometimes land directly in privileged exec ("#") depending on
+        # boot state / prior config. Accept both ">" and "#" prompts.
+        device_prompt = rb"Switch[>#]" if self.device_type == "switch" else rb"Router[>#]"
 
         (ridx, match, res) = self.con_expect(
             [
                 rb"Would you like to enter the initial configuration dialog\? \[yes/no\]:",
-                b"Press RETURN to get started!",
+                # Some IOSv builds emit terminal control sequences around this line; match loosely.
+                rb"Press[\s\S]*RETURN",
                 device_prompt,
             ],
         )
@@ -105,13 +113,15 @@ class VIOS_vm(vrnetlab.VM):
             elif ridx == 1:
                 self.logger.info("Entering user EXEC mode")
                 for _ in range(3):
-                    self.wait_write("\r", wait=None)
+                    # wait_write() appends "\r" itself; sending "\r" as cmd can result
+                    # in doubled returns and occasionally misses the prompt.
+                    self.wait_write("", wait=None)
             elif ridx == 2:
                 self.apply_config()
                 startup_time = datetime.datetime.now() - self.start_time
                 self.logger.info(f"Startup complete in: {startup_time}")
                 self.running = True
-                return
+            return
 
         if res != b"":
             self.write_to_stdout(res)
@@ -183,34 +193,133 @@ class VIOS_vm(vrnetlab.VM):
         res = con.send_configs(cfg_lines + [l + "\n" for l in access_cfg])
 
         try:
-            def rsa_keys_present(s: str) -> bool:
-                return bool(
-                    re.search(
-                        r"key\\s+(name|label)\\s*:|ssh-rsa|begin\\s+public\\s+key",
-                        s or "",
-                        re.IGNORECASE,
-                    )
-                )
+            def ssh_banner_ready(timeout_sec: float = 1.0) -> bool:
+                # The only thing we ultimately care about (for Skyforge readiness) is that the
+                # guest-side SSH server produces a banner via the QEMU hostfwd path.
+                #
+                # When the guest SSH server is not listening, QEMU will often accept and then
+                # immediately close the connection, producing EOF (no banner).
+                s = None
+                try:
+                    s = socket.create_connection(("127.0.0.1", 22), timeout=timeout_sec)
+                    s.settimeout(timeout_sec)
+                    b = s.recv(4)
+                    return b == b"SSH-"
+                except Exception:
+                    return False
+                finally:
+                    try:
+                        if s is not None:
+                            s.close()
+                    except Exception:
+                        pass
 
             def ssh_is_enabled() -> bool:
                 r = con.send_command("show ip ssh")
                 return "SSH Enabled" in (r.result or "")
 
             # Prefer checking whether SSH is enabled. Some IOSvL2 builds return odd/no output from
-            # "show crypto key mypubkey rsa" even when key material exists (and vice versa).
-            has_ssh = ssh_is_enabled()
+            # key inspection commands even when key material exists (and vice versa).
+            has_ssh = ssh_banner_ready()
             if not has_ssh:
                 modulus = int(os.getenv("RSA_KEY_MODULUS", "1024"))
                 self.logger.info("SSH not enabled; generating RSA keys (modulus %d)", modulus)
-                # IOSv expects key generation in config mode. Supplying modulus makes it non-interactive.
-                res += con.send_configs([f"crypto key generate rsa general-keys modulus {modulus}\n"])
 
-                key_wait = int(os.getenv("RSA_KEY_WAIT_SECONDS", "180"))
+                # "crypto key generate rsa" is an exec-mode command on IOSv/IOSvL2.
+                # We must not run it via send_configs() (config-mode), otherwise it can error out
+                # and SSH will never come up.
+                try:
+                    _ = con.send_command("end")
+                except Exception:
+                    pass
+
+                try:
+                    def _invalid(out: str) -> bool:
+                        return "invalid input" in (out or "").lower()
+
+                    def _flatten(resps) -> str:
+                        if resps is None:
+                            return ""
+                        if isinstance(resps, list):
+                            return "\n".join([(r.result or "") for r in resps if r is not None])
+                        return getattr(resps, "result", "") or ""
+
+                    inline_ok = False
+
+                    # Attempt 1: config-mode general-keys modulus (non-interactive when supported).
+                    try:
+                        resp = con.send_configs([f"crypto key generate rsa general-keys modulus {modulus}\n"])
+                        out = _flatten(resp).strip().replace("\r", "")
+                        if out:
+                            self.logger.info("RSA keygen output (config general-keys): %s", out.replace("\n", " | ")[:500])
+                        if not _invalid(out):
+                            inline_ok = True
+                    except Exception as e:
+                        self.logger.warning("RSA keygen (config general-keys) failed: %s", e)
+
+                    # Attempt 2: exec-mode general-keys modulus.
+                    if not inline_ok:
+                        try:
+                            resp = con.send_command(
+                                f"crypto key generate rsa general-keys modulus {modulus}",
+                                timeout_ops=600,
+                            )
+                            out = _flatten(resp).strip().replace("\r", "")
+                            if out:
+                                self.logger.info("RSA keygen output (exec general-keys): %s", out.replace("\n", " | ")[:500])
+                            if not _invalid(out):
+                                inline_ok = True
+                        except Exception as e:
+                            self.logger.warning("RSA keygen (exec general-keys) failed: %s", e)
+
+                    # Attempt 3: exec-mode "modulus" form.
+                    if not inline_ok:
+                        try:
+                            resp = con.send_command(
+                                f"crypto key generate rsa modulus {modulus}",
+                                timeout_ops=600,
+                            )
+                            out = _flatten(resp).strip().replace("\r", "")
+                            if out:
+                                self.logger.info("RSA keygen output (exec modulus): %s", out.replace("\n", " | ")[:500])
+                            if not _invalid(out):
+                                inline_ok = True
+                        except Exception as e:
+                            self.logger.warning("RSA keygen (exec modulus) failed: %s", e)
+
+                    # Attempt 4: interactive keygen as last resort.
+                    if not inline_ok:
+                        if hasattr(con, "send_interactive"):
+                            _ = con.send_interactive(
+                                [
+                                    ("crypto key generate rsa", r"(?i)(how many bits|modulus)"),
+                                    (str(modulus), r"(?i)(#|>)"),
+                                ],
+                                interaction_complete_patterns=[r"(?i)(#|>)"],
+                                timeout_ops=600,
+                            )
+                        else:
+                            _ = con.send_command("crypto key generate rsa", timeout_ops=600)
+                            _ = con.send_command(str(modulus), timeout_ops=30)
+                except Exception as e:
+                    self.logger.warning("RSA key generation command failed: %s", e)
+
+                key_wait = int(os.getenv("RSA_KEY_WAIT_SECONDS", "900"))
                 deadline = time.time() + key_wait
+                last_log = 0.0
                 while time.time() < deadline:
-                    if ssh_is_enabled():
+                    if ssh_banner_ready():
                         has_ssh = True
                         break
+                    now = time.time()
+                    if now-last_log >= 30:
+                        try:
+                            out = (con.send_command("show ip ssh").result or "").strip().replace("\r", "")
+                            if out:
+                                self.logger.info("Waiting for SSH (%ds left): show ip ssh: %s", int(deadline-now), out.replace("\n", " | ")[:200])
+                        except Exception:
+                            pass
+                        last_log = now
                     time.sleep(2)
                 if not has_ssh:
                     self.logger.warning("SSH did not become enabled within %ds after RSA key generation", key_wait)
@@ -231,6 +340,97 @@ class VIOS(vrnetlab.VR):
     def __init__(self, hostname: str, username: str, password: str, conn_mode: str, device_type: str = None):
         super(VIOS, self).__init__(username, password)
         self.vms = [VIOS_vm(hostname, username, password, conn_mode, device_type)]
+
+
+def _get_pod_ipv4() -> Optional[str]:
+    # Prefer explicit env vars when available; fall back to `ip -j`.
+    for k in ("POD_IP", "POD_IPV4", "MY_POD_IP"):
+        v = (os.getenv(k) or "").strip()
+        if v and v != "127.0.0.1":
+            return v
+
+    try:
+        out = subprocess.check_output(["ip", "-j", "-4", "addr", "show", "dev", "eth0"], text=True)
+        data = json.loads(out)
+        if not data:
+            return None
+        for addr in data[0].get("addr_info", []):
+            if addr.get("family") == "inet":
+                ip = (addr.get("local") or "").strip()
+                if ip and ip != "127.0.0.1":
+                    return ip
+    except Exception:
+        return None
+    return None
+
+
+def _serve_tcp_proxy(
+    bind_ip: str,
+    bind_port: int,
+    backend_ip: str,
+    backend_port: int,
+    logger: logging.Logger,
+):
+    backend = (backend_ip, backend_port)
+
+    def _pipe(src: socket.socket, dst: socket.socket):
+        try:
+            while True:
+                buf = src.recv(16 * 1024)
+                if not buf:
+                    break
+                dst.sendall(buf)
+        except Exception:
+            pass
+        finally:
+            try:
+                dst.shutdown(socket.SHUT_WR)
+            except Exception:
+                pass
+
+    def _handle_client(client: socket.socket, client_addr):
+        b = None
+        try:
+            # Keep the backend connect timeout short so readiness probes don't pile up.
+            b = socket.create_connection(backend, timeout=2.0)
+            b.settimeout(None)
+            client.settimeout(None)
+            t1 = threading.Thread(target=_pipe, args=(client, b), daemon=True)
+            t2 = threading.Thread(target=_pipe, args=(b, client), daemon=True)
+            t1.start()
+            t2.start()
+            t1.join()
+            t2.join()
+        except Exception as e:
+            logger.debug("podip ssh proxy: client=%s backend=%s error=%s", client_addr, backend, e)
+        finally:
+            try:
+                client.close()
+            except Exception:
+                pass
+            try:
+                if b is not None:
+                    b.close()
+            except Exception:
+                pass
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        # NOTE: bind to the pod IP specifically so we don't conflict with QEMU hostfwd on 127.0.0.1.
+        s.bind((bind_ip, bind_port))
+    except Exception as e:
+        logger.error("podip ssh proxy: bind failed on %s:%d: %s", bind_ip, bind_port, e)
+        return
+    s.listen(64)
+    logger.info("podip ssh proxy: listening on %s:%d -> %s:%d", bind_ip, bind_port, backend_ip, backend_port)
+
+    while True:
+        try:
+            c, addr = s.accept()
+            threading.Thread(target=_handle_client, args=(c, addr), daemon=True).start()
+        except Exception:
+            time.sleep(0.2)
 
 
 if __name__ == "__main__":
@@ -266,6 +466,19 @@ if __name__ == "__main__":
     logger.setLevel(logging.DEBUG)
     if args.trace:
         logger.setLevel(1)
+
+    # Kubernetes-specific: QEMU usernet hostfwd for IOSvL2 can accept TCP connections on the pod IP,
+    # but the SSH banner/data path is unreliable unless the client is local to the namespace.
+    # We bind QEMU hostfwd to 127.0.0.1 (see Dockerfile) and expose a pod-IP listener that proxies locally.
+    pod_ip = _get_pod_ipv4()
+    if pod_ip:
+        threading.Thread(
+            target=_serve_tcp_proxy,
+            args=(pod_ip, 22, "127.0.0.1", 22, logger),
+            daemon=True,
+        ).start()
+    else:
+        logger.warning("podip ssh proxy: pod IPv4 not found; remote SSH readiness may fail")
 
     vr = VIOS(
         hostname=args.hostname,

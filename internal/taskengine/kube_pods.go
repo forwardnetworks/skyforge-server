@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
+
+	"encore.app/internal/kubeutil"
 )
 
 type kubeOwnerReference struct {
@@ -159,6 +162,83 @@ func kubeAssertClabernetesNativeMode(ctx context.Context, ns, topologyOwner stri
 		bad = bad[:5]
 	}
 	return fmt.Errorf("%s; examples: %s", msg, strings.Join(bad, "; "))
+}
+
+func kubeClabernetesVXLANSmokeCheck(ctx context.Context, ns, topologyOwner string) (int, error) {
+	ns = strings.TrimSpace(ns)
+	topologyOwner = strings.TrimSpace(topologyOwner)
+	if ns == "" || topologyOwner == "" {
+		return 0, fmt.Errorf("namespace and topology owner are required")
+	}
+
+	pods, err := kubeListPods(ctx, ns, map[string]string{"clabernetes/topologyOwner": topologyOwner})
+	if err != nil {
+		return 0, err
+	}
+	if len(pods) == 0 {
+		return 0, fmt.Errorf("no clabernetes pods found for topology %q", topologyOwner)
+	}
+
+	uniqNodes := map[string]struct{}{}
+	podNames := make([]string, 0, len(pods))
+	for _, p := range pods {
+		if pod := strings.TrimSpace(p.Metadata.Name); pod != "" {
+			podNames = append(podNames, pod)
+		}
+		if node := strings.TrimSpace(p.Spec.NodeName); node != "" {
+			uniqNodes[node] = struct{}{}
+		}
+	}
+	nodes := len(uniqNodes)
+	if nodes < 2 {
+		return nodes, fmt.Errorf("vxlan smoke requires multi-node scheduling but got nodes=%d", nodes)
+	}
+
+	kcfg, err := kubeutil.InClusterConfig()
+	if err != nil {
+		return nodes, err
+	}
+
+	// Use POSIX sh options only; some launcher images use /bin/sh without pipefail support.
+	check := `set -eu
+if ip -d link show type vxlan 2>/dev/null | grep -qi vxlan; then
+  echo "vxlan_present"
+fi
+if bridge fdb show 2>/dev/null | grep -q " dst "; then
+  echo "fdb_has_dst"
+fi
+`
+
+	ctx2, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+
+	foundVXLAN := false
+	foundFDB := false
+	for _, pod := range podNames {
+		if pod == "" {
+			continue
+		}
+		stdout, stderr, execErr := kubeutil.ExecPodShell(ctx2, kcfg, ns, pod, "clabernetes-launcher", check)
+		out := strings.ToLower(stdout + "\n" + stderr)
+		if strings.Contains(out, "vxlan_present") {
+			foundVXLAN = true
+		}
+		if strings.Contains(out, "fdb_has_dst") {
+			foundFDB = true
+		}
+		if execErr == nil && foundVXLAN && foundFDB {
+			break
+		}
+		// Best-effort: exec can be transiently flaky; we only need one launcher to confirm wiring.
+	}
+
+	if !foundVXLAN {
+		return nodes, fmt.Errorf("vxlan not detected in launcher containers (topology spans %d nodes)", nodes)
+	}
+	if !foundFDB {
+		return nodes, fmt.Errorf("vxlan detected but no remote FDB entries found (topology spans %d nodes)", nodes)
+	}
+	return nodes, nil
 }
 
 func kubeClabernetesTopologyPodsReady(ctx context.Context, ns, topologyOwner string) (bool, []string, error) {

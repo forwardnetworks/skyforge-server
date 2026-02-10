@@ -31,7 +31,10 @@ func HTTPClient() (*http.Client, error) {
 		return nil, fmt.Errorf("parse kube ca")
 	}
 	return &http.Client{
-		Timeout: 10 * time.Second,
+		// The in-cluster API can be briefly slow/unreachable during node upgrades,
+		// CNI rollouts, or control-plane pressure. Keep this high enough to avoid
+		// spurious task failures, while still bounding any single request.
+		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
 		},

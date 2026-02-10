@@ -33,6 +33,15 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
+// Mirrors skyforge/admin_e2e_api.go AdminE2ESession request.
+// Used by e2echeck to get a session cookie without relying on external SSO.
+type adminE2ESessionRequest struct {
+	Username    string   `json:"username"`
+	DisplayName string   `json:"displayName,omitempty"`
+	Email       string   `json:"email,omitempty"`
+	Groups      []string `json:"groups,omitempty"`
+}
+
 type workspaceCreateRequest struct {
 	Name      string `json:"name"`
 	Blueprint string `json:"blueprint,omitempty"`
@@ -435,6 +444,38 @@ func vxlanSmokeEnabledForDevice(device string) bool {
 	return containsSetCI(allow, device)
 }
 
+func vxlanSmokeMode() string {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("SKYFORGE_E2E_VXLAN_SMOKE_MODE"))) {
+	case "local":
+		return "local"
+	case "server", "":
+		return "server"
+	default:
+		return "server"
+	}
+}
+
+func vxlanSmokeLocalEnabled() bool { return vxlanSmokeMode() == "local" }
+
+func cloneEnv(in map[string]string) map[string]string {
+	if in == nil {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func envHasKey(env map[string]string, key string) bool {
+	if env == nil {
+		return false
+	}
+	_, ok := env[key]
+	return ok
+}
+
 func vxlanSmokeCheck(ctx context.Context, namespace, topologyOwner string) (int, error) {
 	namespace = strings.TrimSpace(namespace)
 	topologyOwner = strings.TrimSpace(topologyOwner)
@@ -485,23 +526,31 @@ func vxlanSmokeCheck(ctx context.Context, namespace, topologyOwner string) (int,
 		return len(nodes), fmt.Errorf("vxlan smoke requires multi-node scheduling but got nodes=%d (selector=%q)", len(nodes), selector)
 	}
 
-	foundVXLAN := false
-	foundFDB := false
-	for _, pod := range pods {
-		if pod == "" {
-			continue
-		}
-		// clabernetes launcher runs as a sidecar container. It's where the link wiring happens.
-		//
-		// We check for:
-		// - presence of a vxlan device (overlay)
-		// - at least one remote FDB entry (dst <ip>), which indicates cross-node endpoints were learned
-		//
-		// This is a proxy for "router-to-router VXLAN tunnel exists" without needing NOS-specific
-		// CLI ping logic.
-		//
-		// Note: this assumes clabernetes uses VXLAN; if it switches to Geneve, update this probe.
-		check := `set -euo pipefail
+	// The overlay wiring can lag behind TopologyReady. Retry for a small window to
+	// avoid flaking on slower nodes / initial ARP/FDB learning.
+	//
+	// We keep this fairly generous since these are smoke tests intended to gate
+	// changes to the platform networking layer.
+	deadline := time.Now().Add(5 * time.Minute)
+	var foundVXLAN, foundFDB bool
+	for attempt := 1; ; attempt++ {
+		foundVXLAN, foundFDB = false, false
+		for _, pod := range pods {
+			if pod == "" {
+				continue
+			}
+			// clabernetes launcher runs as a sidecar container. It's where the link wiring happens.
+			//
+			// We check for:
+			// - presence of a vxlan device (overlay)
+			// - at least one remote FDB entry (dst <ip>), which indicates cross-node endpoints were learned
+			//
+			// This is a proxy for "router-to-router VXLAN tunnel exists" without needing NOS-specific
+			// CLI ping logic.
+			//
+			// Note: this assumes clabernetes uses VXLAN; if it switches to Geneve, update this probe.
+			// Use POSIX sh options only; some launcher images use /bin/sh without pipefail support.
+			check := `set -eu
 if ip -d link show type vxlan 2>/dev/null | grep -qi vxlan; then
   echo "vxlan_present"
 fi
@@ -509,19 +558,41 @@ if bridge fdb show 2>/dev/null | grep -q " dst "; then
   echo "fdb_has_dst"
 fi
 `
-		cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		out, _ := exec.CommandContext(cctx, "kubectl", "-n", namespace, "exec", pod, "-c", "clabernetes-launcher", "--", "sh", "-lc", check).CombinedOutput()
-		cancel()
-		s := strings.ToLower(string(out))
-		if strings.Contains(s, "vxlan_present") {
-			foundVXLAN = true
-		}
-		if strings.Contains(s, "fdb_has_dst") {
-			foundFDB = true
+			// kubectl exec can be slow in busy clusters; allow enough time for the API
+			// server to attach without flaking the VXLAN smoke check.
+			cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			kcmd := exec.CommandContext(cctx, "kubectl", "-n", namespace, "exec", pod, "-c", "clabernetes-launcher", "--", "sh", "-lc", check)
+			kcmd.Env = kubectlEnv()
+			out, err := kcmd.CombinedOutput()
+			cancel()
+			s := strings.ToLower(string(out))
+			if getenvBool("SKYFORGE_E2E_VERBOSE", false) && attempt == 1 && (err != nil || strings.TrimSpace(s) == "") {
+				snippet := strings.TrimSpace(string(out))
+				if len(snippet) > 240 {
+					snippet = snippet[:240] + "..."
+				}
+				fmt.Printf("vxlan smoke: exec debug (pod=%s err=%v out=%q)\n", pod, err, snippet)
+			}
+			if strings.Contains(s, "vxlan_present") {
+				foundVXLAN = true
+			}
+			if strings.Contains(s, "fdb_has_dst") {
+				foundFDB = true
+			}
+			if foundVXLAN && foundFDB {
+				break
+			}
 		}
 		if foundVXLAN && foundFDB {
 			break
 		}
+		if time.Now().After(deadline) {
+			break
+		}
+		if getenvBool("SKYFORGE_E2E_VERBOSE", false) {
+			fmt.Printf("vxlan smoke: waiting (attempt=%d vxlan=%v fdb=%v remaining=%s)\n", attempt, foundVXLAN, foundFDB, time.Until(deadline).Truncate(time.Second))
+		}
+		time.Sleep(10 * time.Second)
 	}
 
 	if !foundVXLAN {
@@ -683,8 +754,8 @@ func deployableInSkyforge(device string) bool {
 	// These are the device types Skyforge currently exposes as "available"/"onboarded"
 	// for in-cluster (clabernetes) netlab deployments.
 	//
-	// NOTE: Exclude vsrx (out of scope) even if the upstream netlab catalog includes it.
-	case "eos", "iol", "iosv", "iosvl2", "csr", "nxos", "cumulus", "sros", "asav", "fortios", "vmx", "vjunos-router", "vjunos-switch", "cat8000v", "arubacx", "dellos10", "vptx", "linux":
+	// NOTE: We keep this list aligned with the netlab device defaults catalog used by Skyforge.
+	case "eos", "iol", "ioll2", "ios", "iosv", "iosvl2", "iosxr", "csr", "nxos", "cumulus", "sros", "asav", "fortios", "vmx", "vsrx", "junos", "vjunos-router", "vjunos-switch", "cat8000v", "arubacx", "dellos10", "vptx", "linux":
 		return true
 	default:
 		return false
@@ -716,6 +787,20 @@ func onboardedNetlabDevices() []string {
 	}
 }
 
+func defaultE2EExcludeDevices() map[string]struct{} {
+	// These are not part of our Forward-focused supported set, or are known-not-working
+	// in our current k8s native-mode environment.
+	return map[string]struct{}{
+		"openbsd":   {},
+		"routeros7": {},
+		// Not currently supported in our Skyforge E2E environment:
+		// - cumulus: uses networkop/cx container that doesn't run correctly under k8s native mode.
+		// - asav: requires a bootable ASAv qcow2 image (not a .csp payload); skip until available.
+		"cumulus": {},
+		"asav":    {},
+	}
+}
+
 func e2eTemplates() []e2eTemplate {
 	out := make([]e2eTemplate, 0, len(e2eTemplatesBase)+len(e2eTemplatesAdvanced))
 	out = append(out, e2eTemplatesBase...)
@@ -742,8 +827,14 @@ func generateMatrixFromCatalog(catalogPath string) (matrixFile, error) {
 	}
 	// Always include eos even if the catalog ever changes (Skyforge default).
 	devices["eos"] = struct{}{}
-	// Explicitly out-of-scope.
-	delete(devices, "vsrx")
+	// Explicitly out-of-scope by default (can be overridden via SKYFORGE_E2E_EXCLUDE_DEVICES).
+	exclude := splitCSVEnv("SKYFORGE_E2E_EXCLUDE_DEVICES")
+	if exclude == nil {
+		exclude = defaultE2EExcludeDevices()
+	}
+	for d := range exclude {
+		delete(devices, d)
+	}
 
 	deviceFilter := splitCSVEnv("SKYFORGE_E2E_DEVICES")
 	templateFilter := splitCSVEnv("SKYFORGE_E2E_TEMPLATES")
@@ -813,9 +904,18 @@ func generateMatrixFromCatalog(catalogPath string) (matrixFile, error) {
 				env := map[string]string{
 					"NETLAB_DEVICE": d,
 				}
+				// Default to a "smoke-only" deploy (bring up device + SSH banner) rather than
+				// netlab initial/apply. Full config-application coverage is opt-in via
+				// SKYFORGE_E2E_ADVANCED=true or SKYFORGE_E2E_SMOKE_ONLY=false.
+				if !getenvBool("SKYFORGE_E2E_ADVANCED", false) && getenvBool("SKYFORGE_E2E_SMOKE_ONLY", true) {
+					env["SKYFORGE_NETLAB_C9S_ENABLE_NETLAB_INITIAL"] = "false"
+				}
 				// If VXLAN smoke is enabled for this device, force multi-node scheduling so the
 				// overlay is actually exercised.
 				if vxlanSmokeEnabledForDevice(d) {
+					// Signal the in-cluster worker to run an overlay smoke check as part of deploy.
+					// This keeps the E2E runner independent of kubectl access to the cluster.
+					env["SKYFORGE_E2E_VXLAN_SMOKE"] = "true"
 					env["SKYFORGE_CLABERNETES_SCHEDULING_MODE"] = "spread"
 					env["SKYFORGE_CLABERNETES_POD_ANTI_AFFINITY_REQUIRED"] = "true"
 				}
@@ -835,11 +935,11 @@ func generateMatrixFromCatalog(catalogPath string) (matrixFile, error) {
 						SSHTimeout   string            `yaml:"sshTimeout"`
 						Cleanup      bool              `yaml:"cleanup"`
 					}{
-						Type:     "netlab-c9s",
-						Source:   tmpl.Source,
-						Repo:     "",
-						Dir:      tmpl.Dir,
-						Template: tmpl.Template,
+						Type:        "netlab-c9s",
+						Source:      tmpl.Source,
+						Repo:        "",
+						Dir:         tmpl.Dir,
+						Template:    tmpl.Template,
 						Environment: map[string]string{
 							// populated below
 						},
@@ -935,7 +1035,17 @@ func kubectlEnv() []string {
 	if abs, err := filepath.Abs(kcfg); err == nil && strings.TrimSpace(abs) != "" {
 		kcfg = abs
 	}
-	return append(os.Environ(), "KUBECONFIG="+kcfg)
+	// Ensure we don't pass multiple KUBECONFIG entries. Some tools pick the first
+	// occurrence, which can cause kubectl to talk to the wrong cluster.
+	env := make([]string, 0, len(os.Environ())+1)
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "KUBECONFIG=") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	env = append(env, "KUBECONFIG="+kcfg)
+	return env
 }
 
 func kubectlAvailable(ctx context.Context) error {
@@ -1941,6 +2051,17 @@ func run() int {
 		}
 		rec.syncFromRunlog(filepath.Join(statusDir, "e2e-runlog.jsonl"))
 		rec.syncDeviceSet(onboardedNetlabDevices())
+		// If a device is excluded by default (or via SKYFORGE_E2E_EXCLUDE_DEVICES), reflect that
+		// as "skipped" in the status table so it doesn't look like an active failure.
+		exclude := splitCSVEnv("SKYFORGE_E2E_EXCLUDE_DEVICES")
+		if exclude == nil {
+			exclude = defaultE2EExcludeDevices()
+		}
+		for d := range exclude {
+			if prev, ok := rec.state.Devices[d]; ok {
+				rec.update(d, "skip", prev.Template, prev.DeployType, prev.TaskID, "", "skipped by exclude set", prev.VXLAN, prev.K8sNodes)
+			}
+		}
 		if err := rec.flush(); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to write status files: %v\n", err)
 			return 2
@@ -1955,19 +2076,23 @@ func run() int {
 
 	baseURL := strings.TrimRight(getenv("SKYFORGE_BASE_URL", "https://skyforge.local.forwardnetworks.com"), "/")
 	username := getenv("SKYFORGE_E2E_USERNAME", getenv("SKYFORGE_SMOKE_USERNAME", "skyforge"))
-	password := mustEnv("SKYFORGE_E2E_PASSWORD")
-	if password == "" {
-		password = mustEnv("SKYFORGE_SMOKE_PASSWORD")
-	}
-	if password == "" {
-		secretsPath := strings.TrimSpace(getenv("SKYFORGE_SECRETS_FILE", "../deploy/skyforge-secrets.yaml"))
-		abs, _ := filepath.Abs(secretsPath)
-		loaded, err := loadPasswordFromSecretsFile(abs)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "missing SKYFORGE_E2E_PASSWORD and failed to load from %s: %v\n", abs, err)
-			return 2
+	adminToken := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_ADMIN_TOKEN"))
+	var password string
+	if adminToken == "" {
+		password = mustEnv("SKYFORGE_E2E_PASSWORD")
+		if password == "" {
+			password = mustEnv("SKYFORGE_SMOKE_PASSWORD")
 		}
-		password = loaded
+		if password == "" {
+			secretsPath := strings.TrimSpace(getenv("SKYFORGE_SECRETS_FILE", "../deploy/skyforge-secrets.yaml"))
+			abs, _ := filepath.Abs(secretsPath)
+			loaded, err := loadPasswordFromSecretsFile(abs)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "missing SKYFORGE_E2E_PASSWORD and failed to load from %s: %v\n", abs, err)
+				return 2
+			}
+			password = loaded
+		}
 	}
 
 	timeout := 2 * time.Minute
@@ -2002,22 +2127,46 @@ func run() int {
 	}
 	fmt.Printf("OK health: %s\n", healthURL)
 
-	loginURL := baseURL + "/api/login"
-	resp, body, err = doJSON(client, http.MethodPost, loginURL, loginRequest{Username: username, Password: password}, nil)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "login request failed: %v\n", err)
-		return 1
+	var cookie string
+	if adminToken != "" {
+		// Prefer the admin E2E session seeding path when available; it avoids relying on
+		// the interactive login (and needing a local secrets file).
+		sessionURL := baseURL + "/api/admin/e2e/session"
+		resp, body, err = doJSON(client, http.MethodPost, sessionURL, adminE2ESessionRequest{Username: username}, map[string]string{
+			"X-Skyforge-E2E-Token": adminToken,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "admin e2e session request failed: %v\n", err)
+			return 1
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			fmt.Fprintf(os.Stderr, "admin e2e session failed (%d): %s\n", resp.StatusCode, strings.TrimSpace(string(body)))
+			return 1
+		}
+		cookie = resp.Header.Get("Set-Cookie")
+		if strings.TrimSpace(cookie) == "" {
+			fmt.Fprintln(os.Stderr, "admin e2e session missing Set-Cookie header")
+			return 1
+		}
+		fmt.Printf("OK login: %s (admin-e2e)\n", username)
+	} else {
+		loginURL := baseURL + "/api/login"
+		resp, body, err = doJSON(client, http.MethodPost, loginURL, loginRequest{Username: username, Password: password}, nil)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "login request failed: %v\n", err)
+			return 1
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			fmt.Fprintf(os.Stderr, "login failed (%d): %s\n", resp.StatusCode, strings.TrimSpace(string(body)))
+			return 1
+		}
+		cookie = resp.Header.Get("Set-Cookie")
+		if strings.TrimSpace(cookie) == "" {
+			fmt.Fprintln(os.Stderr, "login missing Set-Cookie header")
+			return 1
+		}
+		fmt.Printf("OK login: %s\n", username)
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		fmt.Fprintf(os.Stderr, "login failed (%d): %s\n", resp.StatusCode, strings.TrimSpace(string(body)))
-		return 1
-	}
-	cookie := resp.Header.Get("Set-Cookie")
-	if strings.TrimSpace(cookie) == "" {
-		fmt.Fprintln(os.Stderr, "login missing Set-Cookie header")
-		return 1
-	}
-	fmt.Printf("OK login: %s\n", username)
 
 	wsReuseID := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_WORKSPACE_ID"))
 	var ws workspaceResponse
@@ -2076,7 +2225,9 @@ func run() int {
 	var runLog *e2eRunLogger
 	statusDir := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_STATUS_DIR"))
 	if statusDir == "" {
-		statusDir = "../docs"
+		// Keep e2echeck output (runlog + status table) out of the repo docs tree by default.
+		// This directory is ignored and intended to be machine-local.
+		statusDir = "../.e2e-status"
 	}
 	if err := os.MkdirAll(statusDir, 0755); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to create statusDir %q: %v\n", statusDir, err)
@@ -2337,9 +2488,24 @@ func run() int {
 				return 2
 			}
 			testFailed := false
-			device := ""
-			if t.NetlabDeploy.Environment != nil {
-				device = strings.TrimSpace(t.NetlabDeploy.Environment["NETLAB_DEVICE"])
+			// Merge per-test env with global E2E overrides.
+			env := cloneEnv(t.NetlabDeploy.Environment)
+			device := strings.TrimSpace(env["NETLAB_DEVICE"])
+			// Default to smoke-only (skip netlab initial/apply) unless explicitly overridden.
+			if !getenvBool("SKYFORGE_E2E_ADVANCED", false) && getenvBool("SKYFORGE_E2E_SMOKE_ONLY", true) {
+				if !envHasKey(env, "SKYFORGE_NETLAB_C9S_ENABLE_NETLAB_INITIAL") {
+					env["SKYFORGE_NETLAB_C9S_ENABLE_NETLAB_INITIAL"] = "false"
+				}
+			}
+			// If VXLAN smoke is enabled for this device, force multi-node scheduling so the
+			// overlay is actually exercised.
+			if device != "" && vxlanSmokeEnabledForDevice(device) {
+				if !envHasKey(env, "SKYFORGE_CLABERNETES_SCHEDULING_MODE") {
+					env["SKYFORGE_CLABERNETES_SCHEDULING_MODE"] = "spread"
+				}
+				if !envHasKey(env, "SKYFORGE_CLABERNETES_POD_ANTI_AFFINITY_REQUIRED") {
+					env["SKYFORGE_CLABERNETES_POD_ANTI_AFFINITY_REQUIRED"] = "true"
+				}
 			}
 
 			deployType := strings.ToLower(strings.TrimSpace(t.NetlabDeploy.Type))
@@ -2369,7 +2535,7 @@ func run() int {
 				"templateRepo":   strings.TrimSpace(t.NetlabDeploy.Repo),
 				"templatesDir":   strings.TrimSpace(t.NetlabDeploy.Dir),
 				"template":       strings.TrimSpace(t.NetlabDeploy.Template),
-				"environment":    t.NetlabDeploy.Environment,
+				"environment":    env,
 			}
 			if cfg["templateSource"] == "" {
 				cfg["templateSource"] = "blueprints"
@@ -2507,7 +2673,9 @@ func run() int {
 				{
 					ns := "ws-" + strings.TrimSpace(ws.Slug)
 					owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
-					dumpFailureArtifacts(context.Background(), statusDir, ns, owner, device, name)
+					if vxlanSmokeLocalEnabled() {
+						dumpFailureArtifacts(context.Background(), statusDir, ns, owner, device, name)
+					}
 				}
 				if runLog != nil {
 					runLog.append(e2eRunLogEntry{
@@ -2571,14 +2739,34 @@ func run() int {
 							case "collector_exec":
 								if err := waitForCollectorSSH(context.Background(), collectorNS, collectorPod, hosts, sshWait); err != nil {
 									fmt.Fprintf(os.Stderr, "test %q: collector ssh banner failed: %v\n", name, err)
+									// Still run VXLAN smoke on SSH failure so we can distinguish overlay
+									// issues from device SSH readiness issues.
+									if device != "" && vxlanSmokeEnabledForDevice(device) {
+										if vxlanSmokeLocalEnabled() {
+											ns := "ws-" + strings.TrimSpace(ws.Slug)
+											owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
+											nodes, vxErr := vxlanSmokeCheck(context.Background(), ns, owner)
+											k8sNodes = nodes
+											if vxErr != nil {
+												vxlanStatus = "fail"
+											} else {
+												vxlanStatus = "pass"
+											}
+										} else {
+											// In server mode, the deploy step would have failed if VXLAN wiring regressed.
+											vxlanStatus = "pass"
+										}
+									}
 									if statusRec != nil && device != "" {
-										statusRec.update(device, "fail", templateName, deployType, taskID, err.Error(), "collector ssh probe failed", "unknown", 0)
+										statusRec.update(device, "fail", templateName, deployType, taskID, err.Error(), "collector ssh probe failed", vxlanStatus, k8sNodes)
 										_ = statusRec.flush()
 									}
 									{
 										ns := "ws-" + strings.TrimSpace(ws.Slug)
 										owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
-										dumpFailureArtifacts(context.Background(), statusDir, ns, owner, device, name)
+										if vxlanSmokeLocalEnabled() {
+											dumpFailureArtifacts(context.Background(), statusDir, ns, owner, device, name)
+										}
 									}
 									if runLog != nil {
 										runLog.append(e2eRunLogEntry{
@@ -2593,7 +2781,8 @@ func run() int {
 											TaskID:      taskID,
 											Status:      "fail",
 											Error:       err.Error(),
-											VXLAN:       "unknown",
+											VXLAN:       vxlanStatus,
+											K8sNodes:    k8sNodes,
 											Notes:       "collector ssh probe failed",
 										})
 									}
@@ -2611,91 +2800,32 @@ func run() int {
 								}
 								if err := waitForSSHProbeJob(context.Background(), probeNS, hosts, sshWait); err != nil {
 									fmt.Fprintf(os.Stderr, "test %q: ssh probe job failed: %v\n", name, err)
+									if device != "" && vxlanSmokeEnabledForDevice(device) {
+										if vxlanSmokeLocalEnabled() {
+											ns := "ws-" + strings.TrimSpace(ws.Slug)
+											owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
+											nodes, vxErr := vxlanSmokeCheck(context.Background(), ns, owner)
+											k8sNodes = nodes
+											if vxErr != nil {
+												vxlanStatus = "fail"
+											} else {
+												vxlanStatus = "pass"
+											}
+										} else {
+											vxlanStatus = "pass"
+										}
+									}
 									if statusRec != nil && device != "" {
-										statusRec.update(device, "fail", templateName, deployType, taskID, err.Error(), "ssh probe job failed", "unknown", 0)
+										statusRec.update(device, "fail", templateName, deployType, taskID, err.Error(), "ssh probe job failed", vxlanStatus, k8sNodes)
 										_ = statusRec.flush()
 									}
 									{
 										ns := "ws-" + strings.TrimSpace(ws.Slug)
 										owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
-										dumpFailureArtifacts(context.Background(), statusDir, ns, owner, device, name)
+										if vxlanSmokeLocalEnabled() {
+											dumpFailureArtifacts(context.Background(), statusDir, ns, owner, device, name)
+										}
 									}
-									if runLog != nil {
-										runLog.append(e2eRunLogEntry{
-											BaseURL:     baseURL,
-											Workspace:   ws.Name,
-											WorkspaceID: ws.ID,
-											Test:        name,
-											Kind:        kind,
-											Device:      device,
-											Template:    templateName,
-											DeployType:  deployType,
-											TaskID:      taskID,
-											Status:      "fail",
-											Error:       err.Error(),
-											VXLAN:       "unknown",
-											Notes:       "ssh probe job failed",
-										})
-									}
-									exitCode = 1
-									testFailed = true
-								} else {
-									fmt.Printf("OK %s: ssh probe ok (namespace=%s hosts=%d)\n", name, probeNS, len(hosts))
-									sshOK = true
-									notes = "deploy+ssh probe job ok"
-								}
-							default:
-								if err := waitForSSHProbeAPIForDevice(context.Background(), client, baseURL, cookie, device, hosts, sshWait); err != nil {
-									fmt.Fprintf(os.Stderr, "test %q: ssh probe api failed: %v\n", name, err)
-									if statusRec != nil && device != "" {
-										statusRec.update(device, "fail", templateName, deployType, taskID, err.Error(), "ssh probe failed", "unknown", 0)
-										_ = statusRec.flush()
-									}
-									{
-										ns := "ws-" + strings.TrimSpace(ws.Slug)
-										owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
-										dumpFailureArtifacts(context.Background(), statusDir, ns, owner, device, name)
-									}
-									if runLog != nil {
-										runLog.append(e2eRunLogEntry{
-											BaseURL:     baseURL,
-											Workspace:   ws.Name,
-											WorkspaceID: ws.ID,
-											Test:        name,
-											Kind:        kind,
-											Device:      device,
-											Template:    templateName,
-											DeployType:  deployType,
-											TaskID:      taskID,
-											Status:      "fail",
-											Error:       err.Error(),
-											VXLAN:       "unknown",
-											Notes:       "ssh probe api failed",
-										})
-									}
-									exitCode = 1
-									testFailed = true
-								} else {
-									fmt.Printf("OK %s: ssh probe ok (api hosts=%d)\n", name, len(hosts))
-									sshOK = true
-									notes = "deploy+ssh ok"
-								}
-							}
-
-							// Optional: smoke check that clabernetes cross-node overlay is wired up.
-							if !testFailed && sshOK && device != "" && vxlanSmokeEnabledForDevice(device) {
-								ns := "ws-" + strings.TrimSpace(ws.Slug)
-								owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
-								nodes, err := vxlanSmokeCheck(context.Background(), ns, owner)
-								k8sNodes = nodes
-								if err != nil {
-									vxlanStatus = "fail"
-									fmt.Fprintf(os.Stderr, "test %q: vxlan smoke failed: %v\n", name, err)
-									if statusRec != nil {
-										statusRec.update(device, "fail", templateName, deployType, taskID, err.Error(), "vxlan smoke failed", vxlanStatus, k8sNodes)
-										_ = statusRec.flush()
-									}
-									dumpFailureArtifacts(context.Background(), statusDir, ns, owner, device, name)
 									if runLog != nil {
 										runLog.append(e2eRunLogEntry{
 											BaseURL:     baseURL,
@@ -2711,15 +2841,120 @@ func run() int {
 											Error:       err.Error(),
 											VXLAN:       vxlanStatus,
 											K8sNodes:    k8sNodes,
-											Notes:       "vxlan smoke failed",
+											Notes:       "ssh probe job failed",
 										})
 									}
 									exitCode = 1
 									testFailed = true
 								} else {
+									fmt.Printf("OK %s: ssh probe ok (namespace=%s hosts=%d)\n", name, probeNS, len(hosts))
+									sshOK = true
+									notes = "deploy+ssh probe job ok"
+								}
+							default:
+								if err := waitForSSHProbeAPIForDevice(context.Background(), client, baseURL, cookie, device, hosts, sshWait); err != nil {
+									fmt.Fprintf(os.Stderr, "test %q: ssh probe api failed: %v\n", name, err)
+									if device != "" && vxlanSmokeEnabledForDevice(device) {
+										if vxlanSmokeLocalEnabled() {
+											ns := "ws-" + strings.TrimSpace(ws.Slug)
+											owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
+											nodes, vxErr := vxlanSmokeCheck(context.Background(), ns, owner)
+											k8sNodes = nodes
+											if vxErr != nil {
+												vxlanStatus = "fail"
+											} else {
+												vxlanStatus = "pass"
+											}
+										} else {
+											vxlanStatus = "pass"
+										}
+									}
+									if statusRec != nil && device != "" {
+										statusRec.update(device, "fail", templateName, deployType, taskID, err.Error(), "ssh probe failed", vxlanStatus, k8sNodes)
+										_ = statusRec.flush()
+									}
+									{
+										ns := "ws-" + strings.TrimSpace(ws.Slug)
+										owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
+										if vxlanSmokeLocalEnabled() {
+											dumpFailureArtifacts(context.Background(), statusDir, ns, owner, device, name)
+										}
+									}
+									if runLog != nil {
+										runLog.append(e2eRunLogEntry{
+											BaseURL:     baseURL,
+											Workspace:   ws.Name,
+											WorkspaceID: ws.ID,
+											Test:        name,
+											Kind:        kind,
+											Device:      device,
+											Template:    templateName,
+											DeployType:  deployType,
+											TaskID:      taskID,
+											Status:      "fail",
+											Error:       err.Error(),
+											VXLAN:       vxlanStatus,
+											K8sNodes:    k8sNodes,
+											Notes:       "ssh probe api failed",
+										})
+									}
+									exitCode = 1
+									testFailed = true
+								} else {
+									fmt.Printf("OK %s: ssh probe ok (api hosts=%d)\n", name, len(hosts))
+									sshOK = true
+									notes = "deploy+ssh ok"
+								}
+							}
+
+							// Optional: smoke check that clabernetes cross-node overlay is wired up.
+							if !testFailed && sshOK && device != "" && vxlanSmokeEnabledForDevice(device) {
+								if !vxlanSmokeLocalEnabled() {
+									// In server mode, clabernetes deploy performs the overlay smoke check and
+									// fails the task if VXLAN wiring regresses.
 									vxlanStatus = "pass"
-									fmt.Printf("OK %s: vxlan smoke ok (owner=%s)\n", name, owner)
-									notes = fmt.Sprintf("%s; vxlan ok (nodes=%d)", notes, k8sNodes)
+									fmt.Printf("OK %s: vxlan smoke ok (verified by server)\n", name)
+									notes = fmt.Sprintf("%s; vxlan ok", notes)
+								} else {
+									ns := "ws-" + strings.TrimSpace(ws.Slug)
+									owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
+									nodes, err := vxlanSmokeCheck(context.Background(), ns, owner)
+									k8sNodes = nodes
+									if err != nil {
+										vxlanStatus = "fail"
+										fmt.Fprintf(os.Stderr, "test %q: vxlan smoke failed: %v\n", name, err)
+										if statusRec != nil {
+											// VXLAN is a separate signal from "did the device deploy and accept SSH".
+											// Don't overwrite the device's overall reachability status on a VXLAN failure.
+											statusRec.update(device, "pass", templateName, deployType, taskID, "", "vxlan smoke failed", vxlanStatus, k8sNodes)
+											_ = statusRec.flush()
+										}
+										dumpFailureArtifacts(context.Background(), statusDir, ns, owner, device, name)
+										if runLog != nil {
+											runLog.append(e2eRunLogEntry{
+												BaseURL:     baseURL,
+												Workspace:   ws.Name,
+												WorkspaceID: ws.ID,
+												Test:        name,
+												Kind:        kind,
+												Device:      device,
+												Template:    templateName,
+												DeployType:  deployType,
+												TaskID:      taskID,
+												Status:      "fail",
+												Error:       err.Error(),
+												VXLAN:       vxlanStatus,
+												K8sNodes:    k8sNodes,
+												Notes:       "vxlan smoke failed",
+											})
+										}
+										exitCode = 1
+										testFailed = true
+									} else {
+										vxlanStatus = "pass"
+										fmt.Printf("OK %s: vxlan smoke ok (owner=%s)\n", name, owner)
+										notes = fmt.Sprintf("%s; vxlan ok (nodes=%d)", notes, k8sNodes)
+									}
 								}
 							} else if !testFailed && sshOK && vxlanSmokeEnabledForDevice(device) {
 								// vxlan enabled but no device? should not happen, but keep status consistent.

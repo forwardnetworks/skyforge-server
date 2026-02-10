@@ -75,7 +75,6 @@ func (r *e2eStatusRecorder) syncFromRunlog(runlogPath string) {
 		Notes     string `json:"notes"`
 	}
 
-	latest := map[string]entry{}
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		ln := strings.TrimSpace(sc.Text())
@@ -94,49 +93,69 @@ func (r *e2eStatusRecorder) syncFromRunlog(runlogPath string) {
 		if st != "pass" && st != "fail" && st != "skip" {
 			continue
 		}
-		prev, ok := latest[dev]
-		// RFC3339 timestamps are lexicographically sortable.
-		if !ok || strings.TrimSpace(e.At) > strings.TrimSpace(prev.At) {
-			latest[dev] = e
-		}
-	}
 
-	for dev, e := range latest {
 		at := strings.TrimSpace(e.At)
 		if at == "" {
 			at = time.Now().UTC().Format(time.RFC3339)
 		}
 		prev := r.state.Devices[dev]
-		st := e2eDeviceStat{
-			Device:     dev,
-			Status:     strings.TrimSpace(e.Status),
-			UpdatedAt:  at,
-			LastOKAt:   prev.LastOKAt,
-			LastFailAt: prev.LastFailAt,
-			LastError:  prev.LastError,
-			Template:   strings.TrimSpace(e.Template),
-			DeployType: strings.TrimSpace(e.DeployTyp),
-			TaskID:     e.TaskID,
-			Error:      strings.TrimSpace(e.Error),
-			Notes:      strings.TrimSpace(e.Notes),
-			VXLAN:      prev.VXLAN,
-			K8sNodes:   prev.K8sNodes,
+
+		// VXLAN smoke failures should not override "deploy + SSH reachability" status.
+		// They are tracked in the dedicated VXLAN column.
+		vxlanOnlyFailure := st == "fail" && strings.EqualFold(strings.TrimSpace(e.Notes), "vxlan smoke failed")
+
+		next := prev
+		next.Device = dev
+		next.UpdatedAt = at
+		if strings.TrimSpace(e.Template) != "" {
+			next.Template = strings.TrimSpace(e.Template)
+		}
+		if strings.TrimSpace(e.DeployTyp) != "" {
+			next.DeployType = strings.TrimSpace(e.DeployTyp)
+		}
+		if e.TaskID != 0 {
+			next.TaskID = e.TaskID
 		}
 		if strings.TrimSpace(e.VXLAN) != "" {
-			st.VXLAN = strings.TrimSpace(e.VXLAN)
+			next.VXLAN = strings.TrimSpace(e.VXLAN)
 		}
 		if e.K8sNodes > 0 {
-			st.K8sNodes = e.K8sNodes
+			next.K8sNodes = e.K8sNodes
 		}
-		switch strings.ToLower(strings.TrimSpace(e.Status)) {
+
+		switch st {
 		case "pass":
-			st.LastOKAt = at
-			st.LastError = ""
+			next.Status = "pass"
+			next.LastOKAt = at
+			next.LastError = ""
+			next.Error = ""
+			next.Notes = strings.TrimSpace(e.Notes)
+		case "skip":
+			next.Status = "skip"
+			next.Error = ""
+			next.Notes = strings.TrimSpace(e.Notes)
 		case "fail":
-			st.LastFailAt = at
-			st.LastError = strings.TrimSpace(e.Error)
+			if vxlanOnlyFailure {
+				// Preserve previous deploy status; annotate with VXLAN failure detail.
+				if strings.TrimSpace(next.VXLAN) == "" {
+					next.VXLAN = "fail"
+				}
+				msg := strings.TrimSpace(e.Error)
+				if msg == "" {
+					msg = "vxlan smoke failed"
+				}
+				next.Error = ""
+				next.Notes = "vxlan smoke failed: " + msg
+			} else {
+				next.Status = "fail"
+				next.LastFailAt = at
+				next.LastError = strings.TrimSpace(e.Error)
+				next.Error = strings.TrimSpace(e.Error)
+				next.Notes = strings.TrimSpace(e.Notes)
+			}
 		}
-		r.state.Devices[dev] = st
+
+		r.state.Devices[dev] = next
 	}
 }
 

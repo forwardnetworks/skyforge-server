@@ -57,10 +57,12 @@ func injectNetlabC9sVrnetlabStartupConfig(
 	if len(nodesAny) == 0 {
 		return topologyYAML, nodeMounts, nil
 	}
+	dpIntfsByNode := countClabDataPlaneInterfaces(topology)
 
 	overrideCM := sanitizeKubeNameFallback(fmt.Sprintf("c9s-%s-vrnetlab-startup", topologyName), "c9s-vrnetlab-startup")
 	overrideData := map[string]string{}
 	labels := map[string]string{"skyforge-c9s-topology": topologyName}
+	modified := false
 
 	knownOrder := []string{
 		"normalize",
@@ -82,16 +84,65 @@ func injectNetlabC9sVrnetlabStartupConfig(
 		if !ok || cfg == nil || nodeName == "" {
 			continue
 		}
+		dpIntfs := dpIntfsByNode[nodeName]
 
 		kind := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["kind"])))
 		image := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["image"])))
 
-		// vrnetlab qemu-based nodes use /config/startup-config.cfg as the loadable startup config.
-		// Keep IOS/IOL out of this path; their bootstrap is handled differently.
+		// Only touch vrnetlab images (qemu-based).
 		if !strings.Contains(image, "/vrnetlab/") {
 			continue
 		}
-		if kind == "cisco_iol" || kind == "cisco_ioll2" {
+
+		// Apply QEMU/vrnetlab environment overrides (CLAB_INTFS, virtio-rng, etc) for *all* vrnetlab nodes,
+		// even if we don't mount a startup-config for the NOS image.
+		applyVrnetlabNodeEnvOverrides(kind, image, dpIntfs, cfg)
+		if dpIntfs > 0 {
+			modified = true
+		}
+
+		// IOSv/IOSvL2 bootstrap SSH internally (vrnetlab's own access_cfg + RSA keygen logic).
+		// In the native netlab/containerlab workflow, netlab does NOT mount a full startup-config
+		// into IOSv; it applies config post-boot ("netlab initial"). Mounting snippets into
+		// /config/startup-config.cfg can wedge IOSv bootstrapping and prevent the SSH server from
+		// ever emitting a banner (TCP accept works, but no "SSH-" line), which breaks readiness.
+		//
+		// Therefore:
+		// - remove any startup-config reference + mount
+		// - rewrite to our tuned vrnetlab tags (still vrnetlab-native behavior; just more reliable in k8s)
+		if kind == "cisco_vios" || kind == "cisco_viosl2" {
+			if s, ok := cfg["startup-config"].(string); ok && strings.TrimSpace(s) != "" {
+				delete(cfg, "startup-config")
+				modified = true
+			}
+			dropped := dropC9sMountForPath(nodeMounts[nodeName], startupPath)
+			if len(dropped) != len(nodeMounts[nodeName]) {
+				modified = true
+			}
+			nodeMounts[nodeName] = dropped
+
+			// Prefer the skyforge-tuned images for stable SSH bootstrap.
+			if strings.Contains(image, "/cisco_vios:15.9.3") && !strings.Contains(image, "-skyforge") {
+				// Pin to a digest to avoid k8s/node tag caching (imagePullPolicy is typically IfNotPresent).
+				cfg["image"] = "ghcr.io/forwardnetworks/vrnetlab/cisco_vios@sha256:6055038e6c024326a9630699d897a7a089b7af6925f5bcb7b162ba884dbe5f72"
+				modified = true
+			}
+			if strings.Contains(image, "/cisco_viosl2:15.2") && !strings.Contains(image, "-skyforge") {
+				// Pin to a digest to avoid k8s/node tag caching (imagePullPolicy is typically IfNotPresent).
+				cfg["image"] = "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2@sha256:898301d2f9e609b7f008d5e419d0750f31a1ebf30afeb7e311592217b4ac620b"
+				modified = true
+			}
+
+			nodesAny[node] = cfg
+			continue
+		}
+
+		// Some vrnetlab images handle their own bootstrap to enable SSH (IOSv/IOSvL2/IOL/IOLL2).
+		// Mounting a full netlab-generated startup-config into /config/startup-config.cfg can slow or wedge
+		// the bootstrap (e.g. interface config for NICs not yet attached, keygen prompts, etc) and prevent
+		// SSH readiness. For these, rely on vrnetlab's native bootstrap and let `netlab initial` apply config
+		// post-boot, matching the upstream netlab/containerlab workflow.
+		if kind == "cisco_iol" || kind == "cisco_ioll2" || kind == "cisco_vios" || kind == "cisco_viosl2" {
 			continue
 		}
 
@@ -147,7 +198,16 @@ func injectNetlabC9sVrnetlabStartupConfig(
 	}
 
 	if len(overrideData) == 0 {
-		return topologyYAML, nodeMounts, nil
+		if !modified {
+			return topologyYAML, nodeMounts, nil
+		}
+		topology["nodes"] = nodesAny
+		topo["topology"] = topology
+		out, err := yaml.Marshal(topo)
+		if err != nil {
+			return nil, nil, fmt.Errorf("encode clab.yml: %w", err)
+		}
+		return out, nodeMounts, nil
 	}
 	if err := kubeUpsertConfigMap(ctx, ns, overrideCM, overrideData, labels); err != nil {
 		return nil, nil, err
@@ -162,6 +222,165 @@ func injectNetlabC9sVrnetlabStartupConfig(
 	}
 
 	return out, nodeMounts, nil
+}
+
+func applyVrnetlabNodeEnvOverrides(kind, image string, dpIntfs int, cfg map[string]any) {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	image = strings.ToLower(strings.TrimSpace(image))
+	if cfg == nil || kind == "" || image == "" {
+		return
+	}
+	if !strings.Contains(image, "/vrnetlab/") {
+		return
+	}
+
+	// vrnetlab discovers and attaches data-plane NICs by looking for container interfaces
+	// (e.g. eth1, eth2, ...) *at QEMU start time*. In clabernetes the pod networking can
+	// be created slightly after the container starts, so we must tell vrnetlab how many
+	// data-plane interfaces to wait for, otherwise it can start QEMU too early and the
+	// VM comes up missing interfaces (breaking netlab config application and SSH).
+	if dpIntfs > 0 {
+		upsertNodeEnvVar(cfg, "CLAB_INTFS", fmt.Sprintf("%d", dpIntfs))
+	}
+
+	// Many vrnetlab devices enable SSH by generating RSA keys on first boot. Without an entropy
+	// source, key generation can take an extremely long time (or appear hung), which makes
+	// SSH readiness unreliable. Attach a virtio RNG device backed by /dev/urandom.
+	//
+	// This is a QEMU-level tweak (not a NOS patch) and keeps behavior aligned with the
+	// "device comes up and accepts SSH" expectation of containerlab/vrnetlab deployments.
+	appendNodeEnvVarIfMissing(cfg, "QEMU_ADDITIONAL_ARGS",
+		"-object rng-random,filename=/dev/urandom,id=rng0 -device virtio-rng-pci,rng=rng0",
+		[]string{"virtio-rng", "rng-random"},
+	)
+
+	// Cisco ASAv often exposes boot output on the VGA console. Ensure it is redirected to
+	// the serial console that vrnetlab monitors, otherwise the bootstrap never completes
+	// and SSH is never enabled.
+	//
+	// Also bump QEMU memory/SMP to match our k8s resource requests for this kind.
+	if kind == "cisco_asav" {
+		appendNodeEnvVarIfMissing(cfg, "QEMU_ADDITIONAL_ARGS", "-nographic", []string{"-nographic"})
+		upsertNodeEnvVar(cfg, "QEMU_MEMORY", 4096)
+		upsertNodeEnvVar(cfg, "QEMU_SMP", 2)
+	}
+}
+
+// countClabDataPlaneInterfaces estimates the number of data-plane interfaces for each node
+// based on the containerlab topology links.
+//
+// This is used to set vrnetlab's CLAB_INTFS env var so it waits for eth1..ethN before
+// launching QEMU, ensuring the VM sees all interfaces that netlab expects.
+func countClabDataPlaneInterfaces(topology map[string]any) map[string]int {
+	out := map[string]int{}
+	if topology == nil {
+		return out
+	}
+	linksAny, _ := topology["links"].([]any)
+	for _, raw := range linksAny {
+		switch v := raw.(type) {
+		case string:
+			// netlab's simplest link syntax: "r1-r2"
+			parts := strings.Split(strings.TrimSpace(v), "-")
+			if len(parts) != 2 {
+				continue
+			}
+			a := strings.TrimSpace(parts[0])
+			b := strings.TrimSpace(parts[1])
+			if a != "" {
+				out[a]++
+			}
+			if b != "" {
+				out[b]++
+			}
+		case map[string]any:
+			// containerlab-style link entries usually include `endpoints: [ "r1:eth1", "r2:eth1" ]`
+			eps, _ := v["endpoints"].([]any)
+			for _, epAny := range eps {
+				ep := strings.TrimSpace(fmt.Sprintf("%v", epAny))
+				if ep == "" {
+					continue
+				}
+				node := strings.TrimSpace(strings.Split(ep, ":")[0])
+				if node != "" {
+					out[node]++
+				}
+			}
+		default:
+			continue
+		}
+	}
+	return out
+}
+
+func upsertNodeEnvVar(cfg map[string]any, key string, value any) {
+	key = strings.TrimSpace(key)
+	if cfg == nil || key == "" {
+		return
+	}
+
+	raw, ok := cfg["env"]
+	if !ok || raw == nil {
+		cfg["env"] = map[string]any{key: value}
+		return
+	}
+
+	// netlab/containerlab uses a map for env vars; be conservative if the type is unexpected.
+	envMap, ok := raw.(map[string]any)
+	if !ok || envMap == nil {
+		return
+	}
+
+	if _, exists := envMap[key]; !exists {
+		envMap[key] = value
+		cfg["env"] = envMap
+	}
+}
+
+func appendNodeEnvVarIfMissing(cfg map[string]any, key string, suffix string, containsAny []string) {
+	key = strings.TrimSpace(key)
+	suffix = strings.TrimSpace(suffix)
+	if cfg == nil || key == "" || suffix == "" {
+		return
+	}
+	for _, needle := range containsAny {
+		if strings.TrimSpace(needle) == "" {
+			continue
+		}
+		if v, ok := cfg["env"].(map[string]any); ok && v != nil {
+			if cur, ok := v[key]; ok {
+				if s, ok := cur.(string); ok && strings.Contains(s, needle) {
+					return
+				}
+			}
+		}
+	}
+
+	raw, ok := cfg["env"]
+	if !ok || raw == nil {
+		cfg["env"] = map[string]any{key: suffix}
+		return
+	}
+	envMap, ok := raw.(map[string]any)
+	if !ok || envMap == nil {
+		return
+	}
+	if curAny, ok := envMap[key]; ok {
+		if cur, ok := curAny.(string); ok {
+			cur = strings.TrimSpace(cur)
+			if cur == "" {
+				envMap[key] = suffix
+			} else if !strings.Contains(cur, suffix) {
+				envMap[key] = strings.TrimSpace(cur + " " + suffix)
+			}
+			cfg["env"] = envMap
+			return
+		}
+		// If the current type isn't string, don't try to modify it.
+		return
+	}
+	envMap[key] = suffix
+	cfg["env"] = envMap
 }
 
 func stripNetlabJunosDeleteDirectives(kind, startupConfig string) string {
@@ -370,4 +589,19 @@ func upsertC9sMount(existing []c9sFileFromConfigMap, mount c9sFileFromConfigMap)
 		}
 	}
 	return append(existing, mount)
+}
+
+func dropC9sMountForPath(existing []c9sFileFromConfigMap, filePath string) []c9sFileFromConfigMap {
+	filePath = strings.TrimSpace(filePath)
+	if len(existing) == 0 || filePath == "" {
+		return existing
+	}
+	out := existing[:0]
+	for _, m := range existing {
+		if strings.TrimSpace(m.FilePath) == filePath {
+			continue
+		}
+		out = append(out, m)
+	}
+	return out
 }
