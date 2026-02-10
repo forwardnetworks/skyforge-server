@@ -253,20 +253,6 @@ func (s *Service) PostWorkspaceForwardNetworkAssuranceTrafficSeeds(ctx context.C
 	dstNameParts := normalizeParts(req.DstNameParts)
 	dstDevTypes := normalizeParts(req.DstDeviceTypes)
 
-	// Dedupe: keep first management IP per device.
-	byDev := map[string]trafficSeedEndpointRow{}
-	for _, r := range rows {
-		dev := strings.TrimSpace(r.DeviceName)
-		ip := strings.TrimSpace(r.MgmtIP)
-		if dev == "" || ip == "" {
-			continue
-		}
-		if _, ok := byDev[dev]; ok {
-			continue
-		}
-		byDev[dev] = r
-	}
-
 	toEndpoint := func(r trafficSeedEndpointRow) AssuranceTrafficEndpoint {
 		return AssuranceTrafficEndpoint{
 			DeviceName: strings.TrimSpace(r.DeviceName),
@@ -346,10 +332,10 @@ func (s *Service) PostWorkspaceForwardNetworkAssuranceTrafficSeeds(ctx context.C
 		return true
 	}
 
-	allEndpoints := make([]AssuranceTrafficEndpoint, 0, len(byDev))
+	allEndpoints := make([]AssuranceTrafficEndpoint, 0, len(rows))
 	srcEndpoints := []AssuranceTrafficEndpoint{}
 	dstEndpoints := []AssuranceTrafficEndpoint{}
-	for _, r := range byDev {
+	for _, r := range rows {
 		allEndpoints = append(allEndpoints, toEndpoint(r))
 
 		switch mode {

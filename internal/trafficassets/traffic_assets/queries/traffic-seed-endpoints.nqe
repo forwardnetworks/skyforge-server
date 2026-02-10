@@ -5,16 +5,26 @@ Purpose: return device endpoints suitable for seeding Traffic Scenarios.
 We intentionally keep this query vendor-agnostic and lightweight.
 
 Notes:
-- `device.platform.managementIps` may have multiple entries; we emit one row per IP.
-- The Skyforge backend will dedupe to one IP per device and apply tag/name filters.
+- `device.platform.managementIps` may have multiple entries; we pick a deterministic
+  single management IP per device (lexicographically smallest).
+- The Skyforge backend applies tag/name/deviceType filters (demo knobs).
 */
 
-foreach device in network.devices
-foreach ip in device.platform.managementIps
-select {
-  deviceName: device.name,
-  deviceType: device.platform.deviceType,
-  tagNames: device.tagNames,
-  groupNames: device.groupNames,
-  mgmtIp: ip
-}
+@query
+trafficSeedEndpoints =
+  foreach device in network.devices
+  let ips =
+    foreach ip in device.platform.managementIps
+    let v = if isPresent(ip) then ip else ""
+    where v != ""
+    select v
+    order by v ascending
+  where length(ips) > 0
+  let mgmtIp = ips[0]
+  select {
+    deviceName: device.name,
+    deviceType: device.platform.deviceType,
+    tagNames: device.tagNames,
+    groupNames: device.groupNames,
+    mgmtIp: mgmtIp
+  };
