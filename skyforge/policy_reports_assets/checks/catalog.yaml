@@ -368,3 +368,14 @@ checks:
         type: "Bool"
         default: true
         description: "If true, tag matching also considers groupNames."
+
+  - id: "assurance-posture-summary.nqe"
+    title: "Assurance posture summary (single query)"
+    category: "assurance"
+    severity: "low"
+    description: "Single-query posture summary for the assurance dashboard (bundles several high-signal findings)."
+    params:
+      - name: "sensitivePorts"
+        type: "List<Integer>"
+        default: [22, 23, 445, 3389, 1433, 1521, 3306, 5432, 6379, 9200, 27017]
+        description: "Ports considered sensitive when permitted to private address space."

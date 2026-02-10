@@ -739,6 +739,83 @@ func computeAssuranceNQEPosture(ctx context.Context, client *forwardClient, forw
 		return nil, fmt.Errorf("no posture pack found")
 	}
 
+	// Preferred: a single NQE query that emits the demo pack findings in one call.
+	// Falls back to per-check pack execution if the query is missing or rejected by the target Forward runtime.
+	{
+		checkID := "assurance-posture-summary.nqe"
+		queryText, err := policyReportsReadNQE(checkID)
+		if err == nil && strings.TrimSpace(queryText) != "" {
+			params := JSONMap{}
+			for k, v := range policyReportsCatalogDefaultsFor(checkID) {
+				params[k] = v
+			}
+
+			q := url.Values{}
+			q.Set("networkId", forwardNetworkID)
+			if snapshotID != "" {
+				q.Set("snapshotId", snapshotID)
+			}
+			payload := map[string]any{"query": queryText}
+			if len(params) > 0 {
+				payload["parameters"] = params
+			}
+
+			rawPath := forwardAPIPathFor(client, "/nqe")
+			resp, body, err := client.doJSON(ctx, http.MethodPost, rawPath, q, payload)
+			if err == nil && resp != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				norm, nerr := policyReportsNormalizeNQEResponseForCheck(checkID, body)
+				if nerr == nil && norm != nil {
+					var rows []map[string]any
+					if jerr := json.Unmarshal(norm.Results, &rows); jerr == nil {
+						totals := map[string]int{}
+						findings := make([]ForwardAssuranceNQEPostureFinding, 0, 128)
+						for _, r := range rows {
+							// Only count/store violation rows when present.
+							if v, ok := r["violation"].(bool); ok && !v {
+								continue
+							}
+							sev := strings.TrimSpace(anyToString(r["severity"]))
+							if sev == "" {
+								sev = "unknown"
+							}
+							totals[sev]++
+							findings = append(findings, ForwardAssuranceNQEPostureFinding{
+								CheckID:     strings.TrimSpace(anyToString(r["checkId"])),
+								FindingID:   strings.TrimSpace(anyToString(r["findingId"])),
+								Severity:    sev,
+								Category:    strings.TrimSpace(anyToString(r["category"])),
+								AssetKey:    strings.TrimSpace(anyToString(r["assetKey"])),
+								RiskScore:   anyToInt(r["riskScore"]),
+								RiskReasons: anyToStringSlice(r["riskReasons"]),
+							})
+						}
+
+						sort.Slice(findings, func(i, j int) bool {
+							if findings[i].RiskScore != findings[j].RiskScore {
+								return findings[i].RiskScore > findings[j].RiskScore
+							}
+							if findings[i].Severity != findings[j].Severity {
+								return findings[i].Severity > findings[j].Severity
+							}
+							return findings[i].FindingID < findings[j].FindingID
+						})
+						if len(findings) > 10 {
+							findings = findings[:10]
+						}
+
+						return &ForwardAssuranceNQEPosture{
+							PackID:           packID,
+							SnapshotID:       snapshotID,
+							GeneratedAt:      time.Now().UTC().Format(time.RFC3339Nano),
+							TotalsBySeverity: totals,
+							TopFindings:      findings,
+						}, nil
+					}
+				}
+			}
+		}
+	}
+
 	totals := map[string]int{}
 	findings := make([]ForwardAssuranceNQEPostureFinding, 0, 128)
 

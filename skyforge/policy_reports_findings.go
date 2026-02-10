@@ -214,8 +214,15 @@ func policyReportsArrayContainsString(obj map[string]json.RawMessage, key string
 }
 
 func policyReportsComputeRisk(meta policyReportsCheckMeta, obj map[string]json.RawMessage) (int, []string) {
-	score := baseRiskScoreFromSeverity(meta.Severity)
-	reasons := []string{"base:" + strings.ToLower(strings.TrimSpace(meta.Severity))}
+	// Prefer per-item severity when present (enables composite/summary checks to emit
+	// heterogeneous findings while still producing reasonable risk ordering).
+	sev := strings.TrimSpace(meta.Severity)
+	if v := strings.TrimSpace(policyReportsGetString(obj, "severity")); v != "" {
+		sev = v
+	}
+
+	score := baseRiskScoreFromSeverity(sev)
+	reasons := []string{"base:" + strings.ToLower(strings.TrimSpace(sev))}
 
 	// Generic heuristics derived from common modeled ACL fields.
 	if n, ok := policyReportsArrayLen(obj, "ipv4Src"); ok {
