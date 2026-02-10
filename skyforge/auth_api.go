@@ -92,6 +92,7 @@ type SessionResponseEnvelope struct {
 	DisplayName   string   `json:"displayName,omitempty"`
 	Email         string   `json:"email,omitempty"`
 	Groups        []string `json:"groups,omitempty"`
+	AuthProvider  string   `json:"authProvider,omitempty"`
 	IsAdmin       bool     `json:"isAdmin,omitempty"`
 	ActorUsername string   `json:"actorUsername,omitempty"`
 	Impersonating bool     `json:"impersonating,omitempty"`
@@ -267,12 +268,44 @@ func (s *Service) Session(ctx context.Context) (*SessionResponseEnvelope, error)
 		DisplayName:   claims.DisplayName,
 		Email:         claims.Email,
 		Groups:        claims.Groups,
+		AuthProvider:  s.sessionAuthProviderLabel(),
 		IsAdmin:       isAdminForClaims(s.cfg, claims),
 		ActorUsername: claims.ActorUsername,
 		Impersonating: isImpersonating(claims),
 	}
 	fillSessionHeadersEnvelope(resp, claims)
 	return resp, nil
+}
+
+func (s *Service) sessionAuthProviderLabel() string {
+	// Today Skyforge is typically configured with either Google OIDC or Okta OIDC.
+	// Expose a stable, human-friendly label to the UI.
+	if s == nil {
+		return ""
+	}
+	if s.oidc != nil {
+		issuer := strings.TrimSpace(s.cfg.OIDC.IssuerURL)
+		if issuer == "" {
+			issuer = strings.TrimSpace(s.cfg.OIDC.DiscoveryURL)
+		}
+		low := strings.ToLower(issuer)
+		// Common Google issuer: https://accounts.google.com
+		if strings.Contains(low, "accounts.google.com") || strings.Contains(low, "google") {
+			return "Google"
+		}
+		// Okta issuer is usually under *.okta.com or contains "okta".
+		if strings.Contains(low, ".okta.") || strings.Contains(low, "okta") {
+			return "Okta"
+		}
+		return "OIDC"
+	}
+	if s.auth != nil {
+		return "LDAP"
+	}
+	if strings.TrimSpace(s.cfg.AdminPassword) != "" {
+		return "Local"
+	}
+	return ""
 }
 
 //encore:api auth method=POST path=/auth/refresh
