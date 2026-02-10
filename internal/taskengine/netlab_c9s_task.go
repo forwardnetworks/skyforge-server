@@ -1232,6 +1232,80 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 		log.Infof("c9s: rewritten vrnetlab image(s): nodes=%d", rewrittenVrnetlabNodes)
 	}
 
+	// ASAv (vrnetlab/cisco_asav) expects container interface names like eth1, eth2, ...
+	// (it relies on vrnetlab's "grep eth" style interface discovery at boot).
+	//
+	// Netlab's device definition for ASAv uses interface names like GigabitEthernet0/0.
+	// That is fine for the *guest* naming, but the *container* Linux ifnames must be
+	// eth* to allow vrnetlab to detect the provisioned dataplane interfaces and boot.
+	//
+	// Netlab can be configured to generate eth* names (clab.interface.name), but to
+	// avoid depending on generator image contents, patch the generated clab.yml here.
+	if topology, ok := topo["topology"].(map[string]any); ok {
+		nodes, _ := topology["nodes"].(map[string]any)
+		linksAny, _ := topology["links"].([]any)
+		if len(nodes) > 0 && len(linksAny) > 0 {
+			asavNodes := map[string]struct{}{}
+			for node, nodeAny := range nodes {
+				cfg, ok := nodeAny.(map[string]any)
+				if !ok || cfg == nil {
+					continue
+				}
+				kindLower := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["kind"])))
+				imgLower := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["image"])))
+				if kindLower == "cisco_asav" || strings.Contains(imgLower, "/vrnetlab/cisco_asav") {
+					asavNodes[strings.TrimSpace(fmt.Sprintf("%v", node))] = struct{}{}
+				}
+			}
+			if len(asavNodes) > 0 {
+				nextIdx := map[string]int{}
+				for n := range asavNodes {
+					nextIdx[n] = 1 // eth0 is mgmt, dataplane starts at eth1
+				}
+				changed := 0
+				for li, linkAny := range linksAny {
+					lm, ok := linkAny.(map[string]any)
+					if !ok || lm == nil {
+						continue
+					}
+					epsAny, ok := lm["endpoints"].([]any)
+					if !ok || len(epsAny) == 0 {
+						continue
+					}
+					outEps := make([]any, 0, len(epsAny))
+					for _, epAny := range epsAny {
+						ep := strings.TrimSpace(fmt.Sprintf("%v", epAny))
+						if ep == "" {
+							outEps = append(outEps, epAny)
+							continue
+						}
+						parts := strings.SplitN(ep, ":", 2)
+						if len(parts) != 2 {
+							outEps = append(outEps, epAny)
+							continue
+						}
+						n := strings.TrimSpace(parts[0])
+						if _, ok := asavNodes[n]; !ok {
+							outEps = append(outEps, epAny)
+							continue
+						}
+						idx := nextIdx[n]
+						nextIdx[n] = idx + 1
+						outEps = append(outEps, fmt.Sprintf("%s:eth%d", n, idx))
+						changed++
+					}
+					lm["endpoints"] = outEps
+					linksAny[li] = lm
+				}
+				if changed > 0 {
+					topology["links"] = linksAny
+					topo["topology"] = topology
+					log.Infof("c9s: asav: rewritten dataplane endpoints to eth*: endpoints=%d", changed)
+				}
+			}
+		}
+	}
+
 	// Rewrite bind sources to the mounted file paths (only for node_files paths).
 	mountRoot := path.Join("/tmp/skyforge-c9s", topologyName)
 	if topology, ok := topo["topology"].(map[string]any); ok {
