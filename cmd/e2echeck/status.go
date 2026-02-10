@@ -297,7 +297,19 @@ func (r *e2eStatusRecorder) flush() error {
 	sort.Strings(devs)
 	rows := make([]e2eDeviceStat, 0, len(devs))
 	for _, d := range devs {
-		rows = append(rows, r.state.Devices[d])
+		st := r.state.Devices[d]
+		// Older versions of e2echeck wrote "skip" entries when a device was filtered
+		// out, even if it had never been run. Normalize those to "unknown" so the
+		// status table remains a "last known result" view.
+		if strings.EqualFold(strings.TrimSpace(st.Status), "skip") &&
+			strings.TrimSpace(st.LastOKAt) == "" &&
+			strings.TrimSpace(st.LastFailAt) == "" {
+			st.Status = "unknown"
+			if strings.TrimSpace(st.Notes) == "" || strings.Contains(strings.ToLower(st.Notes), "skipped by") {
+				st.Notes = "not yet run"
+			}
+		}
+		rows = append(rows, st)
 	}
 	r.state.Rows = rows
 
