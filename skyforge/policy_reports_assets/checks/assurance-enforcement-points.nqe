@@ -22,10 +22,11 @@ nonEmptyLower(ss) =
   select v;
 
 isDefaultEnforcementType(dt) =
-  dt == DeviceType.FIREWALL ||
-  dt == DeviceType.AWS_NETWORK_FIREWALL ||
-  dt == DeviceType.AZURE_FIREWALL ||
-  dt == DeviceType.AZURE_VIRTUAL_APPLIANCE;
+  let s = asLower(toString(dt))
+  s == "firewall" ||
+  s == "aws_network_firewall" ||
+  s == "azure_firewall" ||
+  s == "azure_virtual_appliance";
 
 typeMatches(dt, wantedLower) =
   (length(wantedLower) == 0 && isDefaultEnforcementType(dt)) ||
@@ -65,4 +66,3 @@ assuranceEnforcementPoints(
     tagNames: device.tagNames,
     groupNames: device.groupNames
   };
-
