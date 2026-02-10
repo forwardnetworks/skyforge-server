@@ -742,7 +742,7 @@ func allowedTemplatesForDevice(device string) map[string]struct{} {
 func deployTimeoutsForDevice(device string) (deployTimeout string, sshTimeout string) {
 	switch strings.TrimSpace(device) {
 	// QEMU-heavy / slow-boot devices.
-	case "vmx", "vptx", "cat8000v", "nxos", "sros":
+	case "vmx", "vptx", "cat8000v", "nxos", "sros", "vjunos-router", "vjunos-switch":
 		return "50m", "30m"
 	default:
 		return "25m", "12m"
@@ -2291,6 +2291,19 @@ func run() int {
 				}
 				_ = removeCreatedWorkspace(statusDir, ws.ID)
 				fmt.Printf("OK workspace delete: %s\n", ws.ID)
+
+				// Best-effort: E2E workspaces create per-workspace namespaces (ws-<slug>).
+				// Skyforge should normally delete these as part of workspace deletion, but
+				// finalizers / crashed controllers can leave namespaces behind and slowly
+				// degrade cluster performance over time.
+				//
+				// Only delete namespaces for E2E workspaces to avoid accidents.
+				if strings.HasPrefix(strings.TrimSpace(ws.Slug), "e2e-") {
+					ctx := context.Background()
+					ns := "ws-" + strings.TrimSpace(ws.Slug)
+					kubectlDeleteName(ctx, "namespace", "", ns)
+					fmt.Printf("OK e2echeck: requested namespace delete (namespace=%s)\n", ns)
+				}
 			})
 		}
 

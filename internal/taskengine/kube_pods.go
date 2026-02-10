@@ -256,10 +256,45 @@ func kubeClabernetesTopologyPodsReady(ctx context.Context, ns, topologyOwner str
 	}
 
 	var notReady []string
+	// Hard failure reasons we should fail fast on instead of waiting for the full deploy timeout.
+	// This keeps E2E and user deploys from looking "stuck" when the real issue is a missing image
+	// or a crashing container.
+	fatalWaitingReasons := map[string]struct{}{
+		"ErrImagePull":               {},
+		"ImagePullBackOff":           {},
+		"InvalidImageName":           {},
+		"CreateContainerConfigError": {},
+		"CreateContainerError":       {},
+		"RunContainerError":          {},
+		"CrashLoopBackOff":           {},
+	}
+	var fatal []string
 	for _, p := range pods {
 		podName := strings.TrimSpace(p.Metadata.Name)
 		if podName == "" {
 			podName = "<unknown>"
+		}
+		// Detect fatal container states even when the pod phase is still Pending/Running.
+		for _, cs := range p.Status.ContainerStatuses {
+			if cs.State.Waiting == nil {
+				continue
+			}
+			r := strings.TrimSpace(cs.State.Waiting.Reason)
+			if r == "" {
+				continue
+			}
+			if _, ok := fatalWaitingReasons[r]; ok {
+				cname := strings.TrimSpace(cs.Name)
+				if cname == "" {
+					cname = "container"
+				}
+				msg := strings.TrimSpace(cs.State.Waiting.Message)
+				if msg != "" {
+					fatal = append(fatal, fmt.Sprintf("%s/%s waiting=%s message=%q", podName, cname, r, msg))
+				} else {
+					fatal = append(fatal, fmt.Sprintf("%s/%s waiting=%s", podName, cname, r))
+				}
+			}
 		}
 		if strings.TrimSpace(p.Status.Phase) != "Running" {
 			notReady = append(notReady, fmt.Sprintf("%s phase=%s", podName, strings.TrimSpace(p.Status.Phase)))
@@ -277,6 +312,12 @@ func kubeClabernetesTopologyPodsReady(ctx context.Context, ns, topologyOwner str
 		}
 	}
 
+	if len(fatal) > 0 {
+		if len(fatal) > 3 {
+			fatal = fatal[:3]
+		}
+		return false, notReady, fmt.Errorf("clabernetes topology pods have fatal container state(s): %s", strings.Join(fatal, "; "))
+	}
 	return len(notReady) == 0, notReady, nil
 }
 
