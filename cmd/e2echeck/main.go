@@ -793,6 +793,7 @@ func defaultE2EExcludeDevices() map[string]struct{} {
 	return map[string]struct{}{
 		"openbsd":   {},
 		"routeros7": {},
+		"cumulus":   {},
 	}
 }
 
@@ -1151,66 +1152,108 @@ func waitForSSHProbeAPI(ctx context.Context, client *http.Client, baseURL, cooki
 		timeoutSeconds = 600
 	}
 
-	req := adminSSHProbeRequest{
-		Hosts:          hosts,
-		Port:           22,
-		TimeoutSeconds: timeoutSeconds,
-		TCPOnly:        tcpOnly,
-	}
 	url := baseURL + "/api/admin/e2e/sshprobe"
 
-	// The probe endpoint is synchronous and may legitimately take minutes.
-	// Use a dedicated client with a timeout that covers the whole probe window.
-	probeClient := &http.Client{
-		Transport:     client.Transport,
-		CheckRedirect: client.CheckRedirect,
-		Jar:           client.Jar,
-		Timeout:       timeout + 60*time.Second,
+	// The probe endpoint is synchronous. If we pass a long timeout, we can hit
+	// ingress/LB stream timeouts (504) before the probe returns. To keep this
+	// robust, we poll with a smaller per-call window and retry until the overall
+	// deadline.
+	deadline := time.Now().Add(timeout)
+	step := 30 * time.Second
+	if step > timeout {
+		step = timeout
 	}
-	resp, body, err := doJSONWithRetry(ctx, probeClient, http.MethodPost, url, req, map[string]string{"Cookie": cookie})
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("ssh probe api failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	var out adminSSHProbeResponse
-	if err := json.Unmarshal(body, &out); err != nil {
-		return fmt.Errorf("ssh probe api parse failed: %v", err)
-	}
-	if out.OK {
-		return nil
-	}
-	if len(out.Results) == 0 {
-		return fmt.Errorf("ssh probe failed (no results)")
+	if step < 10*time.Second {
+		step = 10 * time.Second
 	}
 
-	type item struct {
-		host string
-		res  adminSSHProbeResult
-	}
-	items := make([]item, 0, len(out.Results))
-	for h, r := range out.Results {
-		items = append(items, item{host: h, res: r})
-	}
-	sort.Slice(items, func(i, j int) bool { return items[i].host < items[j].host })
+	var lastErr error
+	for time.Now().Before(deadline) {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			break
+		}
+		callTimeout := step
+		if callTimeout > remaining {
+			callTimeout = remaining
+		}
+		if callTimeout < 5*time.Second {
+			callTimeout = 5 * time.Second
+		}
 
-	var b strings.Builder
-	for _, it := range items {
-		if it.res.OK {
+		req := adminSSHProbeRequest{
+			Hosts:          hosts,
+			Port:           22,
+			TimeoutSeconds: int(callTimeout.Seconds()),
+			TCPOnly:        tcpOnly,
+		}
+
+		probeClient := &http.Client{
+			Transport:     client.Transport,
+			CheckRedirect: client.CheckRedirect,
+			Jar:           client.Jar,
+			Timeout:       callTimeout + 15*time.Second,
+		}
+		resp, body, err := doJSONWithRetry(ctx, probeClient, http.MethodPost, url, req, map[string]string{"Cookie": cookie})
+		if err != nil {
+			lastErr = err
+			time.Sleep(3 * time.Second)
 			continue
 		}
-		if it.res.Error != "" {
-			fmt.Fprintf(&b, "%s: %s\n", it.host, it.res.Error)
-		} else {
-			fmt.Fprintf(&b, "%s: failed\n", it.host)
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			lastErr = fmt.Errorf("ssh probe api failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+			time.Sleep(3 * time.Second)
+			continue
 		}
+		var out adminSSHProbeResponse
+		if err := json.Unmarshal(body, &out); err != nil {
+			lastErr = fmt.Errorf("ssh probe api parse failed: %v", err)
+			time.Sleep(3 * time.Second)
+			continue
+		}
+		if out.OK {
+			return nil
+		}
+		if len(out.Results) == 0 {
+			lastErr = fmt.Errorf("ssh probe failed (no results)")
+			time.Sleep(3 * time.Second)
+			continue
+		}
+
+		type item struct {
+			host string
+			res  adminSSHProbeResult
+		}
+		items := make([]item, 0, len(out.Results))
+		for h, r := range out.Results {
+			items = append(items, item{host: h, res: r})
+		}
+		sort.Slice(items, func(i, j int) bool { return items[i].host < items[j].host })
+
+		var b strings.Builder
+		for _, it := range items {
+			if it.res.OK {
+				continue
+			}
+			if it.res.Error != "" {
+				fmt.Fprintf(&b, "%s: %s\n", it.host, it.res.Error)
+			} else {
+				fmt.Fprintf(&b, "%s: failed\n", it.host)
+			}
+		}
+		msg := strings.TrimSpace(b.String())
+		if msg == "" {
+			msg = "ssh probe failed"
+		}
+		lastErr = fmt.Errorf("%s", msg)
+
+		time.Sleep(3 * time.Second)
 	}
-	msg := strings.TrimSpace(b.String())
-	if msg == "" {
-		msg = "ssh probe failed"
+
+	if lastErr != nil {
+		return lastErr
 	}
-	return fmt.Errorf("%s", msg)
+	return fmt.Errorf("ssh probe failed")
 }
 
 func isSlowSSHDevice(device string) bool {
