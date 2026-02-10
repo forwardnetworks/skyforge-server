@@ -47,7 +47,7 @@ read_file_json_string() {
   jq -Rs . <"$p"
 }
 
-echo "[1/6] Fetch latest processed snapshot..."
+echo "[1/7] Fetch latest processed snapshot..."
 snap_json="$(api_get "/api/networks/${FWD_NETWORK_ID}/snapshots/latestProcessed")"
 snapshot_id="$(jq -r '.id // .snapshotId // empty' <<<"$snap_json")"
 if [[ -z "$snapshot_id" || "$snapshot_id" == "null" ]]; then
@@ -57,7 +57,7 @@ if [[ -z "$snapshot_id" || "$snapshot_id" == "null" ]]; then
 fi
 echo "snapshotId=$snapshot_id"
 
-echo "[2/6] Run NQE: traffic seed endpoints..."
+echo "[2/7] Run NQE: traffic seed endpoints..."
 seed_q="$ROOT_DIR/internal/trafficassets/traffic_assets/queries/traffic-seed-endpoints.nqe"
 seed_query="$(read_file_json_string "$seed_q")"
 seed_body="$(jq -n \
@@ -75,7 +75,7 @@ if [[ -z "$src_dev" || -z "$src_ip" || -z "$dst_ip" ]]; then
   exit 1
 fi
 
-echo "[3/6] Run NQE: assurance enforcement points helper..."
+echo "[3/7] Run NQE: assurance enforcement points helper..."
 enf_q="$ROOT_DIR/skyforge/policy_reports_assets/checks/assurance-enforcement-points.nqe"
 enf_query="$(read_file_json_string "$enf_q")"
 enf_body="$(jq -n \
@@ -85,7 +85,7 @@ enf_out="$(api_post "/api/nqe?networkId=${FWD_NETWORK_ID}&snapshotId=${snapshot_
 enf_n="$(jq -r '.totalNumItems // (.items|length) // 0' <<<"$enf_out")"
 echo "enforcement points=$enf_n"
 
-echo "[4/6] Run NQE: assurance posture summary..."
+echo "[4/7] Run NQE: assurance posture summary..."
 post_q="$ROOT_DIR/skyforge/policy_reports_assets/checks/assurance-posture-summary.nqe"
 post_query="$(read_file_json_string "$post_q")"
 post_body="$(jq -n \
@@ -95,7 +95,7 @@ post_out="$(api_post "/api/nqe?networkId=${FWD_NETWORK_ID}&snapshotId=${snapshot
 post_n="$(jq -r '.totalNumItems // (.items|length) // 0' <<<"$post_out")"
 echo "posture findings rows=$post_n"
 
-echo "[5/6] Run NQE: RFC1918 to internet any-service..."
+echo "[5/7] Run NQE: RFC1918 to internet any-service..."
 eg_q="$ROOT_DIR/skyforge/policy_reports_assets/checks/acl-rfc1918-to-internet-any-service.nqe"
 eg_query="$(read_file_json_string "$eg_q")"
 eg_body="$(jq -n --argjson query "$eg_query" '{query:$query}')"
@@ -103,7 +103,17 @@ eg_out="$(api_post "/api/nqe?networkId=${FWD_NETWORK_ID}&snapshotId=${snapshot_i
 eg_n="$(jq -r '.totalNumItems // (.items|length) // 0' <<<"$eg_out")"
 echo "egress findings rows=$eg_n"
 
-echo "[6/6] Run paths-bulk + interface-metrics-history (UTILIZATION)..."
+echo "[6/7] Run NQE: RFC1918 to internet sensitive ports..."
+eg2_q="$ROOT_DIR/skyforge/policy_reports_assets/checks/acl-rfc1918-to-internet-sensitive-ports.nqe"
+eg2_query="$(read_file_json_string "$eg2_q")"
+eg2_body="$(jq -n \
+  --argjson query "$eg2_query" \
+  '{query:$query, parameters:{sensitivePorts:[22,23,445,3389,1433,1521,3306,5432,6379,9200,27017]}}')"
+eg2_out="$(api_post "/api/nqe?networkId=${FWD_NETWORK_ID}&snapshotId=${snapshot_id}" "$eg2_body")"
+eg2_n="$(jq -r '.totalNumItems // (.items|length) // 0' <<<"$eg2_out")"
+echo "egress sensitive rows=$eg2_n"
+
+echo "[7/7] Run paths-bulk + interface-metrics-history (UTILIZATION)..."
 paths_body="$(jq -n --arg srcIp "$src_ip" --arg dstIp "$dst_ip" \
   '{queries:[{srcIp:$srcIp, dstIp:$dstIp}], intent:"PREFER_DELIVERED", maxCandidates:1000, maxResults:1, maxReturnPathResults:0, maxSeconds:30, maxOverallSeconds:60, includeTags:true, includeNetworkFunctions:false}')"
 paths_out="$(api_post "/api/networks/${FWD_NETWORK_ID}/paths-bulk?snapshotId=${snapshot_id}" "$paths_body")"

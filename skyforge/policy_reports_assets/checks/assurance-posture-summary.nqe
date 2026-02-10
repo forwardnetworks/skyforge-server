@@ -140,6 +140,55 @@ aclRfc1918ToInternetAnyService =
     hitCount: aclEntry.lifecycleData?.truncatedHitCount
   };
 
+aclRfc1918ToInternetSensitivePorts(sensitivePorts) =
+  foreach device in network.devices
+  where device.platform.deviceType == DeviceType.FIREWALL
+  foreach aclEntry in device.aclEntries
+  let h = aclEntry.headerMatches
+  where aclEntry.action == AclAction.PERMIT
+  where !aclEntry.implicitRule
+  where !aclEntry.defaultRule
+
+  let srcOverlapsPrivate =
+    length(h.ipv4Src) == 0 ||
+    !isEmpty(intersect(ipAddressSet(h.ipv4Src), privateIpAddressSet))
+  let dstIsInternet =
+    length(h.ipv4Dst) == 0 ||
+    !(ipAddressSet(h.ipv4Dst) in privateIpAddressSet)
+  let isTcpOrUdp =
+    length(h.ipProtocol) == 0 ||
+    any(foreach r in h.ipProtocol
+        select (r.start <= 6 && 6 <= r.end) || (r.start <= 17 && 17 <= r.end))
+  let hitsSensitivePort =
+    any(foreach p in sensitivePorts select includesPort(h.tpDst, p))
+
+  where srcOverlapsPrivate
+  where dstIsInternet
+  where isTcpOrUdp
+  where hitsSensitivePort
+  select {
+    violation: true,
+    checkId: "acl-rfc1918-to-internet-sensitive-ports.nqe",
+    checkTitle: "PERMIT RFC1918 to internet on sensitive ports (modeled ACL)",
+    category: "policy-risk",
+    severity: "high",
+    findingId: device.name + ":" + aclEntry.name + ":rfc1918-to-internet-sensitive",
+    assetKey: device.name,
+
+    device: device.name,
+    rule: aclEntry.name,
+    action: aclEntry.action,
+    reason: "RFC1918_TO_INTERNET_SENSITIVE_PORTS",
+    evidence: sourceConfigText(aclEntry.name),
+    ipv4Src: h.ipv4Src,
+    ipv4Dst: h.ipv4Dst,
+    ipProto: h.ipProtocol,
+    tpDst: h.tpDst,
+    sensitivePorts: sensitivePorts,
+    lastUsed: aclEntry.lifecycleData?.lastUsed,
+    hitCount: aclEntry.lifecycleData?.truncatedHitCount
+  };
+
 aclAnyToRfc1918(sensitivePorts) =
   foreach device in network.devices
   foreach aclEntry in device.aclEntries
@@ -243,6 +292,7 @@ assurancePostureSummary(sensitivePorts : List<Integer>) =
   aclAnyAny +
   aclAnyService +
   aclRfc1918ToInternetAnyService +
+  aclRfc1918ToInternetSensitivePorts(sensitivePorts) +
   aclAnyToRfc1918(sensitivePorts) +
   defaultRouteNoUrpf +
   ospfPassiveDefaultMissing;

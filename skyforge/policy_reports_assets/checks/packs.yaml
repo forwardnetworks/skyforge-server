@@ -21,6 +21,7 @@ packs:
       - id: "acl-permit-any-service.nqe"
       - id: "acl-any-to-rfc1918-sensitive-ports.nqe"
       - id: "acl-rfc1918-to-internet-any-service.nqe"
+      - id: "acl-rfc1918-to-internet-sensitive-ports.nqe"
 
   - id: "assurance-demo"
     title: "Assurance Demo Pack"
@@ -30,6 +31,7 @@ packs:
       - id: "acl-permit-any-service.nqe"
       - id: "acl-any-to-rfc1918-sensitive-ports.nqe"
       - id: "acl-rfc1918-to-internet-any-service.nqe"
+      - id: "acl-rfc1918-to-internet-sensitive-ports.nqe"
       - id: "default-route-urpf-heuristic.nqe"
       - id: "ospf-passive-default.nqe"
 
