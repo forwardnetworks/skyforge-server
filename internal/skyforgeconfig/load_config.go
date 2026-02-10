@@ -182,10 +182,10 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 	}
 	dnsUserZoneSuffix = strings.TrimPrefix(dnsUserZoneSuffix, ".")
 
-		taskWorkerEnabled := enc.TaskWorkerEnabled
+	taskWorkerEnabled := enc.TaskWorkerEnabled
 
-		mcpEnabled := enc.MCP.Enabled
-		mcpForwardAllowWrites := enc.MCP.ForwardAllowWrites
+	mcpEnabled := enc.MCP.Enabled
+	mcpForwardAllowWrites := enc.MCP.ForwardAllowWrites
 
 	imagePullSecretName := strings.TrimSpace(enc.Kubernetes.ImagePullSecretName)
 	imagePullSecretNamespace := strings.TrimSpace(enc.Kubernetes.ImagePullSecretNamespace)
@@ -436,10 +436,10 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 			}
 			return 30
 		}(),
-			DNSURL:                                   dnsURL,
-			DNSAdminUsername:                         dnsAdminUsername,
-			DNSUserZoneSuffix:                        dnsUserZoneSuffix,
-			TaskWorkerEnabled:                        taskWorkerEnabled,
+		DNSURL:                                   dnsURL,
+		DNSAdminUsername:                         dnsAdminUsername,
+		DNSUserZoneSuffix:                        dnsUserZoneSuffix,
+		TaskWorkerEnabled:                        taskWorkerEnabled,
 		ImagePullSecretName:                      imagePullSecretName,
 		ImagePullSecretNamespace:                 imagePullSecretNamespace,
 		ForwardCollectorImage:                    forwardCollectorImage,
@@ -453,14 +453,14 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		NetlabGeneratorPullPolicy:                netlabGeneratorPullPolicy,
 		NetlabApplierImage:                       netlabApplierImage,
 		NetlabApplierPullPolicy:                  netlabApplierPullPolicy,
-			Features:                                 featuresCfg,
-			Elastic:                                  elasticCfg,
-			MCP: skyforgecore.MCPConfig{
-				Enabled:           mcpEnabled,
-				ForwardAllowWrites: mcpForwardAllowWrites,
-			},
-		}
+		Features:                                 featuresCfg,
+		Elastic:                                  elasticCfg,
+		MCP: skyforgecore.MCPConfig{
+			Enabled:            mcpEnabled,
+			ForwardAllowWrites: mcpForwardAllowWrites,
+		},
 	}
+}
 
 // LoadWorkerConfig loads a subset of configuration required for the worker service.
 func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.Config {
@@ -638,13 +638,13 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 			SNMPPlaceholderEnabled: enc.Forward.SNMPPlaceholderEnabled,
 		},
 		PKICACert: strings.TrimSpace(sec.PKICACert),
-			PKICAKey:  strings.TrimSpace(sec.PKICAKey),
-			SSHCAKey:  strings.TrimSpace(sec.SSHCAKey),
-			Features:  featuresCfg,
-			Elastic:   elasticCfg,
-			MCP: skyforgecore.MCPConfig{
-				Enabled:           false,
-				ForwardAllowWrites: false,
-			},
-		}
+		PKICAKey:  strings.TrimSpace(sec.PKICAKey),
+		SSHCAKey:  strings.TrimSpace(sec.SSHCAKey),
+		Features:  featuresCfg,
+		Elastic:   elasticCfg,
+		MCP: skyforgecore.MCPConfig{
+			Enabled:            false,
+			ForwardAllowWrites: false,
+		},
 	}
+}

@@ -36,6 +36,11 @@ type CapacityInterfaceInventoryRow struct {
 	InterfaceType      string   `json:"interfaceType,omitempty"`
 	Mtu                *int     `json:"mtu,omitempty"`
 	SpeedMbps          *int     `json:"speedMbps,omitempty"`
+
+	// Link aggregation (LAG / port-channel).
+	AggregateID                      *string  `json:"aggregateId,omitempty"`
+	AggregationMemberNames           []string `json:"aggregationMemberNames,omitempty"`
+	AggregationConfiguredMemberNames []string `json:"aggregationConfiguredMemberNames,omitempty"`
 }
 
 type CapacityRouteScaleRow struct {
@@ -142,20 +147,20 @@ func (s *Service) GetWorkspaceDeploymentCapacityInventory(ctx context.Context, i
 	return out, nil
 }
 
-	func loadLatestCapacityInventory(ctx context.Context, db *sql.DB, workspaceID, deploymentID string) (asOf time.Time, snapshotID string, devices []CapacityDeviceInventoryRow, ifaces []CapacityInterfaceInventoryRow, ifaceVrfs []CapacityInterfaceVrfRow, hwTcam []CapacityHardwareTcamRow, routes []CapacityRouteScaleRow, bgp []CapacityBgpNeighborRow, err error) {
-		if db == nil {
-			return time.Time{}, "", nil, nil, nil, nil, nil, nil, fmt.Errorf("db unavailable")
-		}
+func loadLatestCapacityInventory(ctx context.Context, db *sql.DB, workspaceID, deploymentID string) (asOf time.Time, snapshotID string, devices []CapacityDeviceInventoryRow, ifaces []CapacityInterfaceInventoryRow, ifaceVrfs []CapacityInterfaceVrfRow, hwTcam []CapacityHardwareTcamRow, routes []CapacityRouteScaleRow, bgp []CapacityBgpNeighborRow, err error) {
+	if db == nil {
+		return time.Time{}, "", nil, nil, nil, nil, nil, nil, fmt.Errorf("db unavailable")
+	}
 	ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-		rows, err := db.QueryContext(ctxReq, `SELECT DISTINCT ON (query_id) query_id, payload, created_at
+	rows, err := db.QueryContext(ctxReq, `SELECT DISTINCT ON (query_id) query_id, payload, created_at
 	FROM sf_capacity_nqe_cache
 	WHERE workspace_id=$1 AND deployment_id=$2 AND snapshot_id=''
 	ORDER BY query_id, created_at DESC`, workspaceID, deploymentID)
-		if err != nil {
-			return time.Time{}, "", nil, nil, nil, nil, nil, nil, err
-		}
+	if err != nil {
+		return time.Time{}, "", nil, nil, nil, nil, nil, nil, err
+	}
 	defer rows.Close()
 
 	for rows.Next() {
@@ -185,25 +190,25 @@ func (s *Service) GetWorkspaceDeploymentCapacityInventory(ctx context.Context, i
 			var out []CapacityInterfaceInventoryRow
 			_ = json.Unmarshal(cached.Results, &out)
 			ifaces = out
-			case "capacity-interface-vrfs.nqe":
-				var out []CapacityInterfaceVrfRow
-				_ = json.Unmarshal(cached.Results, &out)
-				ifaceVrfs = out
-			case "capacity-hardware-tcam.nqe":
-				var out []CapacityHardwareTcamRow
-				_ = json.Unmarshal(cached.Results, &out)
-				hwTcam = out
-			case "capacity-route-scale.nqe":
-				var out []CapacityRouteScaleRow
-				_ = json.Unmarshal(cached.Results, &out)
-				routes = out
+		case "capacity-interface-vrfs.nqe":
+			var out []CapacityInterfaceVrfRow
+			_ = json.Unmarshal(cached.Results, &out)
+			ifaceVrfs = out
+		case "capacity-hardware-tcam.nqe":
+			var out []CapacityHardwareTcamRow
+			_ = json.Unmarshal(cached.Results, &out)
+			hwTcam = out
+		case "capacity-route-scale.nqe":
+			var out []CapacityRouteScaleRow
+			_ = json.Unmarshal(cached.Results, &out)
+			routes = out
 		case "capacity-bgp-neighbors.nqe":
 			var out []CapacityBgpNeighborRow
 			_ = json.Unmarshal(cached.Results, &out)
 			bgp = out
-			default:
-				continue
-			}
+		default:
+			continue
 		}
-		return asOf, snapshotID, devices, ifaces, ifaceVrfs, hwTcam, routes, bgp, nil
 	}
+	return asOf, snapshotID, devices, ifaces, ifaceVrfs, hwTcam, routes, bgp, nil
+}

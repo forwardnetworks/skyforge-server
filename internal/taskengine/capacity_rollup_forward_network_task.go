@@ -11,8 +11,8 @@ import (
 )
 
 type capacityRollupForwardNetworkTaskSpec struct {
-	ForwardNetworkID   string `json:"forwardNetworkId"`
-	CollectorConfigID  string `json:"collectorConfigId,omitempty"`
+	ForwardNetworkID  string `json:"forwardNetworkId"`
+	CollectorConfigID string `json:"collectorConfigId,omitempty"`
 }
 
 func (e *Engine) dispatchCapacityRollupForwardNetworkTask(ctx context.Context, task *taskstore.TaskRecord, log Logger) error {
@@ -128,4 +128,3 @@ func (e *Engine) runCapacityRollupForwardNetwork(ctx context.Context, pc *worksp
 	})
 	return nil
 }
-

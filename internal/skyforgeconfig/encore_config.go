@@ -53,7 +53,7 @@ type DNSDefaultsConfig struct {
 }
 
 type MCPDefaultsConfig struct {
-	Enabled           bool
+	Enabled            bool
 	ForwardAllowWrites bool
 }
 

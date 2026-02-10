@@ -1,0 +1,81 @@
+/**
+ * @intent Segmentation: PERMIT between two zones on sensitive ports.
+ * @description
+ *  Uses modeled ACL entries (device.aclEntries).
+ *  Zones are defined by subnet lists (strings parsed via ipSubnet()).
+ *
+ *  Flags PERMIT rules that overlap srcSubnets->dstSubnets and include any sensitive port.
+ *  Protocol is treated as TCP/UDP if the protocol set includes 6 or 17, or is unspecified (any).
+ */
+
+subnetsFromStrings(ss) =
+  foreach s in ss select ipSubnet(s);
+
+setFromStrings(ss) =
+  ipAddressSet(subnetsFromStrings(ss));
+
+overlapsZone(ruleSubnets, zoneSet) =
+  // If the rule is "any" (empty), treat as overlapping the zone.
+  length(ruleSubnets) == 0 ||
+  !isEmpty(intersect(ipAddressSet(ruleSubnets), zoneSet));
+
+containsIntRange(ranges, v) =
+  length(ranges) == 0 ||
+  any(foreach r in ranges
+      select r.start <= v && v <= r.end);
+
+protoAllowsTcpOrUdp(protoRanges) =
+  length(protoRanges) == 0 ||
+  containsIntRange(protoRanges, 6) ||
+  containsIntRange(protoRanges, 17);
+
+@query
+aclZoneToZoneSensitivePorts(
+  srcSubnets : List<String>,
+  dstSubnets : List<String>,
+  sensitivePorts : List<Integer>,
+  firewallsOnly : Bool,
+  includeImplicitDefault : Bool
+) =
+  let srcSet = setFromStrings(srcSubnets)
+  let dstSet = setFromStrings(dstSubnets)
+
+  foreach device in network.devices
+  where !firewallsOnly || device.platform.deviceType == DeviceType.FIREWALL
+
+  foreach aclEntry in device.aclEntries
+  let h = aclEntry.headerMatches
+  where aclEntry.action == AclAction.PERMIT
+  where includeImplicitDefault || (!aclEntry.implicitRule && !aclEntry.defaultRule)
+
+  where overlapsZone(h.ipv4Src, srcSet)
+  where overlapsZone(h.ipv4Dst, dstSet)
+  where protoAllowsTcpOrUdp(h.ipProtocol)
+  where any(foreach p in sensitivePorts
+            select containsIntRange(h.tpDst, p))
+
+  select {
+    violation: true,
+    findingId: device.name + ":" + aclEntry.name + ":sens",
+    riskScore: 80,
+    assetKey: device.name,
+    device: device.name,
+    rule: aclEntry.name,
+    action: aclEntry.action,
+    evidence: sourceConfigText(aclEntry.name),
+    srcSubnets: srcSubnets,
+    dstSubnets: dstSubnets,
+    sensitivePorts: sensitivePorts,
+    ipv4Src: h.ipv4Src,
+    ipv4Dst: h.ipv4Dst,
+    ipProto: h.ipProtocol,
+    tpDst: h.tpDst,
+    ingress: aclEntry.metadataMatches.ingressInterfaces,
+    egress: aclEntry.metadataMatches.egressInterfaces,
+    implicit: aclEntry.implicitRule,
+    defaultRule: aclEntry.defaultRule,
+    overApproximated: h.overApproximated,
+    lastUsed: aclEntry.lifecycleData?.lastUsed,
+    hitCount: aclEntry.lifecycleData?.truncatedHitCount
+  };
+

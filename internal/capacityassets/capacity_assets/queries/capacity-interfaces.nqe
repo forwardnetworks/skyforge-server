@@ -17,5 +17,13 @@ capacityInterfaces =
     layer: iface.layer,
     interfaceType: iface.interfaceType,
     mtu: iface.mtu,
-    speedMbps: iface.ethernet.speedMbps
+    speedMbps: iface.ethernet.speedMbps,
+
+    // Link aggregation (LAG / port-channel) enrichment.
+    //
+    // - For member interfaces, ethernet.aggregateId points at the logical aggregate interface name.
+    // - For aggregate interfaces, aggregation.memberNames contains active members.
+    aggregateId: iface.ethernet.aggregateId,
+    aggregationMemberNames: iface.aggregation?.memberNames,
+    aggregationConfiguredMemberNames: iface.aggregation?.configuredMemberNames
   };

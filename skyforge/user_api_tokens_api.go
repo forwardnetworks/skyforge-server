@@ -103,4 +103,3 @@ func (s *Service) RevokeUserAPIToken(ctx context.Context, tokenId string) error 
 	}
 	return revokeUserAPIToken(ctx, s.db, user.Username, tokenId)
 }
-

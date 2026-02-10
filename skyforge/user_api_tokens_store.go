@@ -183,4 +183,3 @@ UPDATE sf_user_api_tokens
 	}
 	return u, id, nil
 }
-

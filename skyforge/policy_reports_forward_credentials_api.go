@@ -117,4 +117,3 @@ func (s *Service) DeleteWorkspacePolicyReportForwardNetworkCredentials(ctx conte
 	})
 	return &PolicyReportDecisionResponse{Ok: true}, nil
 }
-

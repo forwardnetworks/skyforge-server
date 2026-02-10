@@ -21,6 +21,35 @@ packs:
       - id: "acl-permit-any-service.nqe"
       - id: "acl-any-to-rfc1918-sensitive-ports.nqe"
 
+  - id: "segmentation"
+    title: "Segmentation Pack"
+    description: "Zone boundary and any-to-zone exposure checks (parameterized by zone CIDRs)."
+    checks:
+      - id: "acl-zone-to-zone-any-service.nqe"
+        parameters:
+          srcSubnets: ["10.0.0.0/8"]
+          dstSubnets: ["10.1.0.0/16"]
+          firewallsOnly: true
+          includeImplicitDefault: false
+      - id: "acl-zone-to-zone-sensitive-ports.nqe"
+        parameters:
+          srcSubnets: ["10.0.0.0/8"]
+          dstSubnets: ["10.1.0.0/16"]
+          sensitivePorts: [22, 23, 3389, 445]
+          firewallsOnly: true
+          includeImplicitDefault: false
+      - id: "acl-any-to-zone-any-service.nqe"
+        parameters:
+          dstSubnets: ["10.1.0.0/16"]
+          firewallsOnly: true
+          includeImplicitDefault: false
+      - id: "acl-any-to-zone-sensitive-ports.nqe"
+        parameters:
+          dstSubnets: ["10.1.0.0/16"]
+          sensitivePorts: [22, 23, 3389, 445]
+          firewallsOnly: true
+          includeImplicitDefault: false
+
   - id: "policy-analytics"
     title: "Policy Analytics Pack"
     description: "Rulebase analytics for hygiene and intent: flow lookup, shadowing, redundancy, and conflicts."

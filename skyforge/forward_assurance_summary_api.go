@@ -58,14 +58,14 @@ type ForwardAssuranceSnapshotTile struct {
 }
 
 type ForwardAssuranceCollectionHealthTile struct {
-	NumSuccessfulDevices          *int   `json:"numSuccessfulDevices,omitempty"`
-	NumCollectionFailureDevices   *int   `json:"numCollectionFailureDevices,omitempty"`
-	NumProcessingFailureDevices   *int   `json:"numProcessingFailureDevices,omitempty"`
-	NumSuccessfulEndpoints        *int   `json:"numSuccessfulEndpoints,omitempty"`
-	NumCollectionFailureEndpoints *int   `json:"numCollectionFailureEndpoints,omitempty"`
-	NumProcessingFailureEndpoints *int   `json:"numProcessingFailureEndpoints,omitempty"`
-	CollectionDurationMs          *int64 `json:"collectionDurationMs,omitempty"`
-	ProcessingDurationMs          *int64 `json:"processingDurationMs,omitempty"`
+	NumSuccessfulDevices          *int                            `json:"numSuccessfulDevices,omitempty"`
+	NumCollectionFailureDevices   *int                            `json:"numCollectionFailureDevices,omitempty"`
+	NumProcessingFailureDevices   *int                            `json:"numProcessingFailureDevices,omitempty"`
+	NumSuccessfulEndpoints        *int                            `json:"numSuccessfulEndpoints,omitempty"`
+	NumCollectionFailureEndpoints *int                            `json:"numCollectionFailureEndpoints,omitempty"`
+	NumProcessingFailureEndpoints *int                            `json:"numProcessingFailureEndpoints,omitempty"`
+	CollectionDurationMs          *int64                          `json:"collectionDurationMs,omitempty"`
+	ProcessingDurationMs          *int64                          `json:"processingDurationMs,omitempty"`
 	TopFailureReasons             []ForwardAssuranceFailureReason `json:"topFailureReasons,omitempty"`
 	SourceImportItemID            int64                           `json:"sourceImportItemId,omitempty"`
 }
@@ -106,7 +106,7 @@ type ForwardAssuranceCapacityTile struct {
 }
 
 type ForwardAssuranceLiveSignalsTile struct {
-	WindowMinutes int `json:"windowMinutes"`
+	WindowMinutes int                        `json:"windowMinutes"`
 	Syslog        ForwardAssuranceLiveSyslog `json:"syslog"`
 	SnmpTraps     ForwardAssuranceLiveCount  `json:"snmpTraps"`
 	Webhooks      ForwardAssuranceLiveCount  `json:"webhooks"`
@@ -129,9 +129,9 @@ type ForwardAssuranceEvidence struct {
 }
 
 type ForwardAssuranceHistoryItem struct {
-	ID          int64                         `json:"id"`
-	GeneratedAt string                        `json:"generatedAt"`
-	SnapshotID  string                        `json:"snapshotId,omitempty"`
+	ID          int64                           `json:"id"`
+	GeneratedAt string                          `json:"generatedAt"`
+	SnapshotID  string                          `json:"snapshotId,omitempty"`
 	Summary     ForwardAssuranceSummaryResponse `json:"summary"`
 }
 
@@ -795,21 +795,21 @@ func (s *Service) RefreshWorkspaceForwardNetworkAssurance(ctx context.Context, i
 
 	// Best-effort: index to Elastic (category=assurance).
 	s.indexElasticAsync(pc.claims.Username, "assurance", time.Now().UTC(), map[string]any{
-		"generated_at":      sum.GeneratedAt,
-		"workspace_id":      sum.WorkspaceID,
-		"network_ref":       sum.NetworkRef,
+		"generated_at":       sum.GeneratedAt,
+		"workspace_id":       sum.WorkspaceID,
+		"network_ref":        sum.NetworkRef,
 		"forward_network_id": sum.ForwardNetworkID,
-		"snapshot_id":       sum.Snapshot.SnapshotID,
-		"summary":           sum,
+		"snapshot_id":        sum.Snapshot.SnapshotID,
+		"summary":            sum,
 	})
 
 	return sum, nil
 }
 
 type ForwardAssuranceDemoSeedResponse struct {
-	Status   string `json:"status"`
+	Status     string `json:"status"`
 	SyslogCIDR string `json:"syslogCidr"`
-	Inserted struct {
+	Inserted   struct {
 		Syslog    int `json:"syslog"`
 		SnmpTraps int `json:"snmpTraps"`
 		Webhooks  int `json:"webhooks"`
@@ -910,7 +910,7 @@ VALUES ($1, $2, 'demo-seed', 'POST', 'demo', $3::inet, '{}', '{"demo":true}')
 	}
 
 	out := &ForwardAssuranceDemoSeedResponse{
-		Status:    "ok",
+		Status:     "ok",
 		SyslogCIDR: cidr,
 	}
 	out.Inserted.Syslog = syslogCount

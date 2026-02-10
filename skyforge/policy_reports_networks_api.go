@@ -34,9 +34,9 @@ func (s *Service) CreateWorkspacePolicyReportForwardNetwork(ctx context.Context,
 		return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 	}
 	policyReportAudit(ctx, s.db, pc.workspace.ID, pc.claims.Username, "policy_reports.forward_network.create", map[string]any{
-		"id":              out.ID,
+		"id":               out.ID,
 		"forwardNetworkId": out.ForwardNetwork,
-		"name":            out.Name,
+		"name":             out.Name,
 	})
 	return out, nil
 }

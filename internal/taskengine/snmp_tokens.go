@@ -67,4 +67,3 @@ func generateSnmpCommunity(username string) (string, error) {
 	}
 	return "sf-" + username + "-" + hex.EncodeToString(b), nil
 }
-

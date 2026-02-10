@@ -47,13 +47,13 @@ INSERT INTO sf_policy_report_forward_networks (
 	}
 
 	out := &PolicyReportForwardNetwork{
-		ID:             id,
-		WorkspaceID:    workspaceID,
-		ForwardNetwork: forwardID,
-		Name:           name,
-		Description:    desc,
+		ID:                id,
+		WorkspaceID:       workspaceID,
+		ForwardNetwork:    forwardID,
+		Name:              name,
+		Description:       desc,
 		CollectorConfigID: collectorConfigID,
-		CreatedBy:      actor,
+		CreatedBy:         actor,
 	}
 	_ = db.QueryRowContext(ctx, `SELECT created_at, updated_at FROM sf_policy_report_forward_networks WHERE id=$1`, id).Scan(&out.CreatedAt, &out.UpdatedAt)
 	return out, nil
@@ -88,7 +88,7 @@ func upsertUserPolicyReportForwardNetwork(ctx context.Context, db *sql.DB, owner
 	policyReportsEnsureUser(ctx, db, actor)
 
 	var (
-		id string
+		id        string
 		createdAt time.Time
 		updatedAt time.Time
 	)

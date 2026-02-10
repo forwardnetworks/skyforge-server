@@ -54,19 +54,19 @@ type PolicyReportRecertAssignment struct {
 }
 
 type PolicyReportException struct {
-	ID            string     `json:"id"`
-	WorkspaceID   string     `json:"workspaceId"`
-	ForwardNetwork string    `json:"forwardNetworkId"`
-	FindingID     string     `json:"findingId"`
-	CheckID       string     `json:"checkId"`
-	Status        string     `json:"status"`
-	Justification string     `json:"justification"`
-	TicketURL     string     `json:"ticketUrl,omitempty"`
-	ExpiresAt     *time.Time `json:"expiresAt,omitempty"`
-	CreatedBy     string     `json:"createdBy"`
-	ApprovedBy    string     `json:"approvedBy,omitempty"`
-	CreatedAt     time.Time  `json:"createdAt"`
-	UpdatedAt     time.Time  `json:"updatedAt"`
+	ID             string     `json:"id"`
+	WorkspaceID    string     `json:"workspaceId"`
+	ForwardNetwork string     `json:"forwardNetworkId"`
+	FindingID      string     `json:"findingId"`
+	CheckID        string     `json:"checkId"`
+	Status         string     `json:"status"`
+	Justification  string     `json:"justification"`
+	TicketURL      string     `json:"ticketUrl,omitempty"`
+	ExpiresAt      *time.Time `json:"expiresAt,omitempty"`
+	CreatedBy      string     `json:"createdBy"`
+	ApprovedBy     string     `json:"approvedBy,omitempty"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	UpdatedAt      time.Time  `json:"updatedAt"`
 }
 
 type PolicyReportAuditEvent struct {
@@ -125,17 +125,17 @@ type PolicyReportAttestAssignmentRequest struct {
 
 type PolicyReportCreateExceptionRequest struct {
 	ForwardNetwork string `json:"forwardNetworkId"`
-	FindingID     string `json:"findingId"`
-	CheckID       string `json:"checkId"`
-	Justification string `json:"justification"`
-	TicketURL     string `json:"ticketUrl,omitempty"`
-	ExpiresAt     string `json:"expiresAt,omitempty"` // RFC3339
+	FindingID      string `json:"findingId"`
+	CheckID        string `json:"checkId"`
+	Justification  string `json:"justification"`
+	TicketURL      string `json:"ticketUrl,omitempty"`
+	ExpiresAt      string `json:"expiresAt,omitempty"` // RFC3339
 }
 
 type PolicyReportListExceptionsRequest struct {
 	ForwardNetwork string `query:"forwardNetworkId" encore:"optional"`
-	Status string `query:"status" encore:"optional"`
-	Limit  int    `query:"limit" encore:"optional"`
+	Status         string `query:"status" encore:"optional"`
+	Limit          int    `query:"limit" encore:"optional"`
 }
 
 type PolicyReportListExceptionsResponse struct {

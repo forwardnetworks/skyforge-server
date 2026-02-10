@@ -40,6 +40,44 @@ checks:
         default: [22, 23, 445, 3389, 1433, 1521, 3306, 5432, 6379, 9200, 27017]
         description: "Ports considered sensitive when permitted to private address space."
 
+  - id: "acl-any-to-zone-any-service.nqe"
+    title: "PERMIT any-to-zone any-service (modeled ACL)"
+    category: "segmentation"
+    severity: "high"
+    description: "Flags PERMIT rules from any source to dstSubnets with any protocol/port."
+    params:
+      - name: "dstSubnets"
+        type: "List<String>"
+        description: "Destination zone subnets (CIDR strings)."
+        required: true
+      - name: "firewallsOnly"
+        type: "Bool"
+        default: true
+      - name: "includeImplicitDefault"
+        type: "Bool"
+        default: false
+
+  - id: "acl-any-to-zone-sensitive-ports.nqe"
+    title: "PERMIT any-to-zone sensitive ports (modeled ACL)"
+    category: "segmentation"
+    severity: "high"
+    description: "Flags PERMIT rules from any source to dstSubnets on sensitive ports."
+    params:
+      - name: "dstSubnets"
+        type: "List<String>"
+        description: "Destination zone subnets (CIDR strings)."
+        required: true
+      - name: "sensitivePorts"
+        type: "List<Integer>"
+        default: [22, 23, 3389, 445, 1433, 1521, 3306, 5432, 6379, 9200, 27017]
+        description: "Ports considered sensitive when permitted into the zone."
+      - name: "firewallsOnly"
+        type: "Bool"
+        default: true
+      - name: "includeImplicitDefault"
+        type: "Bool"
+        default: false
+
   - id: "acl-stale-permits-30d.nqe"
     title: "Stale PERMIT rules (unused for N days)"
     category: "policy-hygiene"
@@ -220,6 +258,52 @@ checks:
     severity: "high"
     description: "Flags overlapping rules with different actions (first-match pitfalls)."
     params:
+      - name: "firewallsOnly"
+        type: "Bool"
+        default: true
+      - name: "includeImplicitDefault"
+        type: "Bool"
+        default: false
+
+  - id: "acl-zone-to-zone-any-service.nqe"
+    title: "Zone-to-zone any-service PERMIT (modeled ACL)"
+    category: "segmentation"
+    severity: "high"
+    description: "Flags PERMIT rules that overlap a zone boundary (srcSubnets->dstSubnets) with any protocol/port."
+    params:
+      - name: "srcSubnets"
+        type: "List<String>"
+        description: "Source zone subnets (CIDR strings)."
+        required: true
+      - name: "dstSubnets"
+        type: "List<String>"
+        description: "Destination zone subnets (CIDR strings)."
+        required: true
+      - name: "firewallsOnly"
+        type: "Bool"
+        default: true
+      - name: "includeImplicitDefault"
+        type: "Bool"
+        default: false
+
+  - id: "acl-zone-to-zone-sensitive-ports.nqe"
+    title: "Zone-to-zone sensitive ports PERMIT (modeled ACL)"
+    category: "segmentation"
+    severity: "high"
+    description: "Flags PERMIT rules that overlap a zone boundary (srcSubnets->dstSubnets) and include sensitive TCP/UDP ports."
+    params:
+      - name: "srcSubnets"
+        type: "List<String>"
+        description: "Source zone subnets (CIDR strings)."
+        required: true
+      - name: "dstSubnets"
+        type: "List<String>"
+        description: "Destination zone subnets (CIDR strings)."
+        required: true
+      - name: "sensitivePorts"
+        type: "List<Integer>"
+        default: [22, 23, 3389, 445, 1433, 1521, 3306, 5432, 6379, 9200, 27017]
+        description: "Ports considered sensitive across the zone boundary."
       - name: "firewallsOnly"
         type: "Bool"
         default: true

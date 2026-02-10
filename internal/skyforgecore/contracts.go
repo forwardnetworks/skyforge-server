@@ -15,16 +15,16 @@ const (
 	TaskTypeUserBootstrap      = "user-bootstrap"
 	TaskTypeWorkspaceBootstrap = "workspace-bootstrap"
 
-	TaskTypeNetlabRun      = "netlab-run"
-	TaskTypeNetlabC9sRun   = "netlab-c9s-run"
-	TaskTypeNetlabValidate = "netlab-validate"
-	TaskTypeContainerlab   = "containerlab-run"
-	TaskTypeClabernetes    = "clabernetes-run"
-	TaskTypeForwardInit    = "forward-init"
-	TaskTypeForwardSync    = "forward-sync"
-	TaskTypeCapacityRollup = "capacity-rollup"
+	TaskTypeNetlabRun                    = "netlab-run"
+	TaskTypeNetlabC9sRun                 = "netlab-c9s-run"
+	TaskTypeNetlabValidate               = "netlab-validate"
+	TaskTypeContainerlab                 = "containerlab-run"
+	TaskTypeClabernetes                  = "clabernetes-run"
+	TaskTypeForwardInit                  = "forward-init"
+	TaskTypeForwardSync                  = "forward-sync"
+	TaskTypeCapacityRollup               = "capacity-rollup"
 	TaskTypeCapacityRollupForwardNetwork = "capacity-rollup-forward-network"
-	TaskTypeTerraformPref  = "terraform-"
+	TaskTypeTerraformPref                = "terraform-"
 )
 
 const (

@@ -14,6 +14,14 @@ echo "policy reports: validating embedded .nqe checks"
 
 fail=0
 
+## 0) Catalog sanity: duplicate check IDs
+dup_ids="$(rg -n '^[[:space:]]*- id:' "$CATALOG_YAML" | sed -E 's/.*- id:[[:space:]]*"([^"]+)".*/\1/' | sort | uniq -d || true)"
+if [[ -n "${dup_ids:-}" ]]; then
+  echo "ERROR: duplicate check IDs in catalog.yaml:" >&2
+  echo "$dup_ids" | sed 's/^/  - /' >&2
+  fail=1
+fi
+
 ## 1) Basic sanity: files exist + contain @query
 while IFS= read -r -d '' f; do
   # Allow library-only helpers with no @query.
@@ -22,6 +30,19 @@ while IFS= read -r -d '' f; do
   fi
   if ! rg -q '@query' "$f"; then
     echo "ERROR: missing @query in: $f" >&2
+    fail=1
+  fi
+done < <(find "$CHECKS_DIR" -maxdepth 1 -name '*.nqe' -print0)
+
+## 1b) Every non-lib .nqe file should appear in the catalog.
+catalog_ids="$(rg -n '^[[:space:]]*- id:' "$CATALOG_YAML" | sed -E 's/.*- id:[[:space:]]*"([^"]+)".*/\1/' | sort -u)"
+while IFS= read -r -d '' f; do
+  bn="$(basename "$f")"
+  if [[ "$bn" == *"-lib.nqe" ]]; then
+    continue
+  fi
+  if ! echo "$catalog_ids" | grep -Fxq "$bn"; then
+    echo "ERROR: .nqe file missing from catalog.yaml: $bn" >&2
     fail=1
   fi
 done < <(find "$CHECKS_DIR" -maxdepth 1 -name '*.nqe' -print0)
@@ -114,6 +135,19 @@ while IFS=$'\t' read -r check_id param_csv; do
 done < "$tmp_params"
 
 rm -f "$tmp_params"
+
+## 2b) Packs sanity: referenced check IDs must exist.
+PACKS_YAML="$CHECKS_DIR/packs.yaml"
+if [[ -f "$PACKS_YAML" ]]; then
+  while IFS= read -r id; do
+    [[ -z "$id" ]] && continue
+    if [[ ! -f "$CHECKS_DIR/$id" ]]; then
+      echo "ERROR: packs.yaml references missing .nqe: $id" >&2
+      fail=1
+    fi
+  # Only validate the nested check IDs (packs themselves also have `id:` fields).
+  done < <(rg -n '^[[:space:]]{6}- id:' "$PACKS_YAML" | sed -E 's/.*- id:[[:space:]]*"([^"]+)".*/\1/' | sort -u)
+fi
 
 ## 3) Optional: full semantic validation via nqe-lsp-validate (if available).
 ## Requires:

@@ -43,4 +43,3 @@ func (s *Service) authUserFromAPIToken(ctx context.Context, token string) (*Auth
 	}
 	return u, nil
 }
-

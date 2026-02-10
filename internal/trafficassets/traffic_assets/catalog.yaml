@@ -1,0 +1,6 @@
+version: "1"
+queries:
+  - id: "traffic-seed-endpoints.nqe"
+    title: "Traffic seed endpoints"
+    category: "traffic"
+    description: "Device inventory with management IPs for seeding traffic scenarios."

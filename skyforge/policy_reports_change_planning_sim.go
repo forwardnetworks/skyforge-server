@@ -1,238 +1,330 @@
 package skyforge
 
 import (
-	"net/netip"
+	"fmt"
+	"net"
 	"strconv"
 	"strings"
 )
 
-func toString(v any) string {
-	switch t := v.(type) {
-	case string:
-		return t
-	case []byte:
-		return string(t)
+// policyReportsFlowToRulesItem is the minimal result shape returned by acl-flow-to-rules.nqe
+// that we need for change-planning simulation.
+type policyReportsFlowToRulesItem struct {
+	Device    string `json:"device"`
+	RuleIndex int    `json:"ruleIndex"`
+	Rule      string `json:"rule"`
+	Action    string `json:"action"`
+}
+
+type policyReportsDecision struct {
+	Decision string
+	Rule     string
+	Index    int
+}
+
+func policyReportsFirstMatchDecision(matches []policyReportsFlowToRulesItem) policyReportsDecision {
+	if len(matches) == 0 {
+		return policyReportsDecision{Decision: "NO_MATCH", Rule: "", Index: -1}
+	}
+	first := matches[0]
+	return policyReportsDecision{
+		Decision: normalizePolicyAction(first.Action),
+		Rule:     strings.TrimSpace(first.Rule),
+		Index:    first.RuleIndex,
+	}
+}
+
+func policyReportsDecisionChanged(before, after policyReportsDecision) bool {
+	return before.Decision != after.Decision || before.Rule != after.Rule || before.Index != after.Index
+}
+
+func normalizePolicyAction(v string) string {
+	s := strings.ToUpper(strings.TrimSpace(v))
+	switch s {
+	case "PERMIT", "ALLOW":
+		return "PERMIT"
+	case "DENY", "DROP", "REJECT":
+		return "DENY"
+	case "":
+		return "UNKNOWN"
 	default:
-		return ""
+		return s
 	}
 }
 
-func toInt(v any) int {
-	switch t := v.(type) {
-	case int:
-		return t
-	case int32:
-		return int(t)
-	case int64:
-		return int(t)
-	case float64:
-		return int(t)
-	case string:
-		n, _ := strconv.Atoi(strings.TrimSpace(t))
-		return n
+func normalizePolicyReportFlowTuple(in PolicyReportFlowTuple) (PolicyReportFlowTuple, error) {
+	out := in
+	out.SrcIP = strings.TrimSpace(out.SrcIP)
+	out.DstIP = strings.TrimSpace(out.DstIP)
+	if out.SrcIP == "" || out.DstIP == "" {
+		return PolicyReportFlowTuple{}, fmt.Errorf("flow srcIp and dstIp are required")
+	}
+	// UI often passes -1 for "ignore"; if omitted in JSON it may come through as 0.
+	if out.IPProto == 0 {
+		out.IPProto = -1
+	}
+	if out.DstPort == 0 {
+		out.DstPort = -1
+	}
+	return out, nil
+}
+
+func policyReportsSimulateAfterDecision(flow PolicyReportFlowTuple, matches []policyReportsFlowToRulesItem, change PolicyReportRuleChange) (policyReportsDecision, string) {
+	op := strings.ToUpper(strings.TrimSpace(change.Op))
+	if op == "" {
+		op = "ADD"
+	}
+	switch op {
+	case "ADD":
+		return policyReportsSimulateAdd(flow, matches, change.Rule)
+	case "REMOVE":
+		return policyReportsSimulateRemove(flow, matches, change.Rule)
+	case "MODIFY":
+		return policyReportsSimulateModify(flow, matches, change.Rule)
 	default:
-		return 0
+		// Should be validated by caller.
+		return policyReportsFirstMatchDecision(matches), "unsupported op"
 	}
 }
 
-func firstMatchDecision(matches []map[string]any, skipIndex int) (decision string, rule string, idx int) {
-	for _, it := range matches {
-		i := toInt(it["ruleIndex"])
-		if skipIndex >= 0 && i == skipIndex {
-			continue
+func policyReportsSimulateAdd(flow PolicyReportFlowTuple, matches []policyReportsFlowToRulesItem, rule PolicyReportProposedRule) (policyReportsDecision, string) {
+	before := policyReportsFirstMatchDecision(matches)
+
+	// ADD shifts indices >= inserted index.
+	shiftIndex := func(idx int) int {
+		if idx < 0 {
+			return idx
 		}
-		act := strings.TrimSpace(toString(it["action"]))
-		name := strings.TrimSpace(toString(it["rule"]))
-		if act == "" {
-			act = "UNKNOWN"
+		if idx >= rule.Index {
+			return idx + 1
 		}
-		return act, name, i
+		return idx
 	}
-	return "NO_MATCH", "", -1
+
+	if !policyReportsProposedRuleMatchesFlow(rule, flow) {
+		after := before
+		after.Index = shiftIndex(after.Index)
+		if before.Index != after.Index {
+			return after, "added rule does not match; indices shifted"
+		}
+		return after, "added rule does not match"
+	}
+
+	// If there was no match before, or the insertion is before/at the first match,
+	// the added rule becomes the effective decision.
+	if before.Index < 0 || rule.Index <= before.Index {
+		return policyReportsDecision{
+			Decision: normalizePolicyAction(rule.Action),
+			Rule:     "(added rule)",
+			Index:    rule.Index,
+		}, "added rule matches and becomes first match"
+	}
+
+	after := before
+	after.Index = shiftIndex(after.Index)
+	if before.Index != after.Index {
+		return after, "added rule matches but is after first match; indices shifted"
+	}
+	return after, "added rule matches but is after first match"
 }
 
-type intRange struct {
-	start int
-	end   int
-}
+func policyReportsSimulateRemove(flow PolicyReportFlowTuple, matches []policyReportsFlowToRulesItem, rule PolicyReportProposedRule) (policyReportsDecision, string) {
+	before := policyReportsFirstMatchDecision(matches)
 
-func parseRanges(spec []string) ([]intRange, bool) {
-	if len(spec) == 0 {
-		return nil, true
-	}
-	var out []intRange
-	for _, s := range spec {
-		s = strings.TrimSpace(s)
-		if s == "" {
-			continue
+	// REMOVE shifts indices > removed index.
+	shiftIndex := func(idx int) int {
+		if idx < 0 {
+			return idx
 		}
-		if strings.Contains(s, "-") {
-			parts := strings.SplitN(s, "-", 2)
-			a, errA := strconv.Atoi(strings.TrimSpace(parts[0]))
-			b, errB := strconv.Atoi(strings.TrimSpace(parts[1]))
-			if errA != nil || errB != nil {
+		if idx > rule.Index {
+			return idx - 1
+		}
+		return idx
+	}
+
+	// If the removed rule was the first match, after becomes the next matching rule (if any).
+	if before.Index == rule.Index && before.Index >= 0 {
+		for _, it := range matches {
+			if it.RuleIndex <= rule.Index {
 				continue
 			}
-			if a > b {
-				a, b = b, a
+			return policyReportsDecision{
+				Decision: normalizePolicyAction(it.Action),
+				Rule:     strings.TrimSpace(it.Rule),
+				Index:    shiftIndex(it.RuleIndex),
+			}, "removed first match; next match becomes effective"
+		}
+		return policyReportsDecision{Decision: "NO_MATCH", Rule: "", Index: -1}, "removed first match; no remaining matches"
+	}
+
+	after := before
+	after.Index = shiftIndex(after.Index)
+	if before.Index != after.Index {
+		return after, "removed rule; indices shifted"
+	}
+	return after, "removed rule does not affect first match"
+}
+
+func policyReportsSimulateModify(flow PolicyReportFlowTuple, matches []policyReportsFlowToRulesItem, rule PolicyReportProposedRule) (policyReportsDecision, string) {
+	before := policyReportsFirstMatchDecision(matches)
+
+	modIdx := rule.Index
+	modMatches := policyReportsProposedRuleMatchesFlow(rule, flow)
+
+	// Find the earliest unchanged match with index < modIdx.
+	for _, it := range matches {
+		if it.RuleIndex < modIdx {
+			return policyReportsDecision{
+				Decision: normalizePolicyAction(it.Action),
+				Rule:     strings.TrimSpace(it.Rule),
+				Index:    it.RuleIndex,
+			}, "modified rule is after the effective decision"
+		}
+		break
+	}
+
+	// If the modified rule now matches, it becomes first match (since no earlier matches exist).
+	if modMatches {
+		afterRule := "(modified rule)"
+		// If we have a name for the rule at that index (from before matches), keep it.
+		for _, it := range matches {
+			if it.RuleIndex == modIdx && strings.TrimSpace(it.Rule) != "" {
+				afterRule = strings.TrimSpace(it.Rule)
+				break
 			}
-			out = append(out, intRange{start: a, end: b})
+			if it.RuleIndex > modIdx {
+				break
+			}
+		}
+		after := policyReportsDecision{
+			Decision: normalizePolicyAction(rule.Action),
+			Rule:     afterRule,
+			Index:    modIdx,
+		}
+		if before.Index == modIdx && before.Decision != after.Decision {
+			return after, "modified first match; action changed"
+		}
+		if before.Index == modIdx && before.Decision == after.Decision {
+			return after, "modified first match; still matches"
+		}
+		return after, "modified rule now matches and becomes first match"
+	}
+
+	// Modified rule does not match; choose the next unchanged matching rule with index > modIdx.
+	for _, it := range matches {
+		if it.RuleIndex <= modIdx {
 			continue
 		}
-		n, err := strconv.Atoi(s)
-		if err != nil {
-			continue
-		}
-		out = append(out, intRange{start: n, end: n})
+		return policyReportsDecision{
+			Decision: normalizePolicyAction(it.Action),
+			Rule:     strings.TrimSpace(it.Rule),
+			Index:    it.RuleIndex,
+		}, "modified rule no longer matches; next match becomes effective"
 	}
-	if len(out) == 0 {
-		return nil, false
-	}
-	return out, true
+	return policyReportsDecision{Decision: "NO_MATCH", Rule: "", Index: -1}, "modified rule does not match; no remaining matches"
 }
 
-func cidrContainsAny(cidrList []string, ip netip.Addr) bool {
-	if len(cidrList) == 0 {
-		return true
+func policyReportsProposedRuleMatchesFlow(rule PolicyReportProposedRule, flow PolicyReportFlowTuple) bool {
+	src := net.ParseIP(strings.TrimSpace(flow.SrcIP))
+	dst := net.ParseIP(strings.TrimSpace(flow.DstIP))
+	if src == nil || dst == nil {
+		return false
 	}
-	okAny := false
-	for _, s := range cidrList {
-		s = strings.TrimSpace(s)
-		if s == "" {
-			continue
-		}
-		p, err := netip.ParsePrefix(s)
-		if err != nil {
-			continue
-		}
-		okAny = true
-		if p.Contains(ip) {
-			return true
-		}
+	if !policyReportsIPInSubnets(src, rule.Ipv4Src) {
+		return false
 	}
-	// If user provided CIDRs but none parsed, treat as non-match.
-	return !okAny
-}
+	if !policyReportsIPInSubnets(dst, rule.Ipv4Dst) {
+		return false
+	}
 
-func intListContains(list []int, v int) bool {
-	if len(list) == 0 {
-		return true
-	}
-	for _, it := range list {
-		if it == v {
-			return true
+	if flow.IPProto >= 0 && len(rule.IPProto) > 0 {
+		found := false
+		for _, p := range rule.IPProto {
+			if p == flow.IPProto {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
 		}
 	}
-	return false
-}
 
-func rangesContain(ranges []intRange, v int) bool {
-	if len(ranges) == 0 {
-		return true
-	}
-	for _, r := range ranges {
-		if r.start <= v && v <= r.end {
-			return true
+	if flow.DstPort >= 0 && len(rule.TpDst) > 0 {
+		ok := false
+		for _, r := range rule.TpDst {
+			lo, hi, okRange := policyReportsParsePortRange(strings.TrimSpace(r))
+			if !okRange {
+				continue
+			}
+			if lo <= flow.DstPort && flow.DstPort <= hi {
+				ok = true
+				break
+			}
 		}
-	}
-	return false
-}
-
-func proposedRuleMatchesFlow(rule PolicyReportProposedRule, flow PolicyReportFlowTuple) bool {
-	src, err := netip.ParseAddr(strings.TrimSpace(flow.SrcIP))
-	if err != nil {
-		return false
-	}
-	dst, err := netip.ParseAddr(strings.TrimSpace(flow.DstIP))
-	if err != nil {
-		return false
-	}
-	if !cidrContainsAny(rule.Ipv4Src, src) {
-		return false
-	}
-	if !cidrContainsAny(rule.Ipv4Dst, dst) {
-		return false
-	}
-	if flow.IPProto >= 0 && !intListContains(rule.IPProto, flow.IPProto) {
-		return false
-	}
-	if flow.DstPort >= 0 {
-		ranges, ok := parseRanges(rule.TpDst)
 		if !ok {
 			return false
 		}
-		if !rangesContain(ranges, flow.DstPort) {
-			return false
-		}
 	}
+
 	return true
 }
 
-func normalizeAction(action string) string {
-	action = strings.ToUpper(strings.TrimSpace(action))
-	switch action {
-	case "PERMIT", "DENY":
-		return action
-	default:
-		if action == "" {
-			return "UNKNOWN"
-		}
-		return action
+func policyReportsParsePortRange(s string) (int, int, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, 0, false
 	}
+	// Accept "443" or "443-445".
+	if strings.Contains(s, "-") {
+		parts := strings.SplitN(s, "-", 2)
+		if len(parts) != 2 {
+			return 0, 0, false
+		}
+		lo, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+		hi, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+		if err1 != nil || err2 != nil {
+			return 0, 0, false
+		}
+		if lo <= 0 || hi <= 0 || lo > 65535 || hi > 65535 {
+			return 0, 0, false
+		}
+		if hi < lo {
+			lo, hi = hi, lo
+		}
+		return lo, hi, true
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, 0, false
+	}
+	if n <= 0 || n > 65535 {
+		return 0, 0, false
+	}
+	return n, n, true
 }
 
-func simulateChangeDecision(op string, rule PolicyReportProposedRule, flow PolicyReportFlowTuple, matches []map[string]any) (afterDecision, afterRule string, afterIdx int, reason string) {
-	beforeDecision, beforeRule, beforeIdx := firstMatchDecision(matches, -1)
-	_ = beforeDecision
-	_ = beforeRule
-	_ = beforeIdx
-
-	op = strings.ToUpper(strings.TrimSpace(op))
-	ruleIdx := rule.Index
-	ruleAction := normalizeAction(rule.Action)
-
-	switch op {
-	case "ADD":
-		matchesNew := proposedRuleMatchesFlow(rule, flow)
-		if !matchesNew {
-			d, r, i := firstMatchDecision(matches, -1)
-			return d, r, i, "proposed-rule-no-match"
-		}
-		d, r, i := firstMatchDecision(matches, -1)
-		if i < 0 || ruleIdx <= i {
-			return ruleAction, "PROPOSED_RULE", ruleIdx, "inserted-before-first-match"
-		}
-		return d, r, i, "inserted-after-first-match"
-
-	case "REMOVE":
-		d, r, i := firstMatchDecision(matches, -1)
-		if i == ruleIdx {
-			d2, r2, i2 := firstMatchDecision(matches, ruleIdx)
-			return d2, r2, i2, "removed-first-match"
-		}
-		return d, r, i, "removed-non-first-match"
-
-	case "MODIFY":
-		// Conceptually: remove the old rule at ruleIdx and replace it with the proposed one.
-		modMatches := proposedRuleMatchesFlow(rule, flow)
-		// Existing first match after removing the rule at ruleIdx.
-		dRem, rRem, iRem := firstMatchDecision(matches, ruleIdx)
-		// If there is an earlier rule than ruleIdx that already matches, it still wins.
-		earlierD, earlierR, earlierI := firstMatchDecision(matches, -1)
-		if earlierI >= 0 && earlierI < ruleIdx {
-			return earlierD, earlierR, earlierI, "earlier-rule-still-matches"
-		}
-		if modMatches && (iRem < 0 || ruleIdx <= iRem) {
-			return ruleAction, "PROPOSED_RULE", ruleIdx, "modified-rule-wins"
-		}
-		if iRem < 0 {
-			return "NO_MATCH", "", -1, "modified-rule-no-match"
-		}
-		return dRem, rRem, iRem, "next-rule-wins"
-
-	default:
-		d, r, i := firstMatchDecision(matches, -1)
-		return d, r, i, "no-op"
+func policyReportsIPInSubnets(ip net.IP, subnets []string) bool {
+	if len(subnets) == 0 {
+		return true
 	}
+	for _, raw := range subnets {
+		s := strings.TrimSpace(raw)
+		if s == "" {
+			continue
+		}
+		if strings.Contains(s, "/") {
+			_, cidr, err := net.ParseCIDR(s)
+			if err == nil && cidr != nil && cidr.Contains(ip) {
+				return true
+			}
+			continue
+		}
+		// Treat plain IP as /32.
+		needle := net.ParseIP(s)
+		if needle != nil && needle.Equal(ip) {
+			return true
+		}
+	}
+	return false
 }
-

@@ -110,6 +110,10 @@ type capacityIfaceInvRow struct {
 	InterfaceType      string   `json:"interfaceType,omitempty"`
 	Mtu                *int     `json:"mtu,omitempty"`
 	SpeedMbps          *int     `json:"speedMbps,omitempty"`
+
+	AggregateID                      *string  `json:"aggregateId,omitempty"`
+	AggregationMemberNames           []string `json:"aggregationMemberNames,omitempty"`
+	AggregationConfiguredMemberNames []string `json:"aggregationConfiguredMemberNames,omitempty"`
 }
 
 type capacityInventoryEnrichment struct {
@@ -176,6 +180,14 @@ func (e *Engine) refreshCapacityInventoryCache(ctx context.Context, db *sql.DB, 
 		if err := upsertCapacityNQECache(ctx, db, workspaceID, deploymentID, networkID, qid, "", cachePayload); err != nil {
 			if log != nil {
 				log.Errorf("capacity nqe cache upsert failed (query=%s): %v", qid, err)
+			}
+		}
+		// Best-effort: also insert a snapshot-scoped row so we can diff across snapshots later.
+		if sid := strings.TrimSpace(resp.SnapshotID); sid != "" {
+			if err := insertCapacityNQECacheSnapshot(ctx, db, workspaceID, deploymentID, networkID, qid, sid, cachePayload); err != nil {
+				if log != nil {
+					log.Errorf("capacity nqe cache snapshot insert failed (query=%s): %v", qid, err)
+				}
 			}
 		}
 
@@ -295,5 +307,44 @@ DO UPDATE SET
   created_at = now()`,
 		workspaceID, networkID, queryID, snapshotID, payload,
 	)
+	return err
+}
+
+func insertCapacityNQECacheSnapshot(ctx context.Context, db *sql.DB, workspaceID string, deploymentID *string, networkID, queryID, snapshotID string, payload []byte) error {
+	if db == nil {
+		return fmt.Errorf("db unavailable")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	networkID = strings.TrimSpace(networkID)
+	queryID = strings.TrimSpace(queryID)
+	snapshotID = strings.TrimSpace(snapshotID)
+	if workspaceID == "" || networkID == "" || queryID == "" || snapshotID == "" {
+		return fmt.Errorf("invalid cache key")
+	}
+	if payload == nil {
+		payload = []byte("null")
+	}
+	ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	var depVal any
+	if deploymentID != nil && strings.TrimSpace(*deploymentID) != "" {
+		depVal = strings.TrimSpace(*deploymentID)
+	}
+
+	if depVal != nil {
+		_, err := db.ExecContext(ctxReq, `INSERT INTO sf_capacity_nqe_cache (
+  workspace_id, deployment_id, forward_network_id, query_id, snapshot_id, payload
+) VALUES ($1,$2,$3,$4,$5,$6)
+ON CONFLICT (workspace_id, deployment_id, query_id, snapshot_id)
+DO NOTHING`, workspaceID, depVal, networkID, queryID, snapshotID, payload)
+		return err
+	}
+
+	_, err := db.ExecContext(ctxReq, `INSERT INTO sf_capacity_nqe_cache (
+  workspace_id, deployment_id, forward_network_id, query_id, snapshot_id, payload
+) VALUES ($1,NULL,$2,$3,$4,$5)
+ON CONFLICT (workspace_id, forward_network_id, query_id, snapshot_id) WHERE deployment_id IS NULL
+DO NOTHING`, workspaceID, networkID, queryID, snapshotID, payload)
 	return err
 }

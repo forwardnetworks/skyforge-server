@@ -15,17 +15,17 @@ import (
 )
 
 type ForwardNetworkCapacitySummaryResponse struct {
-	WorkspaceID      string            `json:"workspaceId"`
-	NetworkRef       string            `json:"networkRef"`
-	ForwardNetworkID string            `json:"forwardNetworkId"`
-	AsOf             string            `json:"asOf,omitempty"`
+	WorkspaceID      string              `json:"workspaceId"`
+	NetworkRef       string              `json:"networkRef"`
+	ForwardNetworkID string              `json:"forwardNetworkId"`
+	AsOf             string              `json:"asOf,omitempty"`
 	Rollups          []CapacityRollupRow `json:"rollups"`
-	Stale            bool              `json:"stale"`
+	Stale            bool                `json:"stale"`
 }
 
 type ForwardNetworkCapacityRefreshResponse struct {
-	WorkspaceID string `json:"workspaceId"`
-	NetworkRef  string `json:"networkRef"`
+	WorkspaceID string  `json:"workspaceId"`
+	NetworkRef  string  `json:"networkRef"`
 	Run         JSONMap `json:"run"`
 }
 
@@ -58,8 +58,8 @@ type ForwardNetworkCapacityGrowthResponse struct {
 }
 
 type resolveForwardNetworkRow struct {
-	ID               string
-	ForwardNetworkID string
+	ID                string
+	ForwardNetworkID  string
 	CollectorConfigID string
 }
 

@@ -670,10 +670,10 @@ func insertCapacityRollup(ctx context.Context, db *sql.DB, row capacityRollupIns
   details = EXCLUDED.details,
   created_at = now()`,
 			row.WorkspaceID, depVal, row.ForwardNetworkID,
-		row.ObjectType, row.ObjectID, row.Metric, row.Window,
-		row.PeriodEnd, row.Samples, nullFloatPtr(row.Avg), nullFloatPtr(row.P95), nullFloatPtr(row.P99), nullFloatPtr(row.Max),
-		nullFloatPtr(row.SlopePerDay), nullTimePtr(row.ForecastCrossingTS), nullFloatPtr(row.Threshold), detailsBytes,
-	)
+			row.ObjectType, row.ObjectID, row.Metric, row.Window,
+			row.PeriodEnd, row.Samples, nullFloatPtr(row.Avg), nullFloatPtr(row.P95), nullFloatPtr(row.P99), nullFloatPtr(row.Max),
+			nullFloatPtr(row.SlopePerDay), nullTimePtr(row.ForecastCrossingTS), nullFloatPtr(row.Threshold), detailsBytes,
+		)
 		return err
 	}
 
