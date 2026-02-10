@@ -78,14 +78,14 @@ func policyReportsExecuteCheck(ctx context.Context, client *forwardClient, netwo
 // policyReportsApplyResultLimits truncates per-check result arrays to keep stored runs bounded.
 // Returns a map of checkId->canResolve, where false means results were truncated and should not
 // be used to resolve missing findings in the aggregate table.
-func policyReportsApplyResultLimits(order []string, results map[string]*PolicyReportNQEResponse, maxPerCheck, maxTotal int) map[string]bool {
-	canResolve := map[string]bool{}
+func policyReportsApplyResultLimits(order []string, results map[string]*PolicyReportNQEResponse, maxPerCheck, maxTotal int) map[string]policyReportsResolveSpec {
+	canResolve := map[string]policyReportsResolveSpec{}
 	if results == nil {
 		return canResolve
 	}
 	if maxPerCheck <= 0 && maxTotal <= 0 {
 		for k := range results {
-			canResolve[k] = true
+			canResolve[k] = policyReportsResolveSpec{CanResolve: true}
 		}
 		return canResolve
 	}
@@ -102,7 +102,7 @@ func policyReportsApplyResultLimits(order []string, results map[string]*PolicyRe
 		}
 		var arr []json.RawMessage
 		if err := json.Unmarshal(r.Results, &arr); err != nil {
-			canResolve[checkID] = false
+			canResolve[checkID] = policyReportsResolveSpec{CanResolve: false}
 			continue
 		}
 		origLen := len(arr)
@@ -131,7 +131,7 @@ func policyReportsApplyResultLimits(order []string, results map[string]*PolicyRe
 		if remaining < 0 {
 			remaining = 0
 		}
-		canResolve[checkID] = !truncated
+		canResolve[checkID] = policyReportsResolveSpec{CanResolve: !truncated}
 	}
 	return canResolve
 }

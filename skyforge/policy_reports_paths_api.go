@@ -141,7 +141,7 @@ type prFwdPath struct {
 }
 
 // policyReportsPathsEnforcementBypassEvalFromFwdOut evaluates the suite using a precomputed Forward paths-bulk response.
-// It returns the normalized response plus the suite-scoped checkId ("paths-enforcement-bypass:<hash12>").
+// It returns the normalized response plus the base checkId ("paths-enforcement-bypass").
 //
 // kept must be the subset of req.Queries that were actually included in the Forward request, in the same order.
 func policyReportsPathsEnforcementBypassEvalFromFwdOut(req *PolicyReportPathsEnforcementBypassRequest, kept []PolicyReportPathQuery, fwdOut []fwdPathSearchResponseFull, matcher assuranceEnforcementMatcher) (*PolicyReportNQEResponse, string, error) {
@@ -186,34 +186,39 @@ func policyReportsPathsEnforcementBypassEvalFromFwdOut(req *PolicyReportPathsEnf
 	}
 
 	suiteKey := suiteKeyForPathsAssurance(req, kept)
-	checkID := "paths-enforcement-bypass:" + suiteKey[:12]
+	suiteKey12 := suiteKey
+	if len(suiteKey12) > 12 {
+		suiteKey12 = suiteKey12[:12]
+	}
+	checkID := "paths-enforcement-bypass"
 
 	results := make([]map[string]any, 0, len(kept))
 	for i := 0; i < len(kept); i++ {
 		q := kept[i]
 		out := map[string]any{
-			"checkId":   checkID,
-			"suiteKey":  suiteKey[:12],
-			"category":  "Paths",
-			"severity":  "high",
-			"assetKey":  strings.TrimSpace(q.SrcIP) + "->" + strings.TrimSpace(q.DstIP),
-			"srcIp":     strings.TrimSpace(q.SrcIP),
-			"dstIp":     strings.TrimSpace(q.DstIP),
-			"ipProto":   q.IPProto,
-			"dstPort":   strings.TrimSpace(q.DstPort),
-			"intent":    strings.TrimSpace(req.Intent),
-			"findingId": findingIDForFlow("paths-enforcement-bypass:"+suiteKey[:12], q),
-			"violation": false,
-			"riskScore": 0,
-			"timedOut":  false,
-			"totalHits": 0,
-			"queryUrl":  "",
+			"checkId":    checkID,
+			"suiteKey":   suiteKey12,
+			"checkTitle": "Paths Assurance: Enforcement bypass",
+			"category":   "Paths",
+			"severity":   "low",
+			"assetKey":   strings.TrimSpace(q.SrcIP) + "->" + strings.TrimSpace(q.DstIP),
+			"srcIp":      strings.TrimSpace(q.SrcIP),
+			"dstIp":      strings.TrimSpace(q.DstIP),
+			"ipProto":    q.IPProto,
+			"dstPort":    strings.TrimSpace(q.DstPort),
+			"intent":     strings.TrimSpace(req.Intent),
+			"findingId":  findingIDForFlow("paths-enforcement-bypass:"+suiteKey12, q),
+			"violation":  false,
+			"timedOut":   false,
+			"totalHits":  0,
+			"queryUrl":   "",
 		}
 
 		if i >= len(fwdOut) {
 			out["violation"] = true
-			out["riskScore"] = 60
+			out["severity"] = "high"
 			out["error"] = "missing response from Forward"
+			out["riskReasons"] = []string{"missing_response"}
 			results = append(results, out)
 			continue
 		}
@@ -225,15 +230,17 @@ func policyReportsPathsEnforcementBypassEvalFromFwdOut(req *PolicyReportPathsEnf
 
 		if r.TimedOut {
 			out["violation"] = true
-			out["riskScore"] = 60
+			out["severity"] = "high"
 			out["reason"] = "timed_out"
+			out["riskReasons"] = []string{"timed_out"}
 			results = append(results, out)
 			continue
 		}
 		if len(r.Info.Paths) == 0 {
 			out["violation"] = true
-			out["riskScore"] = 55
+			out["severity"] = "medium"
 			out["reason"] = "no_paths"
+			out["riskReasons"] = []string{"no_paths"}
 			results = append(results, out)
 			continue
 		}
@@ -324,25 +331,25 @@ func policyReportsPathsEnforcementBypassEvalFromFwdOut(req *PolicyReportPathsEnf
 
 		violation := false
 		reasons := []string{}
-		score := 0
+		sev := "low"
 		if strings.TrimSpace(p.ForwardingOutcome) != "DELIVERED" {
 			violation = true
 			reasons = append(reasons, "forwarding_outcome:"+strings.TrimSpace(p.ForwardingOutcome))
-			score = 80
+			sev = "critical"
 		}
 		if requireEnf && len(enfHops) == 0 {
 			violation = true
 			reasons = append(reasons, "missing_enforcement")
-			if score < 70 {
-				score = 70
+			if sev == "low" {
+				sev = "high"
 			}
 		}
 		if maxReturn > 0 && requireSym {
 			if v, ok := out["returnForwardingOutcome"].(string); ok && strings.TrimSpace(v) != "" && strings.TrimSpace(v) != "DELIVERED" {
 				violation = true
 				reasons = append(reasons, "return_forwarding_outcome:"+strings.TrimSpace(v))
-				if score < 75 {
-					score = 75
+				if sev != "critical" {
+					sev = "high"
 				}
 			}
 		}
@@ -350,13 +357,13 @@ func policyReportsPathsEnforcementBypassEvalFromFwdOut(req *PolicyReportPathsEnf
 			if enforced, ok := out["returnEnforced"].(bool); ok && !enforced {
 				violation = true
 				reasons = append(reasons, "missing_return_enforcement")
-				if score < 70 {
-					score = 70
+				if sev == "low" {
+					sev = "high"
 				}
 			}
 		}
 		out["violation"] = violation
-		out["riskScore"] = score
+		out["severity"] = sev
 		if len(reasons) > 0 {
 			out["riskReasons"] = reasons
 		}
@@ -365,6 +372,7 @@ func policyReportsPathsEnforcementBypassEvalFromFwdOut(req *PolicyReportPathsEnf
 	}
 
 	b, _ := json.Marshal(results)
+	aug, _ := policyReportsAugmentResults(checkID, b)
 	total := 0
 	for _, r := range results {
 		if v, ok := r["violation"].(bool); ok && v {
@@ -375,12 +383,12 @@ func policyReportsPathsEnforcementBypassEvalFromFwdOut(req *PolicyReportPathsEnf
 	return &PolicyReportNQEResponse{
 		SnapshotID: strings.TrimSpace(req.SnapshotID),
 		Total:      total,
-		Results:    b,
+		Results:    aug,
 	}, checkID, nil
 }
 
 // policyReportsPathsEnforcementBypassEvalWithClient evaluates the suite using the provided Forward client.
-// It returns the normalized response plus the suite-scoped checkId ("paths-enforcement-bypass:<hash12>").
+// It returns the normalized response plus the base checkId ("paths-enforcement-bypass").
 func policyReportsPathsEnforcementBypassEvalWithClient(ctx context.Context, client *forwardClient, req *PolicyReportPathsEnforcementBypassRequest) (*PolicyReportNQEResponse, string, error) {
 	if client == nil || req == nil {
 		return nil, "", errs.B().Code(errs.InvalidArgument).Msg("invalid input").Err()
@@ -982,7 +990,22 @@ func (s *Service) PostWorkspacePolicyReportPathsEnforcementBypassStore(ctx conte
 		})
 	}
 
-	resolveChecks := map[string]bool{checkID: true}
+	// Resolve only within this suite; multiple suites may share a checkId.
+	kept := make([]PolicyReportPathQuery, 0, len(live.Queries))
+	for _, q := range live.Queries {
+		if strings.TrimSpace(q.DstIP) == "" {
+			continue
+		}
+		kept = append(kept, q)
+	}
+	suiteKey := suiteKeyForPathsAssurance(live, kept)
+	suiteKey12 := suiteKey
+	if len(suiteKey12) > 12 {
+		suiteKey12 = suiteKey12[:12]
+	}
+	resolveChecks := map[string]policyReportsResolveSpec{
+		checkID: {CanResolve: true, SuiteKey: suiteKey12},
+	}
 	if err := persistPolicyReportRun(ctx, s.db, &run, checks, findings, resolveChecks); err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist run").Err()
 	}

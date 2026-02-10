@@ -68,3 +68,31 @@ func TestPolicyReportsAugmentResults_IncludesRiskFields(t *testing.T) {
 		t.Fatalf("missing riskReasons")
 	}
 }
+
+func TestPolicyReportsAugmentResults_DoesNotOverwriteExistingRiskReasons(t *testing.T) {
+	results := json.RawMessage(`[
+	  {"checkId":"paths-enforcement-bypass","suiteKey":"abc123","violation":true,"severity":"high","riskReasons":["missing_enforcement"]}
+	]`)
+	aug, err := policyReportsAugmentResults("paths-enforcement-bypass", results)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var arr []map[string]any
+	if err := json.Unmarshal(aug, &arr); err != nil {
+		t.Fatalf("unexpected json: %v", err)
+	}
+	if len(arr) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(arr))
+	}
+	if _, ok := arr[0]["riskScore"]; !ok {
+		t.Fatalf("missing riskScore")
+	}
+	reasons, ok := arr[0]["riskReasons"].([]any)
+	if !ok || len(reasons) != 1 {
+		t.Fatalf("expected 1 riskReasons item, got %#v", arr[0]["riskReasons"])
+	}
+	if s, _ := reasons[0].(string); s != "missing_enforcement" {
+		t.Fatalf("expected preserved riskReasons, got %#v", arr[0]["riskReasons"])
+	}
+}

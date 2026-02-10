@@ -259,6 +259,69 @@ func policyReportsComputeRisk(meta policyReportsCheckMeta, obj map[string]json.R
 		reasons = append(reasons, "match:overApproximated")
 	}
 
+	// Paths assurance: treat non-delivery and enforcement bypass as high-signal.
+	//
+	// These "checks" are not pure NQE outputs, but we still want stable risk ordering
+	// while keeping the richer violation explanation in the row's own fields.
+	checkID := strings.ToLower(strings.TrimSpace(meta.CheckID))
+	checkID = strings.TrimSuffix(checkID, ".nqe")
+	if checkID == "paths-enforcement-bypass" {
+		// These fields are produced by Policy Reports Paths Assurance, not NQE.
+		fwdOutcome := strings.ToUpper(strings.TrimSpace(policyReportsGetString(obj, "forwardingOutcome")))
+		retOutcome := strings.ToUpper(strings.TrimSpace(policyReportsGetString(obj, "returnForwardingOutcome")))
+
+		// The live endpoints already emit a human-friendly reason list in "riskReasons"
+		// (used by the UI). We reuse those signals for scoring, without overwriting them.
+		hasReason := func(substr string) bool {
+			substr = strings.ToLower(strings.TrimSpace(substr))
+			if substr == "" {
+				return false
+			}
+			if strings.Contains(strings.ToLower(policyReportsGetString(obj, "reason")), substr) {
+				return true
+			}
+			return policyReportsArrayContainsString(obj, "riskReasons", substr)
+		}
+
+		// Strongest signal: Forward says the path is not delivered.
+		if fwdOutcome != "" && fwdOutcome != "DELIVERED" {
+			if score < 90 {
+				score = 90
+			}
+			reasons = append(reasons, "paths:forwarding_not_delivered")
+		}
+		if hasReason("timed_out") || hasReason("missing response") {
+			if score < 70 {
+				score = 70
+			}
+			reasons = append(reasons, "paths:timed_out")
+		}
+		if hasReason("no_paths") {
+			if score < 60 {
+				score = 60
+			}
+			reasons = append(reasons, "paths:no_paths")
+		}
+		if hasReason("missing_enforcement") {
+			if score < 75 {
+				score = 75
+			}
+			reasons = append(reasons, "paths:missing_enforcement")
+		}
+		if retOutcome != "" && retOutcome != "DELIVERED" {
+			if score < 85 {
+				score = 85
+			}
+			reasons = append(reasons, "paths:return_not_delivered")
+		}
+		if hasReason("missing_return_enforcement") {
+			if score < 75 {
+				score = 75
+			}
+			reasons = append(reasons, "paths:missing_return_enforcement")
+		}
+	}
+
 	return clampInt(score, 0, 100), reasons
 }
 
@@ -312,8 +375,13 @@ func policyReportsAugmentResults(checkID string, results json.RawMessage) (json.
 				score, reasons := policyReportsComputeRisk(meta, obj)
 				b, _ := json.Marshal(score)
 				obj["riskScore"] = b
-				rb, _ := json.Marshal(reasons)
-				obj["riskReasons"] = rb
+				// Only add riskReasons when absent. Some non-NQE checks (e.g., Paths Assurance)
+				// use "riskReasons" as a UI-friendly violation explanation and we should not
+				// overwrite it with computed scoring heuristics.
+				if _, ok := obj["riskReasons"]; !ok {
+					rb, _ := json.Marshal(reasons)
+					obj["riskReasons"] = rb
+				}
 			}
 			nb, err := json.Marshal(obj)
 			if err == nil {

@@ -17,6 +17,15 @@ type policyReportsViolationFinding struct {
 	Finding   json.RawMessage
 }
 
+type policyReportsResolveSpec struct {
+	CanResolve bool
+
+	// Optional: scope resolution for a check to only findings whose JSON includes this suiteKey.
+	// This is used by checks like Paths Assurance where multiple suites share a checkId, but
+	// resolution must not cross suite boundaries.
+	SuiteKey string
+}
+
 func policyReportsExtractViolationFindings(checkID string, resp *PolicyReportNQEResponse) ([]policyReportsViolationFinding, error) {
 	checkID = strings.TrimSpace(checkID)
 	if resp == nil || len(resp.Results) == 0 {
@@ -89,7 +98,7 @@ func policyReportsExtractViolationFindings(checkID string, resp *PolicyReportNQE
 	return out, nil
 }
 
-func persistPolicyReportRun(ctx context.Context, db *sql.DB, run *PolicyReportRun, checks []PolicyReportRunCheck, findings []PolicyReportRunFinding, resolveChecks map[string]bool) error {
+func persistPolicyReportRun(ctx context.Context, db *sql.DB, run *PolicyReportRun, checks []PolicyReportRunCheck, findings []PolicyReportRunFinding, resolveChecks map[string]policyReportsResolveSpec) error {
 	if db == nil {
 		return fmt.Errorf("db is not configured")
 	}
@@ -187,24 +196,36 @@ DO UPDATE SET
 	}
 
 	// Mark resolved for checks where we are confident we saw the full set (no truncation).
-	for checkID, canResolve := range resolveChecks {
-		if !canResolve {
+	for checkID, spec := range resolveChecks {
+		if !spec.CanResolve {
 			continue
 		}
 		checkID = strings.TrimSpace(checkID)
 		if checkID == "" {
 			continue
 		}
+		suiteKey := strings.TrimSpace(spec.SuiteKey)
 		current := presentByCheck[checkID]
 		if current == nil {
 			current = map[string]bool{} // empty set => resolve all actives for this check
 		}
 
-		rows, err := tx.QueryContext(ctx, `
+		var rows *sql.Rows
+		var err error
+		if suiteKey != "" {
+			rows, err = tx.QueryContext(ctx, `
+SELECT finding_id
+  FROM sf_policy_report_findings_agg
+ WHERE workspace_id=$1 AND forward_network_id=$2 AND check_id=$3 AND status='ACTIVE'
+   AND COALESCE(finding->>'suiteKey','') = $4
+`, run.WorkspaceID, run.ForwardNetworkID, checkID, suiteKey)
+		} else {
+			rows, err = tx.QueryContext(ctx, `
 SELECT finding_id
   FROM sf_policy_report_findings_agg
  WHERE workspace_id=$1 AND forward_network_id=$2 AND check_id=$3 AND status='ACTIVE'
 `, run.WorkspaceID, run.ForwardNetworkID, checkID)
+		}
 		if err != nil {
 			return err
 		}
@@ -226,6 +247,22 @@ SELECT finding_id
 			if current[fid] {
 				continue
 			}
+			if suiteKey != "" {
+				_, err := tx.ExecContext(ctx, `
+UPDATE sf_policy_report_findings_agg
+   SET status='RESOLVED',
+       resolved_at=$1,
+       last_run_id=$2,
+       updated_at=now()
+ WHERE workspace_id=$3 AND forward_network_id=$4 AND check_id=$5 AND finding_id=$6 AND status='ACTIVE'
+   AND COALESCE(finding->>'suiteKey','') = $7
+`, finishedAt, run.ID, run.WorkspaceID, run.ForwardNetworkID, checkID, fid, suiteKey)
+				if err != nil {
+					return err
+				}
+				continue
+			}
+
 			_, err := tx.ExecContext(ctx, `
 UPDATE sf_policy_report_findings_agg
    SET status='RESOLVED',

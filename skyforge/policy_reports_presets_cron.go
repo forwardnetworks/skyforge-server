@@ -248,7 +248,21 @@ func runPolicyReportPresetInternal(ctx context.Context, db *sql.DB, sessionSecre
 			})
 		}
 
-		resolveChecks := map[string]bool{checkID: true}
+		kept := make([]PolicyReportPathQuery, 0, len(live.Queries))
+		for _, q := range live.Queries {
+			if strings.TrimSpace(q.DstIP) == "" {
+				continue
+			}
+			kept = append(kept, q)
+		}
+		suiteKey := suiteKeyForPathsAssurance(&live, kept)
+		suiteKey12 := suiteKey
+		if len(suiteKey12) > 12 {
+			suiteKey12 = suiteKey12[:12]
+		}
+		resolveChecks := map[string]policyReportsResolveSpec{
+			checkID: {CanResolve: true, SuiteKey: suiteKey12},
+		}
 		if err := persistPolicyReportRun(ctx, db, &run, checks, findings, resolveChecks); err != nil {
 			_ = bumpPresetSchedule(ctx, db, p.workspaceID, p.id, "", finishedAt, p.intervalMinutes, err.Error())
 			return err
