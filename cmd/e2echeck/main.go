@@ -899,6 +899,14 @@ func generateMatrixFromCatalog(catalogPath string) (matrixFile, error) {
 				env := map[string]string{
 					"NETLAB_DEVICE": d,
 				}
+				// Keep the in-cluster SSH-readiness gate aligned with the E2E timeout. Otherwise
+				// slow-boot images can fail early in the worker even though the E2E runner is
+				// willing to wait longer (for example vPTX/vMX/vJunos).
+				if sshTimeout != "" {
+					if dur, err := time.ParseDuration(sshTimeout); err == nil && dur > 15*time.Minute {
+						env["SKYFORGE_CLABERNETES_SSH_READY_SECONDS"] = fmt.Sprintf("%d", int(dur.Seconds()))
+					}
+				}
 				// Default to a "smoke-only" deploy (bring up device + SSH banner) rather than
 				// netlab initial/apply. Full config-application coverage is opt-in via
 				// SKYFORGE_E2E_ADVANCED=true or SKYFORGE_E2E_SMOKE_ONLY=false.
