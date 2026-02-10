@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>API Docs</title>
+    <style>
+      html, body { height: 100%; margin: 0; }
+      body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+      #redoc-container { height: 100vh; }
+    </style>
+  </head>
+  <body>
+    <div id="redoc-container"></div>
+    <script src="./redoc.standalone.js"></script>
+    <script>
+      // The Gateway routes /openapi.json to the Skyforge server even when /docs is enabled.
+      Redoc.init("/openapi.json", {}, document.getElementById("redoc-container"));
+    </script>
+  </body>
+</html>
