@@ -55,6 +55,14 @@
     "juniper_vjunosevolved": {
       "cpuRequest": "4000m",
       "memoryRequest": "12Gi"
+    },
+    "juniper_vjunosrouter": {
+      "cpuRequest": "4000m",
+      "memoryRequest": "6Gi"
+    },
+    "juniper_vjunosswitch": {
+      "cpuRequest": "4000m",
+      "memoryRequest": "6Gi"
     }
   }
 }
