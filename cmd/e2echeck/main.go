@@ -793,11 +793,6 @@ func defaultE2EExcludeDevices() map[string]struct{} {
 	return map[string]struct{}{
 		"openbsd":   {},
 		"routeros7": {},
-		// Not currently supported in our Skyforge E2E environment:
-		// - cumulus: uses networkop/cx container that doesn't run correctly under k8s native mode.
-		// - asav: requires a bootable ASAv qcow2 image (not a .csp payload); skip until available.
-		"cumulus": {},
-		"asav":    {},
 	}
 }
 

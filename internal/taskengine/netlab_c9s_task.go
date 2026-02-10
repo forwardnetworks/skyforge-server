@@ -1253,7 +1253,17 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 							if strings.TrimSpace(m.FilePath) == "" || strings.TrimSpace(m.ConfigMapPath) == "" {
 								continue
 							}
-							filePathForMountDir[m.FilePath] = path.Join(m.FilePath, m.ConfigMapPath)
+							// nodeMounts can contain either relative ("node_files/...") or absolute
+							// ("/tmp/skyforge-c9s/...") file paths. Normalize to the absolute mount
+							// root so we can rewrite netlab binds reliably.
+							fp := strings.TrimSpace(m.FilePath)
+							if !strings.HasPrefix(fp, "/") {
+								fp = strings.TrimPrefix(fp, "./")
+								if strings.HasPrefix(fp, "node_files/") || strings.HasPrefix(fp, "config/") {
+									fp = path.Join(mountRoot, fp)
+								}
+							}
+							filePathForMountDir[fp] = path.Join(fp, strings.TrimSpace(m.ConfigMapPath))
 						}
 					}
 				}
@@ -1306,10 +1316,11 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 					hostPath = strings.TrimPrefix(hostPath, "./")
 					if strings.HasPrefix(hostPath, "node_files/") {
 						newHost := path.Join(mountRoot, hostPath)
-						// If the bind target is /etc/hosts, netlab expects the source to be a file,
-						// but filesFromConfigMap materializes the file under a directory named by
-						// the bind source. Rewrite to the materialized file path when possible.
-						if strings.HasPrefix(rest, "/etc/hosts") {
+						// If the bind target is /etc/hosts or /etc/network/interfaces, netlab expects
+						// the source to be a file, but filesFromConfigMap materializes it under a
+						// directory named by the bind source. Rewrite to the materialized file
+						// path when possible.
+						if strings.HasPrefix(rest, "/etc/hosts") || strings.HasPrefix(rest, "/etc/network/interfaces") {
 							if fp, ok := filePathForMountDir[newHost]; ok && fp != "" {
 								newHost = fp
 							}

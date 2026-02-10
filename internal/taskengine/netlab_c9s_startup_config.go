@@ -108,9 +108,12 @@ func injectNetlabC9sVrnetlabStartupConfig(
 		// ever emitting a banner (TCP accept works, but no "SSH-" line), which breaks readiness.
 		//
 		// Therefore:
-		// - remove any startup-config reference + mount
+		// - do NOT mount the full netlab-generated startup-config (it can wedge bootstrap)
+		// - mount a minimal SSH bootstrap-only startup-config so SSH becomes reachable
 		// - rewrite to our tuned vrnetlab tags (still vrnetlab-native behavior; just more reliable in k8s)
 		if kind == "cisco_vios" || kind == "cisco_viosl2" {
+			// Remove any existing startup-config reference + mount first to avoid applying
+			// a full netlab-generated config at boot.
 			if s, ok := cfg["startup-config"].(string); ok && strings.TrimSpace(s) != "" {
 				delete(cfg, "startup-config")
 				modified = true
@@ -132,6 +135,43 @@ func injectNetlabC9sVrnetlabStartupConfig(
 				cfg["image"] = "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2@sha256:898301d2f9e609b7f008d5e419d0750f31a1ebf30afeb7e311592217b4ac620b"
 				modified = true
 			}
+
+			// Minimal bootstrap-only config to ensure an SSH server exists for readiness.
+			//
+			// Keep this intentionally tiny and avoid interface configuration; netlab will
+			// apply the full intended config post-boot via `netlab initial`.
+			//
+			// Containerlab's IOSv defaults are typically vagrant/vagrant; keep parity with
+			// our catalog defaults to avoid auth mismatches.
+			user := "vagrant"
+			pass := "vagrant"
+			bootstrap := strings.TrimSpace(fmt.Sprintf(`
+hostname %s
+no ip domain lookup
+ip domain name lab
+username %s privilege 15 secret %s
+ip ssh version 2
+crypto key generate rsa modulus 2048
+line vty 0 4
+ login local
+ transport input ssh
+!
+`, nodeName, user, pass))
+			key := sanitizeArtifactKeySegment(fmt.Sprintf("%s-startup-config.cfg", nodeName))
+			if key == "" || key == "unknown" {
+				key = "startup-config.cfg"
+			}
+			overrideData[key] = bootstrap
+
+			// Set startup-config path in topology for clarity (mount is handled by FilesFromConfigMap).
+			cfg["startup-config"] = startupPath
+			nodeMounts[nodeName] = upsertC9sMount(nodeMounts[nodeName], c9sFileFromConfigMap{
+				ConfigMapName: overrideCM,
+				ConfigMapPath: key,
+				FilePath:      startupPath,
+				Mode:          "read",
+			})
+			modified = true
 
 			nodesAny[node] = cfg
 			continue
