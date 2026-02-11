@@ -7,7 +7,6 @@
 # Goals:
 # - Prefer Containerlab (clab) as the provider when not explicitly set in a template.
 # - Ensure common device types have a clab image configured.
-# - Provide common configlets (ex: SNMP) without patching upstream netlab.
 #
 # NOTE: Netlab syntax matches the topology file, but without the `defaults.` prefix.
 provider: clab
@@ -19,58 +18,6 @@ plugin: [ files ]
 addressing:
   loopback:
     ipv4: 10.255.0.0/16
-
-# Apply SNMP config globally so collectors can discover devices out of the box.
-# Blueprints can still override by setting `config: []` explicitly if needed.
-config: [ snmp_config ]
-
-# Global configlets available to all blueprints.
-#
-# Configlets are only applied when referenced in a topology via `config: [ ... ]`.
-configlets:
-  snmp_config:
-    linux: |
-      # no-op (keep linux hosts SNMP-free by default)
-    eos: |
-      snmp-server community public ro
-    # Netlab device keys that behave like EOS but don't necessarily inherit its configlet.
-    # Keep explicit keys to avoid "fallback" behavior.
-    ceos: |
-      snmp-server community public ro
-    ios: |
-      snmp-server community public RO
-    iol: |
-      snmp-server community public RO
-    ioll2: |
-      snmp-server community public RO
-    iosv: |
-      snmp-server community public RO
-    iosvl2: |
-      snmp-server community public RO
-    iosxe: |
-      snmp-server community public RO
-    csr: |
-      snmp-server community public RO
-    cat8000v: |
-      snmp-server community public RO
-    iosxr: |
-      snmp-server community public RO
-    asa: |
-      snmp-server community public
-    junos: |
-      set snmp community public authorization read-only
-    vmx: |
-      set snmp community public authorization read-only
-    vsrx: |
-      set snmp community public authorization read-only
-    vjunos-router: |
-      set snmp community public authorization read-only
-    vjunos-switch: |
-      set snmp community public authorization read-only
-    vptx: |
-      set snmp community public authorization read-only
-    nxos: |
-      snmp-server community public group network-operator
 
 devices:
   linux:

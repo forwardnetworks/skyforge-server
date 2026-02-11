@@ -44,6 +44,135 @@ type netlabC9sManifest struct {
 
 const defaultNetlabC9sGeneratorImage = "ghcr.io/forwardnetworks/skyforge-netlab-generator:latest"
 
+var generatedSnmpConfigTemplates = map[string]string{
+	"linux": `# no-op (keep linux hosts SNMP-free by default)`,
+	"arubacx": `snmp-server community {{ defaults.snmp.community }} unrestricted
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
+snmp-server host {{ defaults.snmp.trap_host }} community {{ defaults.snmp.community }}
+{% endif %}`,
+	"asav": `snmp-server community {{ defaults.snmp.community }}
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
+snmp-server enable traps
+snmp-server host {{ mgmt_if|default('Management0/0') }} {{ defaults.snmp.trap_host }} community {{ defaults.snmp.community }}
+{% endif %}`,
+	"cat8000v": `snmp-server community {{ defaults.snmp.community }} RO
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
+snmp-server enable traps
+snmp-server host {{ defaults.snmp.trap_host }} version 2c {{ defaults.snmp.community }}
+{% endif %}`,
+	"csr": `snmp-server community {{ defaults.snmp.community }} RO
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
+snmp-server enable traps
+snmp-server host {{ defaults.snmp.trap_host }} version 2c {{ defaults.snmp.community }}
+{% endif %}`,
+	"dellos10": `snmp-server community {{ defaults.snmp.community }} ro
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
+snmp-server host {{ defaults.snmp.trap_host }} traps version 2c {{ defaults.snmp.community }}
+{% endif %}`,
+	"eos": `snmp-server community {{ defaults.snmp.community }} ro
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
+snmp-server enable traps
+snmp-server host {{ defaults.snmp.trap_host }} version 2c {{ defaults.snmp.community }}
+{% endif %}`,
+	"fortios": `config system snmp community
+  edit 1
+    set name "skyforge"
+    set query-v1-status disable
+    set query-v2c-status enable
+    set community "{{ defaults.snmp.community }}"
+  next
+end
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
+config system snmp sysinfo
+  set status enable
+end
+config system snmp user
+  edit 1
+    set name "skyforge"
+    set security-level no-auth-no-priv
+    set notify-hosts {{ defaults.snmp.trap_host }}
+  next
+end
+{% endif %}`,
+	"iol": `snmp-server community {{ defaults.snmp.community }} RO
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
+snmp-server enable traps
+snmp-server host {{ defaults.snmp.trap_host }} version 2c {{ defaults.snmp.community }}
+{% endif %}`,
+	"ioll2": `snmp-server community {{ defaults.snmp.community }} RO
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
+snmp-server enable traps
+snmp-server host {{ defaults.snmp.trap_host }} version 2c {{ defaults.snmp.community }}
+{% endif %}`,
+	"ios": `snmp-server community {{ defaults.snmp.community }} RO
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
+snmp-server enable traps
+snmp-server host {{ defaults.snmp.trap_host }} version 2c {{ defaults.snmp.community }}
+{% endif %}`,
+	"iosv": `snmp-server community {{ defaults.snmp.community }} RO
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
+snmp-server enable traps
+snmp-server host {{ defaults.snmp.trap_host }} version 2c {{ defaults.snmp.community }}
+{% endif %}`,
+	"iosvl2": `snmp-server community {{ defaults.snmp.community }} RO
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
+snmp-server enable traps
+snmp-server host {{ defaults.snmp.trap_host }} version 2c {{ defaults.snmp.community }}
+{% endif %}`,
+	"iosxe": `snmp-server community {{ defaults.snmp.community }} RO
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
+snmp-server enable traps
+snmp-server host {{ defaults.snmp.trap_host }} version 2c {{ defaults.snmp.community }}
+{% endif %}`,
+	"iosxr": `snmp-server community {{ defaults.snmp.community }} RO`,
+	"junos": `set snmp community {{ defaults.snmp.community }} authorization read-only
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
+set snmp trap-group SKYFORGE categories link
+set snmp trap-group SKYFORGE categories chassis
+set snmp trap-group SKYFORGE targets {{ defaults.snmp.trap_host }}
+{% endif %}`,
+	"nxos": `snmp-server community {{ defaults.snmp.community }} group network-operator
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
+snmp-server enable traps
+snmp-server host {{ defaults.snmp.trap_host }} traps version 2c {{ defaults.snmp.community }}
+{% endif %}`,
+	"sros": `/configure system security snmp community "{{ defaults.snmp.community }}" access-permissions r
+/configure system security snmp community "{{ defaults.snmp.community }}" version v2c
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
+/configure system security snmp trap-group "skyforge" trap-target "{{ defaults.snmp.trap_host }}"
+{% endif %}`,
+	"vjunos-router": `set snmp community {{ defaults.snmp.community }} authorization read-only
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
+set snmp trap-group SKYFORGE categories link
+set snmp trap-group SKYFORGE categories chassis
+set snmp trap-group SKYFORGE targets {{ defaults.snmp.trap_host }}
+{% endif %}`,
+	"vjunos-switch": `set snmp community {{ defaults.snmp.community }} authorization read-only
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
+set snmp trap-group SKYFORGE categories link
+set snmp trap-group SKYFORGE categories chassis
+set snmp trap-group SKYFORGE targets {{ defaults.snmp.trap_host }}
+{% endif %}`,
+	"vmx": `set snmp community {{ defaults.snmp.community }} authorization read-only
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
+set snmp trap-group SKYFORGE categories link
+set snmp trap-group SKYFORGE categories chassis
+set snmp trap-group SKYFORGE targets {{ defaults.snmp.trap_host }}
+{% endif %}`,
+	"vptx": `set snmp community {{ defaults.snmp.community }} authorization read-only
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
+set snmp trap-group SKYFORGE categories link
+set snmp trap-group SKYFORGE categories chassis
+set snmp trap-group SKYFORGE targets {{ defaults.snmp.trap_host }}
+{% endif %}`,
+	"vsrx": `set snmp community {{ defaults.snmp.community }} authorization read-only
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
+set snmp trap-group SKYFORGE categories link
+set snmp trap-group SKYFORGE categories chassis
+set snmp trap-group SKYFORGE targets {{ defaults.snmp.trap_host }}
+{% endif %}`,
+}
+
 func patchNetlabTopologyYAMLForSnmp(topologyYAML []byte, community, trapHost string, trapPort int) ([]byte, error) {
 	var topo map[string]any
 	if err := yaml.Unmarshal(topologyYAML, &topo); err != nil {
@@ -69,6 +198,72 @@ func patchNetlabTopologyYAMLForSnmp(topologyYAML []byte, community, trapHost str
 		m := map[string]any{}
 		parent[key] = m
 		return m
+	}
+
+	ensureAnyMap := func(raw any) map[string]any {
+		switch vv := raw.(type) {
+		case map[string]any:
+			return vv
+		case map[any]any:
+			out := map[string]any{}
+			for k, v := range vv {
+				key := strings.TrimSpace(fmt.Sprintf("%v", k))
+				if key == "" {
+					continue
+				}
+				out[key] = v
+			}
+			return out
+		default:
+			return map[string]any{}
+		}
+	}
+
+	// Ensure the files plugin is enabled so generated configlets are materialized into templates.
+	rawPlugin, _ := topo["plugin"]
+	hasFilesPlugin := false
+	switch v := rawPlugin.(type) {
+	case nil:
+		topo["plugin"] = []any{"files"}
+	case string:
+		p := strings.TrimSpace(v)
+		if strings.EqualFold(p, "files") {
+			hasFilesPlugin = true
+		}
+		if !hasFilesPlugin {
+			if p == "" {
+				topo["plugin"] = []any{"files"}
+			} else {
+				topo["plugin"] = []any{p, "files"}
+			}
+		}
+	case []any:
+		for _, item := range v {
+			if strings.EqualFold(strings.TrimSpace(fmt.Sprintf("%v", item)), "files") {
+				hasFilesPlugin = true
+				break
+			}
+		}
+		if !hasFilesPlugin {
+			topo["plugin"] = append(v, "files")
+		}
+	case []string:
+		for _, item := range v {
+			if strings.EqualFold(strings.TrimSpace(item), "files") {
+				hasFilesPlugin = true
+				break
+			}
+		}
+		if !hasFilesPlugin {
+			next := make([]any, 0, len(v)+1)
+			for _, item := range v {
+				next = append(next, item)
+			}
+			next = append(next, "files")
+			topo["plugin"] = next
+		}
+	default:
+		topo["plugin"] = []any{"files"}
 	}
 
 	// Append snmp_config to groups.all.config (do not overwrite).
@@ -117,6 +312,18 @@ func patchNetlabTopologyYAMLForSnmp(topologyYAML []byte, community, trapHost str
 	default:
 		all["config"] = []any{"snmp_config"}
 	}
+
+	// Generate snmp_config templates directly in topology.yml so we do not depend on
+	// repo-specific `_skyforge/snmp_config` overlay files.
+	configlets := ensureMap(topo, "configlets")
+	snmpConfiglets := ensureAnyMap(configlets["snmp_config"])
+	for device, tpl := range generatedSnmpConfigTemplates {
+		existing, exists := snmpConfiglets[device]
+		if !exists || strings.TrimSpace(fmt.Sprintf("%v", existing)) == "" {
+			snmpConfiglets[device] = tpl
+		}
+	}
+	configlets["snmp_config"] = snmpConfiglets
 
 	defaults := ensureMap(topo, "defaults")
 	snmp := ensureMap(defaults, "snmp")
@@ -259,8 +466,12 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 		return nil, nil, nil, fmt.Errorf("invalid netlab topology bundle encoding: %w", err)
 	}
 
-	// Forward-synced deployments: enable netlab-native SNMP via custom config templates.
-	// We patch topology.yml in the bundle so netlab create validates/renders snmp_config templates.
+	// Always enable netlab-native SNMP by injecting generated snmp_config templates directly
+	// into topology.yml (no external template directory dependency). Forward-enabled deployments
+	// are upgraded to per-user SNMP credentials + trap target.
+	community := "public"
+	trapHost := ""
+	trapPort := 0
 	if spec.WorkspaceCtx != nil && strings.TrimSpace(spec.DeploymentID) != "" {
 		dep, depErr := e.loadDeployment(ctx, strings.TrimSpace(spec.WorkspaceCtx.workspace.ID), strings.TrimSpace(spec.DeploymentID))
 		if depErr == nil && dep != nil {
@@ -279,26 +490,28 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 				}
 			}
 			if enabled {
-				community, tokErr := e.ensureUserSnmpTrapToken(ctx, strings.TrimSpace(spec.WorkspaceCtx.claims.Username))
-				if tokErr != nil {
+				if c, tokErr := e.ensureUserSnmpTrapToken(ctx, strings.TrimSpace(spec.WorkspaceCtx.claims.Username)); tokErr == nil {
+					if strings.TrimSpace(c) != "" {
+						community = strings.TrimSpace(c)
+					}
+				} else {
 					return nil, nil, nil, tokErr
 				}
 				// Prefer an IP over DNS to avoid assumptions about NOS DNS.
-				trapHost := ""
 				if ip, found, ipErr := kubeGetServiceClusterIP(ctx, kubeNamespace(), "skyforge-snmp-trap"); ipErr == nil && found {
 					trapHost = strings.TrimSpace(ip)
 				}
-				trapPort := 162
-				patched, patchErr := patchNetlabBundleB64(bundleB64, func(b []byte) ([]byte, error) {
-					return patchNetlabTopologyYAMLForSnmp(b, community, trapHost, trapPort)
-				})
-				if patchErr != nil {
-					return nil, nil, nil, patchErr
-				}
-				bundleB64 = patched
+				trapPort = 162
 			}
 		}
 	}
+	patched, patchErr := patchNetlabBundleB64(bundleB64, func(b []byte) ([]byte, error) {
+		return patchNetlabTopologyYAMLForSnmp(b, community, trapHost, trapPort)
+	})
+	if patchErr != nil {
+		return nil, nil, nil, patchErr
+	}
+	bundleB64 = patched
 
 	if err := kubeEnsureNamespace(ctx, ns); err != nil {
 		return nil, nil, nil, err
