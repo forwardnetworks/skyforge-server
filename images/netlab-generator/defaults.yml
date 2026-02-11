@@ -112,7 +112,7 @@ devices:
   nxos:
     provider: clab
     clab:
-      image: ghcr.io/forwardnetworks/vrnetlab/vr-n9kv:9.3.8
+      image: ghcr.io/forwardnetworks/vrnetlab/vr-n9kv:9.3.8-skyforge1
 
   # Cisco ASAv via vrnetlab
   asav:
