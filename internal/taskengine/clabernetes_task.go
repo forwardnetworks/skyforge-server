@@ -335,27 +335,27 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		if schedulingMode == "" {
 			schedulingMode = "pack"
 		}
-		requireAntiAffinity := envBool(spec.Environment, "SKYFORGE_CLABERNETES_POD_ANTI_AFFINITY_REQUIRED", false)
-		enableAntiAffinity := envBool(spec.Environment, "SKYFORGE_CLABERNETES_ENABLE_POD_ANTI_AFFINITY", schedulingMode == "spread")
+		// Legacy compatibility: never hard-require anti-affinity, even if this legacy env var is set.
+		// Required anti-affinity deadlocks larger topologies on small clusters (e.g., > node count).
+		requestedRequiredAntiAffinity := envBool(spec.Environment, "SKYFORGE_CLABERNETES_POD_ANTI_AFFINITY_REQUIRED", false)
+		if requestedRequiredAntiAffinity {
+			log.Infof("Clabernetes scheduling: ignoring legacy required anti-affinity flag; forcing preferred-only behavior (topologyOwner=%s)", name)
+		}
+		enableAntiAffinity := envBool(spec.Environment, "SKYFORGE_CLABERNETES_ENABLE_POD_ANTI_AFFINITY", schedulingMode == "spread") || requestedRequiredAntiAffinity
 		//
 		// NOTE: The upstream clabernetes Topology CRD in our deployment prunes affinity from
 		// spec.deployment.scheduling, so we cannot rely on writing affinity into the Topology
 		// spec and having it persist. Instead, we pass scheduling intent via a label and let
 		// our clabernetes-manager fork apply the corresponding Pod affinity at render time.
-		if requireAntiAffinity || enableAntiAffinity {
+		if enableAntiAffinity {
 			labelsAny, _ := payload["metadata"].(map[string]any)["labels"].(map[string]any)
 			if labelsAny == nil {
 				labelsAny = map[string]any{}
 				payload["metadata"].(map[string]any)["labels"] = labelsAny
 			}
 			const labelKey = "skyforge.forwardnetworks.com/scheduling"
-			if requireAntiAffinity {
-				labelsAny[labelKey] = "spread-required"
-				log.Infof("Clabernetes scheduling: require spreading pods (podAntiAffinity required topologyOwner=%s)", name)
-			} else {
-				labelsAny[labelKey] = "spread-preferred"
-				log.Infof("Clabernetes scheduling: prefer spreading pods (podAntiAffinity topologyOwner=%s)", name)
-			}
+			labelsAny[labelKey] = "spread-preferred"
+			log.Infof("Clabernetes scheduling: prefer spreading pods (podAntiAffinity topologyOwner=%s)", name)
 		}
 
 		if disableExpose {
