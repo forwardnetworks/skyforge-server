@@ -17,16 +17,26 @@ plugin: [ files ]
 # so keep Netlab loopbacks out of 10.0.0.0/24 to avoid breaking SSH reachability.
 addressing:
   loopback:
-    ipv4: 10.255.0.0/16
+    ipv4: 172.31.0.0/16
 
 devices:
   linux:
     clab:
       image: ghcr.io/forwardnetworks/skyforge-linux-host:20260127
+      group_vars:
+        netlab_config_mode: sh
 
   eos:
     clab:
       image: ghcr.io/forwardnetworks/ceos:4.34.2F
+      group_vars:
+        netlab_config_mode: sh
+
+  # Prefer native container/script startup for common lightweight clab NOSes.
+  frr:
+    clab:
+      group_vars:
+        netlab_config_mode: sh
 
   # Cisco IOS-on-Linux (IOL) via vrnetlab
   iol:
@@ -109,3 +119,19 @@ devices:
     provider: clab
     clab:
       image: ghcr.io/forwardnetworks/vrnetlab/vr-ftosv:10.6.1.0.24V-skyforge1
+      group_vars:
+        netlab_config_mode: startup
+
+  # Keep IOS/Junos-family virtual NOSes on startup-config mode.
+  ios:
+    clab:
+      group_vars:
+        netlab_config_mode: startup
+  junos:
+    clab:
+      group_vars:
+        netlab_config_mode: startup
+  arubacx:
+    clab:
+      group_vars:
+        netlab_config_mode: startup

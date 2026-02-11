@@ -33,11 +33,12 @@ func TestUpsertC9sMount_ReplacesByFilePath(t *testing.T) {
 
 func TestExtractNetlabConfigModeOverrides(t *testing.T) {
 	in := []string{
-		"devices.eos.clab.group_vars.netlab_config_mode=sh",
-		"devices.ios.clab.group_vars.netlab_config_mode = startup",
-		"devices.junos.clab.group_vars.netlab_config_mode=\"startup\"",
-		"devices.nxos.group_vars.netlab_config_mode=startup", // wrong path
-		"devices.eos.clab.group_vars.ansible_user=admin",     // wrong key
+		"defaults.devices.eos.clab.group_vars.netlab_config_mode=sh",
+		"defaults.devices.ios.clab.group_vars.netlab_config_mode = startup",
+		"defaults.devices.junos.clab.group_vars.netlab_config_mode=\"startup\"",
+		"devices.arubacx.clab.group_vars.netlab_config_mode=startup",  // legacy path still accepted
+		"defaults.devices.nxos.group_vars.netlab_config_mode=startup", // wrong path
+		"defaults.devices.eos.clab.group_vars.ansible_user=admin",     // wrong key
 		"garbage",
 	}
 	got := extractNetlabConfigModeOverrides(in)
@@ -49,6 +50,9 @@ func TestExtractNetlabConfigModeOverrides(t *testing.T) {
 	}
 	if got["junos"] != "startup" {
 		t.Fatalf("expected junos=startup, got %#v", got["junos"])
+	}
+	if got["arubacx"] != "startup" {
+		t.Fatalf("expected arubacx=startup from legacy key, got %#v", got["arubacx"])
 	}
 	if _, ok := got["nxos"]; ok {
 		t.Fatalf("did not expect nxos entry, got %#v", got)
@@ -82,5 +86,24 @@ func TestShouldUseNativeNetlabConfigModeForNode(t *testing.T) {
 	opts.NativeConfigModesEnabled = false
 	if shouldUseNativeNetlabConfigModeForNode("ceos", "ghcr.io/forwardnetworks/ceos:4.34.2F", opts) {
 		t.Fatalf("did not expect native mode when globally disabled")
+	}
+}
+
+func TestEffectiveNetlabConfigModeByDevice_DefaultsAndOverrides(t *testing.T) {
+	got := effectiveNetlabConfigModeByDevice([]string{
+		"defaults.devices.eos.clab.group_vars.netlab_config_mode=startup",
+		"defaults.devices.nxos.clab.group_vars.netlab_config_mode=startup",
+	})
+	if got["eos"] != "startup" {
+		t.Fatalf("expected eos override to startup, got %#v", got["eos"])
+	}
+	if got["frr"] != "sh" {
+		t.Fatalf("expected frr default sh, got %#v", got["frr"])
+	}
+	if got["ios"] != "startup" {
+		t.Fatalf("expected ios default startup, got %#v", got["ios"])
+	}
+	if got["nxos"] != "startup" {
+		t.Fatalf("expected nxos override startup, got %#v", got["nxos"])
 	}
 }

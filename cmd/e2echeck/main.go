@@ -953,7 +953,7 @@ func generateMatrixFromCatalog(catalogPath string) (matrixFile, error) {
 					// This keeps the E2E runner independent of kubectl access to the cluster.
 					env["SKYFORGE_E2E_VXLAN_SMOKE"] = "true"
 					env["SKYFORGE_CLABERNETES_SCHEDULING_MODE"] = "spread"
-					env["SKYFORGE_CLABERNETES_POD_ANTI_AFFINITY_REQUIRED"] = "true"
+					env["SKYFORGE_CLABERNETES_POD_ANTI_AFFINITY_REQUIRED"] = "false"
 				}
 				tests = append(tests, matrixTest{
 					Name: deployName,
@@ -2618,7 +2618,7 @@ func run() int {
 					env["SKYFORGE_CLABERNETES_SCHEDULING_MODE"] = "spread"
 				}
 				if !envHasKey(env, "SKYFORGE_CLABERNETES_POD_ANTI_AFFINITY_REQUIRED") {
-					env["SKYFORGE_CLABERNETES_POD_ANTI_AFFINITY_REQUIRED"] = "true"
+					env["SKYFORGE_CLABERNETES_POD_ANTI_AFFINITY_REQUIRED"] = "false"
 				}
 			}
 

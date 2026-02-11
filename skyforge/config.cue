@@ -186,15 +186,6 @@ NetlabGenerator: {
 	PullPolicy:        "IfNotPresent"
 	ApplierImage:      "ghcr.io/forwardnetworks/skyforge-netlab-applier:latest"
 	ApplierPullPolicy: "IfNotPresent"
-	// Keep API-side netlab validation consistent with worker netlab-c9s behavior.
-	C9sDefaultSetOverrides: [
-		"addressing.loopback.ipv4=172.31.0.0/16",
-		"devices.eos.clab.group_vars.netlab_config_mode=sh",
-		"devices.frr.clab.group_vars.netlab_config_mode=sh",
-		"devices.linux.clab.group_vars.netlab_config_mode=sh",
-		"devices.ios.clab.group_vars.netlab_config_mode=startup",
-		"devices.junos.clab.group_vars.netlab_config_mode=startup",
-		"devices.dellos10.clab.group_vars.netlab_config_mode=startup",
-		"devices.arubacx.clab.group_vars.netlab_config_mode=startup",
-	]
+	// Prefer static defaults in /etc/netlab/defaults.yml over platform-injected --set.
+	C9sDefaultSetOverrides: []
 }

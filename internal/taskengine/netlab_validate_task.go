@@ -151,9 +151,8 @@ func (e *Engine) runNetlabValidateTask(ctx context.Context, spec netlabValidateR
 	defer func() { _, _ = kubeDeleteConfigMap(context.Background(), ns, bundleCM) }()
 
 	jobName := sanitizeKubeNameFallback(fmt.Sprintf("netlab-validate-%d", time.Now().Unix()%10_000), "netlab-validate")
-	mergedSetOverrides := mergeNetlabSetOverrides(spec.SetOverrides, e.cfg.NetlabC9sDefaultSetOverrides)
 	setOverrides := []string{}
-	for _, raw := range mergedSetOverrides {
+	for _, raw := range spec.SetOverrides {
 		if v := strings.TrimSpace(raw); v != "" {
 			setOverrides = append(setOverrides, v)
 		}

@@ -229,13 +229,6 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		topologyPath = "topology.yml"
 	}
 
-	// Apply platform defaults for netlab `--set` before we run the generator.
-	// This is intentionally done before `netlab create` so generated startup-config
-	// snippets match what will run in-cluster.
-	if len(e.cfg.NetlabC9sDefaultSetOverrides) > 0 {
-		spec.SetOverrides = mergeNetlabSetOverrides(spec.SetOverrides, e.cfg.NetlabC9sDefaultSetOverrides)
-	}
-
 	var clabYAML []byte
 	var nodeMounts map[string][]c9sFileFromConfigMap
 	var generatorManifest *netlabC9sManifest
@@ -257,11 +250,12 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		return err
 	}
 
-	// Derive netlab `set` overrides to align netlab initial credentials with the NOS images
-	// running in-cluster. Without this, netlab initial can fail its SSH readiness check with
-	// "SSH server not ready after 100s" even when SSH banners are present (auth mismatch).
-	derivedOverrides := deriveNetlabC9sSetOverridesFromClabYAML(topologyBytes)
-	setOverrides := mergeNetlabSetOverrides(spec.SetOverrides, derivedOverrides)
+	setOverrides := make([]string, 0, len(spec.SetOverrides))
+	for _, raw := range spec.SetOverrides {
+		if v := strings.TrimSpace(raw); v != "" {
+			setOverrides = append(setOverrides, v)
+		}
+	}
 
 	// Persist the node name mapping (original ↔ sanitized) so post-deploy steps
 	// (netlab initial applier, debug tooling) can consistently address Kubernetes
@@ -283,7 +277,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 			var err error
 			topologyBytes, nodeMounts, err = injectNetlabC9sStartupConfig(ctx, ns, topologyName, topologyBytes, nodeMounts, netlabC9sStartupConfigOptions{
 				NativeConfigModesEnabled: nativeConfigModesEnabled,
-				DeviceConfigMode:         extractNetlabConfigModeOverrides(setOverrides),
+				DeviceConfigMode:         effectiveNetlabConfigModeByDevice(setOverrides),
 			}, log)
 			return err
 		}); err != nil {
@@ -558,141 +552,6 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	})
 
 	return nil
-}
-
-func mergeNetlabSetOverrides(userOverrides, derivedOverrides []string) []string {
-	keyOf := func(line string) string {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			return ""
-		}
-		if i := strings.Index(line, "="); i >= 0 {
-			return strings.TrimSpace(line[:i])
-		}
-		return ""
-	}
-
-	seen := map[string]bool{}
-	out := make([]string, 0, len(userOverrides)+len(derivedOverrides))
-	for _, raw := range userOverrides {
-		line := strings.TrimSpace(raw)
-		if line == "" {
-			continue
-		}
-		out = append(out, line)
-		if k := keyOf(line); k != "" {
-			seen[k] = true
-		}
-	}
-	for _, raw := range derivedOverrides {
-		line := strings.TrimSpace(raw)
-		if line == "" {
-			continue
-		}
-		k := keyOf(line)
-		if k != "" && seen[k] {
-			continue
-		}
-		out = append(out, line)
-		if k != "" {
-			seen[k] = true
-		}
-	}
-	return out
-}
-
-func deriveNetlabC9sSetOverridesFromClabYAML(clabYAML []byte) []string {
-	if len(clabYAML) == 0 {
-		return nil
-	}
-	var topo map[string]any
-	if err := yaml.Unmarshal(clabYAML, &topo); err != nil {
-		return nil
-	}
-	topology, _ := topo["topology"].(map[string]any)
-	nodesAny, _ := topology["nodes"].(map[string]any)
-	if len(nodesAny) == 0 {
-		return nil
-	}
-
-	type deviceInfo struct {
-		deviceKey string
-		image     string
-	}
-	byKey := map[string]deviceInfo{}
-	for _, nodeAny := range nodesAny {
-		cfg, ok := nodeAny.(map[string]any)
-		if !ok || cfg == nil {
-			continue
-		}
-		kind := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["kind"])))
-		image := strings.TrimSpace(fmt.Sprintf("%v", cfg["image"]))
-		deviceKey := netlabDeviceKeyForClabNode(kind, image)
-		if deviceKey == "" {
-			continue
-		}
-		if existing, ok := byKey[deviceKey]; ok && existing.image != "" {
-			continue
-		}
-		byKey[deviceKey] = deviceInfo{deviceKey: deviceKey, image: image}
-	}
-
-	keys := make([]string, 0, len(byKey))
-	for k := range byKey {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	lines := make([]string, 0, len(keys)*2)
-	for _, deviceKey := range keys {
-		info := byKey[deviceKey]
-		cred, ok := netlabCredentialForDevice(info.deviceKey, info.image)
-		if !ok {
-			continue
-		}
-		lines = append(lines, fmt.Sprintf("devices.%s.group_vars.ansible_user=%s", info.deviceKey, cred.Username))
-		lines = append(lines, fmt.Sprintf("devices.%s.group_vars.ansible_ssh_pass=%s", info.deviceKey, cred.Password))
-	}
-	return lines
-}
-
-// netlabDeviceKeyForClabNode attempts to map a containerlab node kind/image to the
-// netlab device key used by `--set devices.<device>.group_vars.*`.
-//
-// Example: containerlab kind "ceos" should map to netlab device "eos".
-func netlabDeviceKeyForClabNode(kind, image string) string {
-	kind = strings.ToLower(strings.TrimSpace(kind))
-	image = strings.ToLower(strings.TrimSpace(image))
-	image = strings.TrimPrefix(image, "ghcr.io/forwardnetworks/")
-
-	// Prefer a direct match against known netlab device keys.
-	if kind != "" {
-		for _, set := range netlabDefaults.Sets {
-			if set.Device != "" && strings.EqualFold(strings.TrimSpace(set.Device), kind) {
-				return strings.ToLower(strings.TrimSpace(set.Device))
-			}
-		}
-	}
-
-	// Otherwise, derive device key from the image prefix catalog.
-	if image != "" {
-		for _, set := range netlabDefaults.Sets {
-			if set.Device == "" || set.ImagePrefix == "" {
-				continue
-			}
-			if strings.HasPrefix(image, strings.ToLower(strings.TrimSpace(set.ImagePrefix))) {
-				return strings.ToLower(strings.TrimSpace(set.Device))
-			}
-		}
-	}
-
-	// Known containerlab kind -> netlab device aliases.
-	switch kind {
-	case "ceos":
-		return "eos"
-	}
-
-	return kind
 }
 
 func envInt(env map[string]string, key string, def int) int {
@@ -1103,12 +962,27 @@ func waitForForwardSSHReady(
 		return nil
 	}
 	probeCfg := forwardSSHProbeConfigFromEnv(environment)
-	if preProbe != nil {
-		preProbe(ctx)
-	}
 
 	start := time.Now()
 	deadline := start.Add(timeout)
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	const preProbeInterval = 30 * time.Second
+	lastPreProbe := time.Time{}
+	runPreProbe := func(force bool) {
+		if preProbe == nil {
+			return
+		}
+		if !force && !lastPreProbe.IsZero() && time.Since(lastPreProbe) < preProbeInterval {
+			return
+		}
+		preProbe(waitCtx)
+		lastPreProbe = time.Now()
+	}
+	// Run an initial pre-probe before the SSH polling loop starts.
+	runPreProbe(true)
+
 	if log != nil {
 		log.Infof(
 			"forward ssh readiness: waiting for ssh on nodes=%d timeout=%s sshProbeDial=%s sshProbeRead=%s sshProbeConsecutive=%d",
@@ -1123,9 +997,6 @@ func waitForForwardSSHReady(
 		index   int
 		elapsed time.Duration
 	}
-
-	waitCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 
 	readyCh := make(chan readyEvent, len(targets))
 	var wg sync.WaitGroup
@@ -1240,6 +1111,11 @@ func waitForForwardSSHReady(
 					time.Since(start).Truncate(time.Second),
 					remaining,
 				)
+			}
+			// Some NOS images (notably EOS/cEOS) can wipe pod eth0 routes after initial boot.
+			// Re-run pre-probe periodically while nodes are unresolved to restore reachability.
+			if len(ready) < len(targets) {
+				runPreProbe(false)
 			}
 		case <-cancelPollTicker.C:
 			if taskID > 0 && e != nil {

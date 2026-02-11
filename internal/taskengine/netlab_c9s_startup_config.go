@@ -680,13 +680,23 @@ func extractNetlabConfigModeOverrides(setOverrides []string) map[string]string {
 			continue
 		}
 		keyParts := strings.Split(key, ".")
-		if len(keyParts) != 5 {
+		device := ""
+		switch len(keyParts) {
+		case 5:
+			// Backward-compatible: devices.<device>.clab.group_vars.netlab_config_mode
+			if keyParts[0] != "devices" || keyParts[2] != "clab" || keyParts[3] != "group_vars" || keyParts[4] != "netlab_config_mode" {
+				continue
+			}
+			device = strings.TrimSpace(keyParts[1])
+		case 6:
+			// Preferred for netlab --set: defaults.devices.<device>.clab.group_vars.netlab_config_mode
+			if keyParts[0] != "defaults" || keyParts[1] != "devices" || keyParts[3] != "clab" || keyParts[4] != "group_vars" || keyParts[5] != "netlab_config_mode" {
+				continue
+			}
+			device = strings.TrimSpace(keyParts[2])
+		default:
 			continue
 		}
-		if keyParts[0] != "devices" || keyParts[2] != "clab" || keyParts[3] != "group_vars" || keyParts[4] != "netlab_config_mode" {
-			continue
-		}
-		device := strings.TrimSpace(keyParts[1])
 		if device == "" {
 			continue
 		}
@@ -695,6 +705,30 @@ func extractNetlabConfigModeOverrides(setOverrides []string) map[string]string {
 			continue
 		}
 		out[device] = value
+	}
+	return out
+}
+
+var defaultNetlabConfigModesByDevice = map[string]string{
+	"eos":      "sh",
+	"frr":      "sh",
+	"linux":    "sh",
+	"ios":      "startup",
+	"junos":    "startup",
+	"dellos10": "startup",
+	"arubacx":  "startup",
+}
+
+func effectiveNetlabConfigModeByDevice(setOverrides []string) map[string]string {
+	out := map[string]string{}
+	for k, v := range defaultNetlabConfigModesByDevice {
+		out[k] = v
+	}
+	for k, v := range extractNetlabConfigModeOverrides(setOverrides) {
+		if strings.TrimSpace(k) == "" || strings.TrimSpace(v) == "" {
+			continue
+		}
+		out[k] = v
 	}
 	return out
 }
@@ -779,6 +813,42 @@ func supportsNetlabConfigMode(device, mode string) bool {
 	default:
 		return false
 	}
+}
+
+// netlabDeviceKeyForClabNode attempts to map a containerlab node kind/image to the
+// netlab device key used by defaults/group_vars lookups.
+func netlabDeviceKeyForClabNode(kind, image string) string {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	image = strings.ToLower(strings.TrimSpace(image))
+	image = strings.TrimPrefix(image, "ghcr.io/forwardnetworks/")
+
+	// Prefer a direct match against known netlab device keys.
+	if kind != "" {
+		for _, set := range netlabDefaults.Sets {
+			if set.Device != "" && strings.EqualFold(strings.TrimSpace(set.Device), kind) {
+				return strings.ToLower(strings.TrimSpace(set.Device))
+			}
+		}
+	}
+
+	// Otherwise, derive device key from the image prefix catalog.
+	if image != "" {
+		for _, set := range netlabDefaults.Sets {
+			if set.Device == "" || set.ImagePrefix == "" {
+				continue
+			}
+			if strings.HasPrefix(image, strings.ToLower(strings.TrimSpace(set.ImagePrefix))) {
+				return strings.ToLower(strings.TrimSpace(set.Device))
+			}
+		}
+	}
+
+	// Known containerlab kind -> netlab device aliases.
+	switch kind {
+	case "ceos":
+		return "eos"
+	}
+	return kind
 }
 
 func shouldUseNativeNetlabConfigModeForNode(kind, image string, options netlabC9sStartupConfigOptions) bool {
