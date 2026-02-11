@@ -712,6 +712,18 @@ func resolveClabernetesSchedulingMode(env map[string]string, topologyYAML string
 	}
 
 	nodeCount = containerlabNodeCount(topologyYAML)
+	if envBool(env, "SKYFORGE_CLABERNETES_HEAVY_NOS_SPREAD_OVERRIDE", true) && topologyHasHeavyNOS(topologyYAML) {
+		switch rawMode {
+		case "":
+			reason = "default-adaptive-heavy-nos"
+		case "adaptive":
+			reason = "adaptive-heavy-nos"
+		default:
+			reason = "invalid-adaptive-heavy-nos"
+		}
+		return "spread", reason, nodeCount
+	}
+
 	packMaxNodes := envInt(env, "SKYFORGE_CLABERNETES_ADAPTIVE_PACK_MAX_NODES", 4)
 	if packMaxNodes <= 0 {
 		packMaxNodes = 4
@@ -733,6 +745,45 @@ func resolveClabernetesSchedulingMode(env map[string]string, topologyYAML string
 		reason = "invalid-adaptive"
 	}
 	return mode, reason, nodeCount
+}
+
+func topologyHasHeavyNOS(containerlabYAML string) bool {
+	specs, err := containerlabNodeSpecs(containerlabYAML)
+	if err != nil || len(specs) == 0 {
+		return false
+	}
+	for _, spec := range specs {
+		if isHeavyNOSNode(spec.Kind, spec.Image) {
+			return true
+		}
+	}
+	return false
+}
+
+func isHeavyNOSNode(kind, image string) bool {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	image = strings.ToLower(strings.TrimSpace(image))
+	image = strings.TrimPrefix(image, "ghcr.io/forwardnetworks/")
+
+	switch kind {
+	case "nxos", "vr-n9kv", "n9kv", "vmx", "vr-vmx", "vqfx", "vr-vqfx", "vptx", "vr-vptx", "cat8000v", "vr-cat8000v":
+		return true
+	}
+
+	heavyHints := []string{
+		"n9kv",
+		"nxos",
+		"vmx",
+		"vqfx",
+		"vptx",
+		"cat8000v",
+	}
+	for _, hint := range heavyHints {
+		if strings.Contains(image, hint) {
+			return true
+		}
+	}
+	return false
 }
 
 func containerlabNodeCount(containerlabYAML string) int {

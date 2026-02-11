@@ -260,6 +260,20 @@ func getenvBoolOK(key string) (bool, bool) {
 	}
 }
 
+func getenvDuration(key string, fallback time.Duration) time.Duration {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	if secs, err := strconv.Atoi(raw); err == nil && secs > 0 {
+		return time.Duration(secs) * time.Second
+	}
+	if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+		return d
+	}
+	return fallback
+}
+
 func appendCreatedWorkspace(statusDir string, rec createdWorkspaceRecord) error {
 	statusDir = strings.TrimSpace(statusDir)
 	if statusDir == "" {
@@ -3098,8 +3112,34 @@ func run() int {
 					var destroyed deploymentActionResponse
 					if json.Unmarshal(body, &destroyed) == nil {
 						destroyTask := parseTaskID(destroyed.Run)
+						destroyDone := false
+						destroyWait := getenvDuration("SKYFORGE_E2E_DESTROY_TIMEOUT", 5*time.Minute)
+						if destroyWait > wait {
+							destroyWait = wait
+						}
+						destroyReason := ""
 						if destroyTask > 0 {
-							_, _, _ = waitForTaskFinished(&http.Client{Transport: tr}, baseURL, cookie, ws.ID, destroyTask, wait)
+							st, er, waitErr := waitForTaskFinished(&http.Client{Transport: tr}, baseURL, cookie, ws.ID, destroyTask, destroyWait)
+							if waitErr == nil && (strings.EqualFold(strings.TrimSpace(st), "succeeded") || strings.EqualFold(strings.TrimSpace(st), "success")) {
+								destroyDone = true
+							} else if waitErr != nil {
+								destroyReason = waitErr.Error()
+							} else {
+								destroyReason = fmt.Sprintf("status=%s error=%s", strings.TrimSpace(st), strings.TrimSpace(er))
+							}
+						} else {
+							destroyReason = "missing destroy task id"
+						}
+						if !destroyDone {
+							deleteURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s", baseURL, ws.ID, dep.ID)
+							delResp, delBody, delErr := doJSON(client, http.MethodDelete, deleteURL, nil, map[string]string{"Cookie": cookie})
+							if delErr == nil && delResp.StatusCode >= 200 && delResp.StatusCode < 300 {
+								fmt.Printf("OK %s: cleanup fallback deleted deployment (reason=%s)\n", name, strings.TrimSpace(destroyReason))
+							} else if delErr != nil {
+								fmt.Fprintf(os.Stderr, "warning %s: cleanup fallback delete failed (reason=%s): %v\n", name, strings.TrimSpace(destroyReason), delErr)
+							} else {
+								fmt.Fprintf(os.Stderr, "warning %s: cleanup fallback delete failed (%d) (reason=%s): %s\n", name, delResp.StatusCode, strings.TrimSpace(destroyReason), strings.TrimSpace(string(delBody)))
+							}
 						}
 					}
 				}

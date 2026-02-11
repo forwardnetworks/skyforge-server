@@ -9,17 +9,23 @@ func TestResolveClabernetesSchedulingMode(t *testing.T) {
 	topologySmall := `
 topology:
   nodes:
-    r1: { kind: vr-n9kv }
-    r2: { kind: vr-n9kv }
+    r1: { kind: ceos }
+    r2: { kind: ceos }
 `
 	topologyLarge := `
 topology:
   nodes:
+    r1: { kind: ceos }
+    r2: { kind: ceos }
+    r3: { kind: ceos }
+    r4: { kind: ceos }
+    r5: { kind: ceos }
+`
+	topologyHeavySmall := `
+topology:
+  nodes:
     r1: { kind: vr-n9kv }
     r2: { kind: vr-n9kv }
-    r3: { kind: vr-n9kv }
-    r4: { kind: vr-n9kv }
-    r5: { kind: vr-n9kv }
 `
 
 	tests := []struct {
@@ -68,6 +74,29 @@ topology:
 			name:       "adaptive-custom-threshold",
 			env:        map[string]string{"SKYFORGE_CLABERNETES_ADAPTIVE_PACK_MAX_NODES": "6"},
 			topology:   topologyLarge,
+			wantMode:   "pack",
+			wantReason: "default-adaptive",
+		},
+		{
+			name:       "adaptive-heavy-nos-overrides-pack",
+			env:        map[string]string{"SKYFORGE_CLABERNETES_SCHEDULING_MODE": "adaptive"},
+			topology:   topologyHeavySmall,
+			wantMode:   "spread",
+			wantReason: "adaptive-heavy-nos",
+		},
+		{
+			name:       "default-adaptive-heavy-nos-overrides-pack",
+			env:        map[string]string{},
+			topology:   topologyHeavySmall,
+			wantMode:   "spread",
+			wantReason: "default-adaptive-heavy-nos",
+		},
+		{
+			name: "heavy-nos-override-can-be-disabled",
+			env: map[string]string{
+				"SKYFORGE_CLABERNETES_HEAVY_NOS_SPREAD_OVERRIDE": "false",
+			},
+			topology:   topologyHeavySmall,
 			wantMode:   "pack",
 			wantReason: "default-adaptive",
 		},

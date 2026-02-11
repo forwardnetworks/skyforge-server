@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -14,14 +15,7 @@ import (
 )
 
 func envBool(env map[string]string, key string, def bool) bool {
-	if env == nil {
-		return def
-	}
-	raw, ok := env[key]
-	if !ok {
-		return def
-	}
-	raw = strings.TrimSpace(raw)
+	raw := envString(env, key)
 	if raw == "" {
 		return def
 	}
@@ -33,14 +27,14 @@ func envBool(env map[string]string, key string, def bool) bool {
 }
 
 func envString(env map[string]string, key string) string {
-	if env == nil {
-		return ""
+	if env != nil {
+		raw, ok := env[key]
+		if ok {
+			return strings.TrimSpace(raw)
+		}
 	}
-	raw, ok := env[key]
-	if !ok {
-		return ""
-	}
-	return strings.TrimSpace(raw)
+	// Allow per-cluster defaults via process env when a run does not set an override.
+	return strings.TrimSpace(os.Getenv(key))
 }
 
 func envDuration(env map[string]string, key string, def time.Duration) time.Duration {
