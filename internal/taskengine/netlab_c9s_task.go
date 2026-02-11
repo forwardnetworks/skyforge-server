@@ -470,7 +470,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	// 4) Apply post-up config for supported NOS kinds (cfglets, SSH enable, etc).
 	// This must happen before Forward collection starts, but should not be blocked by
 	// Forward sync failures (lab should still be configured even if Forward is down).
-	enableNOSPostUp := envBool(spec.Environment, "SKYFORGE_NETLAB_C9S_ENABLE_NOS_POSTUP", false)
+	enableNOSPostUp := envBool(spec.Environment, "SKYFORGE_NETLAB_C9S_ENABLE_NOS_POSTUP", true)
 	if enableNOSPostUp {
 		if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.nos-postup", func() error {
 			return runNetlabC9sNOSPostUp(ctx, ns, topologyName, topologyBytes, nodeMounts, log)

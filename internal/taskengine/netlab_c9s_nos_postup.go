@@ -585,7 +585,7 @@ func ensureNetlabC9sEOSSSH(ctx context.Context, kcfg *rest.Config, ns, podName, 
 	if ns == "" || podName == "" || nodeName == "" {
 		return nil
 	}
-	script := fmt.Sprintf(`set -eu
+script := fmt.Sprintf(`set -eu
 NODE=%q
 command -v FastCli >/dev/null 2>&1 || { echo "FastCli not found; skipping"; exit 0; }
 command -v timeout >/dev/null 2>&1 || { echo "timeout not found; skipping"; exit 0; }
@@ -595,6 +595,15 @@ i=0
   sleep 1
   i=$((i+1))
 done
+# cEOS exposes SSH via Linux sshd/xinetd. Ensure password auth is enabled so
+# Forward can authenticate with netlab-managed credentials.
+if [ -f /etc/ssh/sshd_config ]; then
+  if grep -q '^PasswordAuthentication' /etc/ssh/sshd_config; then
+    sed -i 's/^PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config || true
+  else
+    echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config || true
+  fi
+fi
 # Ensure SSH service is enabled.
 timeout -k 2s 15s FastCli -p 15 -c "enable" -c "configure terminal" -c "management ssh" -c "no shutdown" -c "end" -c "write memory" >/dev/null 2>&1 || true
 	echo "ssh enabled"
@@ -664,10 +673,19 @@ func applyNetlabC9sEOSConfigSnippets(ctx context.Context, kcfg *rest.Config, ns,
 	// Apply module snippets in order. Also ensures SSH is enabled (needed for Forward reachability).
 	fileList := strings.Join(cleanFiles, "\n")
 
-	script := fmt.Sprintf(`set -eu
+script := fmt.Sprintf(`set -eu
 NODE=%q
 command -v FastCli >/dev/null 2>&1 || { echo "FastCli not found; skipping"; exit 0; }
 command -v timeout >/dev/null 2>&1 || { echo "timeout not found; skipping"; exit 0; }
+# cEOS exposes SSH via Linux sshd/xinetd. Ensure password auth is enabled so
+# Forward can authenticate with netlab-managed credentials.
+if [ -f /etc/ssh/sshd_config ]; then
+  if grep -q '^PasswordAuthentication' /etc/ssh/sshd_config; then
+    sed -i 's/^PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config || true
+  else
+    echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config || true
+  fi
+fi
 try_file() {
   f="$1"
   [ -f "$f" ] || return 1
@@ -680,7 +698,13 @@ try_file() {
   done
   # Ensure SSH service is enabled.
   timeout -k 2s 15s FastCli -p 15 -c "enable" -c "configure terminal" -c "management ssh" -c "no shutdown" -c "end" -c "write memory" >/dev/null 2>&1 || true
-  # Apply lines (best-effort). Skip comments and "end".
+  # Prefer native netlab module script execution for EOS snippets.
+  if timeout -k 2s 30s FastCli -p 15 "$f" >/dev/null 2>&1; then
+    timeout -k 2s 10s FastCli -p 15 -c "write memory" >/dev/null 2>&1 || true
+    echo "applied config snippet (native): $f"
+    return 0
+  fi
+  # Fallback: apply lines best-effort. Skip comments and "end".
   while IFS= read -r line; do
     line="${line%%$'\r'}"
     case "$line" in
