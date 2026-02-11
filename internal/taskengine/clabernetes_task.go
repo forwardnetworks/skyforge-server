@@ -438,44 +438,19 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 				log.Infof("Clabernetes resources: parse failed (ignored): %v", err)
 			} else if len(nodeSpecs) > 0 {
 				enableLimits := envBool(spec.Environment, "SKYFORGE_CLABERNETES_ENABLE_LIMITS", false)
-				resources := map[string]any{}
-				matchedByNode := map[string]string{}
-				for nodeName, nodeSpec := range nodeSpecs {
-					profile, matchedBy, ok := nosResourceProfileForNode(nodeSpec.Kind, nodeSpec.Image)
-					if !ok {
-						continue
-					}
-					matchedByNode[nodeName] = matchedBy
-					req := map[string]any{}
-					if strings.TrimSpace(profile.CPURequest) != "" {
-						req["cpu"] = strings.TrimSpace(profile.CPURequest)
-					}
-					if strings.TrimSpace(profile.MemoryRequest) != "" {
-						req["memory"] = strings.TrimSpace(profile.MemoryRequest)
-					}
-					rr := map[string]any{}
-					if len(req) > 0 {
-						rr["requests"] = req
-					}
-					if enableLimits {
-						lim := map[string]any{}
-						if strings.TrimSpace(profile.CPULimit) != "" {
-							lim["cpu"] = strings.TrimSpace(profile.CPULimit)
-						}
-						if strings.TrimSpace(profile.MemoryLimit) != "" {
-							lim["memory"] = strings.TrimSpace(profile.MemoryLimit)
-						}
-						if len(lim) > 0 {
-							rr["limits"] = lim
-						}
-					}
-					if len(rr) > 0 {
-						resources[nodeName] = rr
-					}
+				assignment, err := buildNOSResourceAssignments(nodeSpecs, spec.Environment, enableLimits)
+				if err != nil {
+					return err
 				}
-				if len(resources) > 0 {
-					deployment["resources"] = resources
-					log.Infof("Clabernetes resources: configured nodes=%d (matched=%v)", len(resources), matchedByNode)
+				if len(assignment.Resources) > 0 {
+					deployment["resources"] = assignment.Resources
+					log.Infof("Clabernetes resources: configured nodes=%d mode=%s matched=%v", len(assignment.Resources), assignment.Mode, assignment.MatchedByNode)
+				}
+				if len(assignment.FallbackByNode) > 0 {
+					log.Infof("Clabernetes resources: fallback applied nodes=%d details=%s", len(assignment.FallbackByNode), formatNodeDetails(assignment.FallbackByNode))
+				}
+				if assignment.Mode == clabernetesResourceFallbackNone && len(assignment.Unresolved) > 0 {
+					log.Infof("Clabernetes resources: unresolved profiles skipped (mode=none): %s", formatNodeDetails(assignment.Unresolved))
 				}
 			}
 		}

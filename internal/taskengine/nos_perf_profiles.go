@@ -3,6 +3,8 @@ package taskengine
 import (
 	_ "embed"
 	"encoding/json"
+	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -57,19 +59,39 @@ var nosPerfProfilesByNormalizedKind = func() map[string]nosResourceProfile {
 var nosKindProfileAliases = map[string]string{
 	"arubacx":       "aruba_arubaos-cx",
 	"asav":          "cisco_asav",
+	"cat8000v":      "cisco_c8000v",
+	"csr":           "vr-csr",
+	"cumulus":       "cumulus",
 	"dellos10":      "vr-ftosv",
+	"eos":           "eos",
 	"fortios":       "vr-fortios",
 	"iol":           "cisco_iol",
 	"ioll2":         "cisco_iol_l2",
+	"ios":           "cisco_vios",
 	"iosv":          "cisco_vios",
 	"iosvl2":        "cisco_viosl2",
+	"linux":         "linux",
 	"nxos":          "vr-n9kv",
 	"sros":          "vr-sros",
+	"vsrx":          "juniper_vsrx",
 	"vjunos-router": "juniper_vjunosrouter",
 	"vjunos-switch": "juniper_vjunosswitch",
 	"vmx":           "vr-vmx",
 	"vptx":          "juniper_vjunosevolved",
 }
+
+type clabernetesResourceFallbackMode string
+
+const (
+	clabernetesResourceFallbackConservative clabernetesResourceFallbackMode = "conservative"
+	clabernetesResourceFallbackNone         clabernetesResourceFallbackMode = "none"
+	clabernetesResourceFallbackFail         clabernetesResourceFallbackMode = "fail"
+)
+
+const (
+	defaultClabernetesFallbackCPURequest    = "500m"
+	defaultClabernetesFallbackMemoryRequest = "1Gi"
+)
 
 func nosResourceProfileForKind(kind string) (nosResourceProfile, bool) {
 	kind = strings.ToLower(strings.TrimSpace(kind))
@@ -149,4 +171,127 @@ func nosResourceProfileForNode(kind string, image string) (nosResourceProfile, s
 		}
 	}
 	return nosResourceProfile{}, "", false
+}
+
+func clabernetesResourceFallbackModeFromEnv(env map[string]string) clabernetesResourceFallbackMode {
+	switch strings.ToLower(strings.TrimSpace(envString(env, "SKYFORGE_CLABERNETES_RESOURCE_FALLBACK"))) {
+	case "", string(clabernetesResourceFallbackConservative):
+		return clabernetesResourceFallbackConservative
+	case string(clabernetesResourceFallbackNone):
+		return clabernetesResourceFallbackNone
+	case string(clabernetesResourceFallbackFail):
+		return clabernetesResourceFallbackFail
+	default:
+		return clabernetesResourceFallbackConservative
+	}
+}
+
+func clabernetesFallbackResourceProfileFromEnv(env map[string]string) nosResourceProfile {
+	cpu := strings.TrimSpace(envString(env, "SKYFORGE_CLABERNETES_FALLBACK_CPU_REQUEST"))
+	if cpu == "" {
+		cpu = defaultClabernetesFallbackCPURequest
+	}
+	mem := strings.TrimSpace(envString(env, "SKYFORGE_CLABERNETES_FALLBACK_MEMORY_REQUEST"))
+	if mem == "" {
+		mem = defaultClabernetesFallbackMemoryRequest
+	}
+	return nosResourceProfile{
+		CPURequest:    cpu,
+		MemoryRequest: mem,
+	}
+}
+
+type nosResourceAssignmentResult struct {
+	Mode           clabernetesResourceFallbackMode
+	Resources      map[string]any
+	MatchedByNode  map[string]string
+	FallbackByNode map[string]string
+	Unresolved     map[string]string
+}
+
+func buildNOSResourceAssignments(nodeSpecs map[string]containerlabNodeSpec, env map[string]string, enableLimits bool) (nosResourceAssignmentResult, error) {
+	result := nosResourceAssignmentResult{
+		Mode:           clabernetesResourceFallbackModeFromEnv(env),
+		Resources:      map[string]any{},
+		MatchedByNode:  map[string]string{},
+		FallbackByNode: map[string]string{},
+		Unresolved:     map[string]string{},
+	}
+
+	fallbackProfile := clabernetesFallbackResourceProfileFromEnv(env)
+	for nodeName, nodeSpec := range nodeSpecs {
+		nodeName = strings.TrimSpace(nodeName)
+		if nodeName == "" {
+			continue
+		}
+		profile, matchedBy, ok := nosResourceProfileForNode(nodeSpec.Kind, nodeSpec.Image)
+		if !ok {
+			desc := fmt.Sprintf("kind=%q image=%q", strings.TrimSpace(nodeSpec.Kind), strings.TrimSpace(nodeSpec.Image))
+			result.Unresolved[nodeName] = desc
+			switch result.Mode {
+			case clabernetesResourceFallbackNone:
+				continue
+			case clabernetesResourceFallbackFail:
+				continue
+			default:
+				profile = fallbackProfile
+				matchedBy = "fallback-conservative"
+				result.FallbackByNode[nodeName] = desc
+			}
+		}
+
+		req := map[string]any{}
+		if strings.TrimSpace(profile.CPURequest) != "" {
+			req["cpu"] = strings.TrimSpace(profile.CPURequest)
+		}
+		if strings.TrimSpace(profile.MemoryRequest) != "" {
+			req["memory"] = strings.TrimSpace(profile.MemoryRequest)
+		}
+
+		rr := map[string]any{}
+		if len(req) > 0 {
+			rr["requests"] = req
+		}
+		if enableLimits {
+			lim := map[string]any{}
+			if strings.TrimSpace(profile.CPULimit) != "" {
+				lim["cpu"] = strings.TrimSpace(profile.CPULimit)
+			}
+			if strings.TrimSpace(profile.MemoryLimit) != "" {
+				lim["memory"] = strings.TrimSpace(profile.MemoryLimit)
+			}
+			if len(lim) > 0 {
+				rr["limits"] = lim
+			}
+		}
+		if len(rr) == 0 {
+			continue
+		}
+		result.Resources[nodeName] = rr
+		result.MatchedByNode[nodeName] = matchedBy
+	}
+
+	if result.Mode == clabernetesResourceFallbackFail && len(result.Unresolved) > 0 {
+		return result, fmt.Errorf(
+			"clabernetes resources: missing profiles for nodes: %s (set SKYFORGE_CLABERNETES_RESOURCE_FALLBACK=conservative|none)",
+			formatNodeDetails(result.Unresolved),
+		)
+	}
+	return result, nil
+}
+
+func formatNodeDetails(m map[string]string) string {
+	if len(m) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s(%s)", k, m[k]))
+	}
+	return strings.Join(parts, ", ")
 }

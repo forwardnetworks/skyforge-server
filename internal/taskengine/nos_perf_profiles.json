@@ -1,20 +1,20 @@
 {
   "profilesByKind": {
-    "vr-vmx": {
-      "cpuRequest": "4000m",
-      "memoryRequest": "6Gi"
+    "aruba_arubaos-cx": {
+      "cpuRequest": "2000m",
+      "memoryRequest": "4Gi"
     },
-    "vr-n9kv": {
-      "cpuRequest": "4000m",
-      "memoryRequest": "12Gi"
-    },
-    "cisco_vios": {
+    "ceos": {
       "cpuRequest": "1000m",
       "memoryRequest": "2Gi"
     },
-    "cisco_viosl2": {
-      "cpuRequest": "1000m",
-      "memoryRequest": "2Gi"
+    "cisco_asav": {
+      "cpuRequest": "2000m",
+      "memoryRequest": "4Gi"
+    },
+    "cisco_c8000v": {
+      "cpuRequest": "4000m",
+      "memoryRequest": "8Gi"
     },
     "cisco_iol": {
       "cpuRequest": "500m",
@@ -24,7 +24,51 @@
       "cpuRequest": "500m",
       "memoryRequest": "512Mi"
     },
-    "cisco_asav": {
+    "cisco_vios": {
+      "cpuRequest": "1000m",
+      "memoryRequest": "2Gi"
+    },
+    "cisco_viosl2": {
+      "cpuRequest": "1000m",
+      "memoryRequest": "2Gi"
+    },
+    "cumulus": {
+      "cpuRequest": "500m",
+      "memoryRequest": "1Gi"
+    },
+    "eos": {
+      "cpuRequest": "1000m",
+      "memoryRequest": "2Gi"
+    },
+    "juniper_vjunosevolved": {
+      "cpuRequest": "4000m",
+      "memoryRequest": "12Gi"
+    },
+    "juniper_vjunosrouter": {
+      "cpuRequest": "4000m",
+      "memoryRequest": "6Gi"
+    },
+    "juniper_vjunosswitch": {
+      "cpuRequest": "4000m",
+      "memoryRequest": "6Gi"
+    },
+    "juniper_vsrx": {
+      "cpuRequest": "2000m",
+      "memoryRequest": "4Gi"
+    },
+    "linux": {
+      "cpuRequest": "250m",
+      "memoryRequest": "256Mi"
+    },
+    "openbsd_openbsd": {
+      "cpuRequest": "500m",
+      "memoryRequest": "512Mi"
+    },
+    "skyforge-linux-host": {
+      "cpuRequest": "250m",
+      "memoryRequest": "256Mi"
+    },
+    "vr-csr": {
       "cpuRequest": "2000m",
       "memoryRequest": "4Gi"
     },
@@ -36,31 +80,15 @@
       "cpuRequest": "2000m",
       "memoryRequest": "4Gi"
     },
+    "vr-n9kv": {
+      "cpuRequest": "4000m",
+      "memoryRequest": "12Gi"
+    },
     "vr-sros": {
       "cpuRequest": "4000m",
       "memoryRequest": "8Gi"
     },
-    "juniper_vsrx": {
-      "cpuRequest": "2000m",
-      "memoryRequest": "4Gi"
-    },
-    "openbsd_openbsd": {
-      "cpuRequest": "500m",
-      "memoryRequest": "512Mi"
-    },
-    "aruba_arubaos-cx": {
-      "cpuRequest": "2000m",
-      "memoryRequest": "4Gi"
-    },
-    "juniper_vjunosevolved": {
-      "cpuRequest": "4000m",
-      "memoryRequest": "12Gi"
-    },
-    "juniper_vjunosrouter": {
-      "cpuRequest": "4000m",
-      "memoryRequest": "6Gi"
-    },
-    "juniper_vjunosswitch": {
+    "vr-vmx": {
       "cpuRequest": "4000m",
       "memoryRequest": "6Gi"
     }
