@@ -106,6 +106,10 @@ nodes:
 	if !listContainsString(all["config"], "snmp_config") {
 		t.Fatalf("expected groups.all.config to include snmp_config, got %#v", all["config"])
 	}
+	eos := getMap(groups["eos"])
+	if !listContainsString(eos["config"], "skyforge_eos_auth") {
+		t.Fatalf("expected groups.eos.config to include skyforge_eos_auth, got %#v", eos["config"])
+	}
 
 	defaults := getMap(topo["defaults"])
 	snmp := getMap(defaults["snmp"])
@@ -127,6 +131,10 @@ nodes:
 	if got := strings.TrimSpace(fmt.Sprintf("%v", snmpCfg["iol"])); got == "" {
 		t.Fatalf("expected generated iol snmp_config template")
 	}
+	eosAuth := getMap(configlets["skyforge_eos_auth"])
+	if got := strings.TrimSpace(fmt.Sprintf("%v", eosAuth["eos"])); got == "" {
+		t.Fatalf("expected generated eos auth template")
+	}
 }
 
 func TestPatchNetlabTopologyYAMLForSnmp_NoDupesAndPreservesExistingTemplate(t *testing.T) {
@@ -136,9 +144,13 @@ plugin: [files]
 groups:
   all:
     config: [initial, snmp_config]
+  eos:
+    config: [initial, skyforge_eos_auth]
 configlets:
   snmp_config:
     iol: "custom-iol-template"
+  skyforge_eos_auth:
+    eos: "custom-eos-auth"
 nodes:
   r1:
     device: iol
@@ -159,6 +171,10 @@ nodes:
 	if got := countStringInList(all["config"], "snmp_config"); got != 1 {
 		t.Fatalf("expected exactly one snmp_config entry, got %d (%#v)", got, all["config"])
 	}
+	eos := getMap(groups["eos"])
+	if got := countStringInList(eos["config"], "skyforge_eos_auth"); got != 1 {
+		t.Fatalf("expected exactly one skyforge_eos_auth entry, got %d (%#v)", got, eos["config"])
+	}
 
 	configlets := getMap(topo["configlets"])
 	snmpCfg := getMap(configlets["snmp_config"])
@@ -167,6 +183,10 @@ nodes:
 	}
 	if got := strings.TrimSpace(fmt.Sprintf("%v", snmpCfg["eos"])); got == "" {
 		t.Fatalf("expected generated eos template to be present")
+	}
+	eosAuthCfg := getMap(configlets["skyforge_eos_auth"])
+	if got := strings.TrimSpace(fmt.Sprintf("%v", eosAuthCfg["eos"])); got != "custom-eos-auth" {
+		t.Fatalf("expected existing eos auth template to be preserved, got %q", got)
 	}
 
 	defaults := getMap(topo["defaults"])

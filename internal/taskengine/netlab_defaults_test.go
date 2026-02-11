@@ -67,4 +67,12 @@ func TestNetlabCredentialForDevice_NoFallback(t *testing.T) {
 	if cred.Username != "admin" || cred.Password != "admin@123" {
 		t.Fatalf("unexpected vmx credential: %#v", cred)
 	}
+
+	linuxCred, ok := netlabCredentialForDevice("linux", "python:3.12-alpine")
+	if !ok {
+		t.Fatalf("expected linux lookup ok=true")
+	}
+	if linuxCred.Username != "root" || linuxCred.Password != "admin" {
+		t.Fatalf("unexpected linux credential: %#v", linuxCred)
+	}
 }

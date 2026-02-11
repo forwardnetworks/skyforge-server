@@ -173,6 +173,12 @@ set snmp trap-group SKYFORGE targets {{ defaults.snmp.trap_host }}
 {% endif %}`,
 }
 
+const generatedEOSAuthConfigTemplate = `aaa authentication login default local
+username admin privilege 15 role network-admin secret admin
+management ssh
+   no shutdown
+ip ssh password-authentication yes`
+
 func renderGeneratedSnmpTemplate(tpl, community, trapHost string) string {
 	out := strings.ReplaceAll(tpl, "{{ defaults.snmp.community }}", community)
 	out = strings.ReplaceAll(out, "{{ defaults.snmp.trap_host }}", trapHost)
@@ -275,52 +281,64 @@ func patchNetlabTopologyYAMLForSnmp(topologyYAML []byte, community, trapHost str
 		topo["plugin"] = []any{"files"}
 	}
 
-	// Append snmp_config to groups.all.config (do not overwrite).
+	// Append required config modules.
+	// - snmp_config applies globally (templates are generated for all supported devices).
+	// - skyforge_eos_auth applies only to EOS groups to keep native netlab config_mode=sh
+	//   while ensuring SSH/password auth defaults are present for Forward.
 	groups := ensureMap(topo, "groups")
 	all := ensureMap(groups, "all")
-	rawCfg, _ := all["config"]
-	var hasSnmp func(v any) bool
-	hasSnmp = func(v any) bool {
+	var hasConfigModule func(v any, module string) bool
+	hasConfigModule = func(v any, module string) bool {
+		module = strings.TrimSpace(module)
+		if module == "" {
+			return false
+		}
 		switch vv := v.(type) {
 		case string:
-			return strings.TrimSpace(vv) == "snmp_config"
+			return strings.TrimSpace(vv) == module
 		case []any:
 			for _, item := range vv {
-				if hasSnmp(item) {
+				if hasConfigModule(item, module) {
 					return true
 				}
 			}
 		case []string:
 			for _, item := range vv {
-				if strings.TrimSpace(item) == "snmp_config" {
+				if strings.TrimSpace(item) == module {
 					return true
 				}
 			}
 		}
 		return false
 	}
-	switch v := rawCfg.(type) {
-	case nil:
-		all["config"] = []any{"snmp_config"}
-	case string:
-		if !hasSnmp(v) {
-			if strings.TrimSpace(v) == "" {
-				all["config"] = []any{"snmp_config"}
-			} else {
-				all["config"] = []any{strings.TrimSpace(v), "snmp_config"}
+	appendConfigModule := func(group map[string]any, module string) {
+		rawCfg, _ := group["config"]
+		switch v := rawCfg.(type) {
+		case nil:
+			group["config"] = []any{module}
+		case string:
+			if !hasConfigModule(v, module) {
+				if strings.TrimSpace(v) == "" {
+					group["config"] = []any{module}
+				} else {
+					group["config"] = []any{strings.TrimSpace(v), module}
+				}
 			}
+		case []any:
+			if !hasConfigModule(v, module) {
+				group["config"] = append(v, module)
+			}
+		case []string:
+			if !hasConfigModule(v, module) {
+				group["config"] = append(v, module)
+			}
+		default:
+			group["config"] = []any{module}
 		}
-	case []any:
-		if !hasSnmp(v) {
-			all["config"] = append(v, "snmp_config")
-		}
-	case []string:
-		if !hasSnmp(v) {
-			all["config"] = append(v, "snmp_config")
-		}
-	default:
-		all["config"] = []any{"snmp_config"}
 	}
+	appendConfigModule(all, "snmp_config")
+	eosGroup := ensureMap(groups, "eos")
+	appendConfigModule(eosGroup, "skyforge_eos_auth")
 
 	community = strings.TrimSpace(community)
 	if community == "" {
@@ -328,8 +346,8 @@ func patchNetlabTopologyYAMLForSnmp(topologyYAML []byte, community, trapHost str
 	}
 	trapHost = strings.TrimSpace(trapHost)
 
-	// Generate snmp_config templates directly in topology.yml so we do not depend on
-	// repo-specific `_skyforge/snmp_config` overlay files.
+	// Generate configlets directly in topology.yml so we do not depend on
+	// repo-specific `_skyforge/*` overlay files.
 	configlets := ensureMap(topo, "configlets")
 	snmpConfiglets := ensureAnyMap(configlets["snmp_config"])
 	for device, tpl := range generatedSnmpConfigTemplates {
@@ -339,6 +357,15 @@ func patchNetlabTopologyYAMLForSnmp(topologyYAML []byte, community, trapHost str
 		}
 	}
 	configlets["snmp_config"] = snmpConfiglets
+
+	eosAuthConfiglets := ensureAnyMap(configlets["skyforge_eos_auth"])
+	if existing, exists := eosAuthConfiglets["eos"]; !exists || strings.TrimSpace(fmt.Sprintf("%v", existing)) == "" {
+		eosAuthConfiglets["eos"] = generatedEOSAuthConfigTemplate
+	}
+	if existing, exists := eosAuthConfiglets["ceos"]; !exists || strings.TrimSpace(fmt.Sprintf("%v", existing)) == "" {
+		eosAuthConfiglets["ceos"] = generatedEOSAuthConfigTemplate
+	}
+	configlets["skyforge_eos_auth"] = eosAuthConfiglets
 
 	defaults := ensureMap(topo, "defaults")
 	snmp := ensureMap(defaults, "snmp")

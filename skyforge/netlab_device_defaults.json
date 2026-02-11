@@ -157,8 +157,8 @@
       "image_prefix": "python",
       "credentials": [
         {
-          "username": "vagrant",
-          "password": "vagrant"
+          "username": "root",
+          "password": "admin"
         }
       ]
     },
