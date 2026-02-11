@@ -39,3 +39,38 @@ func TestRunner_ExecutesTask(t *testing.T) {
 		}
 	}
 }
+
+func TestRunner_DedupesQueuedTaskID(t *testing.T) {
+	var ran int32
+	block := make(chan struct{})
+	r := New("test", 1, 10, func(ctx context.Context, taskID int) error {
+		atomic.AddInt32(&ran, 1)
+		<-block
+		return nil
+	})
+
+	if err := r.Submit(42); err != nil {
+		t.Fatalf("submit failed: %v", err)
+	}
+	if err := r.Submit(42); err != nil {
+		t.Fatalf("duplicate submit should not fail: %v", err)
+	}
+	if err := r.Submit(42); err != nil {
+		t.Fatalf("duplicate submit should not fail: %v", err)
+	}
+
+	deadline := time.NewTimer(2 * time.Second)
+	defer deadline.Stop()
+	for {
+		if atomic.LoadInt32(&ran) == 1 {
+			break
+		}
+		select {
+		case <-deadline.C:
+			t.Fatalf("expected exactly one execution while queued, got=%d", atomic.LoadInt32(&ran))
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	close(block)
+}

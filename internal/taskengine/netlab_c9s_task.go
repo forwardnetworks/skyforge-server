@@ -303,6 +303,12 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		}
 		clabSpec.Environment[k] = v
 	}
+	// For netlab-c9s runs, we perform SSH readiness gating later with c9s-specific EOS
+	// preflight repairs enabled. Disable the generic clabernetes SSH gate by default to
+	// avoid an earlier stall without preflight.
+	if _, ok := clabSpec.Environment["SKYFORGE_CLABERNETES_SSH_READY_SECONDS"]; !ok {
+		clabSpec.Environment["SKYFORGE_CLABERNETES_SSH_READY_SECONDS"] = "0"
+	}
 
 	// Default to spreading NOS pods across Kubernetes nodes for performance.
 	// Co-locating with the collector can be helpful for latency, but in practice it tends to

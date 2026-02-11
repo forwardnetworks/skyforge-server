@@ -9,9 +9,10 @@ import (
 )
 
 type QueuedTask struct {
-	TaskID   int
-	Key      string
-	Priority int
+	TaskID    int
+	Key       string
+	Priority  int
+	CreatedAt time.Time
 }
 
 func ListQueuedTasks(ctx context.Context, db *sql.DB, limit int) ([]QueuedTask, error) {
@@ -22,7 +23,7 @@ func ListQueuedTasks(ctx context.Context, db *sql.DB, limit int) ([]QueuedTask, 
 		limit = 200
 	}
 
-	rows, err := db.QueryContext(ctx, `SELECT id, workspace_id, deployment_id, priority
+	rows, err := db.QueryContext(ctx, `SELECT id, workspace_id, deployment_id, priority, created_at
 FROM sf_tasks
 WHERE status='queued'
 ORDER BY priority DESC, id ASC
@@ -37,11 +38,12 @@ LIMIT $1`, limit)
 		workspaceID  string
 		deploymentID sql.NullString
 		priority     int
+		createdAt    time.Time
 	}
 	items := make([]QueuedTask, 0, 64)
 	for rows.Next() {
 		var r row
-		if err := rows.Scan(&r.id, &r.workspaceID, &r.deploymentID, &r.priority); err != nil {
+		if err := rows.Scan(&r.id, &r.workspaceID, &r.deploymentID, &r.priority, &r.createdAt); err != nil {
 			return nil, err
 		}
 		if r.id <= 0 || strings.TrimSpace(r.workspaceID) == "" {
@@ -52,9 +54,10 @@ LIMIT $1`, limit)
 			key = fmt.Sprintf("%s:%s", strings.TrimSpace(r.workspaceID), strings.TrimSpace(r.deploymentID.String))
 		}
 		items = append(items, QueuedTask{
-			TaskID:   r.id,
-			Key:      key,
-			Priority: r.priority,
+			TaskID:    r.id,
+			Key:       key,
+			Priority:  r.priority,
+			CreatedAt: r.createdAt,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -84,7 +87,7 @@ func ListStuckQueuedTasksByKey(ctx context.Context, db *sql.DB, limit int, minAg
 	// UUID casts when comparing NULL deployments (workspace-scoped tasks).
 	rows, err := db.QueryContext(ctx, `
 SELECT DISTINCT ON (workspace_id, COALESCE(deployment_id::text, ''))
-  id, workspace_id, deployment_id, priority
+  id, workspace_id, deployment_id, priority, created_at
 FROM sf_tasks
 WHERE status='queued'
   AND created_at <= now() - $2::interval
@@ -100,11 +103,12 @@ LIMIT $1`, limit, ageStr)
 		workspaceID  string
 		deploymentID sql.NullString
 		priority     int
+		createdAt    time.Time
 	}
 	items := make([]QueuedTask, 0, 32)
 	for rows.Next() {
 		var r row
-		if err := rows.Scan(&r.id, &r.workspaceID, &r.deploymentID, &r.priority); err != nil {
+		if err := rows.Scan(&r.id, &r.workspaceID, &r.deploymentID, &r.priority, &r.createdAt); err != nil {
 			return nil, err
 		}
 		if r.id <= 0 || strings.TrimSpace(r.workspaceID) == "" {
@@ -115,9 +119,10 @@ LIMIT $1`, limit, ageStr)
 			key = fmt.Sprintf("%s:%s", strings.TrimSpace(r.workspaceID), strings.TrimSpace(r.deploymentID.String))
 		}
 		items = append(items, QueuedTask{
-			TaskID:   r.id,
-			Key:      key,
-			Priority: r.priority,
+			TaskID:    r.id,
+			Key:       key,
+			Priority:  r.priority,
+			CreatedAt: r.createdAt,
 		})
 	}
 	if err := rows.Err(); err != nil {

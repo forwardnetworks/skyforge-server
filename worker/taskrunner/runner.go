@@ -4,14 +4,18 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	"encore.dev/rlog"
 )
 
 type Runner struct {
 	name        string
 	concurrency int
 	queue       chan int
+	enqueued    map[int]struct{}
 
 	runOnce sync.Once
+	mu      sync.Mutex
 
 	exec func(context.Context, int) error
 }
@@ -27,6 +31,7 @@ func New(name string, concurrency int, queueSize int, exec func(context.Context,
 		name:        name,
 		concurrency: concurrency,
 		queue:       make(chan int, queueSize),
+		enqueued:    map[int]struct{}{},
 		exec:        exec,
 	}
 }
@@ -43,10 +48,14 @@ func (r *Runner) Start() {
 						continue
 					}
 					if r.exec == nil {
+						r.clearEnqueued(taskID)
 						continue
 					}
 					// Use an independent background context for long-running tasks.
-					_ = r.exec(context.Background(), taskID)
+					if err := r.exec(context.Background(), taskID); err != nil {
+						rlog.Error("task runner exec failed", "runner", r.name, "task_id", taskID, "err", err)
+					}
+					r.clearEnqueued(taskID)
 				}
 			}()
 		}
@@ -61,10 +70,31 @@ func (r *Runner) Submit(taskID int) error {
 		return fmt.Errorf("invalid task id")
 	}
 	r.Start()
+	if !r.markEnqueued(taskID) {
+		// Already queued/running in this process.
+		return nil
+	}
 	select {
 	case r.queue <- taskID:
 		return nil
 	default:
+		r.clearEnqueued(taskID)
 		return fmt.Errorf("%s runner queue full", r.name)
 	}
+}
+
+func (r *Runner) markEnqueued(taskID int) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.enqueued[taskID]; ok {
+		return false
+	}
+	r.enqueued[taskID] = struct{}{}
+	return true
+}
+
+func (r *Runner) clearEnqueued(taskID int) {
+	r.mu.Lock()
+	delete(r.enqueued, taskID)
+	r.mu.Unlock()
 }

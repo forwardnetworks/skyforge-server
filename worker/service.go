@@ -135,9 +135,12 @@ func runQueuedTaskFallbackLoop() {
 	sem := make(chan struct{}, 2)
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
+	queueWarnedAt := map[int]time.Time{}
 
 	const limit = 50
 	minAge := 20 * time.Second
+	const queueWarnMinAge = 90 * time.Second
+	const queueWarnRepeat = 60 * time.Second
 
 	for range ticker.C {
 		if role := strings.ToLower(strings.TrimSpace(os.Getenv("SKYFORGE_ROLE"))); role != "" && role != "worker" {
@@ -172,6 +175,26 @@ func runQueuedTaskFallbackLoop() {
 			if item.TaskID <= 0 || strings.TrimSpace(item.Key) == "" {
 				continue
 			}
+			// Surface queue pickup latency in the task history so "queued forever" symptoms
+			// are visible in the UI even when workers are alive.
+			if !item.CreatedAt.IsZero() {
+				queuedFor := time.Since(item.CreatedAt)
+				if queuedFor >= queueWarnMinAge {
+					now := time.Now()
+					last := queueWarnedAt[item.TaskID]
+					if last.IsZero() || now.Sub(last) >= queueWarnRepeat {
+						msg := fmt.Sprintf("[reconciler] task queued for %s; fallback attempting submit", queuedFor.Truncate(time.Second))
+						ctxWarn, cancelWarn := context.WithTimeout(context.Background(), 2*time.Second)
+						_ = taskstore.AppendTaskLog(ctxWarn, stdlib, item.TaskID, "stderr", msg)
+						_ = taskstore.AppendTaskEvent(ctxWarn, stdlib, item.TaskID, "task.queue.warn", map[string]any{
+							"queued_for_seconds": int(queuedFor.Seconds()),
+							"source":             "worker_fallback_loop",
+						})
+						cancelWarn()
+						queueWarnedAt[item.TaskID] = now
+					}
+				}
+			}
 			select {
 			case sem <- struct{}{}:
 				go func(taskID int, key string) {
@@ -184,6 +207,15 @@ func runQueuedTaskFallbackLoop() {
 			default:
 				// At concurrency limit; remaining items will be retried on the next tick.
 				break
+			}
+		}
+		// Bound memory for long-lived workers.
+		if len(queueWarnedAt) > 2048 {
+			cutoff := time.Now().Add(-30 * time.Minute)
+			for taskID, ts := range queueWarnedAt {
+				if ts.Before(cutoff) {
+					delete(queueWarnedAt, taskID)
+				}
 			}
 		}
 	}
