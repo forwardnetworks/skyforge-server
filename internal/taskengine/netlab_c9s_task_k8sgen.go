@@ -46,43 +46,43 @@ const defaultNetlabC9sGeneratorImage = "ghcr.io/forwardnetworks/skyforge-netlab-
 
 var generatedSnmpConfigTemplates = map[string]string{
 	"linux": `# no-op (keep linux hosts SNMP-free by default)`,
-	"arubacx": `snmp-server community {{ community }} unrestricted
-{% if trap_host is defined and trap_host %}
-snmp-server host {{ trap_host }} community {{ community }}
+	"arubacx": `snmp-server community {{ defaults.snmp.community }} unrestricted
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
+snmp-server host {{ defaults.snmp.trap_host }} community {{ defaults.snmp.community }}
 {% endif %}`,
-	"asav": `snmp-server community {{ community }}
-{% if trap_host is defined and trap_host %}
+	"asav": `snmp-server community {{ defaults.snmp.community }}
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
 snmp-server enable traps
-snmp-server host {{ mgmt_if|default('Management0/0') }} {{ trap_host }} community {{ community }}
+snmp-server host {{ mgmt_if|default('Management0/0') }} {{ defaults.snmp.trap_host }} community {{ defaults.snmp.community }}
 {% endif %}`,
-	"cat8000v": `snmp-server community {{ community }} RO
-{% if trap_host is defined and trap_host %}
+	"cat8000v": `snmp-server community {{ defaults.snmp.community }} RO
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
 snmp-server enable traps
-snmp-server host {{ trap_host }} version 2c {{ community }}
+snmp-server host {{ defaults.snmp.trap_host }} version 2c {{ defaults.snmp.community }}
 {% endif %}`,
-	"csr": `snmp-server community {{ community }} RO
-{% if trap_host is defined and trap_host %}
+	"csr": `snmp-server community {{ defaults.snmp.community }} RO
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
 snmp-server enable traps
-snmp-server host {{ trap_host }} version 2c {{ community }}
+snmp-server host {{ defaults.snmp.trap_host }} version 2c {{ defaults.snmp.community }}
 {% endif %}`,
-	"dellos10": `snmp-server community {{ community }} ro
-{% if trap_host is defined and trap_host %}
-snmp-server host {{ trap_host }} traps version 2c {{ community }}
+	"dellos10": `snmp-server community {{ defaults.snmp.community }} ro
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
+snmp-server host {{ defaults.snmp.trap_host }} traps version 2c {{ defaults.snmp.community }}
 {% endif %}`,
-	"eos": `snmp-server community {{ community }} ro
-{% if trap_host is defined and trap_host %}
+	"eos": `snmp-server community {{ defaults.snmp.community }} ro
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
 snmp-server enable traps
-snmp-server host {{ trap_host }} version 2c {{ community }}
+snmp-server host {{ defaults.snmp.trap_host }} version 2c {{ defaults.snmp.community }}
 {% endif %}`,
 	"fortios": `config system snmp community
   edit 1
     set name "skyforge"
     set query-v1-status disable
     set query-v2c-status enable
-    set community "{{ community }}"
+    set community "{{ defaults.snmp.community }}"
   next
 end
-{% if trap_host is defined and trap_host %}
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
 config system snmp sysinfo
   set status enable
 end
@@ -90,86 +90,86 @@ config system snmp user
   edit 1
     set name "skyforge"
     set security-level no-auth-no-priv
-    set notify-hosts {{ trap_host }}
+    set notify-hosts {{ defaults.snmp.trap_host }}
   next
 end
 {% endif %}`,
-	"iol": `snmp-server community {{ community }} RO
-{% if trap_host is defined and trap_host %}
+	"iol": `snmp-server community {{ defaults.snmp.community }} RO
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
 snmp-server enable traps
-snmp-server host {{ trap_host }} version 2c {{ community }}
+snmp-server host {{ defaults.snmp.trap_host }} version 2c {{ defaults.snmp.community }}
 {% endif %}`,
-	"ioll2": `snmp-server community {{ community }} RO
-{% if trap_host is defined and trap_host %}
+	"ioll2": `snmp-server community {{ defaults.snmp.community }} RO
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
 snmp-server enable traps
-snmp-server host {{ trap_host }} version 2c {{ community }}
+snmp-server host {{ defaults.snmp.trap_host }} version 2c {{ defaults.snmp.community }}
 {% endif %}`,
-	"ios": `snmp-server community {{ community }} RO
-{% if trap_host is defined and trap_host %}
+	"ios": `snmp-server community {{ defaults.snmp.community }} RO
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
 snmp-server enable traps
-snmp-server host {{ trap_host }} version 2c {{ community }}
+snmp-server host {{ defaults.snmp.trap_host }} version 2c {{ defaults.snmp.community }}
 {% endif %}`,
-	"iosv": `snmp-server community {{ community }} RO
-{% if trap_host is defined and trap_host %}
+	"iosv": `snmp-server community {{ defaults.snmp.community }} RO
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
 snmp-server enable traps
-snmp-server host {{ trap_host }} version 2c {{ community }}
+snmp-server host {{ defaults.snmp.trap_host }} version 2c {{ defaults.snmp.community }}
 {% endif %}`,
-	"iosvl2": `snmp-server community {{ community }} RO
-{% if trap_host is defined and trap_host %}
+	"iosvl2": `snmp-server community {{ defaults.snmp.community }} RO
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
 snmp-server enable traps
-snmp-server host {{ trap_host }} version 2c {{ community }}
+snmp-server host {{ defaults.snmp.trap_host }} version 2c {{ defaults.snmp.community }}
 {% endif %}`,
-	"iosxe": `snmp-server community {{ community }} RO
-{% if trap_host is defined and trap_host %}
+	"iosxe": `snmp-server community {{ defaults.snmp.community }} RO
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
 snmp-server enable traps
-snmp-server host {{ trap_host }} version 2c {{ community }}
+snmp-server host {{ defaults.snmp.trap_host }} version 2c {{ defaults.snmp.community }}
 {% endif %}`,
-	"iosxr": `snmp-server community {{ community }} RO`,
-	"junos": `set snmp community {{ community }} authorization read-only
-{% if trap_host is defined and trap_host %}
+	"iosxr": `snmp-server community {{ defaults.snmp.community }} RO`,
+	"junos": `set snmp community {{ defaults.snmp.community }} authorization read-only
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
 set snmp trap-group SKYFORGE categories link
 set snmp trap-group SKYFORGE categories chassis
-set snmp trap-group SKYFORGE targets {{ trap_host }}
+set snmp trap-group SKYFORGE targets {{ defaults.snmp.trap_host }}
 {% endif %}`,
-	"nxos": `snmp-server community {{ community }} group network-operator
-{% if trap_host is defined and trap_host %}
+	"nxos": `snmp-server community {{ defaults.snmp.community }} group network-operator
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
 snmp-server enable traps
-snmp-server host {{ trap_host }} traps version 2c {{ community }}
+snmp-server host {{ defaults.snmp.trap_host }} traps version 2c {{ defaults.snmp.community }}
 {% endif %}`,
-	"sros": `/configure system security snmp community "{{ community }}" access-permissions r
-/configure system security snmp community "{{ community }}" version v2c
-{% if trap_host is defined and trap_host %}
-/configure system security snmp trap-group "skyforge" trap-target "{{ trap_host }}"
+	"sros": `/configure system security snmp community "{{ defaults.snmp.community }}" access-permissions r
+/configure system security snmp community "{{ defaults.snmp.community }}" version v2c
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
+/configure system security snmp trap-group "skyforge" trap-target "{{ defaults.snmp.trap_host }}"
 {% endif %}`,
-	"vjunos-router": `set snmp community {{ community }} authorization read-only
-{% if trap_host is defined and trap_host %}
+	"vjunos-router": `set snmp community {{ defaults.snmp.community }} authorization read-only
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
 set snmp trap-group SKYFORGE categories link
 set snmp trap-group SKYFORGE categories chassis
-set snmp trap-group SKYFORGE targets {{ trap_host }}
+set snmp trap-group SKYFORGE targets {{ defaults.snmp.trap_host }}
 {% endif %}`,
-	"vjunos-switch": `set snmp community {{ community }} authorization read-only
-{% if trap_host is defined and trap_host %}
+	"vjunos-switch": `set snmp community {{ defaults.snmp.community }} authorization read-only
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
 set snmp trap-group SKYFORGE categories link
 set snmp trap-group SKYFORGE categories chassis
-set snmp trap-group SKYFORGE targets {{ trap_host }}
+set snmp trap-group SKYFORGE targets {{ defaults.snmp.trap_host }}
 {% endif %}`,
-	"vmx": `set snmp community {{ community }} authorization read-only
-{% if trap_host is defined and trap_host %}
+	"vmx": `set snmp community {{ defaults.snmp.community }} authorization read-only
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
 set snmp trap-group SKYFORGE categories link
 set snmp trap-group SKYFORGE categories chassis
-set snmp trap-group SKYFORGE targets {{ trap_host }}
+set snmp trap-group SKYFORGE targets {{ defaults.snmp.trap_host }}
 {% endif %}`,
-	"vptx": `set snmp community {{ community }} authorization read-only
-{% if trap_host is defined and trap_host %}
+	"vptx": `set snmp community {{ defaults.snmp.community }} authorization read-only
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
 set snmp trap-group SKYFORGE categories link
 set snmp trap-group SKYFORGE categories chassis
-set snmp trap-group SKYFORGE targets {{ trap_host }}
+set snmp trap-group SKYFORGE targets {{ defaults.snmp.trap_host }}
 {% endif %}`,
-	"vsrx": `set snmp community {{ community }} authorization read-only
-{% if trap_host is defined and trap_host %}
+	"vsrx": `set snmp community {{ defaults.snmp.community }} authorization read-only
+{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
 set snmp trap-group SKYFORGE categories link
 set snmp trap-group SKYFORGE categories chassis
-set snmp trap-group SKYFORGE targets {{ trap_host }}
+set snmp trap-group SKYFORGE targets {{ defaults.snmp.trap_host }}
 {% endif %}`,
 }
 
@@ -330,15 +330,6 @@ func patchNetlabTopologyYAMLForSnmp(topologyYAML []byte, community, trapHost str
 		community = "public"
 	}
 	trapHost = strings.TrimSpace(trapHost)
-
-	// Keep compatibility with template contexts that expect top-level vars.
-	topo["community"] = community
-	topo["trap_host"] = trapHost
-	if trapPort > 0 {
-		topo["trap_port"] = trapPort
-	} else {
-		delete(topo, "trap_port")
-	}
 
 	defaults := ensureMap(topo, "defaults")
 	snmp := ensureMap(defaults, "snmp")
