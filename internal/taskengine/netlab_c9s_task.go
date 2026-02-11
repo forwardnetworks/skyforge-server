@@ -694,7 +694,9 @@ func envInt(env map[string]string, key string, def int) int {
 }
 
 const (
-	defaultForwardSSHReadySeconds     = 1800
+	// Keep the default SSH readiness gate bounded to 15m so failed boots do not
+	// monopolize workers for 30m by default.
+	defaultForwardSSHReadySeconds     = 900
 	defaultForwardSSHDialTimeoutMS    = 4000
 	defaultForwardSSHReadTimeoutMS    = 4000
 	defaultForwardSSHProbeConsecutive = 1

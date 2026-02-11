@@ -1048,15 +1048,49 @@ func generateMatrixFromCatalog(catalogPath string) (matrixFile, error) {
 	return matrixFile{Tests: tests}, nil
 }
 
+func resolveDefaultE2EKubeconfigPath() string {
+	if v := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_KUBECONFIG")); v != "" {
+		return v
+	}
+
+	candidates := make([]string, 0, 2)
+	if home, err := os.UserHomeDir(); err == nil {
+		home = strings.TrimSpace(home)
+		if home != "" {
+			candidates = append(candidates, filepath.Join(home, ".kube", "config"))
+		}
+	}
+	candidates = append(candidates, "../.kubeconfig-skyforge")
+
+	for _, c := range candidates {
+		c = strings.TrimSpace(c)
+		if c == "" {
+			continue
+		}
+		abs := c
+		if resolved, err := filepath.Abs(c); err == nil && strings.TrimSpace(resolved) != "" {
+			abs = resolved
+		}
+		if st, err := os.Stat(abs); err == nil && !st.IsDir() {
+			return abs
+		}
+	}
+
+	// Fallback to the first candidate even if not present yet.
+	if len(candidates) > 0 {
+		c := strings.TrimSpace(candidates[0])
+		if c != "" {
+			if abs, err := filepath.Abs(c); err == nil && strings.TrimSpace(abs) != "" {
+				return abs
+			}
+			return c
+		}
+	}
+	return ""
+}
+
 func kubectlEnv() []string {
-	kcfg := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_KUBECONFIG"))
-	if kcfg == "" {
-		// Default to the repo kubeconfig (used for prod/dev cluster access via tunnel).
-		kcfg = "../.kubeconfig-skyforge"
-	}
-	if abs, err := filepath.Abs(kcfg); err == nil && strings.TrimSpace(abs) != "" {
-		kcfg = abs
-	}
+	kcfg := strings.TrimSpace(resolveDefaultE2EKubeconfigPath())
 	// Ensure we don't pass multiple KUBECONFIG entries. Some tools pick the first
 	// occurrence, which can cause kubectl to talk to the wrong cluster.
 	env := make([]string, 0, len(os.Environ())+1)
@@ -1066,7 +1100,9 @@ func kubectlEnv() []string {
 		}
 		env = append(env, kv)
 	}
-	env = append(env, "KUBECONFIG="+kcfg)
+	if kcfg != "" {
+		env = append(env, "KUBECONFIG="+kcfg)
+	}
 	return env
 }
 
