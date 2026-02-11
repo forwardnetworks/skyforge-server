@@ -330,10 +330,19 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		// the scheduler to spread labs across the cluster if the preferred node is full.
 		clabSpec.Environment["SKYFORGE_CLABERNETES_PREFERRED_NODE_HOSTNAME"] = preferredNode
 	}
-	// Default netlab-c9s to "spread" scheduling to avoid packing an entire NOS topology onto
-	// a single Kubernetes node by accident.
-	if _, ok := clabSpec.Environment["SKYFORGE_CLABERNETES_SCHEDULING_MODE"]; !ok {
-		clabSpec.Environment["SKYFORGE_CLABERNETES_SCHEDULING_MODE"] = "spread"
+	// Default to tolerating control-plane taints so lab workloads can use all available KVM nodes.
+	if _, ok := clabSpec.Environment["SKYFORGE_CLABERNETES_TOLERATE_CONTROL_PLANE"]; !ok {
+		clabSpec.Environment["SKYFORGE_CLABERNETES_TOLERATE_CONTROL_PLANE"] = "true"
+	}
+
+	// Decide an effective scheduling mode before handing off to clabernetes task execution.
+	// Supported operator values:
+	// - pack/spread: respected as explicit choices.
+	// - adaptive (or unset): select pack for small labs, spread for larger labs.
+	mode, reason, nodeCount := resolveClabernetesSchedulingMode(clabSpec.Environment, string(topologyBytes))
+	clabSpec.Environment["SKYFORGE_CLABERNETES_SCHEDULING_MODE"] = mode
+	if log != nil {
+		log.Infof("Clabernetes scheduling: mode=%s reason=%s nodes=%d", mode, reason, nodeCount)
 	}
 
 	if err := deployOnce(); err != nil {
@@ -408,7 +417,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 			ctxEarly, cancel := context.WithTimeout(ctx, time.Duration(earlyConnectivitySeconds)*time.Second)
 			defer cancel()
 			go func() {
-				_ = startForwardConnectivityAsNodesSSHReady(ctxEarly, spec.TaskID, e, spec.WorkspaceCtx, dep, graph, earlyConnectivityConcurrency, earlyConnectivityBatchSize, log)
+				_ = startForwardConnectivityAsNodesSSHReady(ctxEarly, spec.TaskID, e, spec.WorkspaceCtx, dep, graph, spec.Environment, earlyConnectivityConcurrency, earlyConnectivityBatchSize, log)
 			}()
 		}
 
@@ -427,10 +436,10 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		// SSH logins, and starting netlab initial too early results in authentication errors
 		// (devices not fully booted yet).
 		if graph != nil {
-			sshReadySeconds := envInt(spec.Environment, "SKYFORGE_NETLAB_INITIAL_SSH_READY_SECONDS", envInt(spec.Environment, "SKYFORGE_FORWARD_SSH_READY_SECONDS", 900))
+			sshReadySeconds := envInt(spec.Environment, "SKYFORGE_NETLAB_INITIAL_SSH_READY_SECONDS", envInt(spec.Environment, "SKYFORGE_FORWARD_SSH_READY_SECONDS", defaultForwardSSHReadySeconds))
 			if sshReadySeconds > 0 {
 				if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.ssh.ready", func() error {
-					return waitForForwardSSHReady(ctx, spec.TaskID, e, graph, time.Duration(sshReadySeconds)*time.Second, log)
+					return waitForForwardSSHReady(ctx, spec.TaskID, e, graph, spec.Environment, time.Duration(sshReadySeconds)*time.Second, log)
 				}); err != nil {
 					return err
 				}
@@ -485,10 +494,10 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	// "device unreachable" signals and wastes time. We therefore gate collection on an SSH
 	// banner check (configurable timeout).
 	if dep != nil {
-		sshReadySeconds := envInt(spec.Environment, "SKYFORGE_FORWARD_SSH_READY_SECONDS", 900)
+		sshReadySeconds := envInt(spec.Environment, "SKYFORGE_FORWARD_SSH_READY_SECONDS", defaultForwardSSHReadySeconds)
 		if sshReadySeconds > 0 && graph != nil {
 			_ = taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "forward.ssh.ready", func() error {
-				if err := waitForForwardSSHReady(ctx, spec.TaskID, e, graph, time.Duration(sshReadySeconds)*time.Second, log); err != nil {
+				if err := waitForForwardSSHReady(ctx, spec.TaskID, e, graph, spec.Environment, time.Duration(sshReadySeconds)*time.Second, log); err != nil {
 					// Keep the lab up even if collection is blocked; surface a clear error in the run.
 					if log != nil {
 						log.Infof("forward sync wait timed out: %v", err)
@@ -684,6 +693,109 @@ func envInt(env map[string]string, key string, def int) int {
 	return n
 }
 
+const (
+	defaultForwardSSHReadySeconds     = 1800
+	defaultForwardSSHDialTimeoutMS    = 4000
+	defaultForwardSSHReadTimeoutMS    = 4000
+	defaultForwardSSHProbeConsecutive = 1
+)
+
+func resolveClabernetesSchedulingMode(env map[string]string, topologyYAML string) (mode string, reason string, nodeCount int) {
+	rawMode := strings.ToLower(strings.TrimSpace(envString(env, "SKYFORGE_CLABERNETES_SCHEDULING_MODE")))
+	switch rawMode {
+	case "pack":
+		return "pack", "explicit", containerlabNodeCount(topologyYAML)
+	case "spread":
+		return "spread", "explicit", containerlabNodeCount(topologyYAML)
+	}
+
+	nodeCount = containerlabNodeCount(topologyYAML)
+	packMaxNodes := envInt(env, "SKYFORGE_CLABERNETES_ADAPTIVE_PACK_MAX_NODES", 4)
+	if packMaxNodes <= 0 {
+		packMaxNodes = 4
+	}
+	if nodeCount > 0 && nodeCount <= packMaxNodes {
+		mode = "pack"
+	} else if nodeCount == 0 {
+		mode = "pack"
+	} else {
+		mode = "spread"
+	}
+
+	switch rawMode {
+	case "":
+		reason = "default-adaptive"
+	case "adaptive":
+		reason = "adaptive"
+	default:
+		reason = "invalid-adaptive"
+	}
+	return mode, reason, nodeCount
+}
+
+func containerlabNodeCount(containerlabYAML string) int {
+	containerlabYAML = strings.TrimSpace(containerlabYAML)
+	if containerlabYAML == "" {
+		return 0
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal([]byte(containerlabYAML), &doc); err != nil {
+		return 0
+	}
+	topology, ok := doc["topology"].(map[string]any)
+	if !ok || topology == nil {
+		return 0
+	}
+	nodes, ok := topology["nodes"].(map[string]any)
+	if !ok || nodes == nil {
+		return 0
+	}
+	return len(nodes)
+}
+
+type forwardSSHProbeConfig struct {
+	DialTimeout time.Duration
+	ReadTimeout time.Duration
+	Consecutive int
+}
+
+func forwardSSHProbeConfigFromEnv(env map[string]string) forwardSSHProbeConfig {
+	cfg := forwardSSHProbeConfig{
+		DialTimeout: time.Duration(defaultForwardSSHDialTimeoutMS) * time.Millisecond,
+		ReadTimeout: time.Duration(defaultForwardSSHReadTimeoutMS) * time.Millisecond,
+		Consecutive: defaultForwardSSHProbeConsecutive,
+	}
+	if ms := envInt(env, "SKYFORGE_FORWARD_SSH_PROBE_DIAL_TIMEOUT_MS", defaultForwardSSHDialTimeoutMS); ms > 0 {
+		cfg.DialTimeout = time.Duration(ms) * time.Millisecond
+	}
+	if ms := envInt(env, "SKYFORGE_FORWARD_SSH_PROBE_READ_TIMEOUT_MS", defaultForwardSSHReadTimeoutMS); ms > 0 {
+		cfg.ReadTimeout = time.Duration(ms) * time.Millisecond
+	}
+	if n := envInt(env, "SKYFORGE_FORWARD_SSH_PROBE_CONSECUTIVE", defaultForwardSSHProbeConsecutive); n > 0 {
+		cfg.Consecutive = n
+	}
+
+	if cfg.DialTimeout < 500*time.Millisecond {
+		cfg.DialTimeout = 500 * time.Millisecond
+	}
+	if cfg.DialTimeout > 30*time.Second {
+		cfg.DialTimeout = 30 * time.Second
+	}
+	if cfg.ReadTimeout < 500*time.Millisecond {
+		cfg.ReadTimeout = 500 * time.Millisecond
+	}
+	if cfg.ReadTimeout > 30*time.Second {
+		cfg.ReadTimeout = 30 * time.Second
+	}
+	if cfg.Consecutive < 1 {
+		cfg.Consecutive = 1
+	}
+	if cfg.Consecutive > 5 {
+		cfg.Consecutive = 5
+	}
+	return cfg
+}
+
 type forwardSSHReadyTarget struct {
 	Name string
 	Host string
@@ -697,6 +809,7 @@ func startForwardConnectivityAsNodesSSHReady(
 	pc *workspaceContext,
 	dep *WorkspaceDeployment,
 	graph *TopologyGraph,
+	environment map[string]string,
 	concurrency int,
 	batchSize int,
 	log Logger,
@@ -770,9 +883,17 @@ func startForwardConnectivityAsNodesSSHReady(
 	if len(targets) == 0 {
 		return nil
 	}
+	probeCfg := forwardSSHProbeConfigFromEnv(environment)
 
 	if log != nil {
-		log.Infof("forward sync: early connectivity armed (targets=%d concurrency=%d)", len(targets), concurrency)
+		log.Infof(
+			"forward sync: early connectivity armed (targets=%d concurrency=%d sshProbeDial=%s sshProbeRead=%s sshProbeConsecutive=%d)",
+			len(targets),
+			concurrency,
+			probeCfg.DialTimeout,
+			probeCfg.ReadTimeout,
+			probeCfg.Consecutive,
+		)
 	}
 
 	readyCh := make(chan forwardSSHReadyTarget, 64)
@@ -795,7 +916,7 @@ func startForwardConnectivityAsNodesSSHReady(
 				default:
 				}
 
-				if forwardSSHBannerReady(ctx, tgt.Host) {
+				if forwardSSHBannerReadyWithConfig(ctx, tgt.Host, probeCfg) {
 					select {
 					case readyCh <- tgt:
 					case <-ctx.Done():
@@ -876,7 +997,7 @@ func startForwardConnectivityAsNodesSSHReady(
 	}
 }
 
-func waitForForwardSSHReady(ctx context.Context, taskID int, e *Engine, graph *TopologyGraph, timeout time.Duration, log Logger) error {
+func waitForForwardSSHReady(ctx context.Context, taskID int, e *Engine, graph *TopologyGraph, environment map[string]string, timeout time.Duration, log Logger) error {
 	if graph == nil {
 		return nil
 	}
@@ -904,104 +1025,204 @@ func waitForForwardSSHReady(ctx context.Context, taskID int, e *Engine, graph *T
 	if len(targets) == 0 {
 		return nil
 	}
+	probeCfg := forwardSSHProbeConfigFromEnv(environment)
 
 	start := time.Now()
-	deadline := time.Now().Add(timeout)
+	deadline := start.Add(timeout)
 	if log != nil {
-		log.Infof("forward ssh readiness: waiting for ssh on nodes=%d timeout=%s", len(targets), timeout)
+		log.Infof(
+			"forward ssh readiness: waiting for ssh on nodes=%d timeout=%s sshProbeDial=%s sshProbeRead=%s sshProbeConsecutive=%d",
+			len(targets),
+			timeout,
+			probeCfg.DialTimeout,
+			probeCfg.ReadTimeout,
+			probeCfg.Consecutive,
+		)
 	}
-	readyCount := 0
+	type readyEvent struct {
+		index   int
+		elapsed time.Duration
+	}
+
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	readyCh := make(chan readyEvent, len(targets))
+	var wg sync.WaitGroup
 	for idx, node := range targets {
+		idx := idx
 		node := node
 		host := strings.TrimSpace(node.MgmtHost)
 		if host == "" {
 			host = strings.TrimSpace(node.MgmtIP)
 		}
-		nodeStart := time.Now()
-		lastProgress := time.Time{}
-		for {
-			if time.Now().After(deadline) {
-				return fmt.Errorf(
-					"forward sync wait timed out waiting for ssh on %s (%s) (progress %d/%d ready)",
-					strings.TrimSpace(node.Label),
-					host,
-					readyCount,
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			nodeStart := time.Now()
+			for {
+				select {
+				case <-waitCtx.Done():
+					return
+				default:
+				}
+				// Prefer a real SSH banner read instead of a bare TCP connect. Some NOS images
+				// accept TCP connections early but drop/reset them before SSH is usable.
+				if forwardSSHBannerReadyWithConfig(waitCtx, host, probeCfg) {
+					select {
+					case readyCh <- readyEvent{index: idx, elapsed: time.Since(nodeStart)}:
+					case <-waitCtx.Done():
+					}
+					return
+				}
+				timer := time.NewTimer(2 * time.Second)
+				select {
+				case <-waitCtx.Done():
+					timer.Stop()
+					return
+				case <-timer.C:
+				}
+			}
+		}()
+	}
+	defer wg.Wait()
+
+	ready := map[int]time.Duration{}
+	progressTicker := time.NewTicker(10 * time.Second)
+	cancelPollTicker := time.NewTicker(2 * time.Second)
+	defer progressTicker.Stop()
+	defer cancelPollTicker.Stop()
+
+	unresolvedList := func() []string {
+		out := make([]string, 0, len(targets))
+		for i, node := range targets {
+			if _, ok := ready[i]; ok {
+				continue
+			}
+			host := strings.TrimSpace(node.MgmtHost)
+			if host == "" {
+				host = strings.TrimSpace(node.MgmtIP)
+			}
+			label := strings.TrimSpace(node.Label)
+			if label == "" {
+				label = strings.TrimSpace(node.ID)
+			}
+			if label == "" {
+				label = host
+			}
+			out = append(out, fmt.Sprintf("%s(%s)", label, host))
+		}
+		sort.Strings(out)
+		return out
+	}
+
+	for len(ready) < len(targets) {
+		select {
+		case evt := <-readyCh:
+			if _, ok := ready[evt.index]; ok {
+				continue
+			}
+			ready[evt.index] = evt.elapsed
+			node := targets[evt.index]
+			host := strings.TrimSpace(node.MgmtHost)
+			if host == "" {
+				host = strings.TrimSpace(node.MgmtIP)
+			}
+			label := strings.TrimSpace(node.Label)
+			if label == "" {
+				label = strings.TrimSpace(node.ID)
+			}
+			if log != nil {
+				log.Infof(
+					"forward ssh readiness: ok (%d/%d) label=%s host=%s elapsed=%s",
+					len(ready),
 					len(targets),
+					label,
+					host,
+					evt.elapsed.Truncate(time.Second),
 				)
 			}
+		case <-progressTicker.C:
+			if log != nil {
+				remaining := time.Until(deadline).Truncate(time.Second)
+				if remaining < 0 {
+					remaining = 0
+				}
+				unresolved := unresolvedList()
+				if len(unresolved) > 6 {
+					unresolved = unresolved[:6]
+				}
+				log.Infof(
+					"forward ssh readiness: waiting ready=%d/%d unresolved=%s overallElapsed=%s remaining=%s",
+					len(ready),
+					len(targets),
+					strings.Join(unresolved, ", "),
+					time.Since(start).Truncate(time.Second),
+					remaining,
+				)
+			}
+		case <-cancelPollTicker.C:
 			if taskID > 0 && e != nil {
 				canceled, _ := e.taskCanceled(ctx, taskID)
 				if canceled {
 					return fmt.Errorf("forward sync wait canceled")
 				}
 			}
-
-			// Prefer a real SSH banner read instead of a bare TCP connect. Some NOS images
-			// accept TCP connections early but drop/reset them before SSH is usable.
-			if forwardSSHBannerReady(ctx, host) {
-				readyCount++
-				if log != nil {
-					log.Infof(
-						"forward ssh readiness: ok (%d/%d) label=%s host=%s elapsed=%s",
-						readyCount,
-						len(targets),
-						strings.TrimSpace(node.Label),
-						host,
-						time.Since(nodeStart).Truncate(time.Second),
-					)
-				}
-				break
-			}
-
-			// Emit a periodic progress line so run logs don't look "hung" while devices boot.
-			if log != nil {
-				now := time.Now()
-				if lastProgress.IsZero() || now.Sub(lastProgress) >= 10*time.Second {
-					remaining := time.Until(deadline).Truncate(time.Second)
-					if remaining < 0 {
-						remaining = 0
-					}
-					log.Infof(
-						"forward ssh readiness: waiting (%d/%d) label=%s host=%s nodeElapsed=%s overallElapsed=%s remaining=%s",
-						idx+1,
-						len(targets),
-						strings.TrimSpace(node.Label),
-						host,
-						time.Since(nodeStart).Truncate(time.Second),
-						time.Since(start).Truncate(time.Second),
-						remaining,
-					)
-					lastProgress = now
+		case <-waitCtx.Done():
+			if taskID > 0 && e != nil {
+				canceled, _ := e.taskCanceled(ctx, taskID)
+				if canceled {
+					return fmt.Errorf("forward sync wait canceled")
 				}
 			}
-			time.Sleep(2 * time.Second)
+			unresolved := unresolvedList()
+			if len(unresolved) == 0 {
+				return fmt.Errorf("forward sync wait canceled")
+			}
+			return fmt.Errorf(
+				"forward sync wait timed out waiting for ssh (ready %d/%d): %s",
+				len(ready),
+				len(targets),
+				strings.Join(unresolved, ", "),
+			)
 		}
 	}
 
 	if log != nil {
-		log.Infof("forward ssh readiness ok: nodes=%d", len(targets))
+		log.Infof("forward ssh readiness ok: nodes=%d elapsed=%s", len(targets), time.Since(start).Truncate(time.Second))
 	}
 	return nil
 }
 
 func forwardSSHBannerReady(ctx context.Context, host string) bool {
+	return forwardSSHBannerReadyWithConfig(ctx, host, forwardSSHProbeConfig{})
+}
+
+func forwardSSHBannerReadyWithConfig(ctx context.Context, host string, cfg forwardSSHProbeConfig) bool {
 	host = strings.TrimSpace(host)
 	if host == "" {
 		return false
 	}
+	if cfg.DialTimeout <= 0 {
+		cfg = forwardSSHProbeConfigFromEnv(nil)
+	}
 
 	// Some NOS images briefly emit an SSH banner and then reset connections while
-	// still booting. Require two consecutive banner reads to reduce false-positives.
-	if !forwardSSHBannerReadyOnce(ctx, host) {
-		return false
+	// still booting. Make the required consecutive banners configurable.
+	for i := 0; i < cfg.Consecutive; i++ {
+		if !forwardSSHBannerReadyOnce(ctx, host, cfg.DialTimeout, cfg.ReadTimeout) {
+			return false
+		}
+		// Small jitter between attempts to avoid hitting the same transient window.
+		if i+1 < cfg.Consecutive {
+			time.Sleep(250 * time.Millisecond)
+		}
 	}
-	// Small jitter between attempts to avoid hitting the same transient window.
-	time.Sleep(250 * time.Millisecond)
-	return forwardSSHBannerReadyOnce(ctx, host)
+	return true
 }
 
-func forwardSSHBannerReadyOnce(ctx context.Context, host string) bool {
-	ctxDial, cancel := context.WithTimeout(ctx, 2*time.Second)
+func forwardSSHBannerReadyOnce(ctx context.Context, host string, dialTimeout time.Duration, readTimeout time.Duration) bool {
+	ctxDial, cancel := context.WithTimeout(ctx, dialTimeout)
 	conn, err := (&net.Dialer{}).DialContext(ctxDial, "tcp", net.JoinHostPort(host, "22"))
 	cancel()
 	if err != nil || conn == nil {
@@ -1012,7 +1233,7 @@ func forwardSSHBannerReadyOnce(ctx context.Context, host string) bool {
 	// Some vrnetlab devices (notably QEMU usernet hostfwd -> guest ssh) can accept the TCP
 	// connection quickly but take >750ms before emitting the SSH banner. Use a slightly
 	// longer read deadline to avoid false negatives while still keeping probes fast.
-	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(readTimeout))
 	buf := make([]byte, 4)
 	if _, err := io.ReadFull(conn, buf); err != nil {
 		return false

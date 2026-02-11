@@ -301,6 +301,30 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 			}
 		}
 
+		// Optional: allow topology pods on control-plane/master tainted nodes so environments
+		// with KVM capacity on control-plane hosts can use all available compute.
+		if envBool(spec.Environment, "SKYFORGE_CLABERNETES_TOLERATE_CONTROL_PLANE", false) {
+			scheduling := ensureDeploymentScheduling()
+			tolerationsAny, _ := scheduling["tolerations"].([]any)
+			if tolerationsAny == nil {
+				tolerationsAny = make([]any, 0, 2)
+			}
+			tolerationsAny = append(tolerationsAny,
+				map[string]any{
+					"key":      "node-role.kubernetes.io/control-plane",
+					"operator": "Exists",
+					"effect":   "NoSchedule",
+				},
+				map[string]any{
+					"key":      "node-role.kubernetes.io/master",
+					"operator": "Exists",
+					"effect":   "NoSchedule",
+				},
+			)
+			scheduling["tolerations"] = tolerationsAny
+			log.Infof("Clabernetes scheduling: control-plane tolerations enabled")
+		}
+
 		// Default: prefer spreading per-topology pods across Kubernetes nodes.
 		//
 		// Large NOS images (vrnetlab/QEMU) can be CPU-heavy. If all nodes in a topology schedule
@@ -539,9 +563,9 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 						// Wait until NOS nodes are actually SSH-ready before marking the deploy step complete.
 						// This avoids "ready too fast" and prevents downstream systems (Forward sync, UI terminal)
 						// from racing long boot times.
-						sshReadySeconds := envInt(spec.Environment, "SKYFORGE_CLABERNETES_SSH_READY_SECONDS", 900)
+						sshReadySeconds := envInt(spec.Environment, "SKYFORGE_CLABERNETES_SSH_READY_SECONDS", defaultForwardSSHReadySeconds)
 						if sshReadySeconds > 0 {
-							if err := waitForForwardSSHReady(ctx, spec.TaskID, e, graph, time.Duration(sshReadySeconds)*time.Second, log); err != nil {
+							if err := waitForForwardSSHReady(ctx, spec.TaskID, e, graph, spec.Environment, time.Duration(sshReadySeconds)*time.Second, log); err != nil {
 								return err
 							}
 						}
