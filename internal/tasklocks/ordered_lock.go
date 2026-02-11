@@ -48,7 +48,7 @@ func AcquireOrderedTaskLock(ctx context.Context, db *sql.DB, task *taskstore.Tas
 	if deploymentID != "" {
 		lockKey := pglocks.DeploymentAdvisoryLockKey(workspaceID, deploymentID)
 		for {
-			ok, err := pglocks.TryAdvisoryLock(ctx, db, lockKey)
+			lock, ok, err := pglocks.TryAdvisoryLock(ctx, db, lockKey)
 			if err != nil {
 				rlog.Error("deployment lock error", "err", err)
 				if err := sleep(); err != nil {
@@ -65,7 +65,7 @@ func AcquireOrderedTaskLock(ctx context.Context, db *sql.DB, task *taskstore.Tas
 
 			oldestQueuedID, err := taskstore.GetOldestQueuedDeploymentTaskID(ctx, db, workspaceID, deploymentID)
 			if err != nil {
-				_ = pglocks.AdvisoryUnlock(context.Background(), db, lockKey)
+				_ = lock.Unlock(context.Background())
 				rlog.Error("deployment queue check error", "err", err)
 				if err := sleep(); err != nil {
 					return func() {}, err
@@ -73,21 +73,21 @@ func AcquireOrderedTaskLock(ctx context.Context, db *sql.DB, task *taskstore.Tas
 				continue
 			}
 			if oldestQueuedID != 0 && oldestQueuedID != task.ID {
-				_ = pglocks.AdvisoryUnlock(context.Background(), db, lockKey)
+				_ = lock.Unlock(context.Background())
 				if err := sleep(); err != nil {
 					return func() {}, err
 				}
 				continue
 			}
 
-			unlock = func() { _ = pglocks.AdvisoryUnlock(context.Background(), db, lockKey) }
+			unlock = func() { _ = lock.Unlock(context.Background()) }
 			return unlock, nil
 		}
 	}
 
 	lockKey := pglocks.WorkspaceAdvisoryLockKey(workspaceID)
 	for {
-		ok, err := pglocks.TryAdvisoryLock(ctx, db, lockKey)
+		lock, ok, err := pglocks.TryAdvisoryLock(ctx, db, lockKey)
 		if err != nil {
 			rlog.Error("workspace lock error", "err", err)
 			if err := sleep(); err != nil {
@@ -104,7 +104,7 @@ func AcquireOrderedTaskLock(ctx context.Context, db *sql.DB, task *taskstore.Tas
 
 		oldestQueuedID, err := taskstore.GetOldestQueuedWorkspaceTaskID(ctx, db, workspaceID)
 		if err != nil {
-			_ = pglocks.AdvisoryUnlock(context.Background(), db, lockKey)
+			_ = lock.Unlock(context.Background())
 			rlog.Error("workspace queue check error", "err", err)
 			if err := sleep(); err != nil {
 				return func() {}, err
@@ -112,14 +112,14 @@ func AcquireOrderedTaskLock(ctx context.Context, db *sql.DB, task *taskstore.Tas
 			continue
 		}
 		if oldestQueuedID != 0 && oldestQueuedID != task.ID {
-			_ = pglocks.AdvisoryUnlock(context.Background(), db, lockKey)
+			_ = lock.Unlock(context.Background())
 			if err := sleep(); err != nil {
 				return func() {}, err
 			}
 			continue
 		}
 
-		unlock = func() { _ = pglocks.AdvisoryUnlock(context.Background(), db, lockKey) }
+		unlock = func() { _ = lock.Unlock(context.Background()) }
 		return unlock, nil
 	}
 }
