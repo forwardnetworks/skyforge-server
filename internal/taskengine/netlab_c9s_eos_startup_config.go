@@ -10,7 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func injectNetlabC9sEOSStartupConfig(ctx context.Context, ns, topologyName string, topologyYAML []byte, nodeMounts map[string][]c9sFileFromConfigMap, log Logger) ([]byte, map[string][]c9sFileFromConfigMap, error) {
+func injectNetlabC9sEOSStartupConfig(ctx context.Context, ns, topologyName string, topologyYAML []byte, nodeMounts map[string][]c9sFileFromConfigMap, options netlabC9sStartupConfigOptions, log Logger) ([]byte, map[string][]c9sFileFromConfigMap, error) {
 	if log == nil {
 		log = noopLogger{}
 	}
@@ -54,6 +54,11 @@ func injectNetlabC9sEOSStartupConfig(ctx context.Context, ns, topologyName strin
 		}
 		kind := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["kind"])))
 		if kind != "eos" && kind != "ceos" {
+			continue
+		}
+		image := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["image"])))
+		if shouldUseNativeNetlabConfigModeForNode(kind, image, options) {
+			log.Infof("c9s: eos startup-config injection disabled (native netlab_config_mode): %s", nodeName)
 			continue
 		}
 

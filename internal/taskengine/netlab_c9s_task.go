@@ -277,10 +277,14 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	// Default enabled: without this, many netlab + clabernetes-native labs appear "ready"
 	// before NOS is actually reachable/configured, and post-up config application becomes flaky.
 	enableStartupConfigInjection := envBool(spec.Environment, "SKYFORGE_NETLAB_C9S_ENABLE_STARTUP_CONFIG_INJECTION", true)
+	nativeConfigModesEnabled := envBool(spec.Environment, "SKYFORGE_NETLAB_C9S_NATIVE_CONFIG_MODES", true)
 	if enableStartupConfigInjection {
 		if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.startup-config", func() error {
 			var err error
-			topologyBytes, nodeMounts, err = injectNetlabC9sStartupConfig(ctx, ns, topologyName, topologyBytes, nodeMounts, log)
+			topologyBytes, nodeMounts, err = injectNetlabC9sStartupConfig(ctx, ns, topologyName, topologyBytes, nodeMounts, netlabC9sStartupConfigOptions{
+				NativeConfigModesEnabled: nativeConfigModesEnabled,
+				DeviceConfigMode:         extractNetlabConfigModeOverrides(setOverrides),
+			}, log)
 			return err
 		}); err != nil {
 			return err

@@ -9,6 +9,16 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type netlabC9sStartupConfigOptions struct {
+	// NativeConfigModesEnabled enables netlab-native config_mode behavior
+	// (for example sh/startup) and disables Skyforge startup-config synthesis for
+	// devices switched to those native modes.
+	NativeConfigModesEnabled bool
+	// DeviceConfigMode maps netlab device key -> config mode (sh/startup/etc),
+	// typically parsed from merged netlab --set overrides.
+	DeviceConfigMode map[string]string
+}
+
 // injectNetlabC9sStartupConfig injects startup-config files for NOS containers that need them
 // in clabernetes native mode. This is a best-effort adaptation layer that keeps netlab as the
 // source of truth while making generated topologies runnable in Kubernetes.
@@ -21,15 +31,16 @@ func injectNetlabC9sStartupConfig(
 	ns, topologyName string,
 	topologyYAML []byte,
 	nodeMounts map[string][]c9sFileFromConfigMap,
+	options netlabC9sStartupConfigOptions,
 	log Logger,
 ) ([]byte, map[string][]c9sFileFromConfigMap, error) {
 	// Preserve existing EOS behavior.
-	out, nodeMountsOut, err := injectNetlabC9sEOSStartupConfig(ctx, ns, topologyName, topologyYAML, nodeMounts, log)
+	out, nodeMountsOut, err := injectNetlabC9sEOSStartupConfig(ctx, ns, topologyName, topologyYAML, nodeMounts, options, log)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return injectNetlabC9sVrnetlabStartupConfig(ctx, ns, topologyName, out, nodeMountsOut, log)
+	return injectNetlabC9sVrnetlabStartupConfig(ctx, ns, topologyName, out, nodeMountsOut, options, log)
 }
 
 func injectNetlabC9sVrnetlabStartupConfig(
@@ -37,6 +48,7 @@ func injectNetlabC9sVrnetlabStartupConfig(
 	ns, topologyName string,
 	topologyYAML []byte,
 	nodeMounts map[string][]c9sFileFromConfigMap,
+	options netlabC9sStartupConfigOptions,
 	log Logger,
 ) ([]byte, map[string][]c9sFileFromConfigMap, error) {
 	if log == nil {
@@ -99,6 +111,11 @@ func injectNetlabC9sVrnetlabStartupConfig(
 		applyVrnetlabNodeEnvOverrides(kind, image, dpIntfs, cfg)
 		if dpIntfs > 0 {
 			modified = true
+		}
+		if shouldUseNativeNetlabConfigModeForNode(kind, image, options) {
+			log.Infof("c9s: vrnetlab startup-config injection disabled (native netlab_config_mode): %s", nodeName)
+			nodesAny[node] = cfg
+			continue
 		}
 
 		// IOSv/IOSvL2 bootstrap SSH internally (vrnetlab's own access_cfg + RSA keygen logic).
@@ -644,4 +661,131 @@ func dropC9sMountForPath(existing []c9sFileFromConfigMap, filePath string) []c9s
 		out = append(out, m)
 	}
 	return out
+}
+
+func extractNetlabConfigModeOverrides(setOverrides []string) map[string]string {
+	out := map[string]string{}
+	for _, raw := range setOverrides {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(parts[0]))
+		value := strings.ToLower(strings.TrimSpace(parts[1]))
+		if key == "" || value == "" {
+			continue
+		}
+		keyParts := strings.Split(key, ".")
+		if len(keyParts) != 5 {
+			continue
+		}
+		if keyParts[0] != "devices" || keyParts[2] != "clab" || keyParts[3] != "group_vars" || keyParts[4] != "netlab_config_mode" {
+			continue
+		}
+		device := strings.TrimSpace(keyParts[1])
+		if device == "" {
+			continue
+		}
+		value = strings.Trim(value, "\"'")
+		if value == "" {
+			continue
+		}
+		out[device] = value
+	}
+	return out
+}
+
+var netlabConfigModeParentByDevice = map[string]string{
+	"ceos":          "eos",
+	"iol":           "ios",
+	"ioll2":         "iol",
+	"iosv":          "ios",
+	"iosvl2":        "iosv",
+	"csr":           "ios",
+	"cat8000v":      "csr",
+	"vmx":           "junos",
+	"vsrx":          "junos",
+	"vjunos-router": "vmx",
+	"vjunos-switch": "junos",
+	"vptx":          "junos",
+}
+
+func effectiveNetlabConfigModeForDevice(device string, modeByDevice map[string]string) string {
+	device = strings.ToLower(strings.TrimSpace(device))
+	if device == "" || len(modeByDevice) == 0 {
+		return ""
+	}
+	seen := map[string]bool{}
+	cur := device
+	for cur != "" {
+		if seen[cur] {
+			break
+		}
+		seen[cur] = true
+		if v := strings.ToLower(strings.TrimSpace(modeByDevice[cur])); v != "" {
+			return v
+		}
+		cur = strings.ToLower(strings.TrimSpace(netlabConfigModeParentByDevice[cur]))
+	}
+	return ""
+}
+
+func deviceInNetlabFamily(device, family string) bool {
+	device = strings.ToLower(strings.TrimSpace(device))
+	family = strings.ToLower(strings.TrimSpace(family))
+	if device == "" || family == "" {
+		return false
+	}
+	if device == family {
+		return true
+	}
+	seen := map[string]bool{}
+	cur := device
+	for cur != "" {
+		if seen[cur] {
+			return false
+		}
+		seen[cur] = true
+		next := strings.ToLower(strings.TrimSpace(netlabConfigModeParentByDevice[cur]))
+		if next == "" {
+			return false
+		}
+		if next == family {
+			return true
+		}
+		cur = next
+	}
+	return false
+}
+
+func supportsNetlabConfigMode(device, mode string) bool {
+	device = strings.ToLower(strings.TrimSpace(device))
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if device == "" || mode == "" {
+		return false
+	}
+	switch mode {
+	case "sh":
+		return device == "eos" || device == "frr" || device == "linux"
+	case "startup":
+		if device == "dellos10" || device == "arubacx" {
+			return true
+		}
+		return deviceInNetlabFamily(device, "ios") || deviceInNetlabFamily(device, "junos")
+	default:
+		return false
+	}
+}
+
+func shouldUseNativeNetlabConfigModeForNode(kind, image string, options netlabC9sStartupConfigOptions) bool {
+	if !options.NativeConfigModesEnabled {
+		return false
+	}
+	device := netlabDeviceKeyForClabNode(kind, image)
+	mode := effectiveNetlabConfigModeForDevice(device, options.DeviceConfigMode)
+	return supportsNetlabConfigMode(device, mode)
 }
