@@ -173,6 +173,15 @@ set snmp trap-group SKYFORGE targets {{ defaults.snmp.trap_host }}
 {% endif %}`,
 }
 
+func renderGeneratedSnmpTemplate(tpl, community, trapHost string) string {
+	out := strings.ReplaceAll(tpl, "{{ defaults.snmp.community }}", community)
+	out = strings.ReplaceAll(out, "{{ defaults.snmp.trap_host }}", trapHost)
+	cond := `{% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}`
+	escapedHost := strings.ReplaceAll(trapHost, `"`, `\"`)
+	out = strings.ReplaceAll(out, cond, `{% if "`+escapedHost+`" %}`)
+	return out
+}
+
 func patchNetlabTopologyYAMLForSnmp(topologyYAML []byte, community, trapHost string, trapPort int) ([]byte, error) {
 	var topo map[string]any
 	if err := yaml.Unmarshal(topologyYAML, &topo); err != nil {
@@ -313,6 +322,12 @@ func patchNetlabTopologyYAMLForSnmp(topologyYAML []byte, community, trapHost str
 		all["config"] = []any{"snmp_config"}
 	}
 
+	community = strings.TrimSpace(community)
+	if community == "" {
+		community = "public"
+	}
+	trapHost = strings.TrimSpace(trapHost)
+
 	// Generate snmp_config templates directly in topology.yml so we do not depend on
 	// repo-specific `_skyforge/snmp_config` overlay files.
 	configlets := ensureMap(topo, "configlets")
@@ -320,16 +335,10 @@ func patchNetlabTopologyYAMLForSnmp(topologyYAML []byte, community, trapHost str
 	for device, tpl := range generatedSnmpConfigTemplates {
 		existing, exists := snmpConfiglets[device]
 		if !exists || strings.TrimSpace(fmt.Sprintf("%v", existing)) == "" {
-			snmpConfiglets[device] = tpl
+			snmpConfiglets[device] = renderGeneratedSnmpTemplate(tpl, community, trapHost)
 		}
 	}
 	configlets["snmp_config"] = snmpConfiglets
-
-	community = strings.TrimSpace(community)
-	if community == "" {
-		community = "public"
-	}
-	trapHost = strings.TrimSpace(trapHost)
 
 	defaults := ensureMap(topo, "defaults")
 	snmp := ensureMap(defaults, "snmp")
