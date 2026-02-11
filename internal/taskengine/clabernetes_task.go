@@ -179,6 +179,9 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		// Skyforge never supports Docker-in-Docker (non-native) mode; always run clabernetes in
 		// native mode so NOS containers run directly as Kubernetes containers.
 		nativeMode := true
+		// Native-mode link precreate needs CAP_NET_ADMIN in the launcher setup init container.
+		// Default this on to avoid veth creation failures ("RTNETLINK ... Operation not permitted").
+		privilegedLauncher := envBool(spec.Environment, "SKYFORGE_CLABERNETES_PRIVILEGED_LAUNCHER", true)
 		hostNetwork := envBool(spec.Environment, "SKYFORGE_CLABERNETES_HOST_NETWORK", false)
 		disableExpose := envBool(spec.Environment, "SKYFORGE_CLABERNETES_DISABLE_EXPOSE", false)
 		// Default to auto-exposing so clabernetes creates per-node ClusterIP services for
@@ -358,8 +361,9 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		}
 
 		deployment := map[string]any{
-			"nativeMode":  nativeMode,
-			"hostNetwork": hostNetwork,
+			"nativeMode":         nativeMode,
+			"hostNetwork":        hostNetwork,
+			"privilegedLauncher": privilegedLauncher,
 		}
 
 		if len(spec.FilesFromConfigMap) > 0 {
