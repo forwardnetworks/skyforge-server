@@ -1490,11 +1490,15 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 					cfg["cmd"] = "--connection-mode tc"
 					nodes[node] = cfg
 				}
-				// NX-OSv 9Kv: the vrnetlab launcher defaults to `--connection-mode vrxcon`, which
-				// does not create tap netdevs for the container interfaces in our clabernetes
-				// native-mode model. Force tc datapath mode to match containerlab semantics.
+				// NX-OSv 9Kv:
+				// - force `--connection-mode tc` so vrnetlab creates tap netdevs for clabernetes-native wiring
+				// - force launch credentials to match netlab defaults (admin/admin), so `netlab initial`
+				//   can authenticate consistently during post-deploy apply.
+				//
+				// The vr-n9kv image defaults can differ across builds (often vrnetlab/VR-netlab9), and
+				// when left implicit we can pass SSH banner checks but still fail authenticated logins.
 				if (kindLower == "nxos" || kindLower == "n9kv" || kindLower == "cisco_n9kv" || strings.Contains(imgLower, "/vrnetlab/vr-n9kv")) && cfg["cmd"] == nil {
-					cfg["cmd"] = "--connection-mode tc"
+					cfg["cmd"] = "--connection-mode tc --username admin --password admin"
 					nodes[node] = cfg
 				}
 			}
