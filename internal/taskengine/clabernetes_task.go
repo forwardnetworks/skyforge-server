@@ -433,17 +433,19 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		//
 		// NOTE: clabernetes expects these under spec.deployment.resources (not spec.resources).
 		if envBool(spec.Environment, "SKYFORGE_CLABERNETES_ENABLE_RESOURCES", true) && strings.TrimSpace(spec.TopologyYAML) != "" {
-			kinds, err := containerlabNodeKinds(spec.TopologyYAML)
+			nodeSpecs, err := containerlabNodeSpecs(spec.TopologyYAML)
 			if err != nil {
 				log.Infof("Clabernetes resources: parse failed (ignored): %v", err)
-			} else if len(kinds) > 0 {
+			} else if len(nodeSpecs) > 0 {
 				enableLimits := envBool(spec.Environment, "SKYFORGE_CLABERNETES_ENABLE_LIMITS", false)
 				resources := map[string]any{}
-				for nodeName, kind := range kinds {
-					profile, ok := nosResourceProfileForKind(kind)
+				matchedByNode := map[string]string{}
+				for nodeName, nodeSpec := range nodeSpecs {
+					profile, matchedBy, ok := nosResourceProfileForNode(nodeSpec.Kind, nodeSpec.Image)
 					if !ok {
 						continue
 					}
+					matchedByNode[nodeName] = matchedBy
 					req := map[string]any{}
 					if strings.TrimSpace(profile.CPURequest) != "" {
 						req["cpu"] = strings.TrimSpace(profile.CPURequest)
@@ -473,7 +475,7 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 				}
 				if len(resources) > 0 {
 					deployment["resources"] = resources
-					log.Infof("Clabernetes resources: configured nodes=%d", len(resources))
+					log.Infof("Clabernetes resources: configured nodes=%d (matched=%v)", len(resources), matchedByNode)
 				}
 			}
 		}

@@ -7,9 +7,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// containerlabNodeKinds parses a containerlab YAML document and returns a mapping of
-// nodeName -> kind for nodes under topology.nodes.
-func containerlabNodeKinds(containerlabYAML string) (map[string]string, error) {
+type containerlabNodeSpec struct {
+	Kind  string
+	Image string
+}
+
+// containerlabNodeSpecs parses a containerlab YAML document and returns a mapping of
+// nodeName -> (kind, image) for nodes under topology.nodes.
+func containerlabNodeSpecs(containerlabYAML string) (map[string]containerlabNodeSpec, error) {
 	containerlabYAML = strings.TrimSpace(containerlabYAML)
 	if containerlabYAML == "" {
 		return nil, nil
@@ -31,7 +36,7 @@ func containerlabNodeKinds(containerlabYAML string) (map[string]string, error) {
 		return nil, nil
 	}
 
-	out := map[string]string{}
+	out := map[string]containerlabNodeSpec{}
 	for nodeName, nodeAny := range nodes {
 		nodeName = strings.TrimSpace(nodeName)
 		cfg, ok := nodeAny.(map[string]any)
@@ -39,6 +44,29 @@ func containerlabNodeKinds(containerlabYAML string) (map[string]string, error) {
 			continue
 		}
 		kind := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["kind"])))
+		image := strings.TrimSpace(fmt.Sprintf("%v", cfg["image"]))
+		out[nodeName] = containerlabNodeSpec{
+			Kind:  kind,
+			Image: image,
+		}
+	}
+	return out, nil
+}
+
+// containerlabNodeKinds parses a containerlab YAML document and returns a mapping of
+// nodeName -> kind for nodes under topology.nodes.
+func containerlabNodeKinds(containerlabYAML string) (map[string]string, error) {
+	specs, err := containerlabNodeSpecs(containerlabYAML)
+	if err != nil {
+		return nil, err
+	}
+	if len(specs) == 0 {
+		return nil, nil
+	}
+
+	out := map[string]string{}
+	for nodeName, spec := range specs {
+		kind := strings.TrimSpace(spec.Kind)
 		if kind == "" {
 			continue
 		}

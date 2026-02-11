@@ -639,32 +639,58 @@ func dumpFailureArtifacts(ctx context.Context, statusDir, namespace, topologyOwn
 		}
 		_ = os.WriteFile(filepath.Join(dir, name), b, 0o644)
 	}
-	run := func(args ...string) []byte {
+	run := func(args ...string) ([]byte, error) {
 		cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
 		cmd := exec.CommandContext(cctx, "kubectl", args...)
 		cmd.Env = kubectlEnv()
-		out, _ := cmd.CombinedOutput()
-		return out
+		out, err := cmd.CombinedOutput()
+		return out, err
 	}
 
 	write("meta.txt", []byte(fmt.Sprintf("namespace=%s\ntopologyOwner=%s\ndevice=%s\ntest=%s\n", namespace, topologyOwner, device, testName)))
 	selector := "clabernetes/topologyOwner=" + topologyOwner
-	write("pods.json", run("-n", namespace, "get", "pods", "-l", selector, "-o", "json"))
-	write("pods.txt", run("-n", namespace, "get", "pods", "-l", selector, "-o", "wide"))
+	podsJSON, podsJSONErr := run("-n", namespace, "get", "pods", "-l", selector, "-o", "json")
+	podsWide, _ := run("-n", namespace, "get", "pods", "-l", selector, "-o", "wide")
+	write("pods.json", podsJSON)
+	write("pods.txt", podsWide)
 	// Best-effort: clabernetes topology CR usually matches topologyOwner.
-	write("topology.yaml", run("-n", namespace, "get", "topologies.clabernetes.containerlab.dev", topologyOwner, "-o", "yaml"))
+	if topoYAML, _ := run("-n", namespace, "get", "topologies.clabernetes.containerlab.dev", topologyOwner, "-o", "yaml"); len(topoYAML) > 0 {
+		write("topology.yaml", topoYAML)
+	}
 
 	// Per-pod describe + launcher logs.
-	rawPods := run("-n", namespace, "get", "pods", "-l", selector, "-o", "jsonpath={.items[*].metadata.name}")
-	podNames := strings.Fields(string(rawPods))
+	if podsJSONErr != nil {
+		return
+	}
+	var podList struct {
+		Items []struct {
+			Metadata struct {
+				Name string `json:"name"`
+			} `json:"metadata"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(podsJSON, &podList); err != nil {
+		return
+	}
+	podNames := make([]string, 0, len(podList.Items))
+	for _, it := range podList.Items {
+		pod := strings.TrimSpace(it.Metadata.Name)
+		if pod != "" {
+			podNames = append(podNames, pod)
+		}
+	}
 	for _, pod := range podNames {
 		pod = strings.TrimSpace(pod)
 		if pod == "" {
 			continue
 		}
-		write(fmt.Sprintf("pod-%s-describe.txt", pod), run("-n", namespace, "describe", "pod", pod))
-		write(fmt.Sprintf("pod-%s-launcher.log", pod), run("-n", namespace, "logs", pod, "-c", "clabernetes-launcher", "--tail=500"))
+		if b, _ := run("-n", namespace, "describe", "pod", pod); len(b) > 0 {
+			write(fmt.Sprintf("pod-%s-describe.txt", pod), b)
+		}
+		if b, _ := run("-n", namespace, "logs", pod, "-c", "clabernetes-launcher", "--tail=500"); len(b) > 0 {
+			write(fmt.Sprintf("pod-%s-launcher.log", pod), b)
+		}
 	}
 }
 
