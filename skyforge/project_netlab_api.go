@@ -146,7 +146,9 @@ func (s *Service) GetWorkspaceNetlabTemplates(ctx context.Context, id string, re
 			headSHA = strings.TrimSpace(got)
 		}
 	}
+	var cachedIdx *templateIndexRecord
 	if cached, err := loadTemplateIndex(ctx, s.db, "netlab", owner, repo, branch, dir); err == nil && cached != nil {
+		cachedIdx = cached
 		if headSHA != "" && strings.TrimSpace(cached.HeadSHA) != "" && cached.HeadSHA == headSHA {
 			sort.Strings(cached.Templates)
 			return &WorkspaceNetlabTemplatesResponse{
@@ -162,7 +164,7 @@ func (s *Service) GetWorkspaceNetlabTemplates(ctx context.Context, id string, re
 		}
 		// If we can't resolve the branch head SHA (temporary Gitea error),
 		// serve a reasonably fresh cached value to avoid re-scanning huge dirs.
-		if headSHA == "" && strings.TrimSpace(cached.HeadSHA) == "" && time.Since(cached.UpdatedAt) < 10*time.Minute {
+		if headSHA == "" && time.Since(cached.UpdatedAt) < 10*time.Minute {
 			sort.Strings(cached.Templates)
 			return &WorkspaceNetlabTemplatesResponse{
 				WorkspaceID: pc.workspace.ID,
@@ -191,6 +193,19 @@ func (s *Service) GetWorkspaceNetlabTemplates(ctx context.Context, id string, re
 	}
 	if listErr != nil {
 		log.Printf("netlab templates list: %v", listErr)
+		if cachedIdx != nil {
+			sort.Strings(cachedIdx.Templates)
+			return &WorkspaceNetlabTemplatesResponse{
+				WorkspaceID: pc.workspace.ID,
+				Repo:        fmt.Sprintf("%s/%s", owner, repo),
+				Branch:      branch,
+				Dir:         dir,
+				Templates:   cachedIdx.Templates,
+				HeadSHA:     cachedIdx.HeadSHA,
+				Cached:      true,
+				UpdatedAt:   cachedIdx.UpdatedAt.UTC().Format(time.RFC3339),
+			}, nil
+		}
 		if strings.Contains(strings.ToLower(listErr.Error()), "too many templates") {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("too many templates in this folder; choose a narrower dir").Err()
 		}

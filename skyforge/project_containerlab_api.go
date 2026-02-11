@@ -18,6 +18,9 @@ type WorkspaceContainerlabTemplatesResponse struct {
 	Branch      string   `json:"branch"`
 	Dir         string   `json:"dir"`
 	Templates   []string `json:"templates"`
+	HeadSHA     string   `json:"headSha,omitempty"`
+	Cached      bool     `json:"cached"`
+	UpdatedAt   string   `json:"updatedAt,omitempty"`
 }
 
 type WorkspaceContainerlabTemplatesRequest struct {
@@ -127,6 +130,67 @@ func (s *Service) GetWorkspaceContainerlabTemplates(ctx context.Context, id stri
 		}
 	}
 
+	headSHA := ""
+	{
+		if owner != "url" {
+			got, err := getGiteaBranchHeadSHA(s.cfg, owner, repo, branch)
+			if err == nil {
+				headSHA = strings.TrimSpace(got)
+			}
+		}
+	}
+
+	cacheKind := "containerlab"
+	if owner == "url" {
+		cacheKind = "containerlab-url"
+	}
+	var cached *templateIndexRecord
+	if s.db != nil {
+		if got, err := loadTemplateIndex(ctx, s.db, cacheKind, owner, repo, branch, dir); err == nil && got != nil {
+			cached = got
+			if headSHA != "" && strings.TrimSpace(got.HeadSHA) != "" && strings.TrimSpace(got.HeadSHA) == headSHA {
+				out := append([]string(nil), got.Templates...)
+				sort.Strings(out)
+				return &WorkspaceContainerlabTemplatesResponse{
+					WorkspaceID: pc.workspace.ID,
+					Repo: func() string {
+						if owner == "url" {
+							return repo
+						}
+						return fmt.Sprintf("%s/%s", owner, repo)
+					}(),
+					Branch:    branch,
+					Dir:       dir,
+					Templates: out,
+					HeadSHA:   got.HeadSHA,
+					Cached:    true,
+					UpdatedAt: got.UpdatedAt.UTC().Format(time.RFC3339),
+				}, nil
+			}
+			// If Gitea branch-head probing is unavailable, serve a reasonably fresh cache
+			// instead of blocking the UI on a potentially slow remote lookup.
+			if headSHA == "" && time.Since(got.UpdatedAt) < 10*time.Minute {
+				out := append([]string(nil), got.Templates...)
+				sort.Strings(out)
+				return &WorkspaceContainerlabTemplatesResponse{
+					WorkspaceID: pc.workspace.ID,
+					Repo: func() string {
+						if owner == "url" {
+							return repo
+						}
+						return fmt.Sprintf("%s/%s", owner, repo)
+					}(),
+					Branch:    branch,
+					Dir:       dir,
+					Templates: out,
+					HeadSHA:   got.HeadSHA,
+					Cached:    true,
+					UpdatedAt: got.UpdatedAt.UTC().Format(time.RFC3339),
+				}, nil
+			}
+		}
+	}
+
 	var templates []string
 	if owner == "url" {
 		if s.db == nil || s.box == nil {
@@ -136,23 +200,29 @@ func (s *Service) GetWorkspaceContainerlabTemplates(ctx context.Context, id stri
 		if err != nil {
 			return nil, errs.B().Code(errs.Internal).Msg("failed to load git credentials").Err()
 		}
-		headSHA := ""
-		if cached, err := loadTemplateIndex(ctx, s.db, "containerlab-url", owner, repo, branch, dir); err == nil && cached != nil {
-			headSHA = cached.HeadSHA
-			// Serve cached templates for a short period to reduce clone churn.
-			if time.Since(cached.UpdatedAt) < 10*time.Minute {
-				templates = cached.Templates
-			}
-		}
 		if templates == nil {
 			head, listed, err := listRepoYAMLTemplates(ctx, creds, repo, branch, dir)
 			if err != nil {
 				log.Printf("containerlab external templates list: %v", err)
+				if cached != nil {
+					out := append([]string(nil), cached.Templates...)
+					sort.Strings(out)
+					return &WorkspaceContainerlabTemplatesResponse{
+						WorkspaceID: pc.workspace.ID,
+						Repo:        repo,
+						Branch:      branch,
+						Dir:         dir,
+						Templates:   out,
+						HeadSHA:     cached.HeadSHA,
+						Cached:      true,
+						UpdatedAt:   cached.UpdatedAt.UTC().Format(time.RFC3339),
+					}, nil
+				}
 				return nil, errs.B().Code(errs.Unavailable).Msg("failed to query templates").Err()
 			}
 			headSHA = head
 			templates = listed
-			if err := upsertTemplateIndex(ctx, s.db, "containerlab-url", owner, repo, branch, dir, headSHA, templates); err != nil {
+			if err := upsertTemplateIndex(ctx, s.db, cacheKind, owner, repo, branch, dir, headSHA, templates); err != nil {
 				log.Printf("template index upsert: %v", err)
 			} else {
 				_ = notifyDashboardUpdatePG(ctx, s.db)
@@ -162,6 +232,20 @@ func (s *Service) GetWorkspaceContainerlabTemplates(ctx context.Context, id stri
 		entries, err := listGiteaDirectory(s.cfg, owner, repo, dir, branch)
 		if err != nil {
 			log.Printf("containerlab templates list: %v", err)
+			if cached != nil {
+				out := append([]string(nil), cached.Templates...)
+				sort.Strings(out)
+				return &WorkspaceContainerlabTemplatesResponse{
+					WorkspaceID: pc.workspace.ID,
+					Repo:        fmt.Sprintf("%s/%s", owner, repo),
+					Branch:      branch,
+					Dir:         dir,
+					Templates:   out,
+					HeadSHA:     cached.HeadSHA,
+					Cached:      true,
+					UpdatedAt:   cached.UpdatedAt.UTC().Format(time.RFC3339),
+				}, nil
+			}
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to query templates").Err()
 		}
 		templates = make([]string, 0, len(entries))
@@ -178,6 +262,13 @@ func (s *Service) GetWorkspaceContainerlabTemplates(ctx context.Context, id stri
 			}
 			templates = append(templates, name)
 		}
+		if s.db != nil {
+			if err := upsertTemplateIndex(ctx, s.db, cacheKind, owner, repo, branch, dir, headSHA, templates); err != nil {
+				log.Printf("template index upsert: %v", err)
+			} else {
+				_ = notifyDashboardUpdatePG(ctx, s.db)
+			}
+		}
 	}
 	sort.Strings(templates)
 	_ = ctx
@@ -192,5 +283,8 @@ func (s *Service) GetWorkspaceContainerlabTemplates(ctx context.Context, id stri
 		Branch:    branch,
 		Dir:       dir,
 		Templates: templates,
+		HeadSHA:   headSHA,
+		Cached:    false,
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
 	}, nil
 }
