@@ -426,6 +426,17 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		}
 
 	}
+	preForwardSSHProbe := func(probeCtx context.Context) {
+		if !envBool(spec.Environment, "SKYFORGE_NETLAB_C9S_RESTORE_EOS_ETH0", true) {
+			return
+		}
+		if log != nil {
+			log.Infof("c9s: eos eth0 preflight probe: namespace=%s topology=%s topologyBytes=%d", ns, topologyName, len(topologyBytes))
+		}
+		if err := restoreNetlabC9sEOSPodNetwork(probeCtx, ns, topologyName, topologyBytes, log); err != nil && log != nil {
+			log.Infof("c9s: eos eth0 preflight restore failed (ignored): %v", err)
+		}
+	}
 
 	// Apply netlab-generated device configuration using netlab's own `netlab initial`
 	// workflow (Ansible playbooks + device-specific tasks). This avoids Skyforge-specific
@@ -443,7 +454,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 			sshReadySeconds := envInt(spec.Environment, "SKYFORGE_NETLAB_INITIAL_SSH_READY_SECONDS", envInt(spec.Environment, "SKYFORGE_FORWARD_SSH_READY_SECONDS", defaultForwardSSHReadySeconds))
 			if sshReadySeconds > 0 {
 				if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.ssh.ready", func() error {
-					return waitForForwardSSHReady(ctx, spec.TaskID, e, graph, spec.Environment, time.Duration(sshReadySeconds)*time.Second, log)
+					return waitForForwardSSHReady(ctx, spec.TaskID, e, graph, spec.Environment, time.Duration(sshReadySeconds)*time.Second, preForwardSSHProbe, log)
 				}); err != nil {
 					return err
 				}
@@ -501,7 +512,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		sshReadySeconds := envInt(spec.Environment, "SKYFORGE_FORWARD_SSH_READY_SECONDS", defaultForwardSSHReadySeconds)
 		if sshReadySeconds > 0 && graph != nil {
 			_ = taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "forward.ssh.ready", func() error {
-				if err := waitForForwardSSHReady(ctx, spec.TaskID, e, graph, spec.Environment, time.Duration(sshReadySeconds)*time.Second, log); err != nil {
+				if err := waitForForwardSSHReady(ctx, spec.TaskID, e, graph, spec.Environment, time.Duration(sshReadySeconds)*time.Second, preForwardSSHProbe, log); err != nil {
 					// Keep the lab up even if collection is blocked; surface a clear error in the run.
 					if log != nil {
 						log.Infof("forward sync wait timed out: %v", err)
@@ -1054,7 +1065,16 @@ func startForwardConnectivityAsNodesSSHReady(
 	}
 }
 
-func waitForForwardSSHReady(ctx context.Context, taskID int, e *Engine, graph *TopologyGraph, environment map[string]string, timeout time.Duration, log Logger) error {
+func waitForForwardSSHReady(
+	ctx context.Context,
+	taskID int,
+	e *Engine,
+	graph *TopologyGraph,
+	environment map[string]string,
+	timeout time.Duration,
+	preProbe func(context.Context),
+	log Logger,
+) error {
 	if graph == nil {
 		return nil
 	}
@@ -1083,6 +1103,9 @@ func waitForForwardSSHReady(ctx context.Context, taskID int, e *Engine, graph *T
 		return nil
 	}
 	probeCfg := forwardSSHProbeConfigFromEnv(environment)
+	if preProbe != nil {
+		preProbe(ctx)
+	}
 
 	start := time.Now()
 	deadline := start.Add(timeout)

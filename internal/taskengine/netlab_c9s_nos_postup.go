@@ -176,6 +176,132 @@ func runNetlabC9sNOSPostUp(ctx context.Context, ns, topologyName string, topolog
 	return nil
 }
 
+// restoreNetlabC9sEOSPodNetwork repairs pod eth0 addressing/routes for EOS/cEOS pods.
+// cEOS can wipe the pod default route during boot, making SSH unreachable from in-cluster
+// workers even when the EOS SSH daemon is listening.
+func restoreNetlabC9sEOSPodNetwork(ctx context.Context, ns, topologyName string, topologyYAML []byte, log Logger) error {
+	if log == nil {
+		log = noopLogger{}
+	}
+	ns = strings.TrimSpace(ns)
+	topologyName = strings.TrimSpace(topologyName)
+	if ns == "" || topologyName == "" {
+		return nil
+	}
+	log.Infof("c9s: eos eth0 restore preflight inspect: namespace=%s topology=%s topologyBytes=%d", ns, topologyName, len(topologyYAML))
+
+	// Build a quick set of EOS node names from topology (if available).
+	eosNodes := map[string]bool{}
+	if len(topologyYAML) > 0 {
+		var topo map[string]any
+		if err := yaml.Unmarshal(topologyYAML, &topo); err != nil {
+			log.Infof("c9s: eos eth0 restore preflight: topology parse failed (will use pod-image detection): %v", err)
+		} else {
+			topology, _ := topo["topology"].(map[string]any)
+			nodes, _ := topology["nodes"].(map[string]any)
+			for node, nodeAny := range nodes {
+				nodeName := strings.TrimSpace(fmt.Sprintf("%v", node))
+				cfg, ok := nodeAny.(map[string]any)
+				if !ok || cfg == nil || nodeName == "" {
+					continue
+				}
+				kind := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["kind"])))
+				if kind == "eos" || kind == "ceos" {
+					eosNodes[nodeName] = true
+				}
+			}
+		}
+	}
+
+	pods, err := kubeListPods(ctx, ns, map[string]string{
+		"clabernetes/topologyOwner": topologyName,
+	})
+	if err != nil {
+		return err
+	}
+
+	type podTarget struct {
+		nodeName string
+		podName  string
+		podIP    string
+		k8sNode  string
+	}
+	targets := make([]podTarget, 0, len(eosNodes))
+	for _, pod := range pods {
+		nodeName := strings.TrimSpace(pod.Metadata.Labels["clabernetes/topologyNode"])
+		if nodeName == "" {
+			continue
+		}
+		isEOSNode := eosNodes[nodeName]
+		if !isEOSNode {
+			for _, cs := range pod.Status.ContainerStatuses {
+				if strings.TrimSpace(cs.Name) != nodeName {
+					continue
+				}
+				img := strings.ToLower(strings.TrimSpace(cs.Image))
+				if strings.Contains(img, "ceos") || strings.Contains(img, "/eos") || strings.HasSuffix(img, ":eos") {
+					isEOSNode = true
+					break
+				}
+			}
+		}
+		if !isEOSNode {
+			continue
+		}
+		podName := strings.TrimSpace(pod.Metadata.Name)
+		podIP := strings.TrimSpace(pod.Status.PodIP)
+		k8sNode := strings.TrimSpace(pod.Spec.NodeName)
+		if podName == "" || podIP == "" || k8sNode == "" {
+			continue
+		}
+		targets = append(targets, podTarget{
+			nodeName: nodeName,
+			podName:  podName,
+			podIP:    podIP,
+			k8sNode:  k8sNode,
+		})
+	}
+	if len(targets) == 0 {
+		log.Infof("c9s: eos eth0 restore preflight skipped: no eos pods found")
+		return nil
+	}
+
+	kcfg, err := kubeutil.InClusterConfig()
+	if err != nil {
+		return err
+	}
+
+	log.Infof("c9s: eos eth0 restore preflight starting: nodes=%d", len(targets))
+
+	nodeGateway := map[string]string{}
+	restored := 0
+	var firstErr error
+	for _, item := range targets {
+		gw := strings.TrimSpace(nodeGateway[item.k8sNode])
+		if gw == "" {
+			if discovered, ok := discoverNodeGateway(ctx, kcfg, ns, item.k8sNode, topologyName, pods); ok {
+				gw = discovered
+				nodeGateway[item.k8sNode] = gw
+			}
+		}
+		if gw == "" {
+			log.Infof("c9s: eos eth0 restore preflight skipped (gateway not found): node=%s pod=%s", item.nodeName, item.podName)
+			continue
+		}
+		if err := ensureNetlabC9sPodEth0(ctx, kcfg, ns, item.podName, item.podIP, gw, log); err != nil {
+			log.Infof("c9s: eos eth0 restore preflight failed: node=%s pod=%s err=%v", item.nodeName, item.podName, err)
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		restored++
+	}
+
+	log.Infof("c9s: eos eth0 restore preflight done: restored=%d/%d", restored, len(targets))
+	return firstErr
+}
+
 func podsNodeNameForTopologyNode(pods []kubePod, topologyName, topologyNode string) string {
 	topologyName = strings.TrimSpace(topologyName)
 	topologyNode = strings.TrimSpace(topologyNode)

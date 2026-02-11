@@ -536,7 +536,7 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 						// from racing long boot times.
 						sshReadySeconds := envInt(spec.Environment, "SKYFORGE_CLABERNETES_SSH_READY_SECONDS", defaultForwardSSHReadySeconds)
 						if sshReadySeconds > 0 {
-							if err := waitForForwardSSHReady(ctx, spec.TaskID, e, graph, spec.Environment, time.Duration(sshReadySeconds)*time.Second, log); err != nil {
+							if err := waitForForwardSSHReady(ctx, spec.TaskID, e, graph, spec.Environment, time.Duration(sshReadySeconds)*time.Second, nil, log); err != nil {
 								return err
 							}
 						}
