@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -46,6 +47,7 @@ func runNetlabC9sLinuxScripts(ctx context.Context, ns, topologyOwner string, top
 	}
 
 	linuxNodes := make([]string, 0)
+	linuxScriptsByNode := map[string][]string{}
 	for node, nodeAny := range nodesAny {
 		cfg, ok := nodeAny.(map[string]any)
 		if !ok || cfg == nil {
@@ -55,7 +57,21 @@ func runNetlabC9sLinuxScripts(ctx context.Context, ns, topologyOwner string, top
 		if kind != "linux" {
 			continue
 		}
-		linuxNodes = append(linuxNodes, strings.TrimSpace(node))
+		nodeName := strings.TrimSpace(node)
+		if nodeName == "" {
+			continue
+		}
+		linuxNodes = append(linuxNodes, nodeName)
+
+		// Netlab 26.02 native mode for linux devices uses script execution (provider-side
+		// docker exec). In Kubernetes-native mode we execute the same per-node script
+		// modules via pod exec; discover module order from bind mounts.
+		scripts := linuxScriptModulesFromBinds(cfg)
+		if len(scripts) == 0 {
+			// Backward-compatible fallback for older generated topologies.
+			scripts = []string{"initial", "routing"}
+		}
+		linuxScriptsByNode[nodeName] = scripts
 	}
 	if len(linuxNodes) == 0 {
 		return nil
@@ -81,8 +97,6 @@ func runNetlabC9sLinuxScripts(ctx context.Context, ns, topologyOwner string, top
 		return err
 	}
 
-	scripts := []string{"initial", "routing"}
-
 	concurrency := 6
 	if raw := strings.TrimSpace(os.Getenv("SKYFORGE_NETLAB_C9S_LINUX_CONCURRENCY")); raw != "" {
 		if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 64 {
@@ -92,19 +106,17 @@ func runNetlabC9sLinuxScripts(ctx context.Context, ns, topologyOwner string, top
 	sem := make(chan struct{}, concurrency)
 	var wg sync.WaitGroup
 	// We buffer all results because we only drain the channel after all goroutines complete.
-	// Per node, we emit:
-	// - prep-interfaces
-	// - len(scripts) script runs
-	// - optional ssh enable
-	// - optional noise
-	perNode := 1 + len(scripts)
-	if enableSSH {
-		perNode++
+	capacity := 0
+	for _, node := range linuxNodes {
+		perNode := 1 + len(linuxScriptsByNode[node]) // prep + script modules
+		if enableSSH {
+			perNode++
+		}
+		if enableNoise {
+			perNode++
+		}
+		capacity += perNode
 	}
-	if enableNoise {
-		perNode++
-	}
-	capacity := len(linuxNodes) * perNode
 	results := make(chan netlabC9sLinuxScriptResult, capacity)
 
 	for _, node := range linuxNodes {
@@ -116,6 +128,10 @@ func runNetlabC9sLinuxScripts(ctx context.Context, ns, topologyOwner string, top
 		container := strings.ToLower(strings.TrimSpace(node))
 		if node == "" || podName == "" {
 			continue
+		}
+		scripts := linuxScriptsByNode[node]
+		if len(scripts) == 0 {
+			scripts = []string{"initial", "routing"}
 		}
 
 		wg.Add(1)
@@ -142,7 +158,7 @@ func runNetlabC9sLinuxScripts(ctx context.Context, ns, topologyOwner string, top
 			if cmName != "" {
 				m, ok, err := kubeGetConfigMap(ctx, ns, cmName)
 				if err != nil {
-					// Keep going; we'll mark initial/routing as skipped.
+					// Keep going; we still run prep/ssh/noise and mark module scripts as no-op.
 					log.Errorf("netlab linux script failed node=%s script=configmap err=%v stderr=", node, err)
 				} else if ok {
 					data = m
@@ -366,6 +382,50 @@ func runNetlabC9sLinuxScripts(ctx context.Context, ns, topologyOwner string, top
 		}
 	}
 	return nil
+}
+
+func linuxScriptModulesFromBinds(nodeCfg map[string]any) []string {
+	if nodeCfg == nil {
+		return nil
+	}
+	rawBinds, _ := nodeCfg["binds"].([]any)
+	if len(rawBinds) == 0 {
+		return nil
+	}
+
+	seen := map[string]bool{}
+	out := make([]string, 0, len(rawBinds))
+	for _, bindAny := range rawBinds {
+		bind := strings.TrimSpace(fmt.Sprintf("%v", bindAny))
+		if bind == "" {
+			continue
+		}
+		parts := strings.SplitN(bind, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		hostPath := strings.TrimSpace(parts[0])
+		targetPlusMode := strings.TrimSpace(parts[1])
+		target := targetPlusMode
+		if idx := strings.Index(targetPlusMode, ":"); idx >= 0 {
+			target = strings.TrimSpace(targetPlusMode[:idx])
+		}
+		if !strings.HasSuffix(strings.ToLower(target), ".sh") {
+			continue
+		}
+
+		module := strings.TrimSpace(path.Base(hostPath))
+		if module == "" || strings.Contains(module, ".") {
+			// Skip non-module file artifacts (for example startup.partial.config).
+			continue
+		}
+		if seen[module] {
+			continue
+		}
+		seen[module] = true
+		out = append(out, module)
+	}
+	return out
 }
 
 func envBoolValue(raw string, def bool) bool {

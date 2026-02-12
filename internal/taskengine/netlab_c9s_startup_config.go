@@ -75,6 +75,7 @@ func injectNetlabC9sVrnetlabStartupConfig(
 	overrideData := map[string]string{}
 	labels := map[string]string{"skyforge-c9s-topology": topologyName}
 	modified := false
+	nativeStartupBinds := 0
 
 	knownOrder := []string{
 		"normalize",
@@ -106,101 +107,45 @@ func injectNetlabC9sVrnetlabStartupConfig(
 			continue
 		}
 
+		device := netlabDeviceKeyForClabNode(kind, image)
+		mode := effectiveNetlabConfigModeForDevice(device, options.DeviceConfigMode)
+
 		// Apply QEMU/vrnetlab environment overrides (CLAB_INTFS, virtio-rng, etc) for *all* vrnetlab nodes,
 		// even if we don't mount a startup-config for the NOS image.
 		applyVrnetlabNodeEnvOverrides(kind, image, dpIntfs, cfg)
 		if dpIntfs > 0 {
 			modified = true
 		}
-		if shouldUseNativeNetlabConfigModeForNode(kind, image, options) {
-			log.Infof("c9s: vrnetlab startup-config injection disabled (native netlab_config_mode): %s", nodeName)
-			nodesAny[node] = cfg
-			continue
-		}
-
-		// IOSv/IOSvL2 bootstrap SSH internally (vrnetlab's own access_cfg + RSA keygen logic).
-		// In the native netlab/containerlab workflow, netlab does NOT mount a full startup-config
-		// into IOSv; it applies config post-boot ("netlab initial"). Mounting snippets into
-		// /config/startup-config.cfg can wedge IOSv bootstrapping and prevent the SSH server from
-		// ever emitting a banner (TCP accept works, but no "SSH-" line), which breaks readiness.
-		//
-		// Therefore:
-		// - do NOT mount the full netlab-generated startup-config (it can wedge bootstrap)
-		// - mount a minimal SSH bootstrap-only startup-config so SSH becomes reachable
-		// - rewrite to our tuned vrnetlab tags (still vrnetlab-native behavior; just more reliable in k8s)
-		if kind == "cisco_vios" || kind == "cisco_viosl2" {
-			// Remove any existing startup-config reference + mount first to avoid applying
-			// a full netlab-generated config at boot.
-			if s, ok := cfg["startup-config"].(string); ok && strings.TrimSpace(s) != "" {
-				delete(cfg, "startup-config")
+		if options.NativeConfigModesEnabled && supportsNetlabConfigMode(device, mode) {
+			switch mode {
+			case "sh":
+				// Linux/EOS/FRR use native shell/script modes elsewhere (linux scripts runner + NOS post-up).
+				log.Infof("c9s: vrnetlab startup-config injection disabled (native netlab_config_mode): %s", nodeName)
+				nodesAny[node] = cfg
+				continue
+			case "startup":
+				// For netlab_config_mode=startup (netlab 26.02+), netlab writes startup.partial.config
+				// and sets containerlab `startup-config` to its path (under /tmp/skyforge-c9s/...).
+				//
+				// In clabernetes native mode, mount that file into the NOS container at the vrnetlab
+				// startup-config path so vrnetlab can apply it at boot.
+				//
+				// Cisco IOL/IOLL2 are handled inside clabernetes (it assembles /iol/config.txt directly).
+				if kind == "cisco_iol" || kind == "cisco_ioll2" {
+					nodesAny[node] = cfg
+					continue
+				}
+				sc, _ := cfg["startup-config"].(string)
+				sc = strings.TrimSpace(sc)
+				if sc == "" {
+					return nil, nil, fmt.Errorf("vrnetlab node %s is in netlab_config_mode=startup but has no startup-config in clab.yml", nodeName)
+				}
+				cfg["binds"] = appendUniqueClabBind(cfg["binds"], fmt.Sprintf("%s:%s:ro", sc, startupPath))
+				nodesAny[node] = cfg
 				modified = true
+				nativeStartupBinds++
+				continue
 			}
-			dropped := dropC9sMountForPath(nodeMounts[nodeName], startupPath)
-			if len(dropped) != len(nodeMounts[nodeName]) {
-				modified = true
-			}
-			nodeMounts[nodeName] = dropped
-
-			// Prefer the skyforge-tuned images for stable SSH bootstrap.
-			if strings.Contains(image, "/cisco_vios:15.9.3") && !strings.Contains(image, "-skyforge") {
-				// Pin to a digest to avoid k8s/node tag caching (imagePullPolicy is typically IfNotPresent).
-				cfg["image"] = "ghcr.io/forwardnetworks/vrnetlab/cisco_vios@sha256:6055038e6c024326a9630699d897a7a089b7af6925f5bcb7b162ba884dbe5f72"
-				modified = true
-			}
-			if strings.Contains(image, "/cisco_viosl2:15.2") && !strings.Contains(image, "-skyforge") {
-				// Pin to a digest to avoid k8s/node tag caching (imagePullPolicy is typically IfNotPresent).
-				cfg["image"] = "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2@sha256:898301d2f9e609b7f008d5e419d0750f31a1ebf30afeb7e311592217b4ac620b"
-				modified = true
-			}
-
-			// Minimal bootstrap-only config to ensure an SSH server exists for readiness.
-			//
-			// Keep this intentionally tiny and avoid interface configuration; netlab will
-			// apply the full intended config post-boot via `netlab initial`.
-			//
-			// Containerlab's IOSv defaults are typically vagrant/vagrant; keep parity with
-			// our catalog defaults to avoid auth mismatches.
-			user := "vagrant"
-			pass := "vagrant"
-			bootstrap := strings.TrimSpace(fmt.Sprintf(`
-hostname %s
-no ip domain lookup
-ip domain name lab
-username %s privilege 15 secret %s
-ip ssh version 2
-crypto key generate rsa modulus 2048
-line vty 0 4
- login local
- transport input ssh
-!
-`, nodeName, user, pass))
-			key := sanitizeArtifactKeySegment(fmt.Sprintf("%s-startup-config.cfg", nodeName))
-			if key == "" || key == "unknown" {
-				key = "startup-config.cfg"
-			}
-			overrideData[key] = bootstrap
-
-			// Set startup-config path in topology for clarity (mount is handled by FilesFromConfigMap).
-			cfg["startup-config"] = startupPath
-			nodeMounts[nodeName] = upsertC9sMount(nodeMounts[nodeName], c9sFileFromConfigMap{
-				ConfigMapName: overrideCM,
-				ConfigMapPath: key,
-				FilePath:      startupPath,
-				Mode:          "read",
-			})
-			modified = true
-
-			nodesAny[node] = cfg
-			continue
-		}
-
-		// Some vrnetlab images handle their own bootstrap to enable SSH (IOSv/IOSvL2/IOL/IOLL2).
-		// Mounting a full netlab-generated startup-config into /config/startup-config.cfg can slow or wedge
-		// the bootstrap (e.g. interface config for NICs not yet attached, keygen prompts, etc) and prevent
-		// SSH readiness. For these, rely on vrnetlab's native bootstrap and let `netlab initial` apply config
-		// post-boot, matching the upstream netlab/containerlab workflow.
-		if kind == "cisco_iol" || kind == "cisco_ioll2" || kind == "cisco_vios" || kind == "cisco_viosl2" {
-			continue
 		}
 
 		// Find the netlab-generated snippet ConfigMap for this node (from mounts).
@@ -254,22 +199,28 @@ line vty 0 4
 		})
 	}
 
-	if len(overrideData) == 0 {
-		if !modified {
-			return topologyYAML, nodeMounts, nil
+		if len(overrideData) == 0 {
+			if !modified {
+				return topologyYAML, nodeMounts, nil
+			}
+			topology["nodes"] = nodesAny
+			topo["topology"] = topology
+			out, err := yaml.Marshal(topo)
+			if err != nil {
+				return nil, nil, fmt.Errorf("encode clab.yml: %w", err)
+			}
+			if nativeStartupBinds > 0 {
+				log.Infof("c9s: vrnetlab startup-config bind added (startup.partial.config): nodes=%d", nativeStartupBinds)
+			}
+			return out, nodeMounts, nil
 		}
-		topology["nodes"] = nodesAny
-		topo["topology"] = topology
-		out, err := yaml.Marshal(topo)
-		if err != nil {
-			return nil, nil, fmt.Errorf("encode clab.yml: %w", err)
-		}
-		return out, nodeMounts, nil
-	}
 	if err := kubeUpsertConfigMap(ctx, ns, overrideCM, overrideData, labels); err != nil {
 		return nil, nil, err
 	}
 	log.Infof("c9s: vrnetlab startup-config injected: nodes=%d", len(overrideData))
+	if nativeStartupBinds > 0 {
+		log.Infof("c9s: vrnetlab startup-config bind added (startup.partial.config): nodes=%d", nativeStartupBinds)
+	}
 
 	topology["nodes"] = nodesAny
 	topo["topology"] = topology
@@ -663,6 +614,52 @@ func dropC9sMountForPath(existing []c9sFileFromConfigMap, filePath string) []c9s
 	return out
 }
 
+func appendUniqueClabBind(raw any, bind string) []any {
+	bind = strings.TrimSpace(bind)
+	if bind == "" {
+		return nil
+	}
+	switch v := raw.(type) {
+	case nil:
+		return []any{bind}
+	case string:
+		cur := strings.TrimSpace(v)
+		if cur == "" {
+			return []any{bind}
+		}
+		if cur == bind {
+			return []any{cur}
+		}
+		return []any{cur, bind}
+	case []any:
+		for _, item := range v {
+			if strings.TrimSpace(fmt.Sprintf("%v", item)) == bind {
+				return v
+			}
+		}
+		return append(v, bind)
+	case []string:
+		out := make([]any, 0, len(v)+1)
+		found := false
+		for _, item := range v {
+			s := strings.TrimSpace(item)
+			if s == "" {
+				continue
+			}
+			if s == bind {
+				found = true
+			}
+			out = append(out, s)
+		}
+		if found {
+			return out
+		}
+		return append(out, bind)
+	default:
+		return []any{bind}
+	}
+}
+
 func extractNetlabConfigModeOverrides(setOverrides []string) map[string]string {
 	out := map[string]string{}
 	for _, raw := range setOverrides {
@@ -847,6 +844,16 @@ func netlabDeviceKeyForClabNode(kind, image string) string {
 	switch kind {
 	case "ceos":
 		return "eos"
+	case "juniper_vmx", "vr-vmx", "vr_vmx":
+		return "vmx"
+	case "juniper_vsrx", "vr-vsrx", "vr_vsrx":
+		return "vsrx"
+	case "juniper_vjunosevolved", "vr-vjunosevolved", "vr_vjunosevolved":
+		return "vptx"
+	case "juniper_vjunosrouter", "juniper_vjunos-router", "vr-vjunosrouter", "vr_vjunosrouter":
+		return "vjunos-router"
+	case "juniper_vjunosswitch", "juniper_vjunos-switch", "vr-vjunosswitch", "vr_vjunosswitch":
+		return "vjunos-switch"
 	}
 	return kind
 }

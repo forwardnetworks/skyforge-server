@@ -43,12 +43,18 @@ devices:
     provider: clab
     clab:
       image: ghcr.io/forwardnetworks/vrnetlab/cisco_iol:17.16.01a
+      group_vars:
+        # Use containerlab startup-config injection for IOS/IOL (netlab 26.02+).
+        netlab_config_mode: startup
 
   # Cisco IOL L2 via vrnetlab
   ioll2:
     provider: clab
     clab:
       image: ghcr.io/forwardnetworks/vrnetlab/cisco_iol:L2-17.16.01a
+      group_vars:
+        # Use containerlab startup-config injection for IOS/IOL (netlab 26.02+).
+        netlab_config_mode: startup
 
   # Cisco vIOS/vIOS-L2 via vrnetlab
   # Netlab device types are `iosv` and `iosvl2` (do not introduce new device keys here).

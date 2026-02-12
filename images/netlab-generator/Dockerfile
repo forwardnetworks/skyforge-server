@@ -1,7 +1,11 @@
 FROM ghcr.io/forwardnetworks/skyforge-netlab-generator:20260206-netlaboutput
 
-ARG NETLAB_REF=00cadffe0d5ec999a81028e82bce913e2aa7d14b
-RUN python3 -m pip install --no-cache-dir --upgrade "networklab @ git+https://github.com/forwardnetworks/netlab.git@${NETLAB_REF}"
+# Install netlab from the vendored fork in this repo so Skyforge can carry
+# k8s/clabernetes-specific fixes without depending on an external ref.
+#
+# IMPORTANT: build context must be the repo root (.) so this COPY works.
+COPY vendor/netlab /tmp/netlab
+RUN python3 -m pip install --no-cache-dir --upgrade /tmp/netlab
 
-COPY defaults.yml /etc/netlab/defaults.yml
-COPY netlab_generator.py /app/netlab_generator.py
+COPY components/server/images/netlab-generator/defaults.yml /etc/netlab/defaults.yml
+COPY components/server/images/netlab-generator/netlab_generator.py /app/netlab_generator.py

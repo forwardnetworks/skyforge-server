@@ -107,3 +107,21 @@ func TestEffectiveNetlabConfigModeByDevice_DefaultsAndOverrides(t *testing.T) {
 		t.Fatalf("expected nxos override startup, got %#v", got["nxos"])
 	}
 }
+
+func TestNetlabDeviceKeyForClabNode_JunosKindAliases(t *testing.T) {
+	cases := []struct {
+		kind string
+		want string
+	}{
+		{kind: "juniper_vmx", want: "vmx"},
+		{kind: "juniper_vsrx", want: "vsrx"},
+		{kind: "juniper_vjunosevolved", want: "vptx"},
+		{kind: "juniper_vjunosrouter", want: "vjunos-router"},
+		{kind: "juniper_vjunosswitch", want: "vjunos-switch"},
+	}
+	for _, tc := range cases {
+		if got := netlabDeviceKeyForClabNode(tc.kind, ""); got != tc.want {
+			t.Fatalf("kind alias mismatch kind=%q got=%q want=%q", tc.kind, got, tc.want)
+		}
+	}
+}

@@ -256,6 +256,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 			setOverrides = append(setOverrides, v)
 		}
 	}
+	modeByDevice := effectiveNetlabConfigModeByDevice(setOverrides)
 
 	// Persist the node name mapping (original ↔ sanitized) so post-deploy steps
 	// (netlab initial applier, debug tooling) can consistently address Kubernetes
@@ -277,7 +278,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 			var err error
 			topologyBytes, nodeMounts, err = injectNetlabC9sStartupConfig(ctx, ns, topologyName, topologyBytes, nodeMounts, netlabC9sStartupConfigOptions{
 				NativeConfigModesEnabled: nativeConfigModesEnabled,
-				DeviceConfigMode:         effectiveNetlabConfigModeByDevice(setOverrides),
+				DeviceConfigMode:         modeByDevice,
 			}, log)
 			return err
 		}); err != nil {
@@ -427,11 +428,26 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	//
 	// We run it after early Forward topology upload so Forward can start reachability
 	// checks while configuration is being applied, but before starting Forward collection.
-	enableNetlabInitial := envBool(spec.Environment, "SKYFORGE_NETLAB_C9S_ENABLE_NETLAB_INITIAL", true)
-	if enableNetlabInitial {
-		// Gate netlab initial on SSH readiness. Netlab initial relies on SSH/NETCONF access
-		// to push config. Many vrnetlab-based nodes become "Running" long before they accept
-		// SSH logins, and starting netlab initial too early results in authentication errors
+		enableNetlabInitial := envBool(spec.Environment, "SKYFORGE_NETLAB_C9S_ENABLE_NETLAB_INITIAL", true)
+		if enableNetlabInitial && nativeConfigModesEnabled {
+			// If all nodes are configured by netlab-native mechanisms (startup-config/scripts),
+			// running `netlab initial` is redundant and can cause repeated config application
+			// (for example duplicated snippets or partial startup configs getting overwritten).
+			//
+			// Allow explicit per-run override to keep existing escape hatches.
+			if _, explicit := spec.Environment["SKYFORGE_NETLAB_C9S_ENABLE_NETLAB_INITIAL"]; !explicit {
+				if shouldSkipNetlabInitialForTopology(topologyBytes, modeByDevice) {
+					enableNetlabInitial = false
+					if log != nil {
+						log.Infof("c9s: netlab initial skipped (all nodes use netlab_config_mode startup/sh)")
+					}
+				}
+			}
+		}
+		if enableNetlabInitial {
+			// Gate netlab initial on SSH readiness. Netlab initial relies on SSH/NETCONF access
+			// to push config. Many vrnetlab-based nodes become "Running" long before they accept
+			// SSH logins, and starting netlab initial too early results in authentication errors
 		// (devices not fully booted yet).
 		if graph != nil {
 			sshReadySeconds := envInt(spec.Environment, "SKYFORGE_NETLAB_INITIAL_SSH_READY_SECONDS", envInt(spec.Environment, "SKYFORGE_FORWARD_SSH_READY_SECONDS", defaultForwardSSHReadySeconds))
@@ -519,6 +535,58 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	})
 
 	return nil
+}
+
+func shouldSkipNetlabInitialForTopology(topologyYAML []byte, modeByDevice map[string]string) bool {
+	if len(topologyYAML) == 0 || len(modeByDevice) == 0 {
+		return false
+	}
+
+	var topo map[string]any
+	if err := yaml.Unmarshal(topologyYAML, &topo); err != nil {
+		return false
+	}
+	topology, _ := topo["topology"].(map[string]any)
+	nodesAny, _ := topology["nodes"].(map[string]any)
+	if len(nodesAny) == 0 {
+		return false
+	}
+
+	for _, nodeAny := range nodesAny {
+		cfg, ok := nodeAny.(map[string]any)
+		if !ok || cfg == nil {
+			return false
+		}
+		kind := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["kind"])))
+		image := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["image"])))
+		device := netlabDeviceKeyForClabNode(kind, image)
+		mode := effectiveNetlabConfigModeForDevice(device, modeByDevice)
+		if !supportsNetlabConfigMode(device, mode) {
+			return false
+		}
+		switch mode {
+		case "startup":
+			if s, ok := cfg["startup-config"].(string); !ok || strings.TrimSpace(s) == "" {
+				// If netlab claims startup mode but no startup-config is present in clab.yml,
+				// we still need `netlab initial` to apply configuration.
+				return false
+			}
+		case "sh":
+			// We currently have native (non-`netlab initial`) executors only for:
+			// - linux: via runNetlabC9sLinuxScripts
+			// - eos/ceos: via runNetlabC9sNOSPostUp (FastCLI)
+			//
+			// Keep `netlab initial` enabled for other devices (for example frr) until we add
+			// a native executor for them.
+			if device != "linux" && device != "eos" {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+
+	return true
 }
 
 func envInt(env map[string]string, key string, def int) int {
