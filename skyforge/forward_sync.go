@@ -272,7 +272,7 @@ func (s *Service) forwardConfigForUserCollectorConfigID(ctx context.Context, use
 	var skipTLSVerify bool
 	err := s.db.QueryRowContext(ctxReq, `SELECT COALESCE(credential_id,''),
   COALESCE(base_url,''), COALESCE(skip_tls_verify, false),
-  forward_username, forward_password,
+  COALESCE(forward_username, ''), COALESCE(forward_password, ''),
   COALESCE(collector_username, ''), COALESCE(authorization_key, '')
 FROM sf_user_forward_collectors
 WHERE username=$1 AND id=$2`, username, collectorConfigID).Scan(
