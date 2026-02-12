@@ -10,6 +10,7 @@
 #
 # NOTE: Netlab syntax matches the topology file, but without the `defaults.` prefix.
 provider: clab
+device: eos
 plugin: [ files ]
 
 # vrnetlab QEMU management uses 10.0.0.0/24 internally for host port-forwards
