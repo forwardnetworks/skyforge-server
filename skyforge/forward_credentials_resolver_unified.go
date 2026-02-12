@@ -3,6 +3,7 @@ package skyforge
 import (
 	"context"
 	"database/sql"
+	"log"
 	"strings"
 	"time"
 
@@ -29,6 +30,7 @@ func resolveForwardCredentialsFor(ctx context.Context, db *sql.DB, sessionSecret
 	opts.CollectorConfigID = strings.TrimSpace(opts.CollectorConfigID)
 
 	box := newSecretBox(sessionSecret)
+	var resolutionErr error
 
 	// 1) Explicit override (MCP).
 	if opts.ExplicitCredentialID != "" {
@@ -87,7 +89,8 @@ func resolveForwardCredentialsFor(ctx context.Context, db *sql.DB, sessionSecret
 		defer cancel()
 		cfg, err := forwardConfigForUserCollectorConfigID(ctxReq, db, sessionSecret, username, opts.CollectorConfigID)
 		if err != nil {
-			return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward credentials").Err()
+			log.Printf("forward credentials resolution: collector-config lookup failed for user=%s collectorConfigID=%s: %v", username, opts.CollectorConfigID, err)
+			resolutionErr = err
 		}
 		if cfg != nil && strings.TrimSpace(cfg.BaseURL) != "" && strings.TrimSpace(cfg.Username) != "" && strings.TrimSpace(cfg.Password) != "" {
 			return cfg, nil
@@ -100,7 +103,8 @@ func resolveForwardCredentialsFor(ctx context.Context, db *sql.DB, sessionSecret
 		defer cancel()
 		cfg, err := forwardConfigForUser(ctxReq, db, sessionSecret, username)
 		if err != nil {
-			return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward credentials").Err()
+			log.Printf("forward credentials resolution: user default lookup failed for user=%s: %v", username, err)
+			resolutionErr = err
 		}
 		if cfg != nil && strings.TrimSpace(cfg.BaseURL) != "" && strings.TrimSpace(cfg.Username) != "" && strings.TrimSpace(cfg.Password) != "" {
 			return cfg, nil
@@ -113,7 +117,8 @@ func resolveForwardCredentialsFor(ctx context.Context, db *sql.DB, sessionSecret
 		defer cancel()
 		cfg, err := getWorkspaceForwardCredentials(ctxReq, db, box, workspaceID)
 		if err != nil {
-			return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward credentials").Err()
+			log.Printf("forward credentials resolution: workspace lookup failed for workspace=%s: %v", workspaceID, err)
+			resolutionErr = err
 		}
 		if cfg != nil {
 			if strings.TrimSpace(cfg.BaseURL) == "" {
@@ -123,6 +128,10 @@ func resolveForwardCredentialsFor(ctx context.Context, db *sql.DB, sessionSecret
 				return cfg, nil
 			}
 		}
+	}
+
+	if resolutionErr != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward credentials").Err()
 	}
 
 	return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward is not configured for this user/network or workspace").Err()
@@ -146,7 +155,7 @@ func forwardConfigForUser(ctx context.Context, db *sql.DB, sessionSecret string,
 
 	// Fallback: explicit default Forward credential set in sf_user_settings.
 	{
-		ctxReq, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 		var credID sql.NullString
 		if err := db.QueryRowContext(ctxReq, `

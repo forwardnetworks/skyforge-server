@@ -23,7 +23,7 @@ func preferredUserForwardCollectorConfigID(ctx context.Context, db *sql.DB, user
 		return "", nil
 	}
 
-	ctxReq, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
 	// Preferred: explicit default in sf_user_settings.
