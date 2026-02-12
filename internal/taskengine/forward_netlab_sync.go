@@ -516,6 +516,12 @@ func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *work
 		changed = true
 	}
 
+	// Ensure Forward network performance settings have global SNMP perf collection enabled.
+	// This must be done for every deployment network so capacity/perf endpoints have data.
+	if err := forwardEnableSNMPPerfCollection(ctx, client, networkID); err != nil {
+		return cfgAny, err
+	}
+
 	// Ensure the network is registered in Skyforge's saved networks table so capacity/assurance
 	// endpoints that use :networkRef have something to reference.
 	if e != nil && e.db != nil {
@@ -664,78 +670,6 @@ func (e *Engine) startForwardCollectionForDeployment(ctx context.Context, taskID
 	if taskID > 0 {
 		_ = taskstore.AppendTaskEvent(context.Background(), e.db, taskID, "forward.collection.started", map[string]any{
 			"networkId": networkID,
-		})
-	}
-	return nil
-}
-
-func (e *Engine) startForwardConnectivityTestsForDeployment(ctx context.Context, taskID int, pc *workspaceContext, dep *WorkspaceDeployment, graph *TopologyGraph) error {
-	if e == nil || pc == nil || dep == nil || graph == nil {
-		return nil
-	}
-	cfgAny, err := e.ensureForwardNetworkForDeployment(ctx, pc, dep)
-	if err != nil || cfgAny == nil {
-		return err
-	}
-	rawID, ok := cfgAny[forwardNetworkIDKey]
-	if !ok || rawID == nil {
-		return nil
-	}
-	networkID := strings.TrimSpace(fmt.Sprintf("%v", rawID))
-	if networkID == "" {
-		return nil
-	}
-
-	// Start connectivity tests for:
-	// - classic devices (NOS nodes)
-	// - endpoints (Linux nodes)
-	classicNames := make([]string, 0, len(graph.Nodes))
-	endpointNames := make([]string, 0, len(graph.Nodes))
-	for _, node := range graph.Nodes {
-		name := strings.TrimSpace(node.Label)
-		if name == "" {
-			name = strings.TrimSpace(node.ID)
-		}
-		if name == "" {
-			continue
-		}
-		if strings.EqualFold(strings.TrimSpace(node.Kind), "linux") {
-			endpointNames = append(endpointNames, name)
-			continue
-		}
-		classicNames = append(classicNames, name)
-	}
-	if len(classicNames) == 0 && len(endpointNames) == 0 {
-		return nil
-	}
-
-	collectorConfigID := strings.TrimSpace(fmt.Sprintf("%v", cfgAny[forwardCollectorIDKey]))
-	forwardCfg, err := e.forwardConfigForUserCollector(ctx, pc.claims.Username, collectorConfigID)
-	if err != nil || forwardCfg == nil {
-		return err
-	}
-	client, err := newForwardClient(*forwardCfg)
-	if err != nil {
-		return err
-	}
-
-	if len(classicNames) > 0 {
-		if err := forwardBulkStartConnectivityTests(ctx, client, networkID, classicNames); err != nil {
-			return err
-		}
-	}
-	if len(endpointNames) > 0 {
-		// Forward supports endpoint connectivity tests via:
-		//   POST /api/networks/{id}/connectivityTests/bulkStart?type=endpoint
-		if err := forwardBulkStartConnectivityTestsTyped(ctx, client, networkID, endpointNames, "endpoint"); err != nil {
-			return err
-		}
-	}
-	if taskID > 0 {
-		_ = taskstore.AppendTaskEvent(context.Background(), e.db, taskID, "forward.connectivity.started", map[string]any{
-			"networkId":     networkID,
-			"deviceCount":   len(classicNames),
-			"endpointCount": len(endpointNames),
 		})
 	}
 	return nil
@@ -1153,12 +1087,6 @@ func forwardDefaultCredentialForKind(kind string) (username, password string, ok
 }
 
 type forwardSyncOptions struct {
-	// StartConnectivity controls whether we start Forward connectivity tests immediately
-	// after importing devices/endpoints. For some in-cluster NOS images (vrnetlab/QEMU),
-	// starting connectivity too early creates noisy "unreachable" signals. Those flows
-	// should prefer an explicit SSH-ready gate before starting connectivity tests.
-	StartConnectivity bool
-
 	// StartCollection controls whether we start a Forward collection immediately after
 	// importing devices/endpoints.
 	StartCollection bool
@@ -1257,7 +1185,6 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 
 	devices := []forwardClassicDevice{}
 	endpoints := []forwardEndpoint{}
-	connectivityNames := []string{}
 	seen := map[string]bool{}
 	linuxEndpointProfileID := ""
 	for _, node := range graph.Nodes {
@@ -1387,7 +1314,6 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 			BgpPeerType:              "BOTH",
 			EnableSnmpCollection:     true,
 		})
-		connectivityNames = append(connectivityNames, name)
 	}
 	if len(endpoints) > 0 {
 		if err := forwardPutEndpointsBatch(ctx, client, networkID, endpoints); err != nil {
@@ -1399,21 +1325,6 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 	}
 	if err := forwardPutClassicDevices(ctx, client, networkID, devices); err != nil {
 		return 0, err
-	}
-	// Start connectivity tests as soon as devices are imported, so the UI shows reachability
-	// quickly even before collection is started. Best-effort (don't fail the run).
-	//
-	// NOTE: In some flows we intentionally defer connectivity tests until we have verified
-	// SSH readiness, to avoid false negatives during long boots (e.g., vrnetlab devices).
-	if opts.StartConnectivity && len(connectivityNames) > 0 {
-		if err := forwardBulkStartConnectivityTests(ctx, client, networkID, connectivityNames); err != nil {
-			log.Printf("forward connectivity tests skipped: %v", err)
-		} else if taskID > 0 && e != nil && e.db != nil {
-			_ = taskstore.AppendTaskEvent(context.Background(), e.db, taskID, "forward.connectivity.bulkstart", map[string]any{
-				"networkId": networkID,
-				"devices":   len(connectivityNames),
-			})
-		}
 	}
 	if opts.StartCollection {
 		_ = forwardStartCollection(ctx, client, networkID)
