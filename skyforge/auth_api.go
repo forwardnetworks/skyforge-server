@@ -239,7 +239,7 @@ func (s *Service) Reauth(w http.ResponseWriter, r *http.Request) {
 		clearCachedLDAPPassword(s.db, claims.Username)
 	}
 	http.SetCookie(w, s.sessionManager.ClearCookie())
-	if s.oidc != nil {
+	if s.oidcClient() != nil {
 		http.Redirect(w, r, "/api/oidc/login?next="+url.QueryEscape(next), http.StatusFound)
 		return
 	}
@@ -283,7 +283,7 @@ func (s *Service) sessionAuthProviderLabel() string {
 	if s == nil {
 		return ""
 	}
-	if s.oidc != nil {
+	if s.oidcClient() != nil {
 		issuer := strings.TrimSpace(s.cfg.OIDC.IssuerURL)
 		if issuer == "" {
 			issuer = strings.TrimSpace(s.cfg.OIDC.DiscoveryURL)

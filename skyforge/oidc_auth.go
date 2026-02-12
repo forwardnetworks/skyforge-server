@@ -67,6 +67,13 @@ func initOIDCClient(cfg Config) (*OIDCClient, error) {
 		}
 	}
 
+	// Never proxy in-cluster service calls through environment proxies.
+	// Some clusters set HTTP(S)_PROXY for egress which can break service DNS/VIPs.
+	transport := &http.Transport{
+		Proxy: func(*http.Request) (*url.URL, error) { return nil, nil },
+	}
+	ctx = oidc.ClientContext(ctx, &http.Client{Timeout: 5 * time.Second, Transport: transport})
+
 	provider, err := oidc.NewProvider(ctx, providerURL)
 	if err != nil {
 		return nil, err
@@ -197,7 +204,15 @@ func writeOIDCFlowCookie(w http.ResponseWriter, sm *SessionManager, flows map[st
 //
 //encore:api public raw method=GET path=/api/oidc/login
 func (s *Service) OIDCLogin(w http.ResponseWriter, r *http.Request) {
-	if s.oidc == nil {
+	if s == nil {
+		http.Error(w, "OIDC not configured", http.StatusNotFound)
+		return
+	}
+	if s.oidcClient() == nil {
+		if oidcIsConfigured(s.cfg) {
+			http.Error(w, "OIDC is starting up; please retry", http.StatusServiceUnavailable)
+			return
+		}
 		http.Error(w, "OIDC not configured", http.StatusNotFound)
 		return
 	}
@@ -228,7 +243,7 @@ func (s *Service) OIDCLogin(w http.ResponseWriter, r *http.Request) {
 	setOIDCCookie(w, s.sessionManager, oidcNonceCookie, nonce, secure)
 	setOIDCCookie(w, s.sessionManager, oidcNextCookie, url.QueryEscape(next), secure)
 
-	authURL := s.oidc.oauth2Config.AuthCodeURL(state, oidc.Nonce(nonce))
+	authURL := s.oidcClient().oauth2Config.AuthCodeURL(state, oidc.Nonce(nonce))
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
@@ -236,7 +251,15 @@ func (s *Service) OIDCLogin(w http.ResponseWriter, r *http.Request) {
 //
 //encore:api public raw method=GET path=/api/oidc/callback
 func (s *Service) OIDCCallback(w http.ResponseWriter, r *http.Request) {
-	if s.oidc == nil {
+	if s == nil {
+		http.Error(w, "OIDC not configured", http.StatusNotFound)
+		return
+	}
+	if s.oidcClient() == nil {
+		if oidcIsConfigured(s.cfg) {
+			http.Error(w, "OIDC is starting up; please retry", http.StatusServiceUnavailable)
+			return
+		}
 		http.Error(w, "OIDC not configured", http.StatusNotFound)
 		return
 	}
@@ -272,7 +295,7 @@ func (s *Service) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	token, err := s.oidc.oauth2Config.Exchange(ctx, code)
+	token, err := s.oidcClient().oauth2Config.Exchange(ctx, code)
 	if err != nil {
 		rlog.Error("oidc exchange failed", "error", err)
 		http.Error(w, "oidc exchange failed", http.StatusUnauthorized)
@@ -285,7 +308,7 @@ func (s *Service) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	idToken, err := s.oidc.verifier.Verify(ctx, rawIDToken)
+	idToken, err := s.oidcClient().verifier.Verify(ctx, rawIDToken)
 	if err != nil {
 		rlog.Error("invalid id token", "error", err)
 		http.Error(w, "invalid id token", http.StatusUnauthorized)

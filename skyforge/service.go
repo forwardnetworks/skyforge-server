@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"encore.dev"
@@ -2373,9 +2374,13 @@ func initService() (*Service, error) {
 		log.Printf("LDAP not configured; using local admin only")
 	}
 	sessionManager := NewSessionManager(cfg.SessionSecret, cfg.SessionCookie, cfg.SessionTTL, cfg.CookieSecure, cfg.CookieDomain)
-	oidcClient, err := initOIDCClient(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("oidc init failed: %w", err)
+	oidcClient, oidcErr := initOIDCClient(cfg)
+	if oidcErr != nil {
+		// OIDC initialization depends on the provider being reachable (usually in-cluster Dex).
+		// We've observed transient Service VIP routing failures (kube-proxy replacement) that
+		// make `http://dex:5556/...` time out even though the Dex pod IP is reachable. Failing
+		// hard here crashloops the whole API; instead, start without OIDC and retry later.
+		rlog.Error("oidc init failed; continuing without oidc until it recovers", "err", oidcErr)
 	}
 	var (
 		workspaceStore workspacesStore
@@ -2384,7 +2389,7 @@ func initService() (*Service, error) {
 		db             *sql.DB
 	)
 
-	db, err = openSkyforgeDB(context.Background())
+	db, err := openSkyforgeDB(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("postgres open failed: %w", err)
 	}
@@ -2408,13 +2413,18 @@ func initService() (*Service, error) {
 	svc := &Service{
 		cfg:            cfg,
 		auth:           auth,
-		oidc:           oidcClient,
 		sessionManager: sessionManager,
 		workspaceStore: workspaceStore,
 		awsStore:       awsStore,
 		userStore:      userStore,
 		box:            box,
 		db:             db,
+	}
+	if oidcClient != nil {
+		svc.oidc.Store(oidcClient)
+	}
+	if oidcErr != nil && oidcIsConfigured(cfg) {
+		go svc.retryOIDCInit()
 	}
 	ensurePGNotifyHub(db)
 	// Ensure the shared blueprint catalog exists for Gitea Explore even before any
@@ -2467,7 +2477,7 @@ type SessionManager struct {
 type Service struct {
 	cfg            Config
 	auth           *LDAPAuthenticator
-	oidc           *OIDCClient
+	oidc           atomic.Pointer[OIDCClient]
 	sessionManager *SessionManager
 	workspaceStore workspacesStore
 	awsStore       awsSSOTokenStore

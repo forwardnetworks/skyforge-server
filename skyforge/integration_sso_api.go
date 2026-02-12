@@ -22,7 +22,7 @@ func (s *Service) redirectToReauth(w http.ResponseWriter, r *http.Request) {
 		requestURI = "/"
 	}
 	externalNext := publicAPIPrefix + requestURI
-	if s != nil && s.oidc != nil {
+	if s != nil && s.oidcClient() != nil {
 		http.Redirect(
 			w,
 			r,
