@@ -116,7 +116,19 @@ func injectNetlabC9sVrnetlabStartupConfig(
 		if dpIntfs > 0 {
 			modified = true
 		}
-		if options.NativeConfigModesEnabled && supportsNetlabConfigMode(device, mode) {
+		// Keep NX-OS on legacy `netlab initial` (Ansible) until native startup/sh support is validated.
+		// Remove any startup-config mount/reference so vrnetlab does not try to apply topology config at boot.
+		if device == "nxos" {
+			if s, ok := cfg["startup-config"].(string); ok && strings.TrimSpace(s) != "" {
+				delete(cfg, "startup-config")
+				modified = true
+				log.Infof("c9s: nxos startup-config removed (legacy netlab initial path): %s", nodeName)
+			}
+			cfg["binds"] = removeClabBindPath(cfg["binds"], startupPath)
+			nodesAny[node] = cfg
+			continue
+		}
+		if options.NativeConfigModesEnabled && mode != "ansible" && supportsNetlabConfigMode(device, mode) {
 			switch mode {
 			case "sh":
 				// Linux/EOS/FRR use native shell/script modes elsewhere (linux scripts runner + NOS post-up).
@@ -146,6 +158,11 @@ func injectNetlabC9sVrnetlabStartupConfig(
 				nativeStartupBinds++
 				continue
 			}
+		}
+		if mode == "ansible" {
+			// Legacy netlab initial path: do not inject full startup-config snippets.
+			nodesAny[node] = cfg
+			continue
 		}
 
 		// Find the netlab-generated snippet ConfigMap for this node (from mounts).
@@ -199,21 +216,21 @@ func injectNetlabC9sVrnetlabStartupConfig(
 		})
 	}
 
-		if len(overrideData) == 0 {
-			if !modified {
-				return topologyYAML, nodeMounts, nil
-			}
-			topology["nodes"] = nodesAny
-			topo["topology"] = topology
-			out, err := yaml.Marshal(topo)
-			if err != nil {
-				return nil, nil, fmt.Errorf("encode clab.yml: %w", err)
-			}
-			if nativeStartupBinds > 0 {
-				log.Infof("c9s: vrnetlab startup-config bind added (startup.partial.config): nodes=%d", nativeStartupBinds)
-			}
-			return out, nodeMounts, nil
+	if len(overrideData) == 0 {
+		if !modified {
+			return topologyYAML, nodeMounts, nil
 		}
+		topology["nodes"] = nodesAny
+		topo["topology"] = topology
+		out, err := yaml.Marshal(topo)
+		if err != nil {
+			return nil, nil, fmt.Errorf("encode clab.yml: %w", err)
+		}
+		if nativeStartupBinds > 0 {
+			log.Infof("c9s: vrnetlab startup-config bind added (startup.partial.config): nodes=%d", nativeStartupBinds)
+		}
+		return out, nodeMounts, nil
+	}
 	if err := kubeUpsertConfigMap(ctx, ns, overrideCM, overrideData, labels); err != nil {
 		return nil, nil, err
 	}
@@ -660,6 +677,76 @@ func appendUniqueClabBind(raw any, bind string) []any {
 	}
 }
 
+func removeClabBindPath(raw any, filePath string) []any {
+	filePath = strings.TrimSpace(filePath)
+	if filePath == "" {
+		switch v := raw.(type) {
+		case []any:
+			return v
+		case []string:
+			out := make([]any, 0, len(v))
+			for _, s := range v {
+				s = strings.TrimSpace(s)
+				if s != "" {
+					out = append(out, s)
+				}
+			}
+			return out
+		case string:
+			s := strings.TrimSpace(v)
+			if s == "" {
+				return nil
+			}
+			return []any{s}
+		default:
+			return nil
+		}
+	}
+
+	keep := func(bind string) bool {
+		bind = strings.TrimSpace(bind)
+		if bind == "" {
+			return false
+		}
+		parts := strings.Split(bind, ":")
+		if len(parts) < 2 {
+			return true
+		}
+		target := strings.TrimSpace(parts[1])
+		return target != filePath
+	}
+
+	switch v := raw.(type) {
+	case nil:
+		return nil
+	case string:
+		if keep(v) {
+			return []any{strings.TrimSpace(v)}
+		}
+		return nil
+	case []any:
+		out := make([]any, 0, len(v))
+		for _, item := range v {
+			s := strings.TrimSpace(fmt.Sprintf("%v", item))
+			if keep(s) {
+				out = append(out, s)
+			}
+		}
+		return out
+	case []string:
+		out := make([]any, 0, len(v))
+		for _, item := range v {
+			s := strings.TrimSpace(item)
+			if keep(s) {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
 func extractNetlabConfigModeOverrides(setOverrides []string) map[string]string {
 	out := map[string]string{}
 	for _, raw := range setOverrides {
@@ -706,26 +793,37 @@ func extractNetlabConfigModeOverrides(setOverrides []string) map[string]string {
 	return out
 }
 
-var defaultNetlabConfigModesByDevice = map[string]string{
+var defaultNetlabConfigModesByDeviceCatalog = map[string]string{
+	// This map must match the netlab generator defaults at
+	// components/server/images/netlab-generator/defaults.yml.
+	//
+	// Unspecified devices fall back to ansible (netlab initial).
+	"linux":    "sh",
 	"eos":      "sh",
 	"frr":      "sh",
-	"linux":    "sh",
+	"iol":      "startup",
+	"ioll2":    "startup",
+	"dellos10": "startup",
 	"ios":      "startup",
 	"junos":    "startup",
-	"dellos10": "startup",
 	"arubacx":  "startup",
 }
 
-func effectiveNetlabConfigModeByDevice(setOverrides []string) map[string]string {
-	out := map[string]string{}
-	for k, v := range defaultNetlabConfigModesByDevice {
+func defaultNetlabConfigModesByDevice() map[string]string {
+	out := make(map[string]string, len(defaultNetlabConfigModesByDeviceCatalog))
+	for k, v := range defaultNetlabConfigModesByDeviceCatalog {
 		out[k] = v
 	}
+	return out
+}
+
+func effectiveNetlabConfigModeByDevice(setOverrides []string) map[string]string {
+	out := defaultNetlabConfigModesByDevice()
 	for k, v := range extractNetlabConfigModeOverrides(setOverrides) {
 		if strings.TrimSpace(k) == "" || strings.TrimSpace(v) == "" {
 			continue
 		}
-		out[k] = v
+		out[k] = strings.ToLower(strings.TrimSpace(v))
 	}
 	return out
 }
@@ -748,7 +846,7 @@ var netlabConfigModeParentByDevice = map[string]string{
 func effectiveNetlabConfigModeForDevice(device string, modeByDevice map[string]string) string {
 	device = strings.ToLower(strings.TrimSpace(device))
 	if device == "" || len(modeByDevice) == 0 {
-		return ""
+		return "ansible"
 	}
 	seen := map[string]bool{}
 	cur := device
@@ -758,11 +856,61 @@ func effectiveNetlabConfigModeForDevice(device string, modeByDevice map[string]s
 		}
 		seen[cur] = true
 		if v := strings.ToLower(strings.TrimSpace(modeByDevice[cur])); v != "" {
+			if normalized := normalizeNetlabConfigMode(v); normalized != "" {
+				return normalized
+			}
 			return v
 		}
 		cur = strings.ToLower(strings.TrimSpace(netlabConfigModeParentByDevice[cur]))
 	}
-	return ""
+	return "ansible"
+}
+
+func resolveNetlabConfigModeForDevice(device string, defaultsByDevice, overridesByDevice map[string]string) (mode string, source string, valid bool) {
+	device = strings.ToLower(strings.TrimSpace(device))
+	if device == "" {
+		return "ansible", "fallback", true
+	}
+	seen := map[string]bool{}
+	chain := make([]string, 0, 4)
+	cur := device
+	for cur != "" {
+		if seen[cur] {
+			break
+		}
+		seen[cur] = true
+		chain = append(chain, cur)
+		cur = strings.ToLower(strings.TrimSpace(netlabConfigModeParentByDevice[cur]))
+	}
+	for _, key := range chain {
+		if raw := strings.ToLower(strings.TrimSpace(overridesByDevice[key])); raw != "" {
+			if normalized := normalizeNetlabConfigMode(raw); normalized != "" {
+				return normalized, "override", true
+			}
+			return raw, "override", false
+		}
+	}
+	for _, key := range chain {
+		if raw := strings.ToLower(strings.TrimSpace(defaultsByDevice[key])); raw != "" {
+			if normalized := normalizeNetlabConfigMode(raw); normalized != "" {
+				return normalized, "defaults", true
+			}
+			return raw, "defaults", false
+		}
+	}
+	return "ansible", "fallback", true
+}
+
+func normalizeNetlabConfigMode(mode string) string {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	switch mode {
+	case "ansible", "legacy", "initial", "netlab-initial":
+		return "ansible"
+	case "sh", "startup":
+		return mode
+	default:
+		return ""
+	}
 }
 
 func deviceInNetlabFamily(device, family string) bool {
@@ -795,11 +943,13 @@ func deviceInNetlabFamily(device, family string) bool {
 
 func supportsNetlabConfigMode(device, mode string) bool {
 	device = strings.ToLower(strings.TrimSpace(device))
-	mode = strings.ToLower(strings.TrimSpace(mode))
+	mode = normalizeNetlabConfigMode(mode)
 	if device == "" || mode == "" {
 		return false
 	}
 	switch mode {
+	case "ansible":
+		return true
 	case "sh":
 		return device == "eos" || device == "frr" || device == "linux"
 	case "startup":
@@ -864,5 +1014,5 @@ func shouldUseNativeNetlabConfigModeForNode(kind, image string, options netlabC9
 	}
 	device := netlabDeviceKeyForClabNode(kind, image)
 	mode := effectiveNetlabConfigModeForDevice(device, options.DeviceConfigMode)
-	return supportsNetlabConfigMode(device, mode)
+	return mode != "ansible" && supportsNetlabConfigMode(device, mode)
 }

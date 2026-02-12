@@ -256,7 +256,12 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 			setOverrides = append(setOverrides, v)
 		}
 	}
+	defaultModeByDevice := defaultNetlabConfigModesByDevice()
+	overrideModeByDevice := extractNetlabConfigModeOverrides(setOverrides)
 	modeByDevice := effectiveNetlabConfigModeByDevice(setOverrides)
+	if err := validateAndLogNetlabConfigModesForTopology(topologyBytes, defaultModeByDevice, overrideModeByDevice, modeByDevice, log); err != nil {
+		return err
+	}
 
 	// Persist the node name mapping (original ↔ sanitized) so post-deploy steps
 	// (netlab initial applier, debug tooling) can consistently address Kubernetes
@@ -428,26 +433,26 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	//
 	// We run it after early Forward topology upload so Forward can start reachability
 	// checks while configuration is being applied, but before starting Forward collection.
-		enableNetlabInitial := envBool(spec.Environment, "SKYFORGE_NETLAB_C9S_ENABLE_NETLAB_INITIAL", true)
-		if enableNetlabInitial && nativeConfigModesEnabled {
-			// If all nodes are configured by netlab-native mechanisms (startup-config/scripts),
-			// running `netlab initial` is redundant and can cause repeated config application
-			// (for example duplicated snippets or partial startup configs getting overwritten).
-			//
-			// Allow explicit per-run override to keep existing escape hatches.
-			if _, explicit := spec.Environment["SKYFORGE_NETLAB_C9S_ENABLE_NETLAB_INITIAL"]; !explicit {
-				if shouldSkipNetlabInitialForTopology(topologyBytes, modeByDevice) {
-					enableNetlabInitial = false
-					if log != nil {
-						log.Infof("c9s: netlab initial skipped (all nodes use netlab_config_mode startup/sh)")
-					}
+	enableNetlabInitial := envBool(spec.Environment, "SKYFORGE_NETLAB_C9S_ENABLE_NETLAB_INITIAL", true)
+	if enableNetlabInitial && nativeConfigModesEnabled {
+		// If all nodes are configured by netlab-native mechanisms (startup-config/scripts),
+		// running `netlab initial` is redundant and can cause repeated config application
+		// (for example duplicated snippets or partial startup configs getting overwritten).
+		//
+		// Allow explicit per-run override to keep existing escape hatches.
+		if _, explicit := spec.Environment["SKYFORGE_NETLAB_C9S_ENABLE_NETLAB_INITIAL"]; !explicit {
+			if shouldSkipNetlabInitialForTopology(topologyBytes, modeByDevice) {
+				enableNetlabInitial = false
+				if log != nil {
+					log.Infof("c9s: netlab initial skipped (all nodes use netlab_config_mode startup/sh)")
 				}
 			}
 		}
-		if enableNetlabInitial {
-			// Gate netlab initial on SSH readiness. Netlab initial relies on SSH/NETCONF access
-			// to push config. Many vrnetlab-based nodes become "Running" long before they accept
-			// SSH logins, and starting netlab initial too early results in authentication errors
+	}
+	if enableNetlabInitial {
+		// Gate netlab initial on SSH readiness. Netlab initial relies on SSH/NETCONF access
+		// to push config. Many vrnetlab-based nodes become "Running" long before they accept
+		// SSH logins, and starting netlab initial too early results in authentication errors
 		// (devices not fully booted yet).
 		if graph != nil {
 			sshReadySeconds := envInt(spec.Environment, "SKYFORGE_NETLAB_INITIAL_SSH_READY_SECONDS", envInt(spec.Environment, "SKYFORGE_FORWARD_SSH_READY_SECONDS", defaultForwardSSHReadySeconds))
@@ -561,21 +566,14 @@ func shouldSkipNetlabInitialForTopology(topologyYAML []byte, modeByDevice map[st
 		image := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["image"])))
 		device := netlabDeviceKeyForClabNode(kind, image)
 
-		// NX-OS runs in Skyforge rely on injected startup-config snippets for initial
-		// provisioning. Keep netlab initial disabled when startup-config is present to
-		// avoid applier-time template lookup failures for lag/snmp_config modules.
-		if device == "nxos" {
-			if s, ok := cfg["startup-config"].(string); ok && strings.TrimSpace(s) != "" {
-				continue
-			}
-			return false
-		}
-
 		mode := effectiveNetlabConfigModeForDevice(device, modeByDevice)
 		if !supportsNetlabConfigMode(device, mode) {
 			return false
 		}
 		switch mode {
+		case "ansible":
+			// Any ansible-mode node means we must run `netlab initial`.
+			return false
 		case "startup":
 			if s, ok := cfg["startup-config"].(string); !ok || strings.TrimSpace(s) == "" {
 				// If netlab claims startup mode but no startup-config is present in clab.yml,
@@ -598,6 +596,74 @@ func shouldSkipNetlabInitialForTopology(topologyYAML []byte, modeByDevice map[st
 	}
 
 	return true
+}
+
+func validateAndLogNetlabConfigModesForTopology(topologyYAML []byte, defaultsByDevice, overridesByDevice, modeByDevice map[string]string, log Logger) error {
+	if len(topologyYAML) == 0 {
+		return nil
+	}
+	if log == nil {
+		log = noopLogger{}
+	}
+
+	var topo map[string]any
+	if err := yaml.Unmarshal(topologyYAML, &topo); err != nil {
+		return fmt.Errorf("parse topology for mode validation: %w", err)
+	}
+	topology, _ := topo["topology"].(map[string]any)
+	nodesAny, _ := topology["nodes"].(map[string]any)
+	if len(nodesAny) == 0 {
+		return nil
+	}
+
+	errs := make([]string, 0)
+	modeCounts := map[string]int{}
+	for nodeNameAny, nodeAny := range nodesAny {
+		nodeName := strings.TrimSpace(fmt.Sprintf("%v", nodeNameAny))
+		cfg, ok := nodeAny.(map[string]any)
+		if !ok || cfg == nil || nodeName == "" {
+			continue
+		}
+		kind := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["kind"])))
+		image := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["image"])))
+		device := netlabDeviceKeyForClabNode(kind, image)
+
+		mode, source, valid := resolveNetlabConfigModeForDevice(device, defaultsByDevice, overridesByDevice)
+		if !valid {
+			errs = append(errs, fmt.Sprintf("node %s device %s has invalid netlab_config_mode %q (source=%s)", nodeName, device, mode, source))
+			continue
+		}
+		if !supportsNetlabConfigMode(device, mode) {
+			errs = append(errs, fmt.Sprintf("node %s device %s does not support netlab_config_mode %q", nodeName, device, mode))
+			continue
+		}
+		resolved := effectiveNetlabConfigModeForDevice(device, modeByDevice)
+		if resolved != mode {
+			errs = append(errs, fmt.Sprintf("node %s device %s mode resolution mismatch: effective=%q resolved=%q", nodeName, device, resolved, mode))
+			continue
+		}
+		modeCounts[mode]++
+		log.Infof("c9s: config mode resolved: node=%s device=%s mode=%s source=%s", nodeName, device, mode, source)
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("netlab config mode validation failed: %s", strings.Join(errs, "; "))
+	}
+
+	keys := make([]string, 0, len(modeCounts))
+	for k := range modeCounts {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%d", k, modeCounts[k]))
+	}
+	if len(parts) == 0 {
+		log.Infof("c9s: config mode summary: none")
+	} else {
+		log.Infof("c9s: config mode summary: %s", strings.Join(parts, " "))
+	}
+	return nil
 }
 
 func envInt(env map[string]string, key string, def int) int {

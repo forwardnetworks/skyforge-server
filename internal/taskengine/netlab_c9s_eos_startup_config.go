@@ -57,6 +57,12 @@ func injectNetlabC9sEOSStartupConfig(ctx context.Context, ns, topologyName strin
 			continue
 		}
 		image := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["image"])))
+		device := netlabDeviceKeyForClabNode(kind, image)
+		mode := effectiveNetlabConfigModeForDevice(device, options.DeviceConfigMode)
+		if mode == "ansible" {
+			log.Infof("c9s: eos startup-config injection disabled (ansible mode): %s", nodeName)
+			continue
+		}
 		if shouldUseNativeNetlabConfigModeForNode(kind, image, options) {
 			log.Infof("c9s: eos startup-config injection disabled (native netlab_config_mode): %s", nodeName)
 			continue

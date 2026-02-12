@@ -1,6 +1,14 @@
 package taskengine
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+
+	"gopkg.in/yaml.v3"
+)
 
 func TestCombineNetlabSnippets_OrderAndExtras(t *testing.T) {
 	data := map[string]string{
@@ -123,5 +131,97 @@ func TestNetlabDeviceKeyForClabNode_JunosKindAliases(t *testing.T) {
 		if got := netlabDeviceKeyForClabNode(tc.kind, ""); got != tc.want {
 			t.Fatalf("kind alias mismatch kind=%q got=%q want=%q", tc.kind, got, tc.want)
 		}
+	}
+}
+
+func TestResolveNetlabConfigModeForDevice_PreferenceAndFallback(t *testing.T) {
+	defaults := map[string]string{
+		"eos": "sh",
+		"ios": "startup",
+	}
+	overrides := map[string]string{
+		"eos": "ansible",
+	}
+
+	mode, source, valid := resolveNetlabConfigModeForDevice("ceos", defaults, overrides)
+	if !valid || mode != "ansible" || source != "override" {
+		t.Fatalf("expected ceos override ansible, got mode=%q source=%q valid=%v", mode, source, valid)
+	}
+
+	mode, source, valid = resolveNetlabConfigModeForDevice("ioll2", defaults, nil)
+	if !valid || mode != "startup" || source != "defaults" {
+		t.Fatalf("expected ioll2 defaults startup, got mode=%q source=%q valid=%v", mode, source, valid)
+	}
+
+	mode, source, valid = resolveNetlabConfigModeForDevice("nxos", defaults, nil)
+	if !valid || mode != "ansible" || source != "fallback" {
+		t.Fatalf("expected nxos fallback ansible, got mode=%q source=%q valid=%v", mode, source, valid)
+	}
+}
+
+func TestDefaultNetlabConfigModesByDeviceCatalog_MatchesGeneratorDefaultsYAML(t *testing.T) {
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatalf("runtime.Caller failed")
+	}
+	defaultsPath := filepath.Join(filepath.Dir(thisFile), "..", "..", "images", "netlab-generator", "defaults.yml")
+	data, err := os.ReadFile(defaultsPath)
+	if err != nil {
+		t.Fatalf("read defaults.yml failed: %v", err)
+	}
+
+	var doc map[string]any
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("parse defaults.yml failed: %v", err)
+	}
+
+	asMap := func(raw any) map[string]any {
+		if raw == nil {
+			return map[string]any{}
+		}
+		if m, ok := raw.(map[string]any); ok {
+			return m
+		}
+		return map[string]any{}
+	}
+
+	want := map[string]string{}
+	devices := asMap(doc["devices"])
+	for device, raw := range devices {
+		dev := strings.ToLower(strings.TrimSpace(device))
+		if dev == "" {
+			continue
+		}
+		cfg := asMap(raw)
+		clab := asMap(cfg["clab"])
+		groupVars := asMap(clab["group_vars"])
+		mode := strings.ToLower(strings.TrimSpace(asString(groupVars["netlab_config_mode"])))
+		if mode == "" {
+			continue
+		}
+		want[dev] = mode
+	}
+
+	got := defaultNetlabConfigModesByDevice()
+	if len(got) != len(want) {
+		t.Fatalf("defaults mode size mismatch: got=%d want=%d got=%#v want=%#v", len(got), len(want), got, want)
+	}
+	for k, w := range want {
+		g, ok := got[k]
+		if !ok {
+			t.Fatalf("missing defaults mode for %q", k)
+		}
+		if g != w {
+			t.Fatalf("defaults mode mismatch for %q: got=%q want=%q", k, g, w)
+		}
+	}
+}
+
+func asString(v any) string {
+	switch vv := v.(type) {
+	case string:
+		return strings.TrimSpace(vv)
+	default:
+		return ""
 	}
 }

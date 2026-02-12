@@ -1,6 +1,7 @@
 package taskengine
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -118,7 +119,7 @@ func TestInjectEOSDefaultSSHUser_AppendsWhenNoEnd(t *testing.T) {
 	}
 }
 
-func TestShouldSkipNetlabInitialForTopology_AllNativeModesIncludingNXOSStartup(t *testing.T) {
+func TestShouldSkipNetlabInitialForTopology_NXOSAlwaysRequiresInitial(t *testing.T) {
 	topology := []byte(`
 topology:
   nodes:
@@ -134,8 +135,8 @@ topology:
 		"nxos":  "startup",
 		"linux": "sh",
 	}
-	if !shouldSkipNetlabInitialForTopology(topology, modeByDevice) {
-		t.Fatalf("expected netlab initial to be skipped for nxos(startup)+linux(sh)")
+	if shouldSkipNetlabInitialForTopology(topology, modeByDevice) {
+		t.Fatalf("expected netlab initial to remain enabled when topology includes nxos")
 	}
 }
 
@@ -152,5 +153,29 @@ topology:
 	}
 	if shouldSkipNetlabInitialForTopology(topology, modeByDevice) {
 		t.Fatalf("expected netlab initial to remain enabled when nxos startup-config is missing")
+	}
+}
+
+func TestValidateAndLogNetlabConfigModesForTopology_RejectsUnsupportedPair(t *testing.T) {
+	topology := []byte(`
+topology:
+  nodes:
+    s1:
+      kind: nxos
+      image: ghcr.io/forwardnetworks/vrnetlab/vr-n9kv:9.3.14
+`)
+	defaults := map[string]string{
+		"nxos": "startup",
+	}
+	overrides := map[string]string{}
+	effective := map[string]string{
+		"nxos": "startup",
+	}
+	err := validateAndLogNetlabConfigModesForTopology(topology, defaults, overrides, effective, noopLogger{})
+	if err == nil {
+		t.Fatalf("expected unsupported nxos startup mode to fail validation")
+	}
+	if !strings.Contains(err.Error(), "does not support") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
