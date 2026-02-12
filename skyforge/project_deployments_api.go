@@ -783,6 +783,20 @@ WHERE workspace_id=$1 AND deployment_id=$2 AND status IN ('queued','running')`, 
 				if forwardCfg == nil {
 					forwardCfg, _ = s.forwardConfigForUser(ctx, pc.claims.Username)
 				}
+				// Fallback: deployment might reference a collector config owned by another
+				// workspace member (for example, deployment creator), so the current actor's
+				// user-scoped credential lookup can legitimately be empty.
+				if forwardCfg == nil && collectorConfigID != "" {
+					if ownerUsername, err := s.forwardCollectorConfigOwner(ctx, collectorConfigID); err == nil && ownerUsername != "" && !strings.EqualFold(ownerUsername, pc.claims.Username) {
+						forwardCfg, _ = s.forwardConfigForUserCollectorConfigID(ctx, ownerUsername, collectorConfigID)
+						if forwardCfg == nil {
+							forwardCfg, _ = s.forwardConfigForUser(ctx, ownerUsername)
+						}
+					}
+				}
+				if forwardCfg == nil && !strings.EqualFold(strings.TrimSpace(existing.CreatedBy), pc.claims.Username) {
+					forwardCfg, _ = s.forwardConfigForUser(ctx, strings.TrimSpace(existing.CreatedBy))
+				}
 				if forwardCfg == nil {
 					log.Printf("deployments delete: skipping Forward network cleanup for deployment %s (%s): credentials not configured", existing.ID, networkID)
 				} else {
@@ -811,6 +825,27 @@ WHERE workspace_id=$1 AND deployment_id=$2 AND status IN ('queued','running')`, 
 		return nil, errs.B().Code(errs.NotFound).Msg("deployment not found").Err()
 	}
 	return &WorkspaceDeploymentActionResponse{WorkspaceID: pc.workspace.ID, Deployment: existing}, nil
+}
+
+func (s *Service) forwardCollectorConfigOwner(ctx context.Context, collectorConfigID string) (string, error) {
+	if s.db == nil {
+		return "", errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	collectorConfigID = strings.TrimSpace(collectorConfigID)
+	if collectorConfigID == "" {
+		return "", nil
+	}
+	ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	var owner string
+	err := s.db.QueryRowContext(ctxReq, `SELECT COALESCE(username,'') FROM sf_user_forward_collectors WHERE id=$1`, collectorConfigID).Scan(&owner)
+	if err != nil {
+		if err == sql.ErrNoRows || isMissingDBRelation(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.ToLower(strings.TrimSpace(owner)), nil
 }
 
 type WorkspaceDeploymentStartRequest struct {
