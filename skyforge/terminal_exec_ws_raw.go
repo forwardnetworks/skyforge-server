@@ -1,6 +1,7 @@
 package skyforge
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -651,7 +652,8 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 	defer stdinR.Close()
 	defer stdinW.Close()
 
-	outCh := make(chan terminalServerMsg, 256)
+	// Buffer outgoing WS messages to avoid stalling the k8s exec stream on brief client hiccups.
+	outCh := make(chan terminalServerMsg, 1024)
 	var outWg sync.WaitGroup
 	outWg.Add(1)
 	go func() {
@@ -661,12 +663,64 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 		}
 	}()
 
+	type outputBuffers struct {
+		mu     sync.Mutex
+		stdout bytes.Buffer
+		stderr bytes.Buffer
+	}
+	ob := &outputBuffers{}
+
+	flushOnce := func() {
+		var outStdout, outStderr string
+		ob.mu.Lock()
+		if ob.stdout.Len() > 0 {
+			outStdout = ob.stdout.String()
+			ob.stdout.Reset()
+		}
+		if ob.stderr.Len() > 0 {
+			outStderr = ob.stderr.String()
+			ob.stderr.Reset()
+		}
+		ob.mu.Unlock()
+		if outStdout != "" {
+			outCh <- terminalServerMsg{Type: "output", Data: outStdout, Stream: "stdout"}
+		}
+		if outStderr != "" {
+			outCh <- terminalServerMsg{Type: "output", Data: outStderr, Stream: "stderr"}
+		}
+	}
+
+	flushCtx, flushCancel := context.WithCancel(ctx)
+	var flushWg sync.WaitGroup
+	flushWg.Add(1)
+	go func() {
+		defer flushWg.Done()
+		// Coalesce tiny writes (notably per-character echoes) into fewer WS frames.
+		t := time.NewTicker(15 * time.Millisecond)
+		defer t.Stop()
+		for {
+			select {
+			case <-flushCtx.Done():
+				return
+			case <-t.C:
+				flushOnce()
+			}
+		}
+	}()
+
 	writeBytes := func(stream string) io.Writer {
 		return writerFunc(func(p []byte) (int, error) {
 			if len(p) == 0 {
 				return 0, nil
 			}
-			outCh <- terminalServerMsg{Type: "output", Data: string(p), Stream: stream}
+			ob.mu.Lock()
+			switch stream {
+			case "stderr":
+				_, _ = ob.stderr.Write(p)
+			default:
+				_, _ = ob.stdout.Write(p)
+			}
+			ob.mu.Unlock()
 			return len(p), nil
 		})
 	}
@@ -719,6 +773,9 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 		Tty:               true,
 		TerminalSizeQueue: sizeQ,
 	})
+	flushCancel()
+	flushWg.Wait()
+	flushOnce()
 	close(outCh)
 	outWg.Wait()
 
