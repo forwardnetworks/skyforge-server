@@ -56,7 +56,7 @@ func TestForwardEnableSNMPPerfCollectionPatchSuccess(t *testing.T) {
 			return
 		}
 		body := readBody(t, r)
-		if v, ok := body["globalSnmpPerfCollectionEnabled"].(bool); !ok || !v {
+		if v, ok := body["enabled"].(bool); !ok || !v {
 			http.Error(w, "bad payload", http.StatusBadRequest)
 			return
 		}
@@ -70,7 +70,7 @@ func TestForwardEnableSNMPPerfCollectionPatchSuccess(t *testing.T) {
 	}
 }
 
-func TestForwardEnableSNMPPerfCollectionFallbackPayloads(t *testing.T) {
+func TestForwardEnableSNMPPerfCollectionMethodOnlyPatch(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/networks/net-2/performance/settings" {
 			http.NotFound(w, r)
@@ -81,8 +81,7 @@ func TestForwardEnableSNMPPerfCollectionFallbackPayloads(t *testing.T) {
 			return
 		}
 		body := readBody(t, r)
-		// Accept only one of the fallback payload keys so the client must retry payload variants.
-		if v, ok := body["snmpPerformanceCollectionEnabled"].(bool); !ok || !v {
+		if v, ok := body["enabled"].(bool); !ok || !v {
 			http.Error(w, "bad payload", http.StatusBadRequest)
 			return
 		}

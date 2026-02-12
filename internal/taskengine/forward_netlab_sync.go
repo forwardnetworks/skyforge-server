@@ -586,12 +586,6 @@ RETURNING id::text
 		}
 	}
 
-	// Ensure Forward network performance settings have global SNMP perf collection enabled.
-	// This must run after collector assignment.
-	if err := forwardEnableSNMPPerfCollection(ctx, client, networkID); err != nil {
-		return cfgAny, err
-	}
-
 	snmpCredentialID := getString(forwardSnmpCredentialIDKey)
 	if snmpCredentialID == "" && e.cfg.Forward.SNMPPlaceholderEnabled {
 		// Use the per-user trap token as the single community for both polling and traps.
@@ -607,6 +601,13 @@ RETURNING id::text
 			snmpCredentialID = cred.ID
 			cfgAny[forwardSnmpCredentialIDKey] = snmpCredentialID
 			changed = true
+		}
+	}
+	// Enable SNMP performance collection only after an SNMP credential exists on the network.
+	// Forward rejects this setting when credentials are not configured yet.
+	if strings.TrimSpace(snmpCredentialID) != "" {
+		if err := forwardEnableSNMPPerfCollection(ctx, client, networkID); err != nil {
+			return cfgAny, err
 		}
 	}
 

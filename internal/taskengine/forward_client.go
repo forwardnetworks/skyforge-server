@@ -202,42 +202,18 @@ func forwardEnableSNMPPerfCollection(ctx context.Context, c *forwardClient, netw
 		return fmt.Errorf("forward network id is required")
 	}
 	path := "/api/networks/" + url.PathEscape(networkID) + "/performance/settings"
-
-	// Forward has changed this schema across versions/builds. Try known payload keys
-	// while using PATCH (current documented method for this endpoint).
-	payloads := []map[string]any{
-		{"globalSnmpPerfCollectionEnabled": true},
-		{"enableGlobalSnmpPerfCollection": true},
-		{"snmpPerfCollectionEnabled": true},
-		{"enableSnmpPerfCollection": true},
-		{"snmpPerformanceCollectionEnabled": true},
-		{"globalSnmpPerformanceCollectionEnabled": true},
-		{"global": map[string]any{"snmpPerfCollectionEnabled": true}},
+	resp, body, err := c.doJSON(ctx, http.MethodPatch, path, nil, map[string]any{"enabled": true})
+	if err != nil {
+		return fmt.Errorf("forward performance settings update failed: %v", err)
 	}
-	methods := []string{http.MethodPatch}
-
-	lastFailure := ""
-	for _, payload := range payloads {
-		for _, method := range methods {
-			resp, body, err := c.doJSON(ctx, method, path, nil, payload)
-			if err != nil {
-				lastFailure = err.Error()
-				continue
-			}
-			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-				return nil
-			}
-			msg := strings.TrimSpace(string(body))
-			if msg == "" {
-				msg = resp.Status
-			}
-			lastFailure = fmt.Sprintf("%s %s failed: %s", method, path, msg)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		msg := strings.TrimSpace(string(body))
+		if msg == "" {
+			msg = resp.Status
 		}
+		return fmt.Errorf("forward performance settings update failed: PATCH %s failed: %s", path, msg)
 	}
-	if lastFailure == "" {
-		lastFailure = "unknown error"
-	}
-	return fmt.Errorf("forward performance settings update failed: %s", lastFailure)
+	return nil
 }
 
 func forwardListCollectors(ctx context.Context, c *forwardClient) ([]forwardCollector, error) {
