@@ -70,21 +70,18 @@ func TestForwardEnableSNMPPerfCollectionPatchSuccess(t *testing.T) {
 	}
 }
 
-func TestForwardEnableSNMPPerfCollectionFallbackToPut(t *testing.T) {
+func TestForwardEnableSNMPPerfCollectionFallbackPayloads(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/networks/net-2/performance/settings" {
 			http.NotFound(w, r)
 			return
 		}
-		if r.Method == http.MethodPatch {
-			http.Error(w, "patch unsupported", http.StatusMethodNotAllowed)
-			return
-		}
-		if r.Method != http.MethodPut {
+		if r.Method != http.MethodPatch {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		body := readBody(t, r)
+		// Accept only one of the fallback payload keys so the client must retry payload variants.
 		if v, ok := body["snmpPerformanceCollectionEnabled"].(bool); !ok || !v {
 			http.Error(w, "bad payload", http.StatusBadRequest)
 			return

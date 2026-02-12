@@ -516,12 +516,6 @@ func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *work
 		changed = true
 	}
 
-	// Ensure Forward network performance settings have global SNMP perf collection enabled.
-	// This must be done for every deployment network so capacity/perf endpoints have data.
-	if err := forwardEnableSNMPPerfCollection(ctx, client, networkID); err != nil {
-		return cfgAny, err
-	}
-
 	// Ensure the network is registered in Skyforge's saved networks table so capacity/assurance
 	// endpoints that use :networkRef have something to reference.
 	if e != nil && e.db != nil {
@@ -576,16 +570,26 @@ RETURNING id::text
 	if collectorUser == "" {
 		collectorUser = strings.TrimSpace(forwardCfg.CollectorUser)
 	}
-	if collectorUser != "" {
-		status, err := forwardGetCollectorStatus(ctx, client, networkID)
-		if err != nil {
+
+	// A collector must be assigned to the Forward network before performance settings can
+	// be patched on some Forward versions/builds.
+	status, err := forwardGetCollectorStatus(ctx, client, networkID)
+	if err != nil {
+		return cfgAny, err
+	}
+	if status != nil && !status.IsSet {
+		if collectorUser == "" {
+			return cfgAny, fmt.Errorf("forward collector is not configured for network %s", networkID)
+		}
+		if err := forwardSetCollector(ctx, client, networkID, collectorUser); err != nil {
 			return cfgAny, err
 		}
-		if status != nil && !status.IsSet {
-			if err := forwardSetCollector(ctx, client, networkID, collectorUser); err != nil {
-				return cfgAny, err
-			}
-		}
+	}
+
+	// Ensure Forward network performance settings have global SNMP perf collection enabled.
+	// This must run after collector assignment.
+	if err := forwardEnableSNMPPerfCollection(ctx, client, networkID); err != nil {
+		return cfgAny, err
 	}
 
 	snmpCredentialID := getString(forwardSnmpCredentialIDKey)

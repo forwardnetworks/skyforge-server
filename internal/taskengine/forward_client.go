@@ -204,7 +204,7 @@ func forwardEnableSNMPPerfCollection(ctx context.Context, c *forwardClient, netw
 	path := "/api/networks/" + url.PathEscape(networkID) + "/performance/settings"
 
 	// Forward has changed this schema across versions/builds. Try known payload keys
-	// and both PATCH/PUT to keep this operation robust.
+	// while using PATCH (current documented method for this endpoint).
 	payloads := []map[string]any{
 		{"globalSnmpPerfCollectionEnabled": true},
 		{"enableGlobalSnmpPerfCollection": true},
@@ -214,7 +214,7 @@ func forwardEnableSNMPPerfCollection(ctx context.Context, c *forwardClient, netw
 		{"globalSnmpPerformanceCollectionEnabled": true},
 		{"global": map[string]any{"snmpPerfCollectionEnabled": true}},
 	}
-	methods := []string{http.MethodPatch, http.MethodPut}
+	methods := []string{http.MethodPatch}
 
 	lastFailure := ""
 	for _, payload := range payloads {
