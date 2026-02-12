@@ -772,45 +772,71 @@ WHERE workspace_id=$1 AND deployment_id=$2 AND status IN ('queued','running')`, 
 		if raw, ok := cfgAny[forwardNetworkIDKey]; ok {
 			networkID := strings.TrimSpace(fmt.Sprintf("%v", raw))
 			if networkID != "" {
-				// Forward config is user-scoped (Collector sidebar), not workspace-scoped.
-				// Prefer the per-deployment collector selection (forwardCollectorId) and fall back
-				// to legacy single-collector credentials when missing.
 				collectorConfigID := strings.TrimSpace(fmt.Sprintf("%v", cfgAny["forwardCollectorId"]))
-				forwardCfg := (*forwardCredentials)(nil)
+				if collectorConfigID == "" {
+					if v, err := s.forwardCollectorConfigIDForWorkspaceNetwork(ctx, pc.workspace.ID, networkID); err == nil && v != "" {
+						collectorConfigID = v
+					}
+				}
+
+				candidates := []string{
+					pc.claims.Username,
+					strings.TrimSpace(existing.CreatedBy),
+				}
 				if collectorConfigID != "" {
-					forwardCfg, _ = s.forwardConfigForUserCollectorConfigID(ctx, pc.claims.Username, collectorConfigID)
-				}
-				if forwardCfg == nil {
-					forwardCfg, _ = s.forwardConfigForUser(ctx, pc.claims.Username)
-				}
-				// Fallback: deployment might reference a collector config owned by another
-				// workspace member (for example, deployment creator), so the current actor's
-				// user-scoped credential lookup can legitimately be empty.
-				if forwardCfg == nil && collectorConfigID != "" {
-					if ownerUsername, err := s.forwardCollectorConfigOwner(ctx, collectorConfigID); err == nil && ownerUsername != "" && !strings.EqualFold(ownerUsername, pc.claims.Username) {
-						forwardCfg, _ = s.forwardConfigForUserCollectorConfigID(ctx, ownerUsername, collectorConfigID)
-						if forwardCfg == nil {
-							forwardCfg, _ = s.forwardConfigForUser(ctx, ownerUsername)
-						}
+					if ownerUsername, err := s.forwardCollectorConfigOwner(ctx, collectorConfigID); err == nil && ownerUsername != "" {
+						candidates = append(candidates, ownerUsername)
 					}
 				}
-				if forwardCfg == nil && !strings.EqualFold(strings.TrimSpace(existing.CreatedBy), pc.claims.Username) {
-					forwardCfg, _ = s.forwardConfigForUser(ctx, strings.TrimSpace(existing.CreatedBy))
-				}
-				if forwardCfg == nil {
-					log.Printf("deployments delete: skipping Forward network cleanup for deployment %s (%s): credentials not configured", existing.ID, networkID)
-				} else {
-					client, err := newForwardClient(*forwardCfg)
+
+				var forwardCfg *forwardCredentials
+				resolvedUser := ""
+				seenUsers := map[string]struct{}{}
+				for _, candidate := range candidates {
+					username := strings.ToLower(strings.TrimSpace(candidate))
+					if username == "" {
+						continue
+					}
+					if _, ok := seenUsers[username]; ok {
+						continue
+					}
+					seenUsers[username] = struct{}{}
+					cfg, err := resolveForwardCredentialsFor(
+						ctx,
+						s.db,
+						s.cfg.SessionSecret,
+						pc.workspace.ID,
+						username,
+						networkID,
+						forwardCredResolveOpts{
+							CollectorConfigID: collectorConfigID,
+						},
+					)
 					if err != nil {
-						log.Printf("deployments delete: skipping Forward network cleanup for deployment %s (%s): init client failed: %v", existing.ID, networkID, err)
-					} else {
-						delCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-						defer cancel()
-						if err := forwardDeleteNetwork(delCtx, client, networkID); err != nil {
-							log.Printf("deployments delete: Forward network cleanup failed for deployment %s (%s): %v", existing.ID, networkID, err)
-						}
+						log.Printf("deployments delete: Forward credential resolution failed for deployment %s (%s) user=%s: %v", existing.ID, networkID, username, err)
+						continue
+					}
+					if cfg != nil {
+						forwardCfg = cfg
+						resolvedUser = username
+						break
 					}
 				}
+
+				if forwardCfg == nil {
+					return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward credentials are not configured (cannot delete Forward network)").Err()
+				}
+
+				client, err := newForwardClient(*forwardCfg)
+				if err != nil {
+					return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward credentials are invalid (cannot delete Forward network)").Err()
+				}
+				delCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				defer cancel()
+				if err := forwardDeleteNetwork(delCtx, client, networkID); err != nil {
+					return nil, errs.B().Code(errs.Unavailable).Msg("failed to delete Forward network").Err()
+				}
+				log.Printf("deployments delete: Forward network cleanup succeeded for deployment %s (%s) using user=%s", existing.ID, networkID, resolvedUser)
 			}
 		}
 	}
@@ -846,6 +872,32 @@ func (s *Service) forwardCollectorConfigOwner(ctx context.Context, collectorConf
 		return "", err
 	}
 	return strings.ToLower(strings.TrimSpace(owner)), nil
+}
+
+func (s *Service) forwardCollectorConfigIDForWorkspaceNetwork(ctx context.Context, workspaceID, networkID string) (string, error) {
+	if s.db == nil {
+		return "", errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	networkID = strings.TrimSpace(networkID)
+	if workspaceID == "" || networkID == "" {
+		return "", nil
+	}
+	ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	var collectorConfigID string
+	err := s.db.QueryRowContext(ctxReq, `SELECT COALESCE(collector_config_id,'')
+FROM sf_policy_report_forward_networks
+WHERE workspace_id=$1 AND forward_network=$2
+ORDER BY updated_at DESC
+LIMIT 1`, workspaceID, networkID).Scan(&collectorConfigID)
+	if err != nil {
+		if err == sql.ErrNoRows || isMissingDBRelation(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(collectorConfigID), nil
 }
 
 type WorkspaceDeploymentStartRequest struct {
