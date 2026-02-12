@@ -45,7 +45,9 @@ type netlabC9sManifest struct {
 const defaultNetlabC9sGeneratorImage = "ghcr.io/forwardnetworks/skyforge-netlab-generator:latest"
 
 var generatedSnmpConfigTemplates = map[string]string{
-	"linux": `# no-op (keep linux hosts SNMP-free by default)`,
+	"linux": `#!/bin/sh
+# Keep Linux hosts SNMP-free; no device SNMP config is required here.
+exit 0`,
 	"arubacx": `snmp-server community {{ defaults.snmp.community }} unrestricted
 {% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
 snmp-server host {{ defaults.snmp.trap_host }} community {{ defaults.snmp.community }}
