@@ -349,13 +349,31 @@ func isNetlabTemplatePathExcluded(rel string) bool {
 	return false
 }
 
-func isNetlabAnyYAMLDir(relDir string) bool {
-	// Some directories intentionally contain multiple standalone templates rather than
-	// a "topology.yml" entrypoint per folder. For those, we include any YAML files.
-	//
-	// Today this is used for AI-generated templates.
-	relDir = strings.Trim(strings.TrimSpace(relDir), "/")
-	return relDir == "ai/generated" || strings.HasPrefix(relDir, "ai/generated/")
+func isNetlabTemplateYAMLFile(rel string) bool {
+	rel = strings.TrimPrefix(strings.TrimSpace(rel), "/")
+	if rel == "" {
+		return false
+	}
+	base := path.Base(rel)
+	if !(strings.HasSuffix(base, ".yml") || strings.HasSuffix(base, ".yaml")) {
+		return false
+	}
+
+	// Helpers/shared defaults. These are not user-selectable templates.
+	switch strings.ToLower(strings.TrimSpace(base)) {
+	case "wait_times.yml", "wait_times.yaml",
+		"warnings.yml", "warnings.yaml",
+		"topology-defaults.yml", "topology-defaults.yaml",
+		"ipv6-defaults.yml", "ipv6-defaults.yaml":
+		return false
+	}
+	if strings.HasPrefix(strings.ToLower(base), "defaults-") {
+		return false
+	}
+	if strings.HasSuffix(strings.ToLower(base), "-defaults.yml") || strings.HasSuffix(strings.ToLower(base), "-defaults.yaml") {
+		return false
+	}
+	return true
 }
 
 func listNetlabTemplatesViaGitTree(cfg Config, owner, repo, headSHA, dir string, maxResults int) ([]string, error) {
@@ -406,34 +424,12 @@ func listNetlabTemplatesViaGitTree(cfg Config, owner, repo, headSHA, dir string,
 		if isNetlabTemplatePathExcluded(rel) {
 			continue
 		}
-		base := path.Base(p)
-		// Root-level (single-file) templates.
-		if !strings.Contains(rel, "/") {
-			if strings.HasSuffix(base, ".yml") || strings.HasSuffix(base, ".yaml") {
-				results = append(results, rel)
-				if maxResults > 0 && len(results) >= maxResults {
-					return nil, fmt.Errorf("too many templates")
-				}
-			}
-			continue
-		}
-		// Folder-based templates: only include entrypoints by default.
-		if base == "topology.yml" || base == "topology.yaml" {
+
+		if isNetlabTemplateYAMLFile(rel) {
 			results = append(results, rel)
 			if maxResults > 0 && len(results) >= maxResults {
 				return nil, fmt.Errorf("too many templates")
 			}
-			continue
-		}
-		// Allow-list: directories that intentionally contain multiple single-file templates.
-		if isNetlabAnyYAMLDir(path.Dir(rel)) {
-			if strings.HasSuffix(base, ".yml") || strings.HasSuffix(base, ".yaml") {
-				results = append(results, rel)
-				if maxResults > 0 && len(results) >= maxResults {
-					return nil, fmt.Errorf("too many templates")
-				}
-			}
-			continue
 		}
 	}
 	return results, nil
@@ -460,34 +456,12 @@ func listNetlabTemplatesRecursive(cfg Config, owner, repo, branch, repoPath, rel
 		rel := path.Join(relBase, name)
 		switch entry.Type {
 		case "file":
-			if nested {
-				if isNetlabAnyYAMLDir(relBase) {
-					if strings.HasSuffix(name, ".yml") || strings.HasSuffix(name, ".yaml") {
-						if isNetlabTemplatePathExcluded(rel) {
-							continue
-						}
-						results = append(results, rel)
-						if maxResults > 0 && len(results) >= maxResults {
-							return nil, fmt.Errorf("too many templates")
-						}
-					}
-					continue
-				}
-				if name == "topology.yml" || name == "topology.yaml" {
-					if isNetlabTemplatePathExcluded(rel) {
-						continue
-					}
-					results = append(results, rel)
-					if maxResults > 0 && len(results) >= maxResults {
-						return nil, fmt.Errorf("too many templates")
-					}
-				}
+			// We intentionally allow nested single-file templates (not just topology.yml entrypoints)
+			// to support repos that store many templates in a single folder (for example module tests).
+			if isNetlabTemplatePathExcluded(rel) {
 				continue
 			}
-			if strings.HasSuffix(name, ".yml") || strings.HasSuffix(name, ".yaml") {
-				if isNetlabTemplatePathExcluded(rel) {
-					continue
-				}
+			if isNetlabTemplateYAMLFile(rel) {
 				results = append(results, rel)
 				if maxResults > 0 && len(results) >= maxResults {
 					return nil, fmt.Errorf("too many templates")

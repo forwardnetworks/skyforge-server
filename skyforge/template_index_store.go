@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const templateIndexScannerVersion = 2
+const templateIndexScannerVersion = 3
 
 type templateIndexRecord struct {
 	HeadSHA   string
