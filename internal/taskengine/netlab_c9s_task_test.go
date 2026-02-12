@@ -1,6 +1,8 @@
 package taskengine
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestPickNetlabC9sEOSConfigSnippets_OrdersKnownModules(t *testing.T) {
 	topology := "t1"
@@ -113,5 +115,42 @@ func TestInjectEOSDefaultSSHUser_AppendsWhenNoEnd(t *testing.T) {
 	want := "hostname L1\n!\nusername admin privilege 15 secret admin\nenable secret admin\naaa authentication login default local\naaa authorization exec default local\n"
 	if out != want {
 		t.Fatalf("unexpected output:\n%s", out)
+	}
+}
+
+func TestShouldSkipNetlabInitialForTopology_AllNativeModesIncludingNXOSStartup(t *testing.T) {
+	topology := []byte(`
+topology:
+  nodes:
+    s1:
+      kind: nxos
+      image: ghcr.io/forwardnetworks/vrnetlab/vr-n9kv:9.3.14
+      startup-config: /config/startup-config.cfg
+    h1:
+      kind: linux
+      image: ghcr.io/srl-labs/network-multitool:latest
+`)
+	modeByDevice := map[string]string{
+		"nxos":  "startup",
+		"linux": "sh",
+	}
+	if !shouldSkipNetlabInitialForTopology(topology, modeByDevice) {
+		t.Fatalf("expected netlab initial to be skipped for nxos(startup)+linux(sh)")
+	}
+}
+
+func TestShouldSkipNetlabInitialForTopology_NXOSWithoutStartupConfigRequiresInitial(t *testing.T) {
+	topology := []byte(`
+topology:
+  nodes:
+    s1:
+      kind: nxos
+      image: ghcr.io/forwardnetworks/vrnetlab/vr-n9kv:9.3.14
+`)
+	modeByDevice := map[string]string{
+		"nxos": "startup",
+	}
+	if shouldSkipNetlabInitialForTopology(topology, modeByDevice) {
+		t.Fatalf("expected netlab initial to remain enabled when nxos startup-config is missing")
 	}
 }

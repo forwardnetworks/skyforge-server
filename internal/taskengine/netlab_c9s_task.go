@@ -560,6 +560,17 @@ func shouldSkipNetlabInitialForTopology(topologyYAML []byte, modeByDevice map[st
 		kind := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["kind"])))
 		image := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["image"])))
 		device := netlabDeviceKeyForClabNode(kind, image)
+
+		// NX-OS runs in Skyforge rely on injected startup-config snippets for initial
+		// provisioning. Keep netlab initial disabled when startup-config is present to
+		// avoid applier-time template lookup failures for lag/snmp_config modules.
+		if device == "nxos" {
+			if s, ok := cfg["startup-config"].(string); ok && strings.TrimSpace(s) != "" {
+				continue
+			}
+			return false
+		}
+
 		mode := effectiveNetlabConfigModeForDevice(device, modeByDevice)
 		if !supportsNetlabConfigMode(device, mode) {
 			return false
