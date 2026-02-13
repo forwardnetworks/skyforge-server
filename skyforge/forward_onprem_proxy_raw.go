@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -32,6 +33,11 @@ import (
 
 const (
 	forwardOnPremProxyPrefix = "/api/forward/onprem/proxy"
+)
+
+const (
+	forwardOnPremCookiePathModePrefix = "prefix"
+	forwardOnPremCookiePathModeAlias  = "alias"
 )
 
 var forwardOnPremAutosleepState struct {
@@ -375,6 +381,11 @@ func forwardOnPremProxyPath(reqPath string) string {
 	if !strings.HasPrefix(p, "/") {
 		p = "/" + p
 	}
+	// In root-alias mode, avoid hitting upstream "/" (which sets REDIRECT_URI and
+	// can cause login redirect churn). Go straight to /login.
+	if p == "/" && forwardOnPremRootAliasesEnabled() {
+		return "/login"
+	}
 	return p
 }
 
@@ -386,6 +397,13 @@ func (s *Service) forwardOnPremProxyRaw(w http.ResponseWriter, req *http.Request
 		return
 	}
 	_ = user
+	rlog.Info("forward onprem request",
+		"path", req.URL.Path,
+		"host", req.Host,
+		"xfh", strings.TrimSpace(req.Header.Get("X-Forwarded-Host")),
+		"xfp", strings.TrimSpace(req.Header.Get("X-Forwarded-Prefix")),
+		"cookie_names", cookieHeaderNames(req.Header.Get("Cookie")),
+	)
 
 	forwardOnPremAutosleepState.initOnce.Do(forwardOnPremInitAutosleepState)
 
@@ -452,6 +470,12 @@ func (s *Service) forwardOnPremProxyRaw(w http.ResponseWriter, req *http.Request
 	if u, err := url.Parse(strings.TrimSpace(s.cfg.PublicURL)); err == nil {
 		publicScheme = strings.TrimSpace(u.Scheme)
 	}
+	redirectHost := origHost
+	if redirectHost == "" {
+		redirectHost = strings.TrimSpace(req.Header.Get("X-Forwarded-Host"))
+	}
+	rootAliasesEnabled := forwardOnPremRootAliasesEnabled()
+	cookiePathMode := forwardOnPremCookiePathMode(rootAliasesEnabled)
 	proxy.Director = func(r *http.Request) {
 		if origDirector != nil {
 			origDirector(r)
@@ -477,17 +501,16 @@ func (s *Service) forwardOnPremProxyRaw(w http.ResponseWriter, req *http.Request
 			}
 		}
 
-		// Prefer propagating the external scheme so Forward doesn't bounce users to
-		// its internal HTTPS port (8443).
-		if strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")) == "" {
-			scheme := publicScheme
-			if scheme == "" {
-				// Skyforge is almost always served over HTTPS.
-				scheme = "https"
-			}
-			r.Header.Set("X-Forwarded-Proto", scheme)
+		// Always propagate the external scheme to Forward. Intermediate proxies may
+		// set X-Forwarded-Proto=http for in-cluster hops, which can trigger
+		// self-redirect loops at /login.
+		scheme := publicScheme
+		if scheme == "" {
+			// Skyforge is almost always served over HTTPS.
+			scheme = "https"
 		}
-		if strings.TrimSpace(r.Header.Get("X-Forwarded-Port")) == "" && strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https") {
+		r.Header.Set("X-Forwarded-Proto", scheme)
+		if strings.EqualFold(scheme, "https") {
 			r.Header.Set("X-Forwarded-Port", "443")
 		}
 
@@ -495,6 +518,38 @@ func (s *Service) forwardOnPremProxyRaw(w http.ResponseWriter, req *http.Request
 		if v := strings.TrimSpace(r.Header.Get("X-Forwarded-Prefix")); v == "" {
 			r.Header.Set("X-Forwarded-Prefix", "/fwd")
 		}
+
+		// Prevent same-host cookie collisions (Skyforge and Forward both use web sessions).
+		// Keep only Forward-relevant cookies when proxying to fwd-appserver.
+		sanitizeForwardOnPremCookies(r)
+	}
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		rewriteForwardOnPremSetCookiePaths(resp, cookiePathMode)
+
+		loc := strings.TrimSpace(resp.Header.Get("Location"))
+		if loc == "" {
+			return nil
+		}
+		origLoc := loc
+		if rewritten := rewriteForwardOnPremRedirectLocation(loc, redirectHost, publicScheme, rootAliasesEnabled); strings.TrimSpace(rewritten) != "" && rewritten != loc {
+			resp.Header.Set("Location", rewritten)
+			loc = rewritten
+		}
+		if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+			upPath := ""
+			if resp.Request != nil && resp.Request.URL != nil {
+				upPath = resp.Request.URL.Path
+			}
+			rlog.Info("forward onprem redirect",
+				"status", resp.StatusCode,
+				"upstream_path", upPath,
+				"location", loc,
+				"location_orig", origLoc,
+				"root_aliases", rootAliasesEnabled,
+				"cookie_mode", cookiePathMode,
+			)
+		}
+		return nil
 	}
 	proxy.ErrorHandler = func(rw http.ResponseWriter, r *http.Request, e error) {
 		rlog.Warn("forward onprem proxy upstream error", "err", e)
@@ -548,6 +603,209 @@ func writeForwardOnPremWaking(w http.ResponseWriter, req *http.Request, err erro
 	w.WriteHeader(http.StatusServiceUnavailable)
 	_, _ = w.Write([]byte("Forward is waking up; please retry.\n"))
 	_ = err
+}
+
+func rewriteForwardOnPremRedirectLocation(location, externalHost, externalScheme string, rootAliasesEnabled bool) string {
+	location = strings.TrimSpace(location)
+	if location == "" {
+		return ""
+	}
+	externalScheme = strings.TrimSpace(externalScheme)
+	if externalScheme == "" {
+		externalScheme = "https"
+	}
+
+	// Most Forward redirects are absolute-path locations (for example "/login").
+	if strings.HasPrefix(location, "/") {
+		if location == "/" {
+			if rootAliasesEnabled {
+				return "/login"
+			}
+			return "/fwd/login"
+		}
+		if rootAliasesEnabled && (location == "/login" || location == "/logout") {
+			return location
+		}
+		if strings.HasPrefix(location, "/fwd/") || location == "/fwd" {
+			return location
+		}
+		return "/fwd" + location
+	}
+
+	u, err := url.Parse(location)
+	if err != nil || !u.IsAbs() {
+		return location
+	}
+
+	hostOnly := normalizeHostForCompare(u.Host)
+	extHostOnly := normalizeHostForCompare(externalHost)
+	if !isForwardInternalHost(hostOnly) && (extHostOnly == "" || hostOnly != extHostOnly) {
+		return location
+	}
+
+	path := u.EscapedPath()
+	if path == "" {
+		path = "/"
+	}
+	if path == "/" {
+		if rootAliasesEnabled {
+			u.Path = "/login"
+		} else {
+			u.Path = "/fwd/login"
+		}
+		u.RawPath = ""
+	} else if rootAliasesEnabled && (path == "/login" || path == "/logout") {
+		// Keep canonical root aliases when enabled.
+	} else if !strings.HasPrefix(path, "/fwd/") && path != "/fwd" {
+		u.Path = "/fwd" + u.Path
+		if strings.TrimSpace(u.RawPath) != "" {
+			u.RawPath = "/fwd" + u.RawPath
+		}
+	}
+
+	// Never leak internal service DNS names in browser redirects.
+	if isForwardInternalHost(hostOnly) && strings.TrimSpace(externalHost) != "" {
+		u.Host = strings.TrimSpace(externalHost)
+	}
+	if strings.TrimSpace(u.Scheme) == "" || isForwardInternalHost(hostOnly) || (extHostOnly != "" && hostOnly == extHostOnly) {
+		u.Scheme = externalScheme
+	}
+	return u.String()
+}
+
+func rewriteForwardOnPremSetCookiePaths(resp *http.Response, mode string) {
+	mode = strings.TrimSpace(strings.ToLower(mode))
+	if mode == "" {
+		mode = forwardOnPremCookiePathModePrefix
+	}
+	if mode != forwardOnPremCookiePathModePrefix {
+		return
+	}
+
+	values := resp.Header.Values("Set-Cookie")
+	if len(values) == 0 {
+		return
+	}
+
+	rewritten := make([]string, 0, len(values))
+	for _, v := range values {
+		parts := strings.Split(v, ";")
+		if len(parts) == 0 {
+			continue
+		}
+		foundPath := false
+		for i := 1; i < len(parts); i++ {
+			attr := strings.TrimSpace(parts[i])
+			if attr == "" {
+				continue
+			}
+			lower := strings.ToLower(attr)
+			if strings.HasPrefix(lower, "path=") {
+				foundPath = true
+				p := strings.TrimSpace(attr[len("path="):])
+				if p == "/" {
+					parts[i] = " Path=/fwd"
+				}
+			}
+		}
+		if !foundPath {
+			parts = append(parts, " Path=/fwd")
+		}
+		rewritten = append(rewritten, strings.Join(parts, ";"))
+	}
+	if len(rewritten) == 0 {
+		return
+	}
+	resp.Header.Del("Set-Cookie")
+	for _, v := range rewritten {
+		resp.Header.Add("Set-Cookie", v)
+	}
+}
+
+func sanitizeForwardOnPremCookies(r *http.Request) {
+	cookies := r.Cookies()
+	if len(cookies) == 0 {
+		return
+	}
+	allowed := map[string]struct{}{
+		"SESSION":      {},
+		"XSRF-TOKEN":   {},
+		"JSESSIONID":   {},
+	}
+	kept := make([]string, 0, len(cookies))
+	for _, c := range cookies {
+		if c == nil {
+			continue
+		}
+		if _, ok := allowed[c.Name]; ok {
+			kept = append(kept, c.Name+"="+c.Value)
+		}
+	}
+	if len(kept) == 0 {
+		r.Header.Del("Cookie")
+		return
+	}
+	r.Header.Set("Cookie", strings.Join(kept, "; "))
+}
+
+func cookieHeaderNames(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ";")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		idx := strings.Index(p, "=")
+		name := p
+		if idx >= 0 {
+			name = strings.TrimSpace(p[:idx])
+		}
+		if name != "" {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+func forwardOnPremRootAliasesEnabled() bool {
+	raw := strings.TrimSpace(strings.ToLower(os.Getenv("SKYFORGE_FORWARD_ONPREM_ROOT_ALIASES_ENABLED")))
+	return raw == "1" || raw == "true" || raw == "yes" || raw == "on"
+}
+
+func forwardOnPremCookiePathMode(rootAliasesEnabled bool) string {
+	raw := strings.TrimSpace(strings.ToLower(os.Getenv("SKYFORGE_FORWARD_ONPREM_COOKIE_PATH_MODE")))
+	switch raw {
+	case forwardOnPremCookiePathModeAlias, forwardOnPremCookiePathModePrefix:
+		return raw
+	}
+	if rootAliasesEnabled {
+		return forwardOnPremCookiePathModeAlias
+	}
+	return forwardOnPremCookiePathModePrefix
+}
+
+func normalizeHostForCompare(host string) string {
+	host = strings.TrimSpace(strings.ToLower(host))
+	if host == "" {
+		return ""
+	}
+	// Best-effort strip of :port when present.
+	if h, p, err := net.SplitHostPort(host); err == nil {
+		if strings.TrimSpace(h) != "" && strings.TrimSpace(p) != "" {
+			return h
+		}
+	}
+	return host
+}
+
+func isForwardInternalHost(host string) bool {
+	host = normalizeHostForCompare(host)
+	return host == "fwd-appserver.forward.svc.cluster.local" || strings.HasSuffix(host, ".forward.svc.cluster.local")
 }
 
 // ForwardOnPremProxyGET proxies a Forward on-prem UI/API request under Skyforge SSO.
