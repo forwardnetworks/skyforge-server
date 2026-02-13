@@ -727,19 +727,17 @@ func sanitizeForwardOnPremCookies(r *http.Request) {
 	if len(cookies) == 0 {
 		return
 	}
-	allowed := map[string]struct{}{
-		"SESSION":      {},
-		"XSRF-TOKEN":   {},
-		"JSESSIONID":   {},
-	}
 	kept := make([]string, 0, len(cookies))
 	for _, c := range cookies {
 		if c == nil {
 			continue
 		}
-		if _, ok := allowed[c.Name]; ok {
-			kept = append(kept, c.Name+"="+c.Value)
+		// Strip only Skyforge auth cookie(s); keep all Forward cookies so the
+		// upstream app can complete its own login/session flow.
+		if strings.EqualFold(strings.TrimSpace(c.Name), "skyforge_session") {
+			continue
 		}
+		kept = append(kept, c.Name+"="+c.Value)
 	}
 	if len(kept) == 0 {
 		r.Header.Del("Cookie")
