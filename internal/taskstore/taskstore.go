@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"encore.app/internal/jsonmap"
+	"encore.app/internal/pglocks"
 	"encore.app/internal/tasknotify"
 	"encore.dev/beta/errs"
 )
@@ -84,28 +85,6 @@ func taskDedupeLockKey(workspaceID string, deploymentID *string, taskType, dedup
 	return int64(u)
 }
 
-func pgTryAdvisoryLock(ctx context.Context, db *sql.DB, key int64) (bool, error) {
-	if db == nil {
-		return false, fmt.Errorf("db unavailable")
-	}
-	var ok bool
-	if err := db.QueryRowContext(ctx, `SELECT pg_try_advisory_lock($1)`, key).Scan(&ok); err != nil {
-		return false, err
-	}
-	return ok, nil
-}
-
-func pgAdvisoryUnlock(ctx context.Context, db *sql.DB, key int64) error {
-	if db == nil {
-		return fmt.Errorf("db unavailable")
-	}
-	var ok bool
-	if err := db.QueryRowContext(ctx, `SELECT pg_advisory_unlock($1)`, key).Scan(&ok); err != nil {
-		return err
-	}
-	return nil
-}
-
 func CreateTask(ctx context.Context, db *sql.DB, workspaceID string, deploymentID *string, taskType string, message string, createdBy string, metadata JSONMap) (*TaskRecord, error) {
 	return createTaskWithActiveCheck(ctx, db, workspaceID, deploymentID, taskType, message, createdBy, metadata, false)
 }
@@ -130,14 +109,16 @@ func createTaskWithActiveCheck(ctx context.Context, db *sql.DB, workspaceID stri
 	dedupeKey := strings.TrimSpace(getJSONMapString(metadata, "dedupeKey"))
 	if dedupeKey != "" {
 		lockKey := taskDedupeLockKey(workspaceID, deploymentID, taskType, dedupeKey)
+		var lock *pglocks.AdvisoryLock
 		locked := false
 		for {
-			ok, err := pgTryAdvisoryLock(ctx, db, lockKey)
+			acquiredLock, ok, err := pglocks.TryAdvisoryLock(ctx, db, lockKey)
 			if err != nil {
 				return nil, err
 			}
 			if ok {
 				locked = true
+				lock = acquiredLock
 				break
 			}
 			select {
@@ -148,7 +129,7 @@ func createTaskWithActiveCheck(ctx context.Context, db *sql.DB, workspaceID stri
 			time.Sleep(50 * time.Millisecond)
 		}
 		if locked {
-			defer func() { _ = pgAdvisoryUnlock(context.Background(), db, lockKey) }()
+			defer func() { _ = lock.Unlock(context.Background()) }()
 		}
 
 		rec, err := findActiveTaskByDedupeKey(ctx, db, workspaceID, deploymentID, taskType, dedupeKey)

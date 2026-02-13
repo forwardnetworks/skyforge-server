@@ -11,6 +11,7 @@
 #
 # NOTE: Netlab syntax matches the topology file, but without the `defaults.` prefix.
 provider: clab
+device: eos
 plugin: [ files ]
 
 # vrnetlab QEMU management uses 10.0.0.0/24 internally for host port-forwards
@@ -32,45 +33,81 @@ configlets:
     linux: |
       # no-op (keep linux hosts SNMP-free by default)
     eos: |
-      snmp-server community public ro
+      snmp-server group SKYFORGEV3 v3 priv
+      snmp-server user admin SKYFORGEV3 v3 auth md5 admin priv des admin
     # Netlab device keys that behave like EOS but don't necessarily inherit its configlet.
     # Keep explicit keys to avoid "fallback" behavior.
     ceos: |
-      snmp-server community public ro
+      snmp-server group SKYFORGEV3 v3 priv
+      snmp-server user admin SKYFORGEV3 v3 auth md5 admin priv des admin
     ios: |
-      snmp-server community public RO
+      snmp-server group SKYFORGEV3 v3 priv
+      snmp-server user admin SKYFORGEV3 v3 auth md5 admin priv des admin
     iol: |
-      snmp-server community public RO
+      snmp-server group SKYFORGEV3 v3 priv
+      snmp-server user admin SKYFORGEV3 v3 auth md5 admin priv des admin
     ioll2: |
-      snmp-server community public RO
+      snmp-server group SKYFORGEV3 v3 priv
+      snmp-server user admin SKYFORGEV3 v3 auth md5 admin priv des admin
     iosv: |
-      snmp-server community public RO
+      snmp-server group SKYFORGEV3 v3 priv
+      snmp-server user admin SKYFORGEV3 v3 auth md5 admin priv des admin
     iosvl2: |
-      snmp-server community public RO
+      snmp-server group SKYFORGEV3 v3 priv
+      snmp-server user admin SKYFORGEV3 v3 auth md5 admin priv des admin
     iosxe: |
-      snmp-server community public RO
+      snmp-server group SKYFORGEV3 v3 priv
+      snmp-server user admin SKYFORGEV3 v3 auth md5 admin priv des admin
     csr: |
-      snmp-server community public RO
+      snmp-server group SKYFORGEV3 v3 priv
+      snmp-server user admin SKYFORGEV3 v3 auth md5 admin priv des admin
     cat8000v: |
-      snmp-server community public RO
+      snmp-server group SKYFORGEV3 v3 priv
+      snmp-server user admin SKYFORGEV3 v3 auth md5 admin priv des admin
     iosxr: |
-      snmp-server community public RO
+      snmp-server group SKYFORGEV3 v3 priv
+      snmp-server user admin SKYFORGEV3 v3 auth md5 admin priv des admin
     asa: |
-      snmp-server community public
+      snmp-server group SKYFORGEV3 v3 priv
+      snmp-server user admin SKYFORGEV3 v3 auth md5 admin priv des admin
     junos: |
-      set snmp community public authorization read-only
+      set snmp view SKYFORGE oid .1 include
+      set snmp v3 usm local-engine user admin authentication-md5 authentication-password admin
+      set snmp v3 usm local-engine user admin privacy-des privacy-password admin
+      set snmp v3 vacm security-to-group security-model usm security-name admin group SKYFORGEV3
+      set snmp v3 vacm access group SKYFORGEV3 default-context-prefix security-model usm security-level privacy read-view SKYFORGE
     vmx: |
-      set snmp community public authorization read-only
+      set snmp view SKYFORGE oid .1 include
+      set snmp v3 usm local-engine user admin authentication-md5 authentication-password admin
+      set snmp v3 usm local-engine user admin privacy-des privacy-password admin
+      set snmp v3 vacm security-to-group security-model usm security-name admin group SKYFORGEV3
+      set snmp v3 vacm access group SKYFORGEV3 default-context-prefix security-model usm security-level privacy read-view SKYFORGE
     vsrx: |
-      set snmp community public authorization read-only
+      set snmp view SKYFORGE oid .1 include
+      set snmp v3 usm local-engine user admin authentication-md5 authentication-password admin
+      set snmp v3 usm local-engine user admin privacy-des privacy-password admin
+      set snmp v3 vacm security-to-group security-model usm security-name admin group SKYFORGEV3
+      set snmp v3 vacm access group SKYFORGEV3 default-context-prefix security-model usm security-level privacy read-view SKYFORGE
     vjunos-router: |
-      set snmp community public authorization read-only
+      set snmp view SKYFORGE oid .1 include
+      set snmp v3 usm local-engine user admin authentication-md5 authentication-password admin
+      set snmp v3 usm local-engine user admin privacy-des privacy-password admin
+      set snmp v3 vacm security-to-group security-model usm security-name admin group SKYFORGEV3
+      set snmp v3 vacm access group SKYFORGEV3 default-context-prefix security-model usm security-level privacy read-view SKYFORGE
     vjunos-switch: |
-      set snmp community public authorization read-only
+      set snmp view SKYFORGE oid .1 include
+      set snmp v3 usm local-engine user admin authentication-md5 authentication-password admin
+      set snmp v3 usm local-engine user admin privacy-des privacy-password admin
+      set snmp v3 vacm security-to-group security-model usm security-name admin group SKYFORGEV3
+      set snmp v3 vacm access group SKYFORGEV3 default-context-prefix security-model usm security-level privacy read-view SKYFORGE
     vptx: |
-      set snmp community public authorization read-only
+      set snmp view SKYFORGE oid .1 include
+      set snmp v3 usm local-engine user admin authentication-md5 authentication-password admin
+      set snmp v3 usm local-engine user admin privacy-des privacy-password admin
+      set snmp v3 vacm security-to-group security-model usm security-name admin group SKYFORGEV3
+      set snmp v3 vacm access group SKYFORGEV3 default-context-prefix security-model usm security-level privacy read-view SKYFORGE
     nxos: |
-      snmp-server community public group network-operator
+      ! no-op: nxos images already include SNMPv3 defaults
 
 devices:
   linux:

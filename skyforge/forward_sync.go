@@ -472,25 +472,13 @@ func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *wor
 
 	snmpCredentialID := getString(forwardSnmpCredentialIDKey)
 	if snmpCredentialID == "" && s.cfg.Forward.SNMPPlaceholderEnabled {
-		rec, err := s.getSnmpTrapToken(ctx, pc.claims.Username)
-		if err != nil {
-			return cfgAny, err
+		snmpName := strings.TrimSpace(credentialName)
+		if snmpName == "" {
+			snmpName = forwardSNMPv3DefaultName
+		} else {
+			snmpName = strings.TrimSpace(snmpName + "-snmpv3")
 		}
-		community := ""
-		if rec != nil {
-			community = strings.TrimSpace(rec.Community)
-		}
-		if community == "" {
-			comm, err := generateCommunity(pc.claims.Username)
-			if err != nil {
-				return cfgAny, err
-			}
-			if err := s.putSnmpTrapToken(ctx, pc.claims.Username, comm); err != nil {
-				return cfgAny, err
-			}
-			community = comm
-		}
-		cred, err := forwardCreateSnmpCredential(ctx, client, networkID, credentialName, community)
+		cred, err := forwardCreateSnmpCredential(ctx, client, networkID, snmpName)
 		if err != nil {
 			if strings.Contains(err.Error(), "No collector configured") ||
 				strings.Contains(strings.ToLower(err.Error()), "not found") {

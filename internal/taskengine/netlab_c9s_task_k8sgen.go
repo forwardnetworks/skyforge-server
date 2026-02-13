@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"sort"
 	"strings"
 	"time"
 
@@ -71,54 +72,165 @@ func patchNetlabTopologyYAMLForSnmp(topologyYAML []byte, community, trapHost str
 		return m
 	}
 
-	// Append snmp_config to groups.all.config (do not overwrite).
-	groups := ensureMap(topo, "groups")
-	all := ensureMap(groups, "all")
-	rawCfg, _ := all["config"]
-	var hasSnmp func(v any) bool
-	hasSnmp = func(v any) bool {
-		switch vv := v.(type) {
-		case string:
-			return strings.TrimSpace(vv) == "snmp_config"
-		case []any:
-			for _, item := range vv {
-				if hasSnmp(item) {
-					return true
+	toStringList := func(v any) []string {
+		out := []string{}
+		seen := map[string]struct{}{}
+		var visit func(any)
+		visit = func(x any) {
+			switch vv := x.(type) {
+			case string:
+				s := strings.TrimSpace(vv)
+				if s == "" {
+					return
+				}
+				if _, ok := seen[s]; ok {
+					return
+				}
+				seen[s] = struct{}{}
+				out = append(out, s)
+			case []any:
+				for _, item := range vv {
+					visit(item)
+				}
+			case []string:
+				for _, item := range vv {
+					visit(item)
 				}
 			}
-		case []string:
-			for _, item := range vv {
-				if strings.TrimSpace(item) == "snmp_config" {
-					return true
-				}
+		}
+		visit(v)
+		return out
+	}
+	asAnyList := func(items []string) []any {
+		out := make([]any, 0, len(items))
+		for _, item := range items {
+			out = append(out, item)
+		}
+		return out
+	}
+	containsString := func(items []string, target string) bool {
+		for _, item := range items {
+			if item == target {
+				return true
 			}
 		}
 		return false
 	}
-	switch v := rawCfg.(type) {
-	case nil:
-		all["config"] = []any{"snmp_config"}
-	case string:
-		if !hasSnmp(v) {
-			if strings.TrimSpace(v) == "" {
-				all["config"] = []any{"snmp_config"}
+
+	groups := ensureMap(topo, "groups")
+	// Never apply snmp_config globally via groups.all, because that also applies
+	// to linux nodes (which do not have a netlab snmp_config template).
+	if allRaw, ok := groups["all"]; ok {
+		if all, ok := allRaw.(map[string]any); ok {
+			cfg := toStringList(all["config"])
+			filtered := make([]string, 0, len(cfg))
+			for _, item := range cfg {
+				if item != "snmp_config" {
+					filtered = append(filtered, item)
+				}
+			}
+			if len(filtered) == 0 {
+				delete(all, "config")
 			} else {
-				all["config"] = []any{strings.TrimSpace(v), "snmp_config"}
+				all["config"] = asAnyList(filtered)
 			}
 		}
-	case []any:
-		if !hasSnmp(v) {
-			all["config"] = append(v, "snmp_config")
+	}
+
+	// Build device lookup for groups so we can infer node device when it is not
+	// explicitly set on the node.
+	groupDevice := map[string]string{}
+	groupMembers := map[string]map[string]struct{}{}
+	groupNames := make([]string, 0, len(groups))
+	for name := range groups {
+		groupNames = append(groupNames, name)
+	}
+	sort.Strings(groupNames)
+	for _, groupName := range groupNames {
+		groupRaw, ok := groups[groupName]
+		if !ok {
+			continue
 		}
-	case []string:
-		if !hasSnmp(v) {
-			all["config"] = append(v, "snmp_config")
+		groupMap, ok := groupRaw.(map[string]any)
+		if !ok {
+			continue
 		}
-	default:
-		all["config"] = []any{"snmp_config"}
+		if d, ok := groupMap["device"].(string); ok && strings.TrimSpace(d) != "" {
+			groupDevice[groupName] = strings.TrimSpace(d)
+		}
+		memberSet := map[string]struct{}{}
+		for _, member := range toStringList(groupMap["members"]) {
+			memberSet[member] = struct{}{}
+		}
+		if len(memberSet) > 0 {
+			groupMembers[groupName] = memberSet
+		}
 	}
 
 	defaults := ensureMap(topo, "defaults")
+	defaultDevice := ""
+	if d, ok := defaults["device"].(string); ok {
+		defaultDevice = strings.TrimSpace(d)
+	}
+	nodes := ensureMap(topo, "nodes")
+	nodeNames := make([]string, 0, len(nodes))
+	for nodeName := range nodes {
+		nodeNames = append(nodeNames, nodeName)
+	}
+	sort.Strings(nodeNames)
+	for _, nodeName := range nodeNames {
+		nodeRaw, ok := nodes[nodeName]
+		if !ok {
+			continue
+		}
+		nodeMap, ok := nodeRaw.(map[string]any)
+		if !ok {
+			continue
+		}
+		device := ""
+		if d, ok := nodeMap["device"].(string); ok {
+			device = strings.TrimSpace(d)
+		}
+		if device == "" {
+			for _, groupName := range toStringList(nodeMap["group"]) {
+				if d := strings.TrimSpace(groupDevice[groupName]); d != "" {
+					device = d
+					break
+				}
+			}
+		}
+		if device == "" {
+			for _, groupName := range toStringList(nodeMap["groups"]) {
+				if d := strings.TrimSpace(groupDevice[groupName]); d != "" {
+					device = d
+					break
+				}
+			}
+		}
+		if device == "" {
+			for _, groupName := range groupNames {
+				if _, ok := groupMembers[groupName][nodeName]; !ok {
+					continue
+				}
+				if d := strings.TrimSpace(groupDevice[groupName]); d != "" {
+					device = d
+					break
+				}
+			}
+		}
+		if device == "" {
+			device = defaultDevice
+		}
+		if strings.EqualFold(strings.TrimSpace(device), "linux") {
+			continue
+		}
+		cfg := toStringList(nodeMap["config"])
+		if !containsString(cfg, "snmp_config") {
+			cfg = append(cfg, "snmp_config")
+			nodeMap["config"] = asAnyList(cfg)
+		}
+	}
+
 	snmp := ensureMap(defaults, "snmp")
 	if strings.TrimSpace(community) != "" {
 		snmp["community"] = strings.TrimSpace(community)

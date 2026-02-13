@@ -36,6 +36,9 @@ type forwardSnmpCredential struct {
 	Name            string `json:"name"`
 	Version         string `json:"version"`
 	CommunityString string `json:"communityString"`
+	AuthSettings    struct {
+		Username string `json:"username"`
+	} `json:"authSettings,omitempty"`
 }
 
 type forwardJumpServer struct {
@@ -77,6 +80,19 @@ type forwardConnectivityBulkStartRequest struct {
 	Devices []string `json:"devices"`
 }
 
+// Connectivity tests are intentionally disabled in Skyforge deployment flows.
+// Forward still performs its own checks as part of collection lifecycle.
+const forwardConnectivityBulkStartEnabled = false
+
+const (
+	forwardSNMPv3DefaultName            = "skyforge-snmpv3"
+	forwardSNMPv3DefaultUsername        = "admin"
+	forwardSNMPv3DefaultAuthType        = "MD5"
+	forwardSNMPv3DefaultAuthPassword    = "admin"
+	forwardSNMPv3DefaultPrivacyProtocol = "DES"
+	forwardSNMPv3DefaultPrivacyPassword = "admin"
+)
+
 func normalizeForwardBaseURL(raw string) (string, error) {
 	value := strings.TrimSpace(raw)
 	if value == "" {
@@ -97,6 +113,9 @@ func forwardBulkStartConnectivityTests(ctx context.Context, c *forwardClient, ne
 }
 
 func forwardBulkStartConnectivityTestsTyped(ctx context.Context, c *forwardClient, networkID string, devices []string, targetType string) error {
+	if !forwardConnectivityBulkStartEnabled {
+		return nil
+	}
 	if len(devices) == 0 {
 		return nil
 	}
@@ -336,12 +355,22 @@ func forwardCreateCliCredentialNamed(ctx context.Context, c *forwardClient, netw
 	return nil, fmt.Errorf("forward create cli credential failed: name conflict (%s)", strings.TrimSpace(string(lastBody)))
 }
 
-func forwardCreateSnmpCredential(ctx context.Context, c *forwardClient, networkID string, community string) (*forwardSnmpCredential, error) {
+func forwardCreateSnmpCredential(ctx context.Context, c *forwardClient, networkID string, name string) (*forwardSnmpCredential, error) {
+	credentialName := strings.TrimSpace(name)
+	if credentialName == "" {
+		credentialName = forwardSNMPv3DefaultName
+	}
 	payload := map[string]any{
-		"name":            strings.TrimSpace(community),
-		"autoAssociate":   true,
-		"version":         "V2C",
-		"communityString": strings.TrimSpace(community),
+		"name":          credentialName,
+		"autoAssociate": true,
+		"version":       "V3",
+		"authSettings": map[string]any{
+			"username":        forwardSNMPv3DefaultUsername,
+			"authType":        forwardSNMPv3DefaultAuthType,
+			"password":        forwardSNMPv3DefaultAuthPassword,
+			"privacyProtocol": forwardSNMPv3DefaultPrivacyProtocol,
+			"privacyPassword": forwardSNMPv3DefaultPrivacyPassword,
+		},
 	}
 
 	// Forward has used multiple endpoint spellings over time. Our environment uses:
@@ -381,7 +410,7 @@ func forwardCreateSnmpCredential(ctx context.Context, c *forwardClient, networkI
 
 	// If the credential already exists, try to find and reuse it so this call is idempotent.
 	if lastResp.StatusCode == 409 || strings.Contains(strings.ToLower(string(lastBody)), "already") {
-		existing, listErr := forwardFindSnmpCredential(ctx, c, networkID, community)
+		existing, listErr := forwardFindSnmpCredential(ctx, c, networkID, credentialName)
 		if listErr == nil && existing != nil && strings.TrimSpace(existing.ID) != "" {
 			return existing, nil
 		}
@@ -400,9 +429,9 @@ func forwardCreateSnmpCredential(ctx context.Context, c *forwardClient, networkI
 	return &out, nil
 }
 
-func forwardFindSnmpCredential(ctx context.Context, c *forwardClient, networkID string, community string) (*forwardSnmpCredential, error) {
-	community = strings.TrimSpace(community)
-	if community == "" {
+func forwardFindSnmpCredential(ctx context.Context, c *forwardClient, networkID string, name string) (*forwardSnmpCredential, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
 		return nil, nil
 	}
 
@@ -460,13 +489,17 @@ func forwardFindSnmpCredential(ctx context.Context, c *forwardClient, networkID 
 			if strings.TrimSpace(item.ID) == "" {
 				continue
 			}
-			if strings.EqualFold(strings.TrimSpace(item.Name), community) || strings.EqualFold(strings.TrimSpace(item.CommunityString), community) {
+			if strings.EqualFold(strings.TrimSpace(item.Name), name) {
+				return &item, nil
+			}
+			if strings.EqualFold(strings.TrimSpace(item.AuthSettings.Username), forwardSNMPv3DefaultUsername) &&
+				strings.EqualFold(strings.TrimSpace(item.Version), "V3") {
 				return &item, nil
 			}
 		}
 	}
 
-	return nil, fmt.Errorf("snmp credential %q not found", community)
+	return nil, fmt.Errorf("snmp credential %q not found", name)
 }
 
 func forwardCreateJumpServer(ctx context.Context, c *forwardClient, networkID string, host string, username string, privateKey string, cert string) (*forwardJumpServer, error) {

@@ -124,7 +124,7 @@ func injectNetlabC9sEOSStartupConfig(ctx context.Context, ns, topologyName strin
 		}
 		combined, _ = injectEOSManagementSSH(combined)
 		combined, _ = injectEOSDefaultSSHUser(combined)
-		combined = injectEOSDefaultSNMPPublic(combined)
+		combined = injectEOSDefaultSNMPv3(combined)
 
 		if !strings.Contains(strings.ToLower(combined), "\nend\n") {
 			combined += "end\n"
@@ -166,7 +166,7 @@ func injectNetlabC9sEOSStartupConfig(ctx context.Context, ns, topologyName strin
 	return out, nodeMounts, nil
 }
 
-func injectEOSDefaultSNMPPublic(config string) string {
+func injectEOSDefaultSNMPv3(config string) string {
 	config = strings.ReplaceAll(config, "\r\n", "\n")
 	if strings.TrimSpace(config) == "" {
 		return config
@@ -185,17 +185,20 @@ func injectEOSDefaultSNMPPublic(config string) string {
 		}
 	}
 
-	snmpLine := "snmp-server community public ro"
+	snmpLines := []string{
+		"snmp-server group SKYFORGEV3 v3 priv",
+		"snmp-server user admin SKYFORGEV3 v3 auth md5 admin priv des admin",
+	}
 	if endIdx == -1 {
 		if !strings.HasSuffix(config, "\n") {
 			config += "\n"
 		}
-		return config + snmpLine + "\n"
+		return config + strings.Join(snmpLines, "\n") + "\n"
 	}
 
-	out := make([]string, 0, len(lines)+2)
+	out := make([]string, 0, len(lines)+4)
 	out = append(out, lines[:endIdx]...)
-	out = append(out, snmpLine)
+	out = append(out, snmpLines...)
 	out = append(out, lines[endIdx:]...)
 	return strings.Join(out, "\n")
 }

@@ -584,13 +584,11 @@ RETURNING id::text
 
 	snmpCredentialID := getString(forwardSnmpCredentialIDKey)
 	if snmpCredentialID == "" && e.cfg.Forward.SNMPPlaceholderEnabled {
-		// Use the per-user trap token as the single community for both polling and traps.
-		// This keeps behavior consistent across vendors (esp. Junos) and avoids "public" drift.
-		community, err := e.ensureUserSnmpTrapToken(ctx, pc.claims.Username)
-		if err != nil {
-			return cfgAny, err
+		snmpName := sanitizeForwardName(fmt.Sprintf("%s-%s-snmpv3", dep.Name, strings.TrimSpace(pc.claims.Username)))
+		if snmpName == "" {
+			snmpName = forwardSNMPv3DefaultName
 		}
-		cred, err := forwardCreateSnmpCredential(ctx, client, networkID, community)
+		cred, err := forwardCreateSnmpCredential(ctx, client, networkID, snmpName)
 		if err != nil {
 			log.Printf("forward snmp credential skipped: %v", err)
 		} else {
@@ -1280,7 +1278,14 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 
 		deviceKey := forwardDeviceKeyFromKind(node.Kind)
 		desiredCred, desiredOK := netlabCredentialForDevice(deviceKey, "")
-		if !desiredOK {
+		// Linux credentials are managed by Skyforge scripts and must remain root/admin.
+		// Do not inherit the generic netlab catalog value (often vagrant/vagrant).
+		if deviceKey == "linux" {
+			if u, p, ok := forwardDefaultCredentialForKind(deviceKey); ok {
+				desiredCred = netlabDeviceCredential{Username: u, Password: p}
+				desiredOK = true
+			}
+		} else if !desiredOK {
 			if u, p, ok := forwardDefaultCredentialForKind(deviceKey); ok {
 				desiredCred = netlabDeviceCredential{Username: u, Password: p}
 				desiredOK = true
@@ -1400,21 +1405,8 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 	if err := forwardPutClassicDevices(ctx, client, networkID, devices); err != nil {
 		return 0, err
 	}
-	// Start connectivity tests as soon as devices are imported, so the UI shows reachability
-	// quickly even before collection is started. Best-effort (don't fail the run).
-	//
-	// NOTE: In some flows we intentionally defer connectivity tests until we have verified
-	// SSH readiness, to avoid false negatives during long boots (e.g., vrnetlab devices).
-	if opts.StartConnectivity && len(connectivityNames) > 0 {
-		if err := forwardBulkStartConnectivityTests(ctx, client, networkID, connectivityNames); err != nil {
-			log.Printf("forward connectivity tests skipped: %v", err)
-		} else if taskID > 0 && e != nil && e.db != nil {
-			_ = taskstore.AppendTaskEvent(context.Background(), e.db, taskID, "forward.connectivity.bulkstart", map[string]any{
-				"networkId": networkID,
-				"devices":   len(connectivityNames),
-			})
-		}
-	}
+	_ = opts.StartConnectivity // Connectivity tests are intentionally disabled.
+	_ = connectivityNames
 	if opts.StartCollection {
 		_ = forwardStartCollection(ctx, client, networkID)
 	}

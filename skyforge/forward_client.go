@@ -96,6 +96,15 @@ type forwardEndpoint struct {
 	Note         string `json:"note,omitempty"`
 }
 
+const (
+	forwardSNMPv3DefaultName            = "skyforge-snmpv3"
+	forwardSNMPv3DefaultUsername        = "admin"
+	forwardSNMPv3DefaultAuthType        = "MD5"
+	forwardSNMPv3DefaultAuthPassword    = "admin"
+	forwardSNMPv3DefaultPrivacyProtocol = "DES"
+	forwardSNMPv3DefaultPrivacyPassword = "admin"
+)
+
 func normalizeForwardBaseURL(raw string) (string, error) {
 	value := strings.TrimSpace(raw)
 	if value == "" {
@@ -456,16 +465,22 @@ func parseForwardCredentialID(body string) string {
 	return ""
 }
 
-func forwardCreateSnmpCredential(ctx context.Context, c *forwardClient, networkID string, name string, community string) (*forwardSnmpCredential, error) {
+func forwardCreateSnmpCredential(ctx context.Context, c *forwardClient, networkID string, name string) (*forwardSnmpCredential, error) {
 	credentialName := strings.TrimSpace(name)
 	if credentialName == "" {
-		credentialName = fmt.Sprintf("Skyforge SNMP %d", time.Now().UTC().UnixNano())
+		credentialName = forwardSNMPv3DefaultName
 	}
 	payload := map[string]any{
-		"name":            credentialName,
-		"version":         "V2C",
-		"communityString": strings.TrimSpace(community),
-		"autoAssociate":   true,
+		"name":          credentialName,
+		"version":       "V3",
+		"autoAssociate": true,
+		"authSettings": map[string]any{
+			"username":        forwardSNMPv3DefaultUsername,
+			"authType":        forwardSNMPv3DefaultAuthType,
+			"password":        forwardSNMPv3DefaultAuthPassword,
+			"privacyProtocol": forwardSNMPv3DefaultPrivacyProtocol,
+			"privacyPassword": forwardSNMPv3DefaultPrivacyPassword,
+		},
 	}
 	resp, body, err := c.doJSON(ctx, http.MethodPost, "/api/networks/"+url.PathEscape(strings.TrimSpace(networkID))+"/snmpCredentials", nil, payload)
 	if err != nil {

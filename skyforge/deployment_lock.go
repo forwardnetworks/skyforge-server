@@ -15,10 +15,13 @@ func workspaceAdvisoryLockKey(workspaceID string) int64 {
 	return pglocks.WorkspaceAdvisoryLockKey(workspaceID)
 }
 
-func pgTryAdvisoryLock(ctx context.Context, db *sql.DB, key int64) (bool, error) {
+func pgTryAdvisoryLock(ctx context.Context, db *sql.DB, key int64) (*pglocks.AdvisoryLock, bool, error) {
 	return pglocks.TryAdvisoryLock(ctx, db, key)
 }
 
-func pgAdvisoryUnlock(ctx context.Context, db *sql.DB, key int64) error {
-	return pglocks.AdvisoryUnlock(ctx, db, key)
+func pgAdvisoryUnlock(ctx context.Context, lock *pglocks.AdvisoryLock) error {
+	if lock == nil {
+		return nil
+	}
+	return lock.Unlock(ctx)
 }

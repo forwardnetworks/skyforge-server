@@ -15,6 +15,7 @@ import (
 
 	"encore.dev/beta/errs"
 	"encore.dev/rlog"
+	authv1 "k8s.io/api/authorization/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -34,6 +35,54 @@ const (
 	forwardOnPremProxyPrefix = "/api/forward/onprem/proxy"
 )
 
+type forwardOnPremRBACStatus struct {
+	CanGetDeployments    bool `json:"canGetDeployments"`
+	CanPatchDeployments  bool `json:"canPatchDeployments"`
+	CanGetStatefulSets   bool `json:"canGetStatefulSets"`
+	CanPatchStatefulSets bool `json:"canPatchStatefulSets"`
+}
+
+func (s forwardOnPremRBACStatus) missing() []string {
+	missing := make([]string, 0, 4)
+	if !s.CanGetDeployments {
+		missing = append(missing, "deployments.get")
+	}
+	if !s.CanPatchDeployments {
+		missing = append(missing, "deployments.patch")
+	}
+	if !s.CanGetStatefulSets {
+		missing = append(missing, "statefulsets.get")
+	}
+	if !s.CanPatchStatefulSets {
+		missing = append(missing, "statefulsets.patch")
+	}
+	return missing
+}
+
+type forwardOnPremWorkloadStatus struct {
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	Optional  bool   `json:"optional"`
+	Desired   int32  `json:"desired"`
+	Ready     int32  `json:"ready"`
+	Available int32  `json:"available"`
+	Error     string `json:"error,omitempty"`
+}
+
+type forwardOnPremStatusResponse struct {
+	Enabled            bool                          `json:"enabled"`
+	Phase              string                        `json:"phase"`
+	IdleTimeoutSeconds int64                         `json:"idleTimeoutSeconds"`
+	WakeTimeoutSeconds int64                         `json:"wakeTimeoutSeconds"`
+	LastRequestAt      string                        `json:"lastRequestAt,omitempty"`
+	LastWakeAt         string                        `json:"lastWakeAt,omitempty"`
+	LastError          string                        `json:"lastError,omitempty"`
+	LastErrorAt        string                        `json:"lastErrorAt,omitempty"`
+	ProxyPrefix        string                        `json:"proxyPrefix"`
+	RBAC               forwardOnPremRBACStatus       `json:"rbac"`
+	Workloads          []forwardOnPremWorkloadStatus `json:"workloads"`
+}
+
 var forwardOnPremAutosleepState struct {
 	mu sync.Mutex
 
@@ -42,9 +91,18 @@ var forwardOnPremAutosleepState struct {
 	wakeTimeout time.Duration
 
 	lastRequestAt time.Time
+	lastWakeAt    time.Time
+	lastErrorAt   time.Time
+	lastError     string
 	timer         *time.Timer
 
 	initOnce sync.Once
+}
+
+var forwardOnPremRBACCache struct {
+	mu        sync.Mutex
+	checkedAt time.Time
+	status    forwardOnPremRBACStatus
 }
 
 func forwardOnPremAutosleepEnabled() bool {
@@ -93,6 +151,83 @@ func forwardOnPremInitAutosleepState() {
 	forwardOnPremAutosleepState.enabled = forwardOnPremAutosleepEnabled()
 	forwardOnPremAutosleepState.idleTimeout = forwardOnPremAutosleepIdleTimeout()
 	forwardOnPremAutosleepState.wakeTimeout = forwardOnPremAutosleepWakeTimeout()
+}
+
+func forwardOnPremCheckVerb(
+	ctx context.Context,
+	clientset *kubernetes.Clientset,
+	namespace string,
+	resource string,
+	verb string,
+) bool {
+	review := &authv1.SelfSubjectAccessReview{
+		Spec: authv1.SelfSubjectAccessReviewSpec{
+			ResourceAttributes: &authv1.ResourceAttributes{
+				Namespace: namespace,
+				Verb:      verb,
+				Group:     "apps",
+				Resource:  resource,
+			},
+		},
+	}
+	out, err := clientset.AuthorizationV1().SelfSubjectAccessReviews().Create(
+		ctx,
+		review,
+		metav1.CreateOptions{},
+	)
+	if err != nil || out == nil || out.Status.Allowed == false {
+		return false
+	}
+	return true
+}
+
+func forwardOnPremRBACStatusNow(ctx context.Context) (forwardOnPremRBACStatus, error) {
+	kcfg, err := kubeInClusterConfig()
+	if err != nil {
+		return forwardOnPremRBACStatus{}, err
+	}
+	clientset, err := kubernetes.NewForConfig(kcfg)
+	if err != nil {
+		return forwardOnPremRBACStatus{}, err
+	}
+	const ns = "forward"
+	return forwardOnPremRBACStatus{
+		CanGetDeployments:   forwardOnPremCheckVerb(ctx, clientset, ns, "deployments", "get"),
+		CanPatchDeployments: forwardOnPremCheckVerb(ctx, clientset, ns, "deployments", "patch"),
+		CanGetStatefulSets:  forwardOnPremCheckVerb(ctx, clientset, ns, "statefulsets", "get"),
+		CanPatchStatefulSets: forwardOnPremCheckVerb(
+			ctx,
+			clientset,
+			ns,
+			"statefulsets",
+			"patch",
+		),
+	}, nil
+}
+
+func forwardOnPremRBACStatusCached(ctx context.Context) (forwardOnPremRBACStatus, error) {
+	const ttl = 15 * time.Second
+	now := time.Now()
+
+	forwardOnPremRBACCache.mu.Lock()
+	if !forwardOnPremRBACCache.checkedAt.IsZero() &&
+		now.Sub(forwardOnPremRBACCache.checkedAt) < ttl {
+		out := forwardOnPremRBACCache.status
+		forwardOnPremRBACCache.mu.Unlock()
+		return out, nil
+	}
+	forwardOnPremRBACCache.mu.Unlock()
+
+	status, err := forwardOnPremRBACStatusNow(ctx)
+	if err != nil {
+		return forwardOnPremRBACStatus{}, err
+	}
+
+	forwardOnPremRBACCache.mu.Lock()
+	forwardOnPremRBACCache.checkedAt = now
+	forwardOnPremRBACCache.status = status
+	forwardOnPremRBACCache.mu.Unlock()
+	return status, nil
 }
 
 func forwardOnPremNoteRequestLocked(now time.Time) {
@@ -249,6 +384,14 @@ func scaleStatefulSet(ctx context.Context, clientset *kubernetes.Clientset, name
 }
 
 func forwardOnPremEnsureAwake(ctx context.Context, wakeTimeout time.Duration) error {
+	rbacStatus, err := forwardOnPremRBACStatusCached(ctx)
+	if err != nil {
+		return fmt.Errorf("rbac status check failed: %w", err)
+	}
+	if missing := rbacStatus.missing(); len(missing) > 0 {
+		return fmt.Errorf("rbac missing required permissions: %s", strings.Join(missing, ", "))
+	}
+
 	if err := forwardOnPremScale(ctx, 1); err != nil {
 		return err
 	}
@@ -401,12 +544,21 @@ func (s *Service) forwardOnPremProxyRaw(w http.ResponseWriter, req *http.Request
 		ctxWake, cancel := context.WithTimeout(req.Context(), wakeTimeout)
 		defer cancel()
 		if err := forwardOnPremEnsureAwake(ctxWake, wakeTimeout); err != nil {
+			forwardOnPremAutosleepState.mu.Lock()
+			forwardOnPremAutosleepState.lastError = err.Error()
+			forwardOnPremAutosleepState.lastErrorAt = time.Now()
+			forwardOnPremAutosleepState.mu.Unlock()
 			rlog.Warn("forward onprem wake failed", "err", err)
 			w.Header().Set("Retry-After", "10")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte("Forward is waking up; please retry.\n"))
 			return
 		}
+		forwardOnPremAutosleepState.mu.Lock()
+		forwardOnPremAutosleepState.lastWakeAt = time.Now()
+		forwardOnPremAutosleepState.lastError = ""
+		forwardOnPremAutosleepState.lastErrorAt = time.Time{}
+		forwardOnPremAutosleepState.mu.Unlock()
 	}
 
 	target, err := forwardOnPremProxyTarget()
@@ -478,6 +630,178 @@ func (s *Service) ForwardOnPremProxyPATCH(w http.ResponseWriter, req *http.Reque
 	s.forwardOnPremProxyRaw(w, req)
 }
 
+func forwardOnPremWorkloadSnapshot(ctx context.Context) ([]forwardOnPremWorkloadStatus, error) {
+	const ns = "forward"
+
+	kcfg, err := kubeInClusterConfig()
+	if err != nil {
+		return nil, err
+	}
+	clientset, err := kubernetes.NewForConfig(kcfg)
+	if err != nil {
+		return nil, err
+	}
+
+	type depReady struct {
+		name     string
+		optional bool
+	}
+	type stsReady struct {
+		name     string
+		optional bool
+	}
+
+	deps := []depReady{
+		{name: "fwd-backend-master"},
+		{name: "fwd-appserver"},
+		{name: "fwd-collector", optional: true},
+		{name: "fwd-cbr-agent", optional: true},
+		{name: "fwd-cbr-s3-agent", optional: true},
+		{name: "fwd-cbr-server", optional: true},
+	}
+	stss := []stsReady{
+		{name: "fwd-compute-worker"},
+		{name: "fwd-search-worker"},
+		{name: "fwd-log-aggregator", optional: true},
+	}
+
+	out := make([]forwardOnPremWorkloadStatus, 0, len(deps)+len(stss))
+	for _, d := range deps {
+		item := forwardOnPremWorkloadStatus{
+			Kind:     "deployment",
+			Name:     d.name,
+			Optional: d.optional,
+		}
+		obj, err := clientset.AppsV1().Deployments(ns).Get(ctx, d.name, metav1.GetOptions{})
+		if err != nil {
+			item.Error = err.Error()
+		} else {
+			if obj.Spec.Replicas != nil {
+				item.Desired = *obj.Spec.Replicas
+			}
+			item.Ready = obj.Status.ReadyReplicas
+			item.Available = obj.Status.AvailableReplicas
+		}
+		out = append(out, item)
+	}
+	for _, s := range stss {
+		item := forwardOnPremWorkloadStatus{
+			Kind:     "statefulset",
+			Name:     s.name,
+			Optional: s.optional,
+		}
+		obj, err := clientset.AppsV1().StatefulSets(ns).Get(ctx, s.name, metav1.GetOptions{})
+		if err != nil {
+			item.Error = err.Error()
+		} else {
+			if obj.Spec.Replicas != nil {
+				item.Desired = *obj.Spec.Replicas
+			}
+			item.Ready = obj.Status.ReadyReplicas
+			item.Available = obj.Status.AvailableReplicas
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func forwardOnPremPhase(
+	enabled bool,
+	lastErr string,
+	workloads []forwardOnPremWorkloadStatus,
+) string {
+	if lastErr != "" {
+		return "error"
+	}
+	if !enabled {
+		return "ready"
+	}
+	if len(workloads) == 0 {
+		return "waking"
+	}
+	ready := true
+	anyDesired := false
+	for _, w := range workloads {
+		if w.Optional {
+			continue
+		}
+		if w.Desired > 0 {
+			anyDesired = true
+		}
+		if w.Error != "" {
+			ready = false
+			break
+		}
+		if w.Desired > 0 && w.Ready < w.Desired {
+			ready = false
+			break
+		}
+	}
+	if ready && anyDesired {
+		return "ready"
+	}
+	return "waking"
+}
+
+// ForwardOnPremStatus reports autosleep/wake health and workload readiness.
+//
+//encore:api auth method=GET path=/api/forward/onprem/status
+func (s *Service) ForwardOnPremStatus(ctx context.Context) (*forwardOnPremStatusResponse, error) {
+	_, err := requireAuthUser()
+	if err != nil {
+		return nil, errs.B().Code(errs.Unauthenticated).Msg("authentication required").Err()
+	}
+
+	forwardOnPremAutosleepState.initOnce.Do(forwardOnPremInitAutosleepState)
+
+	forwardOnPremAutosleepState.mu.Lock()
+	enabled := forwardOnPremAutosleepState.enabled
+	idleTimeout := forwardOnPremAutosleepState.idleTimeout
+	wakeTimeout := forwardOnPremAutosleepState.wakeTimeout
+	lastReq := forwardOnPremAutosleepState.lastRequestAt
+	lastWake := forwardOnPremAutosleepState.lastWakeAt
+	lastErr := forwardOnPremAutosleepState.lastError
+	lastErrAt := forwardOnPremAutosleepState.lastErrorAt
+	forwardOnPremAutosleepState.mu.Unlock()
+
+	rbac, rbacErr := forwardOnPremRBACStatusCached(ctx)
+	workloads, workloadErr := forwardOnPremWorkloadSnapshot(ctx)
+
+	phase := forwardOnPremPhase(enabled, lastErr, workloads)
+	resp := &forwardOnPremStatusResponse{
+		Enabled:            enabled,
+		Phase:              phase,
+		IdleTimeoutSeconds: int64(idleTimeout.Seconds()),
+		WakeTimeoutSeconds: int64(wakeTimeout.Seconds()),
+		ProxyPrefix:        "/fwd",
+		RBAC:               rbac,
+		Workloads:          workloads,
+	}
+	if !lastReq.IsZero() {
+		resp.LastRequestAt = lastReq.UTC().Format(time.RFC3339)
+	}
+	if !lastWake.IsZero() {
+		resp.LastWakeAt = lastWake.UTC().Format(time.RFC3339)
+	}
+	if lastErr != "" {
+		resp.LastError = lastErr
+		if !lastErrAt.IsZero() {
+			resp.LastErrorAt = lastErrAt.UTC().Format(time.RFC3339)
+		}
+	}
+	if rbacErr != nil {
+		msg := fmt.Sprintf("rbac status check failed: %v", rbacErr)
+		resp.LastError = strings.TrimSpace(strings.Join([]string{resp.LastError, msg}, " | "))
+		resp.Phase = "error"
+	}
+	if workloadErr != nil {
+		msg := fmt.Sprintf("workload snapshot failed: %v", workloadErr)
+		resp.LastError = strings.TrimSpace(strings.Join([]string{resp.LastError, msg}, " | "))
+		resp.Phase = "error"
+	}
+	return resp, nil
+}
+
 // AdminForwardOnPremScaleDown is an internal helper endpoint for debugging.
 //
 //encore:api auth method=POST path=/api/admin/forward/onprem/scale-down tag:admin
@@ -485,6 +809,24 @@ func (s *Service) AdminForwardOnPremScaleDown(ctx context.Context) error {
 	// Keep this behind admin auth. Useful when debugging without waiting for idle timeout.
 	if err := forwardOnPremScale(ctx, 0); err != nil {
 		return errs.B().Code(errs.Unavailable).Msg("failed to scale down forward onprem").Err()
+	}
+	return nil
+}
+
+// AdminForwardOnPremWake forces a wake + readiness check for on-prem Forward.
+//
+//encore:api auth method=POST path=/api/admin/forward/onprem/wake tag:admin
+func (s *Service) AdminForwardOnPremWake(ctx context.Context) error {
+	forwardOnPremAutosleepState.initOnce.Do(forwardOnPremInitAutosleepState)
+
+	forwardOnPremAutosleepState.mu.Lock()
+	wakeTimeout := forwardOnPremAutosleepState.wakeTimeout
+	forwardOnPremAutosleepState.mu.Unlock()
+
+	ctxWake, cancel := context.WithTimeout(ctx, wakeTimeout)
+	defer cancel()
+	if err := forwardOnPremEnsureAwake(ctxWake, wakeTimeout); err != nil {
+		return errs.B().Code(errs.Unavailable).Msgf("failed to wake forward onprem: %v", err).Err()
 	}
 	return nil
 }

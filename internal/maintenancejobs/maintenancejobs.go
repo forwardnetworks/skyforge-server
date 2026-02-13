@@ -64,7 +64,7 @@ func withAdvisoryLock(ctx context.Context, db *sql.DB, key int64, fn func(contex
 	ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
-	locked, err := pglocks.TryAdvisoryLock(ctxReq, db, key)
+	lock, locked, err := pglocks.TryAdvisoryLock(ctxReq, db, key)
 	if err != nil {
 		return err
 	}
@@ -74,7 +74,7 @@ func withAdvisoryLock(ctx context.Context, db *sql.DB, key int64, fn func(contex
 	defer func() {
 		ctxUnlock, cancelUnlock := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancelUnlock()
-		_ = pglocks.AdvisoryUnlock(ctxUnlock, db, key)
+		_ = lock.Unlock(ctxUnlock)
 	}()
 	return fn(ctx)
 }

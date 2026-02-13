@@ -88,6 +88,7 @@ func injectNetlabC9sVrnetlabStartupConfig(
 
 		kind := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["kind"])))
 		image := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["image"])))
+		device := netlabDeviceKeyForClabNode(kind, image)
 
 		// Only touch vrnetlab images (qemu-based).
 		if !strings.Contains(image, "/vrnetlab/") {
@@ -99,6 +100,23 @@ func injectNetlabC9sVrnetlabStartupConfig(
 		applyVrnetlabNodeEnvOverrides(kind, image, dpIntfs, cfg)
 		if dpIntfs > 0 {
 			modified = true
+		}
+
+		// Keep NX-OS on legacy `netlab initial` (Ansible) until native startup/sh support is validated.
+		// Remove any startup-config reference/mount so vrnetlab does not apply topology config at boot.
+		if device == "nxos" {
+			if s, ok := cfg["startup-config"].(string); ok && strings.TrimSpace(s) != "" {
+				delete(cfg, "startup-config")
+				modified = true
+				log.Infof("c9s: nxos startup-config removed (legacy netlab initial path): %s", nodeName)
+			}
+			dropped := dropC9sMountForPath(nodeMounts[nodeName], startupPath)
+			if len(dropped) != len(nodeMounts[nodeName]) {
+				modified = true
+			}
+			nodeMounts[nodeName] = dropped
+			nodesAny[node] = cfg
+			continue
 		}
 
 		// IOSv/IOSvL2 bootstrap SSH internally (vrnetlab's own access_cfg + RSA keygen logic).
