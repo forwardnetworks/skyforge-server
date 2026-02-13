@@ -232,3 +232,28 @@ nodes:
 		t.Fatalf("expected defaults.snmp.trap_port to be omitted when trapPort=0")
 	}
 }
+
+func TestPatchNetlabTopologyYAMLForSnmp_PreservesGroupAutoCreate(t *testing.T) {
+	src := []byte(`
+name: test
+groups:
+  _auto_create: true
+  hosts:
+    members: [h1]
+    device: linux
+  routers:
+    members: [r1]
+nodes:
+  r1:
+    device: nxos
+`)
+	out, err := patchNetlabTopologyYAMLForSnmp(src, "token-xyz", "", 0)
+	if err != nil {
+		t.Fatalf("patch failed: %v", err)
+	}
+	topo := parseYAMLMap(t, out)
+	groups := getMap(topo["groups"])
+	if v, ok := groups["_auto_create"].(bool); !ok || !v {
+		t.Fatalf("expected groups._auto_create=true to be preserved, got %#v", groups["_auto_create"])
+	}
+}

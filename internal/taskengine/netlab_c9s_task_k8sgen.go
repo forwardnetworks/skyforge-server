@@ -415,8 +415,15 @@ func patchNetlabTopologyYAMLForSnmp(topologyYAML []byte, community, trapHost str
 	}
 	sort.Strings(groupNames)
 	for _, groupName := range groupNames {
-		groupMap := ensureAnyMap(groups[groupName])
-		groups[groupName] = groupMap
+		groupRaw, ok := groups[groupName]
+		if !ok {
+			continue
+		}
+		groupMap, ok := groupRaw.(map[string]any)
+		if !ok {
+			// Preserve non-map group keys such as groups._auto_create: true.
+			continue
+		}
 		if d, ok := groupMap["device"].(string); ok && strings.TrimSpace(d) != "" {
 			groupDevice[groupName] = strings.TrimSpace(d)
 		}
