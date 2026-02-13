@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"sort"
 	"strings"
 	"time"
 
@@ -45,9 +46,6 @@ type netlabC9sManifest struct {
 const defaultNetlabC9sGeneratorImage = "ghcr.io/forwardnetworks/skyforge-netlab-generator:latest"
 
 var generatedSnmpConfigTemplates = map[string]string{
-	"linux": `#!/bin/sh
-# Keep Linux hosts SNMP-free; no device SNMP config is required here.
-exit 0`,
 	"arubacx": `snmp-server community {{ defaults.snmp.community }} unrestricted
 {% if defaults.snmp.trap_host is defined and defaults.snmp.trap_host %}
 snmp-server host {{ defaults.snmp.trap_host }} community {{ defaults.snmp.community }}
@@ -284,7 +282,7 @@ func patchNetlabTopologyYAMLForSnmp(topologyYAML []byte, community, trapHost str
 	}
 
 	// Append required config modules.
-	// - snmp_config applies globally (templates are generated for all supported devices).
+	// - snmp_config applies per-node for non-linux devices.
 	// - skyforge_eos_auth applies only to EOS groups to keep native netlab config_mode=sh
 	//   while ensuring SSH/password auth defaults are present for Forward.
 	groups := ensureMap(topo, "groups")
@@ -338,9 +336,153 @@ func patchNetlabTopologyYAMLForSnmp(topologyYAML []byte, community, trapHost str
 			group["config"] = []any{module}
 		}
 	}
-	appendConfigModule(all, "snmp_config")
+	removeConfigModule := func(group map[string]any, module string) {
+		rawCfg, _ := group["config"]
+		switch v := rawCfg.(type) {
+		case nil:
+			return
+		case string:
+			if strings.TrimSpace(v) == module {
+				delete(group, "config")
+			}
+		case []any:
+			next := make([]any, 0, len(v))
+			for _, item := range v {
+				if strings.TrimSpace(fmt.Sprintf("%v", item)) == module {
+					continue
+				}
+				next = append(next, item)
+			}
+			if len(next) == 0 {
+				delete(group, "config")
+			} else {
+				group["config"] = next
+			}
+		case []string:
+			next := make([]any, 0, len(v))
+			for _, item := range v {
+				if strings.TrimSpace(item) == module {
+					continue
+				}
+				next = append(next, item)
+			}
+			if len(next) == 0 {
+				delete(group, "config")
+			} else {
+				group["config"] = next
+			}
+		}
+	}
+	toStringList := func(v any) []string {
+		out := []string{}
+		seen := map[string]struct{}{}
+		var visit func(any)
+		visit = func(x any) {
+			switch vv := x.(type) {
+			case string:
+				s := strings.TrimSpace(vv)
+				if s == "" {
+					return
+				}
+				if _, ok := seen[s]; ok {
+					return
+				}
+				seen[s] = struct{}{}
+				out = append(out, s)
+			case []any:
+				for _, item := range vv {
+					visit(item)
+				}
+			case []string:
+				for _, item := range vv {
+					visit(item)
+				}
+			}
+		}
+		visit(v)
+		return out
+	}
+	// Never use groups.all for snmp_config; this would include linux devices.
+	removeConfigModule(all, "snmp_config")
 	eosGroup := ensureMap(groups, "eos")
 	appendConfigModule(eosGroup, "skyforge_eos_auth")
+
+	groupDevice := map[string]string{}
+	groupMembers := map[string]map[string]struct{}{}
+	groupNames := make([]string, 0, len(groups))
+	for name := range groups {
+		groupNames = append(groupNames, name)
+	}
+	sort.Strings(groupNames)
+	for _, groupName := range groupNames {
+		groupMap := ensureAnyMap(groups[groupName])
+		groups[groupName] = groupMap
+		if d, ok := groupMap["device"].(string); ok && strings.TrimSpace(d) != "" {
+			groupDevice[groupName] = strings.TrimSpace(d)
+		}
+		members := map[string]struct{}{}
+		for _, member := range toStringList(groupMap["members"]) {
+			members[member] = struct{}{}
+		}
+		if len(members) > 0 {
+			groupMembers[groupName] = members
+		}
+	}
+
+	defaults := ensureMap(topo, "defaults")
+	defaultDevice := ""
+	if d, ok := defaults["device"].(string); ok {
+		defaultDevice = strings.TrimSpace(d)
+	}
+	nodes := ensureMap(topo, "nodes")
+	nodeNames := make([]string, 0, len(nodes))
+	for nodeName := range nodes {
+		nodeNames = append(nodeNames, nodeName)
+	}
+	sort.Strings(nodeNames)
+	for _, nodeName := range nodeNames {
+		nodeMap := ensureAnyMap(nodes[nodeName])
+		nodes[nodeName] = nodeMap
+		device := ""
+		if d, ok := nodeMap["device"].(string); ok {
+			device = strings.TrimSpace(d)
+		}
+		if device == "" {
+			for _, groupName := range toStringList(nodeMap["group"]) {
+				if d := strings.TrimSpace(groupDevice[groupName]); d != "" {
+					device = d
+					break
+				}
+			}
+		}
+		if device == "" {
+			for _, groupName := range toStringList(nodeMap["groups"]) {
+				if d := strings.TrimSpace(groupDevice[groupName]); d != "" {
+					device = d
+					break
+				}
+			}
+		}
+		if device == "" {
+			for _, groupName := range groupNames {
+				if _, ok := groupMembers[groupName][nodeName]; !ok {
+					continue
+				}
+				if d := strings.TrimSpace(groupDevice[groupName]); d != "" {
+					device = d
+					break
+				}
+			}
+		}
+		if device == "" {
+			device = defaultDevice
+		}
+		if strings.EqualFold(strings.TrimSpace(device), "linux") {
+			removeConfigModule(nodeMap, "snmp_config")
+			continue
+		}
+		appendConfigModule(nodeMap, "snmp_config")
+	}
 
 	community = strings.TrimSpace(community)
 	if community == "" {
@@ -369,7 +511,6 @@ func patchNetlabTopologyYAMLForSnmp(topologyYAML []byte, community, trapHost str
 	}
 	configlets["skyforge_eos_auth"] = eosAuthConfiglets
 
-	defaults := ensureMap(topo, "defaults")
 	snmp := ensureMap(defaults, "snmp")
 	snmp["community"] = community
 	// trap_host can be empty; templates should treat that as "poll-only".

@@ -86,9 +86,14 @@ func countStringInList(v any, want string) int {
 func TestPatchNetlabTopologyYAMLForSnmp_InsertsGeneratedConfiglets(t *testing.T) {
 	src := []byte(`
 name: test
+defaults:
+  device: eos
 nodes:
   r1:
     device: iol
+  h1:
+    device: linux
+  r2: {}
 `)
 
 	out, err := patchNetlabTopologyYAMLForSnmp(src, "token-abc", "10.0.0.10", 162)
@@ -103,12 +108,26 @@ nodes:
 
 	groups := getMap(topo["groups"])
 	all := getMap(groups["all"])
-	if !listContainsString(all["config"], "snmp_config") {
-		t.Fatalf("expected groups.all.config to include snmp_config, got %#v", all["config"])
+	if listContainsString(all["config"], "snmp_config") {
+		t.Fatalf("expected groups.all.config to exclude snmp_config, got %#v", all["config"])
 	}
 	eos := getMap(groups["eos"])
 	if !listContainsString(eos["config"], "skyforge_eos_auth") {
 		t.Fatalf("expected groups.eos.config to include skyforge_eos_auth, got %#v", eos["config"])
+	}
+
+	nodes := getMap(topo["nodes"])
+	r1 := getMap(nodes["r1"])
+	h1 := getMap(nodes["h1"])
+	r2 := getMap(nodes["r2"])
+	if !listContainsString(r1["config"], "snmp_config") {
+		t.Fatalf("expected non-linux node r1 to include snmp_config, got %#v", r1["config"])
+	}
+	if listContainsString(h1["config"], "snmp_config") {
+		t.Fatalf("expected linux node h1 to exclude snmp_config, got %#v", h1["config"])
+	}
+	if !listContainsString(r2["config"], "snmp_config") {
+		t.Fatalf("expected default-device node r2 to include snmp_config, got %#v", r2["config"])
 	}
 
 	defaults := getMap(topo["defaults"])
@@ -130,6 +149,9 @@ nodes:
 	}
 	if got := strings.TrimSpace(fmt.Sprintf("%v", snmpCfg["iol"])); got == "" {
 		t.Fatalf("expected generated iol snmp_config template")
+	}
+	if _, ok := snmpCfg["linux"]; ok {
+		t.Fatalf("expected linux snmp_config template to be absent")
 	}
 	eosAuth := getMap(configlets["skyforge_eos_auth"])
 	if got := strings.TrimSpace(fmt.Sprintf("%v", eosAuth["eos"])); got == "" {
@@ -154,6 +176,8 @@ configlets:
 nodes:
   r1:
     device: iol
+  h1:
+    device: linux
 `)
 
 	out, err := patchNetlabTopologyYAMLForSnmp(src, "token-xyz", "", 0)
@@ -168,12 +192,22 @@ nodes:
 
 	groups := getMap(topo["groups"])
 	all := getMap(groups["all"])
-	if got := countStringInList(all["config"], "snmp_config"); got != 1 {
-		t.Fatalf("expected exactly one snmp_config entry, got %d (%#v)", got, all["config"])
+	if got := countStringInList(all["config"], "snmp_config"); got != 0 {
+		t.Fatalf("expected groups.all.config snmp_config to be removed, got %d (%#v)", got, all["config"])
 	}
 	eos := getMap(groups["eos"])
 	if got := countStringInList(eos["config"], "skyforge_eos_auth"); got != 1 {
 		t.Fatalf("expected exactly one skyforge_eos_auth entry, got %d (%#v)", got, eos["config"])
+	}
+
+	nodes := getMap(topo["nodes"])
+	r1 := getMap(nodes["r1"])
+	h1 := getMap(nodes["h1"])
+	if got := countStringInList(r1["config"], "snmp_config"); got != 1 {
+		t.Fatalf("expected exactly one node snmp_config entry on r1, got %d (%#v)", got, r1["config"])
+	}
+	if got := countStringInList(h1["config"], "snmp_config"); got != 0 {
+		t.Fatalf("expected linux node h1 snmp_config to be removed, got %d (%#v)", got, h1["config"])
 	}
 
 	configlets := getMap(topo["configlets"])
