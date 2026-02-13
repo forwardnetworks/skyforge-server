@@ -23,6 +23,7 @@ type Config struct {
 	E2EAdminEnabled           bool
 	E2EAdminToken             string
 	UI                        UIConfig
+	Coder                     CoderConfig
 	PublicURL                 string
 	NotificationsEnabled      bool
 	NotificationsInterval     time.Duration
@@ -178,6 +179,10 @@ type UIConfig struct {
 	ThemeDefault     string
 	OIDCEnabled      bool
 	OIDCLoginURL     string
+}
+
+type CoderConfig struct {
+	PortalRedirectPath string
 }
 
 type NetlabConfig struct {

@@ -286,6 +286,10 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 	if uiCfg.SupportText == "" {
 		uiCfg.SupportText = "Need access? Contact your platform admin."
 	}
+	coderPortalRedirectPath := strings.TrimSpace(enc.Coder.PortalRedirectPath)
+	if coderPortalRedirectPath == "" {
+		coderPortalRedirectPath = "/coder/"
+	}
 
 	notificationsEnabled := enc.NotificationsEnabled
 	notificationsInterval := 30 * time.Second
@@ -374,13 +378,16 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 			}
 			return "/opt/skyforge/static"
 		}(),
-		MaxGroups:               maxGroups,
-		AdminUsers:              adminUsers,
-		AdminUsername:           adminUsername,
-		AdminPassword:           adminPassword,
-		E2EAdminEnabled:         e2eAdminEnabled,
-		E2EAdminToken:           e2eAdminToken,
-		UI:                      uiCfg,
+		MaxGroups:       maxGroups,
+		AdminUsers:      adminUsers,
+		AdminUsername:   adminUsername,
+		AdminPassword:   adminPassword,
+		E2EAdminEnabled: e2eAdminEnabled,
+		E2EAdminToken:   e2eAdminToken,
+		UI:              uiCfg,
+		Coder: skyforgecore.CoderConfig{
+			PortalRedirectPath: coderPortalRedirectPath,
+		},
 		NotificationsEnabled:    notificationsEnabled,
 		NotificationsInterval:   notificationsInterval,
 		CloudCredentialChecks:   cloudCredentialChecks,

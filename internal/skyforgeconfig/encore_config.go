@@ -89,6 +89,10 @@ type UIDefaultsConfig struct {
 	ThemeDefault     string
 }
 
+type CoderDefaultsConfig struct {
+	PortalRedirectPath string
+}
+
 type WorkspacesDefaultsConfig struct {
 	DataDir          string
 	GiteaAPIURL      string
@@ -183,6 +187,7 @@ type EncoreConfig struct {
 	Integrations     IntegrationDefaultsConfig
 	Elastic          ElasticDefaultsConfig
 	UI               UIDefaultsConfig
+	Coder            CoderDefaultsConfig
 	OIDC             OIDCDefaultsConfig
 	LDAP             LDAPDefaultsConfig
 	DNS              DNSDefaultsConfig

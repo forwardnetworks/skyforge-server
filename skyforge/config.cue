@@ -62,6 +62,11 @@ UI: {
 	ThemeDefault: ""
 }
 
+Coder: {
+	// Landing path used by Skyforge's /api/coder/launch helper.
+	PortalRedirectPath: "/coder/"
+}
+
 PublicURL: ""
 
 	DNS: {
