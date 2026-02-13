@@ -27,6 +27,12 @@ func runNetlabC9sLinuxScripts(ctx context.Context, ns, topologyOwner string, top
 		log = noopLogger{}
 	}
 	enableNoise := envBoolValue(os.Getenv("SKYFORGE_NETLAB_C9S_LINUX_NOISE"), true)
+	noiseIntervalSeconds := 10
+	if raw := strings.TrimSpace(os.Getenv("SKYFORGE_NETLAB_C9S_LINUX_NOISE_INTERVAL_SECONDS")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 3600 {
+			noiseIntervalSeconds = n
+		}
+	}
 	ns = strings.TrimSpace(ns)
 	topologyOwner = strings.TrimSpace(topologyOwner)
 	if ns == "" || topologyOwner == "" {
@@ -243,11 +249,11 @@ func runNetlabC9sLinuxScripts(ctx context.Context, ns, topologyOwner string, top
         ping -c 1 -W 1 "$gw" >/dev/null 2>&1 || true
       fi
     fi
-    sleep 30
+    sleep ` + strconv.Itoa(noiseIntervalSeconds) + `
   done
   ' >/dev/null 2>&1 &
   echo $! > /tmp/skyforge-noise.pid
-  echo "noise started"
+  echo "noise started (interval=` + strconv.Itoa(noiseIntervalSeconds) + `s)"
 ); rc=$?; echo "__SKYFORGE_STEP_END__ noise ${rc}"
 `
 			}
