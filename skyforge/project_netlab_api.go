@@ -334,15 +334,6 @@ func isNetlabTemplatePathExcluded(rel string) bool {
 	return false
 }
 
-func isNetlabAnyYAMLDir(relDir string) bool {
-	// Some directories intentionally contain multiple standalone templates rather than
-	// a "topology.yml" entrypoint per folder. For those, we include any YAML files.
-	//
-	// Today this is used for AI-generated templates.
-	relDir = strings.Trim(strings.TrimSpace(relDir), "/")
-	return relDir == "ai/generated" || strings.HasPrefix(relDir, "ai/generated/")
-}
-
 func listNetlabTemplatesViaGitTree(cfg Config, owner, repo, headSHA, dir string, maxResults int) ([]string, error) {
 	owner = strings.TrimSpace(owner)
 	repo = strings.TrimSpace(repo)
@@ -402,21 +393,12 @@ func listNetlabTemplatesViaGitTree(cfg Config, owner, repo, headSHA, dir string,
 			}
 			continue
 		}
-		// Folder-based templates: only include entrypoints by default.
-		if base == "topology.yml" || base == "topology.yaml" {
+		// Nested templates: include all YAML files so folder-based catalogs with
+		// many single-file templates are visible from the root dir listing.
+		if strings.HasSuffix(base, ".yml") || strings.HasSuffix(base, ".yaml") {
 			results = append(results, rel)
 			if maxResults > 0 && len(results) >= maxResults {
 				return nil, fmt.Errorf("too many templates")
-			}
-			continue
-		}
-		// Allow-list: directories that intentionally contain multiple single-file templates.
-		if isNetlabAnyYAMLDir(path.Dir(rel)) {
-			if strings.HasSuffix(base, ".yml") || strings.HasSuffix(base, ".yaml") {
-				results = append(results, rel)
-				if maxResults > 0 && len(results) >= maxResults {
-					return nil, fmt.Errorf("too many templates")
-				}
 			}
 			continue
 		}
@@ -446,19 +428,7 @@ func listNetlabTemplatesRecursive(cfg Config, owner, repo, branch, repoPath, rel
 		switch entry.Type {
 		case "file":
 			if nested {
-				if isNetlabAnyYAMLDir(relBase) {
-					if strings.HasSuffix(name, ".yml") || strings.HasSuffix(name, ".yaml") {
-						if isNetlabTemplatePathExcluded(rel) {
-							continue
-						}
-						results = append(results, rel)
-						if maxResults > 0 && len(results) >= maxResults {
-							return nil, fmt.Errorf("too many templates")
-						}
-					}
-					continue
-				}
-				if name == "topology.yml" || name == "topology.yaml" {
+				if strings.HasSuffix(name, ".yml") || strings.HasSuffix(name, ".yaml") {
 					if isNetlabTemplatePathExcluded(rel) {
 						continue
 					}
