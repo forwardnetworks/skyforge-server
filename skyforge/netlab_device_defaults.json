@@ -73,6 +73,16 @@
       ]
     },
     {
+      "device": "exos",
+      "image_prefix": "vrnetlab/extreme_exos",
+      "credentials": [
+        {
+          "username": "admin",
+          "password": "admin"
+        }
+      ]
+    },
+    {
       "device": "fortios",
       "image_prefix": "vrnetlab/vr-fortios",
       "credentials": [

@@ -795,7 +795,7 @@ func deployableInSkyforge(device string) bool {
 	// for in-cluster (clabernetes) netlab deployments.
 	//
 	// NOTE: We keep this list aligned with the netlab device defaults catalog used by Skyforge.
-	case "eos", "iol", "ioll2", "ios", "iosv", "iosvl2", "iosxr", "csr", "nxos", "cumulus", "sros", "asav", "fortios", "vmx", "vsrx", "junos", "vjunos-router", "vjunos-switch", "cat8000v", "arubacx", "dellos10", "vptx", "linux":
+	case "eos", "iol", "ioll2", "ios", "iosv", "iosvl2", "iosxr", "csr", "nxos", "cumulus", "sros", "asav", "fortios", "vmx", "vsrx", "junos", "vjunos-router", "vjunos-switch", "cat8000v", "arubacx", "dellos10", "vptx", "linux", "exos":
 		return true
 	default:
 		return false
@@ -808,6 +808,7 @@ func onboardedNetlabDevices() []string {
 	return []string{
 		"eos",
 		"iol",
+		"exos",
 		"iosv",
 		"iosvl2",
 		"csr",

@@ -801,6 +801,7 @@ var defaultNetlabConfigModesByDeviceCatalog = map[string]string{
 	"linux":    "sh",
 	"eos":      "sh",
 	"frr":      "sh",
+	"exos":     "startup",
 	"iol":      "startup",
 	"ioll2":    "startup",
 	"dellos10": "startup",

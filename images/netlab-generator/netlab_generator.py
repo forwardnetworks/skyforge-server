@@ -8,7 +8,7 @@ import ipaddress
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Set
 
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
@@ -418,6 +418,127 @@ def _inject_ios_mgmt_vrf(workdir: Path) -> None:
             continue
 
 
+def _combine_snippets(snippets: Dict[str, str], known_order: Sequence[str]) -> str:
+    if not snippets:
+        return ""
+    parts: List[str] = []
+    seen: Set[str] = set()
+    for key in known_order:
+        v = str(snippets.get(key, "") or "").strip()
+        if not v:
+            continue
+        parts.append(v)
+        seen.add(key)
+    for key in sorted(snippets.keys()):
+        if key in seen:
+            continue
+        v = str(snippets.get(key, "") or "").strip()
+        if not v:
+            continue
+        parts.append(v)
+    if not parts:
+        return ""
+    out = "\n".join(parts)
+    out = out.replace("\r\n", "\n")
+    if not out.endswith("\n"):
+        out += "\n"
+    return out
+
+
+def _synthesize_missing_startup_partials(workdir: Path) -> None:
+    """
+    Ensure startup.partial.config exists for startup-config workflows.
+
+    netlab usually generates node_files/<node>/startup.partial.config for startup-mode
+    devices. In some generator flows that file may be missing even though per-module
+    snippets exist; synthesize it deterministically from available snippets so
+    clabernetes launcher bootstrap stays stable (notably for cisco_iol).
+    """
+    clab_path = workdir / "clab.yml"
+    if not clab_path.exists():
+        return
+    try:
+        topo = yaml.safe_load(clab_path.read_text()) or {}
+    except Exception:
+        return
+    topology = topo.get("topology")
+    if not isinstance(topology, dict):
+        return
+    nodes = topology.get("nodes")
+    if not isinstance(nodes, dict):
+        return
+
+    known_order = [
+        "normalize",
+        "initial",
+        "vlan",
+        "bgp",
+        "vxlan",
+        "evpn",
+        "ebgp_ecmp",
+        "ebgp.ecmp",
+        "firewall.zonebased",
+    ]
+    iol_kinds = {"cisco_iol", "cisco_ioll2"}
+
+    for node_name, node_obj in nodes.items():
+        node = str(node_name or "").strip()
+        if not node:
+            continue
+        node_def = node_obj if isinstance(node_obj, dict) else {}
+        kind = str(node_def.get("kind", "") or "").strip().lower()
+
+        startup_rel = str(node_def.get("startup-config", "") or "").strip()
+        startup_norm = startup_rel.replace("\\", "/").lstrip("./")
+        if startup_norm and startup_norm.endswith("/startup.partial.config"):
+            target_rel = startup_norm
+        elif kind in iol_kinds:
+            target_rel = f"node_files/{node}/startup.partial.config"
+        else:
+            continue
+
+        target = (workdir / target_rel).resolve()
+        if not str(target).startswith(str(workdir.resolve())):
+            continue
+        if target.exists():
+            continue
+
+        node_dir = (workdir / "node_files" / node).resolve()
+        if (
+            not str(node_dir).startswith(str(workdir.resolve()))
+            or not node_dir.exists()
+            or not node_dir.is_dir()
+        ):
+            continue
+
+        snippets: Dict[str, str] = {}
+        for p in sorted(node_dir.iterdir()):
+            if not p.is_file():
+                continue
+            name = str(p.name or "").strip()
+            if not name or name.startswith("."):
+                continue
+            if name in ("startup.partial.config", "ifstate"):
+                continue
+            try:
+                txt = p.read_text()
+            except Exception:
+                continue
+            if not txt.strip():
+                continue
+            snippets[name] = txt
+
+        combined = _combine_snippets(snippets, known_order)
+        if not combined:
+            continue
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(combined)
+            print(f"info: synthesized startup.partial.config for {node}")
+        except Exception:
+            continue
+
+
 def _ensure_unique_keys(entries: List[FileEntry]) -> List[FileEntry]:
     used: Dict[str, int] = {}
     out: List[FileEntry] = []
@@ -490,6 +611,7 @@ def main() -> None:
     # Post-process netlab output to add Skyforge-specific snippets without patching
     # upstream netlab templates.
     _inject_ios_mgmt_vrf(workdir)
+    _synthesize_missing_startup_partials(workdir)
 
     clab_yml = workdir / "clab.yml"
     if not clab_yml.exists():

@@ -95,6 +95,32 @@ type SaveContainerlabTopologyYAMLResponse struct {
 	FilePath     string `json:"filePath"`
 }
 
+type SaveNetlabTopologyYAMLRequest struct {
+	// Name drives the default filename.
+	Name string `json:"name"`
+
+	// TopologyYAML is the raw netlab topology YAML.
+	TopologyYAML string `json:"topologyYAML"`
+
+	// TemplatesDir is where we store the YAML inside the workspace repo.
+	// Default: "netlab/designer".
+	//
+	// For this endpoint, TemplatesDir must be under "netlab/" or "blueprints/netlab/".
+	TemplatesDir string `json:"templatesDir,omitempty"`
+
+	// Template is the filename to write under TemplatesDir.
+	// Default: "<normalized-name>.yml".
+	Template string `json:"template,omitempty"`
+}
+
+type SaveNetlabTopologyYAMLResponse struct {
+	WorkspaceID  string `json:"workspaceId"`
+	Branch       string `json:"branch"`
+	TemplatesDir string `json:"templatesDir"`
+	Template     string `json:"template"`
+	FilePath     string `json:"filePath"`
+}
+
 type CreateDeploymentFromTemplateRequest struct {
 	// Name becomes the Skyforge deployment name (and drives the lab name).
 	Name string `json:"name"`
@@ -478,6 +504,98 @@ func (s *Service) SaveContainerlabTopologyYAML(ctx context.Context, id string, r
 	}
 
 	return &SaveContainerlabTopologyYAMLResponse{
+		WorkspaceID:  pc.workspace.ID,
+		Branch:       branch,
+		TemplatesDir: templatesDir,
+		Template:     template,
+		FilePath:     filePath,
+	}, nil
+}
+
+// SaveNetlabTopologyYAML writes a netlab topology YAML into the user's workspace repo so it can be
+// validated/deployed later (for example by creating a deployment referencing the file).
+//
+//encore:api auth method=POST path=/api/workspaces/:id/netlab/topologies
+func (s *Service) SaveNetlabTopologyYAML(ctx context.Context, id string, req *SaveNetlabTopologyYAMLRequest) (*SaveNetlabTopologyYAMLResponse, error) {
+	user, err := requireAuthUser()
+	if err != nil {
+		return nil, err
+	}
+	pc, err := s.workspaceContextForUser(user, id)
+	if err != nil {
+		return nil, err
+	}
+	if pc.access == "viewer" {
+		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
+	}
+	if req == nil {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid payload").Err()
+	}
+
+	name, err := normalizeDeploymentName(req.Name)
+	if err != nil {
+		return nil, err
+	}
+	topologyYAML := strings.TrimSpace(req.TopologyYAML)
+	if topologyYAML == "" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("topologyYAML is required").Err()
+	}
+	if len(topologyYAML) > (1 << 20) {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("topologyYAML too large").Err()
+	}
+
+	{
+		var parsed map[string]any
+		if err := yaml.Unmarshal([]byte(topologyYAML), &parsed); err != nil {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid YAML").Err()
+		}
+		if parsed == nil {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid YAML").Err()
+		}
+	}
+
+	templatesDir := strings.Trim(strings.TrimSpace(req.TemplatesDir), "/")
+	if templatesDir == "" {
+		templatesDir = "netlab/designer"
+	}
+	if !isSafeRelativePath(templatesDir) {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("templatesDir must be a safe repo-relative path").Err()
+	}
+	if templatesDir != "netlab" &&
+		!strings.HasPrefix(templatesDir, "netlab/") &&
+		templatesDir != "blueprints/netlab" &&
+		!strings.HasPrefix(templatesDir, "blueprints/netlab/") {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("templatesDir must be under 'netlab/' or 'blueprints/netlab/'").Err()
+	}
+
+	template := strings.Trim(strings.TrimSpace(req.Template), "/")
+	if template == "" {
+		template = name + ".yml"
+	}
+	if !strings.HasSuffix(template, ".yml") && !strings.HasSuffix(template, ".yaml") {
+		template = template + ".yml"
+	}
+	if strings.Contains(template, "/") {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("template must be a filename").Err()
+	}
+
+	branch := strings.TrimSpace(pc.workspace.DefaultBranch)
+	if branch == "" {
+		branch = "main"
+	}
+	filePath := path.Join(templatesDir, template)
+	content := strings.TrimRight(topologyYAML, "\n") + "\n"
+	commitMsg := fmt.Sprintf("lab: save netlab topology (%s)", name)
+	{
+		ctxWrite, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		_ = ctxWrite
+		if err := ensureGiteaFile(s.cfg, pc.workspace.GiteaOwner, pc.workspace.GiteaRepo, filePath, content, commitMsg, branch, pc.claims); err != nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to write topology into workspace repo").Err()
+		}
+	}
+
+	return &SaveNetlabTopologyYAMLResponse{
 		WorkspaceID:  pc.workspace.ID,
 		Branch:       branch,
 		TemplatesDir: templatesDir,

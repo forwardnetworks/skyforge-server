@@ -27,12 +27,12 @@ func rewritePinnedVrnetlabImage(image string) (string, bool) {
 	// This keeps templates using either upstream tags or older -skyforgeN tags working.
 	if strings.Contains(image, "vrnetlab/cisco_vios:15.9.3") {
 		// Pin to a digest so clusters with imagePullPolicy=IfNotPresent can't get stuck on an older
-		// locally cached tag. This digest corresponds to :15.9.3-skyforge19 linux/amd64.
-		return "ghcr.io/forwardnetworks/vrnetlab/cisco_vios@sha256:aa575d17f99775a71a6f076484c5998c2cf400c5524bd30d48dedbbf9e36f5c7", true
+		// locally cached tag. This digest corresponds to :15.9.3-skyforge20 linux/amd64.
+		return "ghcr.io/forwardnetworks/vrnetlab/cisco_vios@sha256:4aa69eda6ff4fabf08802babc2ac78cc5f16bed3fc10fe33fd8f0a8c1df72295", true
 	}
 	if strings.Contains(image, "vrnetlab/cisco_viosl2:15.2") {
-		// Digest corresponds to :15.2-skyforge18 linux/amd64.
-		return "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2@sha256:c8fccd0aef63187c371df881c094ab4ddca6d890c98f698365cafe0662a8442b", true
+		// Digest corresponds to :15.2-skyforge19 linux/amd64.
+		return "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2@sha256:4865c463295355ba00ee1453fd882f74265746c042bf63f06dccc8bdf138bdc0", true
 	}
 
 	if pinned, ok := vrnetlabPinnedImages[image]; ok && strings.TrimSpace(pinned) != "" {

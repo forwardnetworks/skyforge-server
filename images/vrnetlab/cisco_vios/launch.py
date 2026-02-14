@@ -449,8 +449,8 @@ if __name__ == "__main__":
         help="Enable trace level logging",
         default=os.getenv("TRACE", "false").lower() == "true",
     )
-    parser.add_argument("--username", help="Username", default=os.getenv("USERNAME", "vagrant"))
-    parser.add_argument("--password", help="Password", default=os.getenv("PASSWORD", "vagrant"))
+    parser.add_argument("--username", help="Username", default=os.getenv("USERNAME", "admin"))
+    parser.add_argument("--password", help="Password", default=os.getenv("PASSWORD", "admin"))
     parser.add_argument("--hostname", help="Device hostname", default=os.getenv("HOSTNAME", "vios"))
     parser.add_argument(
         "--connection-mode",

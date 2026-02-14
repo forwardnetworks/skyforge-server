@@ -40,6 +40,10 @@
       "cpuRequest": "1000m",
       "memoryRequest": "2Gi"
     },
+    "extreme_exos": {
+      "cpuRequest": "1000m",
+      "memoryRequest": "2Gi"
+    },
     "juniper_vjunosevolved": {
       "cpuRequest": "4000m",
       "memoryRequest": "12Gi"

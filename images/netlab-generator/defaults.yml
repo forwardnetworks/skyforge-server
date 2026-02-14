@@ -129,6 +129,14 @@ devices:
       group_vars:
         netlab_config_mode: startup
 
+  # Extreme EXOS via vrnetlab
+  exos:
+    provider: clab
+    clab:
+      image: ghcr.io/forwardnetworks/vrnetlab/extreme_exos:33.1.1.31
+      group_vars:
+        netlab_config_mode: startup
+
   # Keep IOS/Junos-family virtual NOSes on startup-config mode.
   ios:
     clab:

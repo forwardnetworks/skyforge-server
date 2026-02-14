@@ -64,6 +64,7 @@ var nosKindProfileAliases = map[string]string{
 	"cumulus":       "cumulus",
 	"dellos10":      "vr-ftosv",
 	"eos":           "eos",
+	"exos":          "extreme_exos",
 	"fortios":       "vr-fortios",
 	"iol":           "cisco_iol",
 	"ioll2":         "cisco_iol_l2",
