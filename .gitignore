@@ -7,3 +7,4 @@ encore.gen.cue
 .env.local
 .env.*.local
 skyforge.test
+skyforge/frontend_dist/skyforge-build-manifest.json
