@@ -1,9 +1,13 @@
 package skyforge
 
 import (
+	"bytes"
 	"context"
+	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -364,7 +368,7 @@ func forwardOnPremWaitReady(ctx context.Context) error {
 
 func forwardOnPremProxyTarget() (*url.URL, error) {
 	// Intentionally hard-coded for now; keep this simple for on-prem demos.
-	return url.Parse("http://fwd-appserver.forward.svc.cluster.local:8080")
+	return url.Parse("https://fwd-appserver.forward.svc.cluster.local:8443")
 }
 
 func forwardOnPremProxyPath(reqPath string) string {
@@ -461,6 +465,9 @@ func (s *Service) forwardOnPremProxyRaw(w http.ResponseWriter, req *http.Request
 	}
 
 	proxy := httputil.NewSingleHostReverseProxy(target)
+	proxy.Transport = &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // Forward appserver uses internal/self-signed certs.
+	}
 	origDirector := proxy.Director
 	origHost := strings.TrimSpace(req.Host)
 	if origHost == "" {
@@ -513,6 +520,8 @@ func (s *Service) forwardOnPremProxyRaw(w http.ResponseWriter, req *http.Request
 		if strings.EqualFold(scheme, "https") {
 			r.Header.Set("X-Forwarded-Port", "443")
 		}
+		// Keep responses uncompressed so response-body rewrites are safe.
+		r.Header.Del("Accept-Encoding")
 
 		// If Envoy already provided a prefix header, keep it. It helps Forward build absolute URLs.
 		if v := strings.TrimSpace(r.Header.Get("X-Forwarded-Prefix")); v == "" {
@@ -525,6 +534,12 @@ func (s *Service) forwardOnPremProxyRaw(w http.ResponseWriter, req *http.Request
 	}
 	proxy.ModifyResponse = func(resp *http.Response) error {
 		rewriteForwardOnPremSetCookiePaths(resp, cookiePathMode)
+		if err := rewriteForwardOnPremJSONLocation(resp, redirectHost, publicScheme, rootAliasesEnabled); err != nil {
+			return err
+		}
+		if err := rewriteForwardOnPremAssetAbsolutePaths(resp); err != nil {
+			return err
+		}
 
 		loc := strings.TrimSpace(resp.Header.Get("Location"))
 		if loc == "" {
@@ -557,6 +572,117 @@ func (s *Service) forwardOnPremProxyRaw(w http.ResponseWriter, req *http.Request
 	}
 
 	proxy.ServeHTTP(w, req)
+}
+
+func rewriteForwardOnPremJSONLocation(resp *http.Response, externalHost, externalScheme string, rootAliasesEnabled bool) error {
+	if resp == nil || resp.Body == nil {
+		return nil
+	}
+	ctype := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Type")))
+	if !strings.Contains(ctype, "application/json") {
+		return nil
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	_ = resp.Body.Close()
+	rewritten, changed := rewriteForwardOnPremJSONLocationBody(body, externalHost, externalScheme, rootAliasesEnabled)
+	if !changed {
+		resp.Body = io.NopCloser(bytes.NewReader(body))
+		return nil
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(rewritten))
+	resp.ContentLength = int64(len(rewritten))
+	resp.Header.Set("Content-Length", strconv.Itoa(len(rewritten)))
+	return nil
+}
+
+func rewriteForwardOnPremJSONLocationBody(body []byte, externalHost, externalScheme string, rootAliasesEnabled bool) ([]byte, bool) {
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return body, false
+	}
+	rawLoc, _ := payload["location"].(string)
+	rawLoc = strings.TrimSpace(rawLoc)
+	if rawLoc == "" {
+		return body, false
+	}
+	rewritten := rewriteForwardOnPremRedirectLocation(rawLoc, externalHost, externalScheme, rootAliasesEnabled)
+	rewritten = strings.TrimSpace(rewritten)
+	if rewritten == "" || rewritten == rawLoc {
+		return body, false
+	}
+	payload["location"] = rewritten
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return body, false
+	}
+	return out, true
+}
+
+func rewriteForwardOnPremAssetAbsolutePaths(resp *http.Response) error {
+	if resp == nil || resp.Body == nil {
+		return nil
+	}
+	ctype := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Type")))
+	reqPath := ""
+	if resp.Request != nil && resp.Request.URL != nil {
+		reqPath = strings.TrimSpace(resp.Request.URL.Path)
+	}
+	isJSAsset := strings.Contains(reqPath, "/app/assets/") && strings.HasSuffix(strings.ToLower(reqPath), ".js")
+	if !(strings.Contains(ctype, "text/html") || strings.Contains(ctype, "javascript") || isJSAsset) {
+		return nil
+	}
+	enc := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Encoding")))
+	if enc != "" && enc != "identity" {
+		return nil
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	_ = resp.Body.Close()
+	rewritten, changed := rewriteForwardOnPremBodyPublicPaths(body)
+	if !changed {
+		resp.Body = io.NopCloser(bytes.NewReader(body))
+		return nil
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(rewritten))
+	resp.ContentLength = int64(len(rewritten))
+	resp.Header.Set("Content-Length", strconv.Itoa(len(rewritten)))
+	return nil
+}
+
+func rewriteForwardOnPremBodyPublicPaths(body []byte) ([]byte, bool) {
+	in := string(body)
+	replacer := strings.NewReplacer(
+		`"/api/`, `"/fwd/api/`,
+		`'/api/`, `'/fwd/api/`,
+		`"/release-notes"`, `"/fwd/release-notes"`,
+		`'/release-notes'`, `'/fwd/release-notes'`,
+		`"/release-notes/`, `"/fwd/release-notes/`,
+		`'/release-notes/`, `'/fwd/release-notes/`,
+		`"/docs`, `"/fwd/docs`,
+		`'/docs`, `'/fwd/docs`,
+		`"/api-doc`, `"/fwd/api-doc`,
+		`'/api-doc`, `'/fwd/api-doc`,
+		`"/swagger`, `"/fwd/swagger`,
+		`'/swagger`, `'/fwd/swagger`,
+		`"/v3/api-docs`, `"/fwd/v3/api-docs`,
+		`'/v3/api-docs`, `'/fwd/v3/api-docs`,
+		`"/html/assets`, `"/fwd/html/assets`,
+		`'/html/assets`, `'/fwd/html/assets`,
+		`"/img/`, `"/fwd/img/`,
+		`'/img/`, `'/fwd/img/`,
+		`"/favicon.ico`, `"/fwd/favicon.ico`,
+		`'/favicon.ico`, `'/fwd/favicon.ico`,
+	)
+	out := replacer.Replace(in)
+	if out == in {
+		return body, false
+	}
+	return []byte(out), true
 }
 
 func writeForwardOnPremWaking(w http.ResponseWriter, req *http.Request, err error) {
@@ -618,10 +744,10 @@ func rewriteForwardOnPremRedirectLocation(location, externalHost, externalScheme
 	// Most Forward redirects are absolute-path locations (for example "/login").
 	if strings.HasPrefix(location, "/") {
 		if location == "/" {
-			if rootAliasesEnabled {
-				return "/login"
-			}
-			return "/fwd/login"
+			// Always send browser back to the mounted prefix root after successful
+			// Forward login. Root-alias redirects ("/login") can be claimed by
+			// Skyforge catch-all routing and bounce users out of /fwd.
+			return "/fwd/"
 		}
 		if rootAliasesEnabled && (location == "/login" || location == "/logout") {
 			return location
@@ -648,11 +774,7 @@ func rewriteForwardOnPremRedirectLocation(location, externalHost, externalScheme
 		path = "/"
 	}
 	if path == "/" {
-		if rootAliasesEnabled {
-			u.Path = "/login"
-		} else {
-			u.Path = "/fwd/login"
-		}
+		u.Path = "/fwd/"
 		u.RawPath = ""
 	} else if rootAliasesEnabled && (path == "/login" || path == "/logout") {
 		// Keep canonical root aliases when enabled.

@@ -124,6 +124,16 @@ func (s *Service) FrontendManifest(w http.ResponseWriter, req *http.Request) {
 	s.serveFrontendSPA(w, req)
 }
 
+// FrontendBuildManifest serves the embedded frontend build metadata manifest.
+//
+//encore:api public raw method=GET path=/api/frontend/build-manifest
+func (s *Service) FrontendBuildManifest(w http.ResponseWriter, req *http.Request) {
+	if serveFrontendFile(w, req, "/skyforge-build-manifest.json") {
+		return
+	}
+	http.NotFound(w, req)
+}
+
 // FrontendIndex serves the SPA entrypoint.
 //
 //encore:api public raw method=GET path=/index.html
