@@ -416,11 +416,11 @@ topology:
   nodes:
     r1:
       kind: linux
-      image: alpine:3.20
+      image: public.ecr.aws/docker/library/alpine:3.20
       cmd: "sleep infinity"
     r2:
       kind: linux
-      image: alpine:3.20
+      image: public.ecr.aws/docker/library/alpine:3.20
       cmd: "sleep infinity"
   links:
     - endpoints: ["r1:eth1", "r2:eth1"]

@@ -301,6 +301,9 @@ func (s *Service) GetWorkspaceDeploymentLinkStatsEvents(w http.ResponseWriter, r
 		http.Error(w, "invalid path params", http.StatusBadRequest)
 		return
 	}
+	if wk, err := s.resolveWorkspaceKeyForClaims(claims, workspaceKey); err == nil && strings.TrimSpace(wk) != "" {
+		workspaceKey = strings.TrimSpace(wk)
+	}
 	_, _, ws, err := s.loadWorkspaceByKey(workspaceKey)
 	if err != nil || strings.TrimSpace(ws.ID) == "" {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -331,7 +334,7 @@ func (s *Service) GetWorkspaceDeploymentLinkStatsEvents(w http.ResponseWriter, r
 	}
 
 	// initial
-	snap, err := s.GetWorkspaceDeploymentLinkStats(ctx, workspaceKey, deploymentID)
+	snap, err := s.GetWorkspaceDeploymentLinkStats(ctx, ws.ID, deploymentID)
 	if err != nil {
 		send(LinkStatsSSEEvent{Type: "error", Error: err.Error()})
 	} else {

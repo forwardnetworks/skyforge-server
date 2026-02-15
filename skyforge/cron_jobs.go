@@ -41,6 +41,31 @@ var (
 	})
 )
 
+// Forward metrics snapshots
+//
+// Polls Forward APIs for saved networks and stores compact metrics snapshots in Postgres.
+
+//encore:api private method=POST path=/internal/cron/forward/metrics
+func CronSyncForwardMetrics(ctx context.Context) error {
+	db, err := openSkyforgeDB(ctx)
+	if err != nil || db == nil {
+		return err
+	}
+	ctxReq, cancel := context.WithTimeout(ctx, 4*time.Minute)
+	defer cancel()
+
+	cfg := skyforgeconfig.LoadConfig(skyforgeEncoreCfg, getSecrets())
+	return syncForwardMetricsCron(ctxReq, db, cfg)
+}
+
+var (
+	_ = cron.NewJob("skyforge-forward-metrics-sync", cron.JobConfig{
+		Title:    "Sync Forward metrics snapshots",
+		Endpoint: CronSyncForwardMetrics,
+		Every:    5 * cron.Minute,
+	})
+)
+
 // Capacity rollups
 //
 // This job enqueues per-deployment rollup tasks for deployments that have Forward enabled.

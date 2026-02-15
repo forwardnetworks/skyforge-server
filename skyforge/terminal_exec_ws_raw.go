@@ -332,6 +332,9 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "invalid path params", http.StatusBadRequest)
 		return
 	}
+	if wk, err := s.resolveWorkspaceKeyForClaims(claims, workspaceKey); err == nil && strings.TrimSpace(wk) != "" {
+		workspaceKey = strings.TrimSpace(wk)
+	}
 
 	_, _, ws, err := s.loadWorkspaceByKey(workspaceKey)
 	if err != nil {

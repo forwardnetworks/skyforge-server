@@ -117,6 +117,9 @@ func (s *Service) DeploymentUIEventsStream(w http.ResponseWriter, req *http.Requ
 		http.Error(w, "invalid path params", http.StatusBadRequest)
 		return
 	}
+	if wk, err := s.resolveWorkspaceKeyForClaims(claims, workspaceKey); err == nil && strings.TrimSpace(wk) != "" {
+		workspaceKey = strings.TrimSpace(wk)
+	}
 	_, _, ws, err := s.loadWorkspaceByKey(workspaceKey)
 	if err != nil || strings.TrimSpace(ws.ID) == "" {
 		http.Error(w, "not found", http.StatusNotFound)

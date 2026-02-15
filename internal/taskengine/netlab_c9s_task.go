@@ -340,9 +340,9 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		// the scheduler to spread labs across the cluster if the preferred node is full.
 		clabSpec.Environment["SKYFORGE_CLABERNETES_PREFERRED_NODE_HOSTNAME"] = preferredNode
 	}
-	// Default to tolerating control-plane taints so lab workloads can use all available KVM nodes.
+	// Default to NOT tolerating control-plane taints; lab workloads should run on workers.
 	if _, ok := clabSpec.Environment["SKYFORGE_CLABERNETES_TOLERATE_CONTROL_PLANE"]; !ok {
-		clabSpec.Environment["SKYFORGE_CLABERNETES_TOLERATE_CONTROL_PLANE"] = "true"
+		clabSpec.Environment["SKYFORGE_CLABERNETES_TOLERATE_CONTROL_PLANE"] = "false"
 	}
 
 	// Decide an effective scheduling mode before handing off to clabernetes task execution.
