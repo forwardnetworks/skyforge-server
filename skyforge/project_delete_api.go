@@ -2,12 +2,6 @@ package skyforge
 
 import (
 	"context"
-	"fmt"
-	"log"
-	"net/http"
-	"net/url"
-	"strings"
-	"time"
 
 	"encore.dev/beta/errs"
 )
@@ -46,6 +40,12 @@ func (s *Service) DeleteWorkspace(ctx context.Context, id string, params *Worksp
 	if err != nil {
 		return nil, err
 	}
+	_ = user
+	_ = id
+	_ = params
+	return nil, errs.B().Code(errs.FailedPrecondition).Msg("workspace management has been removed; personal scope is automatic").Err()
+
+	/*
 	pc, err := s.workspaceContextForUser(user, id)
 	if err != nil {
 		return nil, err
@@ -138,4 +138,5 @@ func (s *Service) DeleteWorkspace(ctx context.Context, id string, params *Worksp
 			Name: pc.workspace.Name,
 		},
 	}, nil
+	*/
 }

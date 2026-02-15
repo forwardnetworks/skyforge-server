@@ -17,6 +17,14 @@ type taskQueueTopicLabels struct {
 	Topic string
 }
 
+type forwardMetricsSyncSourceLabels struct {
+	Source string
+}
+
+type workspaceRouteUsageLabels struct {
+	Mode string
+}
+
 var (
 	loginAttempts = metrics.NewCounter[uint64]("skyforge_login_attempts_total", metrics.CounterConfig{})
 	loginFailures = metrics.NewCounter[uint64]("skyforge_login_failures_total", metrics.CounterConfig{})
@@ -38,6 +46,8 @@ var (
 	workspaceSyncFailures       = metrics.NewCounter[uint64]("skyforge_workspace_sync_failures_total", metrics.CounterConfig{})
 	workspaceSyncErrors         = metrics.NewCounter[uint64]("skyforge_workspace_sync_errors_total", metrics.CounterConfig{})
 	workspaceSyncBackgroundRuns = metrics.NewCounter[uint64]("skyforge_workspace_sync_background_runs_total", metrics.CounterConfig{})
+
+	forwardMetricsSnapshotsStored = metrics.NewCounter[uint64]("skyforge_forward_metrics_snapshots_stored_total", metrics.CounterConfig{})
 )
 
 var (
@@ -64,4 +74,11 @@ var (
 	taskWorkersHeartbeatAgeSeconds = metrics.NewGauge[float64]("skyforge_task_workers_heartbeat_age_seconds", metrics.GaugeConfig{})
 
 	taskQueuePublishFailuresTotal = metrics.NewCounterGroup[taskQueueTopicLabels, uint64]("skyforge_task_queue_publish_failures_total", metrics.CounterConfig{})
+
+	forwardMetricsSyncRunsTotal     = metrics.NewCounterGroup[forwardMetricsSyncSourceLabels, uint64]("skyforge_forward_metrics_sync_runs_total", metrics.CounterConfig{})
+	forwardMetricsSyncFailuresTotal = metrics.NewCounterGroup[forwardMetricsSyncSourceLabels, uint64]("skyforge_forward_metrics_sync_failures_total", metrics.CounterConfig{})
+	forwardMetricsLastRunUnix       = metrics.NewGaugeGroup[forwardMetricsSyncSourceLabels, float64]("skyforge_forward_metrics_sync_last_run_unix", metrics.GaugeConfig{})
+
+	workspaceRouteUsageTotal    = metrics.NewCounterGroup[workspaceRouteUsageLabels, uint64]("skyforge_workspace_route_usage_total", metrics.CounterConfig{})
+	workspaceRouteRejectedTotal = metrics.NewCounterGroup[workspaceRouteUsageLabels, uint64]("skyforge_workspace_route_rejected_total", metrics.CounterConfig{})
 )

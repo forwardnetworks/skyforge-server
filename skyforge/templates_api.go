@@ -3,8 +3,6 @@ package skyforge
 import (
 	"context"
 	"strings"
-
-	"encore.dev/beta/errs"
 )
 
 type TemplatesParams struct {
@@ -41,20 +39,13 @@ func (s *Service) GetTemplates(ctx context.Context, params *TemplatesParams) (*T
 		}, nil
 	}
 	if workspaceID == "" {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("workspace_id is required").Err()
+		workspaceID = "me"
 	}
-
-	workspaces, err := s.workspaceStore.load()
+	wk, err := s.resolveWorkspaceKeyForClaims(claims, workspaceID)
 	if err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load workspaces").Err()
+		return nil, err
 	}
-	if w := findWorkspaceByKey(workspaces, workspaceID); w != nil {
-		if workspaceAccessLevel(s.cfg, *w, claims.Username) == "none" {
-			return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
-		}
-	} else {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("workspace not found").Err()
-	}
+	workspaceID = wk
 
 	_ = ctx
 	return &TemplatesResponse{

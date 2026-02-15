@@ -14,46 +14,9 @@ import (
 //
 //encore:api auth method=POST path=/api/workspaces/:id/sync
 func (s *Service) SyncWorkspace(ctx context.Context, id string) (*workspaceSyncReport, error) {
-	workspaceSyncManualRequests.Add(1)
-	user, err := requireAuthUser()
-	if err != nil {
-		workspaceSyncFailures.Add(1)
-		return nil, err
-	}
-	pc, err := s.workspaceContextForUser(user, id)
-	if err != nil {
-		workspaceSyncFailures.Add(1)
-		return nil, err
-	}
-	if pc.access != "admin" && pc.access != "owner" {
-		workspaceSyncFailures.Add(1)
-		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
-	}
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	report := syncWorkspaceResources(ctx, s.cfg, &pc.workspace)
-	if report.Updated {
-		if err := s.workspaceStore.upsert(pc.workspace); err != nil {
-			log.Printf("workspace upsert after sync: %v", err)
-			workspaceSyncFailures.Add(1)
-			return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist sync").Err()
-		}
-		if s.db != nil {
-			_ = notifyWorkspacesUpdatePG(ctx, s.db, "*")
-			_ = notifyDashboardUpdatePG(ctx, s.db)
-		}
-	}
-	{
-		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
-		defer cancel()
-		actor, actorIsAdmin, impersonated := auditActor(s.cfg, pc.claims)
-		details := fmt.Sprintf("updated=%t errors=%d", report.Updated, len(report.Errors))
-		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "workspace.sync.manual", pc.workspace.ID, details)
-	}
-	if len(report.Errors) > 0 {
-		workspaceSyncErrors.Add(1)
-	}
-	return &report, nil
+	_ = ctx
+	_ = id
+	return nil, errs.B().Code(errs.FailedPrecondition).Msg("workspace sync is no longer supported").Err()
 }
 
 type WorkspaceMembersRequest struct {
@@ -70,66 +33,10 @@ type WorkspaceMembersRequest struct {
 //
 //encore:api auth method=PUT path=/api/workspaces/:id/members
 func (s *Service) UpdateWorkspaceMembers(ctx context.Context, id string, req *WorkspaceMembersRequest) (*SkyforgeWorkspace, error) {
-	user, err := requireAuthUser()
-	if err != nil {
-		return nil, err
-	}
-	pc, err := s.workspaceContextForUser(user, id)
-	if err != nil {
-		return nil, err
-	}
-	if pc.access != "admin" && pc.access != "owner" {
-		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
-	}
-	if req == nil {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid payload").Err()
-	}
-	nextOwners := normalizeUsernameList(req.Owners)
-	nextOwnerGroups := normalizeGroupList(req.OwnerGroups)
-	nextEditors := normalizeUsernameList(req.Editors)
-	nextEditorGroups := normalizeGroupList(req.EditorGroups)
-	nextViewers := normalizeUsernameList(req.Viewers)
-	nextViewerGroups := normalizeGroupList(req.ViewerGroups)
-	if len(nextOwners) == 0 {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("owners is required").Err()
-	}
-	if pc.access != "admin" && !containsUser(nextOwners, user.Username) && !strings.EqualFold(pc.workspace.CreatedBy, user.Username) {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("you cannot remove yourself from owners").Err()
-	}
-	if req.IsPublic != nil {
-		pc.workspace.IsPublic = *req.IsPublic
-	}
-	pc.workspace.Owners = nextOwners
-	pc.workspace.OwnerGroups = nextOwnerGroups
-	pc.workspace.Editors = nextEditors
-	pc.workspace.EditorGroups = nextEditorGroups
-	pc.workspace.Viewers = nextViewers
-	pc.workspace.ViewerGroups = nextViewerGroups
-	if err := s.workspaceStore.upsert(pc.workspace); err != nil {
-		log.Printf("workspace upsert: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist members").Err()
-	}
-	if s.db != nil {
-		_ = notifyWorkspacesUpdatePG(ctx, s.db, "*")
-		_ = notifyDashboardUpdatePG(ctx, s.db)
-	}
-	{
-		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
-		defer cancel()
-		actor, actorIsAdmin, impersonated := auditActor(s.cfg, pc.claims)
-		writeAuditEvent(
-			ctx,
-			s.db,
-			actor,
-			actorIsAdmin,
-			impersonated,
-			"workspace.members.update",
-			pc.workspace.ID,
-			fmt.Sprintf("owners=%d ownerGroups=%d editors=%d editorGroups=%d viewers=%d viewerGroups=%d", len(pc.workspace.Owners), len(pc.workspace.OwnerGroups), len(pc.workspace.Editors), len(pc.workspace.EditorGroups), len(pc.workspace.Viewers), len(pc.workspace.ViewerGroups)),
-		)
-	}
-	syncGiteaCollaboratorsForWorkspace(s.cfg, pc.workspace)
-	return &pc.workspace, nil
+	_ = ctx
+	_ = id
+	_ = req
+	return nil, errs.B().Code(errs.FailedPrecondition).Msg("workspace sharing configuration has moved to resource shares").Err()
 }
 
 type WorkspaceNetlabConfigResponse struct {

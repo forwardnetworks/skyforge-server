@@ -12,6 +12,10 @@ import (
 	"encore.app/storage"
 )
 
+type workspaceCreateContextKey string
+
+const workspaceCreateInternalKey workspaceCreateContextKey = "allow_workspace_create_internal"
+
 type WorkspacesListParams struct {
 	All string `query:"all" encore:"optional"`
 }
@@ -67,7 +71,8 @@ func (s *Service) ensureDefaultWorkspace(ctx context.Context, user *AuthUser) (*
 		Slug:      slug,
 		Blueprint: defaultBlueprintCatalog,
 	}
-	created, err := s.CreateWorkspace(ctx, req)
+	internalCtx := context.WithValue(ctx, workspaceCreateInternalKey, true)
+	created, err := s.CreateWorkspace(internalCtx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +121,7 @@ func (s *Service) maybeQueueUserBootstrap(ctx context.Context, workspaceID strin
 
 func (s *Service) resolveWorkspaceForUser(ctx context.Context, user *AuthUser, workspaceKey string) (*SkyforgeWorkspace, error) {
 	workspaceKey = strings.TrimSpace(workspaceKey)
-	if workspaceKey == "" {
+	if workspaceKey == "" || isPersonalWorkspaceKey(workspaceKey) {
 		workspace, err := s.ensureDefaultWorkspace(ctx, user)
 		if err != nil {
 			return nil, err
@@ -151,10 +156,8 @@ func (s *Service) GetWorkspaces(ctx context.Context, params *WorkspacesListParam
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load workspaces").Err()
 	}
-	all := params != nil && strings.EqualFold(strings.TrimSpace(params.All), "true")
-	if !isAdmin && all {
-		return nil, errs.B().Code(errs.PermissionDenied).Msg("admin access required for all workspaces").Err()
-	}
+	all := false
+	_ = params
 	if !isAdmin && !all {
 		changed := false
 		changedWorkspaces := make([]SkyforgeWorkspace, 0)
@@ -186,6 +189,29 @@ func (s *Service) GetWorkspaces(ctx context.Context, params *WorkspacesListParam
 			}
 		}
 		workspaces = filtered
+	}
+	if !all {
+		baseSlug := defaultWorkspaceSlug(user.Username)
+		personal := (*SkyforgeWorkspace)(nil)
+		for i := range workspaces {
+			if strings.EqualFold(workspaces[i].CreatedBy, user.Username) && strings.EqualFold(workspaces[i].Slug, baseSlug) {
+				w := workspaces[i]
+				personal = &w
+				break
+			}
+		}
+		if personal == nil {
+			for i := range workspaces {
+				if strings.EqualFold(workspaces[i].CreatedBy, user.Username) {
+					w := workspaces[i]
+					personal = &w
+					break
+				}
+			}
+		}
+		if personal != nil {
+			workspaces = []SkyforgeWorkspace{*personal}
+		}
 	}
 
 	_ = ctx
@@ -220,6 +246,9 @@ type BlueprintSyncResponse struct {
 //
 //encore:api auth method=POST path=/api/workspaces
 func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateRequest) (*SkyforgeWorkspace, error) {
+	if allow, _ := ctx.Value(workspaceCreateInternalKey).(bool); !allow {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("workspace management has been removed; personal scope is automatic").Err()
+	}
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
