@@ -10,16 +10,16 @@ import (
 	"time"
 )
 
-var errWorkspaceNotFound = errors.New("workspace not found")
+var errOwnerNotFound = errors.New("owner not found")
 
-func (e *Engine) loadWorkspaceByKey(ctx context.Context, key string) (*Workspace, error) {
+func (e *Engine) loadOwnerProfileByKey(ctx context.Context, key string) (*OwnerProfile, error) {
 	db, err := e.requireDB()
 	if err != nil {
 		return nil, err
 	}
 	key = strings.TrimSpace(key)
 	if key == "" {
-		return nil, fmt.Errorf("workspace id is required")
+		return nil, fmt.Errorf("owner id is required")
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -33,18 +33,18 @@ func (e *Engine) loadWorkspaceByKey(ctx context.Context, key string) (*Workspace
 	)
 	row := db.QueryRowContext(ctxReq, `SELECT id, slug, name, created_by, COALESCE(default_branch,''), COALESCE(blueprint,''), COALESCE(netlab_server,''), COALESCE(eve_server,''),
   allow_external_template_repos, COALESCE(external_template_repos,'[]'::jsonb), gitea_owner, gitea_repo, COALESCE(terraform_state_key,''), COALESCE(aws_region,'')
-FROM sf_workspaces
+FROM sf_owner_contexts
 WHERE id=$1 OR slug=$1
 LIMIT 1`, key)
 	if err := row.Scan(&id, &slug, &name, &createdBy, &defaultBranch, &blueprint, &netlabServer, &eveServer, &allowExternalTemplateRepos, &externalTemplateReposJSON, &giteaOwner, &giteaRepo, &terraformStateKey, &awsRegion); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, errWorkspaceNotFound
+			return nil, errOwnerNotFound
 		}
 		return nil, err
 	}
 
 	external := parseExternalTemplateRepos(externalTemplateReposJSON)
-	w := &Workspace{
+	w := &OwnerProfile{
 		ID:                         id,
 		Slug:                       slug,
 		Name:                       name,
@@ -63,7 +63,7 @@ LIMIT 1`, key)
 	return w, nil
 }
 
-func parseWorkspaceServerRef(value string) (string, bool) {
+func parseUserServerRef(value string) (string, bool) {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return "", false
@@ -79,22 +79,22 @@ func parseWorkspaceServerRef(value string) (string, bool) {
 	return "", false
 }
 
-func (e *Engine) resolveWorkspaceNetlabServer(ctx context.Context, workspaceID, serverRef string) (*NetlabServerConfig, error) {
+func (e *Engine) resolveOwnerNetlabServer(ctx context.Context, ownerID, serverRef string) (*NetlabServerConfig, error) {
 	db, err := e.requireDB()
 	if err != nil {
 		return nil, err
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	serverRef = strings.TrimSpace(serverRef)
-	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace id required")
+	if ownerID == "" {
+		return nil, fmt.Errorf("owner id required")
 	}
 	if serverRef == "" {
-		return nil, fmt.Errorf("netlab server is required (configure a Netlab server in workspace settings)")
+		return nil, fmt.Errorf("netlab server is required (configure a Netlab server in user settings)")
 	}
-	serverID, ok := parseWorkspaceServerRef(serverRef)
+	serverID, ok := parseUserServerRef(serverRef)
 	if !ok {
-		return nil, fmt.Errorf("netlab server must be a workspace server reference (ws:...)")
+		return nil, fmt.Errorf("netlab server must be a user server reference (ws:...)")
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -102,12 +102,12 @@ func (e *Engine) resolveWorkspaceNetlabServer(ctx context.Context, workspaceID, 
 	var rec netlabServerRecord
 	var tokenEnc sql.NullString
 	err = db.QueryRowContext(ctxReq, `SELECT id, project_id, name, api_url, api_insecure, COALESCE(api_token,''), created_at, updated_at
-FROM sf_project_netlab_servers WHERE project_id=$1 AND id=$2`, workspaceID, serverID).Scan(
-		&rec.ID, &rec.WorkspaceID, &rec.Name, &rec.APIURL, &rec.APIInsecure, &tokenEnc, &rec.CreatedAt, &rec.UpdatedAt,
+FROM sf_project_netlab_servers WHERE project_id=$1 AND id=$2`, ownerID, serverID).Scan(
+		&rec.ID, &rec.OwnerID, &rec.Name, &rec.APIURL, &rec.APIInsecure, &tokenEnc, &rec.CreatedAt, &rec.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("workspace netlab server not found")
+			return nil, fmt.Errorf("user netlab server not found")
 		}
 		return nil, err
 	}
@@ -127,23 +127,23 @@ FROM sf_project_netlab_servers WHERE project_id=$1 AND id=$2`, workspaceID, serv
 	return &cfg, nil
 }
 
-func (e *Engine) loadDeployment(ctx context.Context, workspaceID, deploymentID string) (*WorkspaceDeployment, error) {
+func (e *Engine) loadDeployment(ctx context.Context, ownerID, deploymentID string) (*UserDeployment, error) {
 	db, err := e.requireDB()
 	if err != nil {
 		return nil, err
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	deploymentID = strings.TrimSpace(deploymentID)
-	if workspaceID == "" || deploymentID == "" {
+	if ownerID == "" || deploymentID == "" {
 		return nil, nil
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	var dep WorkspaceDeployment
+	var dep UserDeployment
 	var cfgBytes []byte
-	err = db.QueryRowContext(ctxReq, `SELECT id, workspace_id, name, type, config
-FROM sf_deployments WHERE workspace_id=$1 AND id=$2`, workspaceID, deploymentID).Scan(&dep.ID, &dep.WorkspaceID, &dep.Name, &dep.Type, &cfgBytes)
+	err = db.QueryRowContext(ctxReq, `SELECT id, owner_id, name, type, config
+FROM sf_deployments WHERE owner_id=$1 AND id=$2`, ownerID, deploymentID).Scan(&dep.ID, &dep.OwnerID, &dep.Name, &dep.Type, &cfgBytes)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil

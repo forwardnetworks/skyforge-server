@@ -50,7 +50,7 @@ func (s *Service) ListUserNetlabServers(ctx context.Context) (*UserNetlabServers
 	return &UserNetlabServersResponse{Servers: out}, nil
 }
 
-// UpsertUserNetlabServer creates or updates a user-scoped Netlab API endpoint.
+// UpsertUserNetlabServer creates or updates a per-user Netlab API endpoint.
 //
 //encore:api auth method=PUT path=/api/user/netlab/servers
 func (s *Service) UpsertUserNetlabServer(ctx context.Context, payload *UserNetlabServerConfig) (*UserNetlabServerConfig, error) {
@@ -101,7 +101,7 @@ func (s *Service) UpsertUserNetlabServer(ctx context.Context, payload *UserNetla
 	}, nil
 }
 
-// DeleteUserNetlabServer deletes a user-scoped Netlab server.
+// DeleteUserNetlabServer deletes a per-user Netlab server.
 //
 //encore:api auth method=DELETE path=/api/user/netlab/servers/:serverID
 func (s *Service) DeleteUserNetlabServer(ctx context.Context, serverID string) error {
@@ -165,7 +165,7 @@ func (s *Service) ListUserEveServers(ctx context.Context) (*UserEveServersRespon
 	return &UserEveServersResponse{Servers: out}, nil
 }
 
-// UpsertUserEveServer creates or updates a user-scoped EVE-NG server.
+// UpsertUserEveServer creates or updates a per-user EVE-NG server.
 //
 //encore:api auth method=PUT path=/api/user/eve/servers
 func (s *Service) UpsertUserEveServer(ctx context.Context, payload *UserEveServerConfig) (*UserEveServerConfig, error) {
@@ -232,7 +232,7 @@ func (s *Service) UpsertUserEveServer(ctx context.Context, payload *UserEveServe
 	}, nil
 }
 
-// DeleteUserEveServer deletes a user-scoped EVE server.
+// DeleteUserEveServer deletes a per-user EVE server.
 //
 //encore:api auth method=DELETE path=/api/user/eve/servers/:serverID
 func (s *Service) DeleteUserEveServer(ctx context.Context, serverID string) error {
@@ -288,7 +288,7 @@ func (s *Service) ListUserContainerlabServers(ctx context.Context) (*UserContain
 	return &UserContainerlabServersResponse{Servers: out}, nil
 }
 
-// UpsertUserContainerlabServer creates or updates a user-scoped Containerlab endpoint.
+// UpsertUserContainerlabServer creates or updates a per-user Containerlab endpoint.
 //
 //encore:api auth method=PUT path=/api/user/containerlab/servers
 func (s *Service) UpsertUserContainerlabServer(ctx context.Context, payload *UserContainerlabServerConfig) (*UserContainerlabServerConfig, error) {
@@ -339,7 +339,7 @@ func (s *Service) UpsertUserContainerlabServer(ctx context.Context, payload *Use
 	}, nil
 }
 
-// DeleteUserContainerlabServer deletes a user-scoped Containerlab server.
+// DeleteUserContainerlabServer deletes a per-user Containerlab server.
 //
 //encore:api auth method=DELETE path=/api/user/containerlab/servers/:serverID
 func (s *Service) DeleteUserContainerlabServer(ctx context.Context, serverID string) error {

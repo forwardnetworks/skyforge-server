@@ -36,8 +36,8 @@ Server APIs (Encore):
 - Coverage scoring (how complete is inventory + rollup coverage)
 - Growth (delta between latest rollup bucket and prior bucket)
 - Upgrade candidates (interfaces + LAGs; direction-aware; speed recommendation)
-- Portfolio (workspace-level list of Forward networks with key rollup signals)
-- Capacity-only paths: `POST /api/workspaces/:id/forward-networks/:networkRef/capacity/path-bottlenecks`
+- Portfolio (per-user list of Forward networks with key rollup signals)
+- Capacity-only paths: `POST /api/fwd/:networkRef/capacity/path-bottlenecks`
   - Calls Forward `POST /networks/{networkId}/paths-bulk`
   - Joins hop ingress/egress interfaces to utilization rollups
   - Returns the worst headroom interface per flow (plus outcomes and optional minimal hops)
@@ -50,7 +50,7 @@ Portal UI:
 
 - Capacity dashboard for Forward networks (interfaces/devices/growth/plan/routing/changes/health/raw)
 - “Paths” tab: batch paste flows and get bottleneck interface + headroom + outcomes, with click-through to interface trend dialog
-  - Optional saved batches stored locally in the browser (workspace+network scoped)
+  - Optional saved batches stored locally in the browser (user+network scoped)
   - Coverage diagnostics + sample unmatched interfaces (helps explain missing stats)
   - Optional payload preview/copy: shows the Forward `/paths-bulk` request shape used (guardrails applied)
   - Per-flow “open in Forward” link via Forward `queryUrl`

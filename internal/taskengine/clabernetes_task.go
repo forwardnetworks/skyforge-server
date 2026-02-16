@@ -72,7 +72,7 @@ type clabernetesTaskSpec struct {
 
 type clabernetesRunSpec struct {
 	TaskID             int
-	WorkspaceID        string
+	OwnerID            string
 	Action             string
 	Namespace          string
 	TopologyName       string
@@ -108,7 +108,7 @@ func (e *Engine) dispatchClabernetesTask(ctx context.Context, task *taskstore.Ta
 	}
 	runSpec := clabernetesRunSpec{
 		TaskID:             task.ID,
-		WorkspaceID:        strings.TrimSpace(task.WorkspaceID),
+		OwnerID:            strings.TrimSpace(task.OwnerID),
 		Action:             strings.TrimSpace(specIn.Action),
 		Namespace:          strings.TrimSpace(specIn.Namespace),
 		TopologyName:       strings.TrimSpace(specIn.TopologyName),
@@ -652,8 +652,8 @@ func (e *Engine) storeClabernetesTopologyArtifact(ctx context.Context, spec clab
 	if e == nil || spec.TaskID <= 0 || graph == nil {
 		return fmt.Errorf("invalid task context")
 	}
-	if strings.TrimSpace(spec.WorkspaceID) == "" {
-		// Best-effort enhancement: storing topology graphs requires a workspace scope.
+	if strings.TrimSpace(spec.OwnerID) == "" {
+		// Best-effort enhancement: storing topology graphs requires a scope scope.
 		// Skip silently rather than failing the overall run.
 		return nil
 	}
@@ -673,7 +673,7 @@ func (e *Engine) storeClabernetesTopologyArtifact(ctx context.Context, spec clab
 	key := fmt.Sprintf("topology/clabernetes/%s.json", sanitizeArtifactKeySegment(labName))
 	ctxPut, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	putKey, err := putWorkspaceArtifact(ctxPut, e.cfg, spec.WorkspaceID, key, graphBytes, "application/json")
+	putKey, err := putUserArtifact(ctxPut, e.cfg, spec.OwnerID, key, graphBytes, "application/json")
 	if err != nil {
 		if isObjectStoreNotConfigured(err) {
 			return nil

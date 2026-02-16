@@ -43,7 +43,7 @@ func (s *Service) GetAdminAudit(ctx context.Context, params *AdminAuditParams) (
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	rows, err := s.db.QueryContext(ctx, `SELECT id, created_at, actor_username, actor_is_admin, COALESCE(impersonated_username,''), action, COALESCE(workspace_id,''), COALESCE(details,'')
+	rows, err := s.db.QueryContext(ctx, `SELECT id, created_at, actor_username, actor_is_admin, COALESCE(impersonated_username,''), action, COALESCE(owner_username,''), COALESCE(details,'')
 FROM sf_audit_log ORDER BY created_at DESC LIMIT $1`, limit)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load audit log").Err()
@@ -52,7 +52,7 @@ FROM sf_audit_log ORDER BY created_at DESC LIMIT $1`, limit)
 	events := make([]AuditEvent, 0, limit)
 	for rows.Next() {
 		var e AuditEvent
-		if err := rows.Scan(&e.ID, &e.CreatedAt, &e.ActorUsername, &e.ActorIsAdmin, &e.ImpersonatedUser, &e.Action, &e.WorkspaceID, &e.Details); err != nil {
+		if err := rows.Scan(&e.ID, &e.CreatedAt, &e.ActorUsername, &e.ActorIsAdmin, &e.ImpersonatedUser, &e.Action, &e.OwnerUsername, &e.Details); err != nil {
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to load audit log").Err()
 		}
 		events = append(events, e)

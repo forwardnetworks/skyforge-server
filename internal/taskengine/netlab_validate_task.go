@@ -22,7 +22,7 @@ type netlabValidateTaskSpec struct {
 
 type netlabValidateRunSpec struct {
 	TaskID         int
-	WorkspaceCtx   *workspaceContext
+	OwnerCtx       *ownerContext
 	Username       string
 	TemplateSource string
 	TemplateRepo   string
@@ -42,7 +42,7 @@ func (e *Engine) dispatchNetlabValidateTask(ctx context.Context, task *taskstore
 	if err := decodeTaskSpec(task, &specIn); err != nil {
 		return err
 	}
-	ws, err := e.loadWorkspaceByKey(ctx, task.WorkspaceID)
+	ws, err := e.loadOwnerProfileByKey(ctx, task.OwnerID)
 	if err != nil {
 		return err
 	}
@@ -50,8 +50,8 @@ func (e *Engine) dispatchNetlabValidateTask(ctx context.Context, task *taskstore
 	if username == "" {
 		username = ws.primaryOwner()
 	}
-	pc := &workspaceContext{
-		workspace: *ws,
+	pc := &ownerContext{
+		owner: *ws,
 		claims: SessionClaims{
 			Username: username,
 		},
@@ -61,7 +61,7 @@ func (e *Engine) dispatchNetlabValidateTask(ctx context.Context, task *taskstore
 	}
 	runSpec := netlabValidateRunSpec{
 		TaskID:         task.ID,
-		WorkspaceCtx:   pc,
+		OwnerCtx:       pc,
 		Username:       username,
 		TemplateSource: strings.TrimSpace(specIn.TemplateSource),
 		TemplateRepo:   strings.TrimSpace(specIn.TemplateRepo),
@@ -88,8 +88,8 @@ func (e *Engine) runNetlabValidateTask(ctx context.Context, spec netlabValidateR
 			return fmt.Errorf("validation canceled")
 		}
 	}
-	if spec.WorkspaceCtx == nil {
-		return fmt.Errorf("workspace context unavailable")
+	if spec.OwnerCtx == nil {
+		return fmt.Errorf("owner context unavailable")
 	}
 	if strings.TrimSpace(spec.Template) == "" {
 		return fmt.Errorf("netlab template is required")
@@ -113,7 +113,7 @@ func (e *Engine) runNetlabValidateTask(ctx context.Context, spec netlabValidateR
 		pullPolicy = "IfNotPresent"
 	}
 
-	ns := clabernetesWorkspaceNamespace(spec.WorkspaceCtx.workspace.Slug)
+	ns := clabernetesOwnerNamespace(spec.OwnerCtx.owner.Slug)
 	if err := kubeEnsureNamespace(ctx, ns); err != nil {
 		return err
 	}
@@ -121,7 +121,7 @@ func (e *Engine) runNetlabValidateTask(ctx context.Context, spec netlabValidateR
 		return err
 	}
 
-	bundleB64, err := e.buildNetlabTopologyBundleB64(ctx, spec.WorkspaceCtx, spec.TemplateSource, spec.TemplateRepo, spec.TemplatesDir, spec.Template)
+	bundleB64, err := e.buildNetlabTopologyBundleB64(ctx, spec.OwnerCtx, spec.TemplateSource, spec.TemplateRepo, spec.TemplatesDir, spec.Template)
 	if err != nil {
 		return err
 	}

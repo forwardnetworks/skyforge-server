@@ -19,13 +19,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type WorkspaceRunResponse struct {
-	WorkspaceID string  `json:"workspaceId"`
-	Task        JSONMap `json:"task"`
-	User        string  `json:"user"`
+type UserRunResponse struct {
+	OwnerUsername string  `json:"ownerUsername"`
+	Task          JSONMap `json:"task"`
+	User          string  `json:"user"`
 }
 
-type WorkspaceTerraformApplyParams struct {
+type UserTerraformApplyParams struct {
 	Confirm        string `query:"confirm" encore:"optional"`
 	Cloud          string `query:"cloud" encore:"optional"`
 	Action         string `query:"action" encore:"optional"`
@@ -36,15 +36,13 @@ type WorkspaceTerraformApplyParams struct {
 	DeploymentID   string `query:"deployment_id" encore:"optional"`
 }
 
-// RunWorkspaceTerraformPlan triggers a terraform plan run for a workspace.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/runs/terraform-plan
-func (s *Service) RunWorkspaceTerraformPlan(ctx context.Context, id string) (*WorkspaceRunResponse, error) {
+// RunUserTerraformPlan triggers a terraform plan run for a user context.
+func (s *Service) RunUserTerraformPlan(ctx context.Context, id string) (*UserRunResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -54,14 +52,14 @@ func (s *Service) RunWorkspaceTerraformPlan(ctx context.Context, id string) (*Wo
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	dep, err := s.getLatestDeploymentByType(ctx, pc.workspace.ID, "terraform")
+	dep, err := s.getLatestDeploymentByType(ctx, pc.context.ID, "terraform")
 	if err != nil {
 		return nil, err
 	}
 	if dep == nil {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("no terraform deployment configured").Err()
 	}
-	region := strings.TrimSpace(pc.workspace.AWSRegion)
+	region := strings.TrimSpace(pc.context.AWSRegion)
 	if region == "" {
 		region = strings.TrimSpace(s.cfg.AwsSSORegion)
 	}
@@ -73,23 +71,23 @@ func (s *Service) RunWorkspaceTerraformPlan(ctx context.Context, id string) (*Wo
 		"AWS_SDK_LOAD_CONFIG":       "0",
 		"AWS_PROFILE":               "",
 	}
-	if s.cfg.Workspaces.ObjectStorageAccessKey != "" && s.cfg.Workspaces.ObjectStorageSecretKey != "" {
-		env["AWS_ACCESS_KEY_ID"] = s.cfg.Workspaces.ObjectStorageAccessKey
-		env["AWS_SECRET_ACCESS_KEY"] = s.cfg.Workspaces.ObjectStorageSecretKey
+	if s.cfg.Scopes.ObjectStorageAccessKey != "" && s.cfg.Scopes.ObjectStorageSecretKey != "" {
+		env["AWS_ACCESS_KEY_ID"] = s.cfg.Scopes.ObjectStorageAccessKey
+		env["AWS_SECRET_ACCESS_KEY"] = s.cfg.Scopes.ObjectStorageSecretKey
 	}
-	if shouldUseAWS(pc.workspace) {
-		if strings.TrimSpace(pc.workspace.AWSAuthMethod) == "" {
-			pc.workspace.AWSAuthMethod = "sso"
+	if shouldUseAWS(pc.context) {
+		if strings.TrimSpace(pc.context.AWSAuthMethod) == "" {
+			pc.context.AWSAuthMethod = "sso"
 		}
 		env["TF_VAR_aws_region"] = region
-		if err := populateAWSAuthEnv(ctx, s.cfg, s.db, s.awsStore, pc.workspace, pc.claims.Username, env); err != nil {
+		if err := populateAWSAuthEnv(ctx, s.cfg, s.db, s.awsStore, pc.context, pc.claims.Username, env); err != nil {
 			return nil, err
 		}
 	}
-	if err := populateAzureAuthEnv(ctx, s.cfg, s.db, pc.workspace, env); err != nil {
+	if err := populateAzureAuthEnv(ctx, s.cfg, s.db, pc.context, env); err != nil {
 		return nil, err
 	}
-	if err := populateGCPAuthEnv(ctx, s.cfg, s.db, pc.workspace, env); err != nil {
+	if err := populateGCPAuthEnv(ctx, s.cfg, s.db, pc.context, env); err != nil {
 		return nil, err
 	}
 
@@ -103,8 +101,8 @@ func (s *Service) RunWorkspaceTerraformPlan(ctx context.Context, id string) (*Wo
 			actor,
 			actorIsAdmin,
 			impersonated,
-			"workspace.run.terraform-plan",
-			pc.workspace.ID,
+			"user.run.terraform-plan",
+			pc.context.ID,
 			fmt.Sprintf("deployment=%s", dep.Name),
 		)
 	}
@@ -118,7 +116,7 @@ func (s *Service) RunWorkspaceTerraformPlan(ctx context.Context, id string) (*Wo
 		cloud = "aws"
 	}
 
-	deploymentEnv, err := s.mergeDeploymentEnvironment(ctx, pc.workspace.ID, user.Username, cfgAny)
+	deploymentEnv, err := s.mergeDeploymentEnvironment(ctx, pc.context.ID, user.Username, cfgAny)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +145,7 @@ func (s *Service) RunWorkspaceTerraformPlan(ctx context.Context, id string) (*Wo
 		log.Printf("terraform plan meta encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode metadata").Err()
 	}
-	task, err := createTask(ctx, s.db, pc.workspace.ID, &dep.ID, "terraform-plan", fmt.Sprintf("Skyforge terraform plan (%s)", pc.claims.Username), pc.claims.Username, meta)
+	task, err := createTask(ctx, s.db, pc.context.ID, &dep.ID, "terraform-plan", fmt.Sprintf("Skyforge terraform plan (%s)", pc.claims.Username), pc.claims.Username, meta)
 	if err != nil {
 		return nil, err
 	}
@@ -158,22 +156,20 @@ func (s *Service) RunWorkspaceTerraformPlan(ctx context.Context, id string) (*Wo
 		log.Printf("terraform plan task encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode run").Err()
 	}
-	return &WorkspaceRunResponse{
-		WorkspaceID: pc.workspace.ID,
-		Task:        taskJSON,
-		User:        pc.claims.Username,
+	return &UserRunResponse{
+		OwnerUsername: pc.context.ID,
+		Task:          taskJSON,
+		User:          pc.claims.Username,
 	}, nil
 }
 
-// RunWorkspaceTerraformApply triggers a terraform apply run for a workspace.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/runs/terraform-apply
-func (s *Service) RunWorkspaceTerraformApply(ctx context.Context, id string, params *WorkspaceTerraformApplyParams) (*WorkspaceRunResponse, error) {
+// RunUserTerraformApply triggers a terraform apply run for a user context.
+func (s *Service) RunUserTerraformApply(ctx context.Context, id string, params *UserTerraformApplyParams) (*UserRunResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +217,7 @@ func (s *Service) RunWorkspaceTerraformApply(ctx context.Context, id string, par
 	default:
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown cloud").Err()
 	}
-	region := strings.TrimSpace(pc.workspace.AWSRegion)
+	region := strings.TrimSpace(pc.context.AWSRegion)
 	if region == "" {
 		region = "us-east-1"
 	}
@@ -245,37 +241,37 @@ func (s *Service) RunWorkspaceTerraformApply(ctx context.Context, id string, par
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("template must be a safe repo-relative path").Err()
 		}
 	}
-	if s.cfg.Workspaces.ObjectStorageAccessKey != "" && s.cfg.Workspaces.ObjectStorageSecretKey != "" {
-		env["AWS_ACCESS_KEY_ID"] = s.cfg.Workspaces.ObjectStorageAccessKey
-		env["AWS_SECRET_ACCESS_KEY"] = s.cfg.Workspaces.ObjectStorageSecretKey
+	if s.cfg.Scopes.ObjectStorageAccessKey != "" && s.cfg.Scopes.ObjectStorageSecretKey != "" {
+		env["AWS_ACCESS_KEY_ID"] = s.cfg.Scopes.ObjectStorageAccessKey
+		env["AWS_SECRET_ACCESS_KEY"] = s.cfg.Scopes.ObjectStorageSecretKey
 	}
-	if cloud == "aws" && shouldUseAWS(pc.workspace) {
-		if strings.TrimSpace(pc.workspace.AWSAuthMethod) == "" {
-			pc.workspace.AWSAuthMethod = "sso"
+	if cloud == "aws" && shouldUseAWS(pc.context) {
+		if strings.TrimSpace(pc.context.AWSAuthMethod) == "" {
+			pc.context.AWSAuthMethod = "sso"
 		}
 		env["TF_VAR_aws_region"] = region
-		if err := populateAWSAuthEnv(ctx, s.cfg, s.db, s.awsStore, pc.workspace, pc.claims.Username, env); err != nil {
+		if err := populateAWSAuthEnv(ctx, s.cfg, s.db, s.awsStore, pc.context, pc.claims.Username, env); err != nil {
 			return nil, err
 		}
 	}
 	if cloud == "azure" {
-		if err := populateAzureAuthEnv(ctx, s.cfg, s.db, pc.workspace, env); err != nil {
+		if err := populateAzureAuthEnv(ctx, s.cfg, s.db, pc.context, env); err != nil {
 			return nil, err
 		}
 	}
 	if cloud == "gcp" {
-		if err := populateGCPAuthEnv(ctx, s.cfg, s.db, pc.workspace, env); err != nil {
+		if err := populateGCPAuthEnv(ctx, s.cfg, s.db, pc.context, env); err != nil {
 			return nil, err
 		}
 	}
 
 	if deploymentID != "" {
-		dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+		dep, err := s.getUserDeployment(ctx, pc.context.ID, deploymentID)
 		if err != nil {
 			return nil, err
 		}
 		cfgAny, _ := fromJSONMap(dep.Config)
-		deploymentEnv, err := s.mergeDeploymentEnvironment(ctx, pc.workspace.ID, user.Username, cfgAny)
+		deploymentEnv, err := s.mergeDeploymentEnvironment(ctx, pc.context.ID, user.Username, cfgAny)
 		if err != nil {
 			return nil, err
 		}
@@ -295,8 +291,8 @@ func (s *Service) RunWorkspaceTerraformApply(ctx context.Context, id string, par
 			actor,
 			actorIsAdmin,
 			impersonated,
-			"workspace.run.terraform-apply",
-			pc.workspace.ID,
+			"user.run.terraform-apply",
+			pc.context.ID,
 			fmt.Sprintf("action=%s cloud=%s template=%s", action, cloud, templateName),
 		)
 	}
@@ -318,7 +314,7 @@ func (s *Service) RunWorkspaceTerraformApply(ctx context.Context, id string, par
 		log.Printf("terraform apply meta encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode metadata").Err()
 	}
-	task, err := createTask(ctx, s.db, pc.workspace.ID, nil, fmt.Sprintf("terraform-%s", action), fmt.Sprintf("Skyforge terraform %s %s (%s)", action, strings.ToUpper(cloud), pc.claims.Username), pc.claims.Username, meta)
+	task, err := createTask(ctx, s.db, pc.context.ID, nil, fmt.Sprintf("terraform-%s", action), fmt.Sprintf("Skyforge terraform %s %s (%s)", action, strings.ToUpper(cloud), pc.claims.Username), pc.claims.Username, meta)
 	if err != nil {
 		return nil, err
 	}
@@ -329,51 +325,49 @@ func (s *Service) RunWorkspaceTerraformApply(ctx context.Context, id string, par
 		log.Printf("terraform apply task encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode run").Err()
 	}
-	return &WorkspaceRunResponse{
-		WorkspaceID: pc.workspace.ID,
-		Task:        taskJSON,
-		User:        pc.claims.Username,
+	return &UserRunResponse{
+		OwnerUsername: pc.context.ID,
+		Task:          taskJSON,
+		User:          pc.claims.Username,
 	}, nil
 }
 
-// RunWorkspaceAnsible triggers an ansible run for a workspace.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/runs/ansible-run
-func (s *Service) RunWorkspaceAnsible(ctx context.Context, id string) (*WorkspaceRunResponse, error) {
+// RunUserAnsible triggers an ansible run for a user context.
+func (s *Service) RunUserAnsible(ctx context.Context, id string) (*UserRunResponse, error) {
 	_ = ctx
 	_ = id
 	return nil, errs.B().Code(errs.Unimplemented).Msg("ansible runs are not supported in native mode").Err()
 }
 
-type WorkspaceNetlabRunRequest struct {
-	Message            string  `json:"message,omitempty"`
-	GitBranch          string  `json:"gitBranch,omitempty"`
-	Environment        JSONMap `json:"environment,omitempty"`
-	Action             string  `json:"action,omitempty"`  // up, create, restart, collect, status, down
-	Cleanup            bool    `json:"cleanup,omitempty"` // for down/restart, remove workdir when true
-	NetlabServer       string  `json:"netlabServer,omitempty"`
-	NetlabPassword     string  `json:"netlabPassword,omitempty"`
-	NetlabWorkspaceDir string  `json:"netlabWorkspaceDir,omitempty"`
-	NetlabMultilabID   string  `json:"netlabMultilabId,omitempty"`
-	NetlabDeployment   string  `json:"netlabDeployment,omitempty"`
-	TopologyPath       string  `json:"topologyPath,omitempty"`   // remote workdir-relative (or absolute) topology file
-	TopologyURL        string  `json:"topologyUrl,omitempty"`    // remote URL (only if netlab supports it)
-	TemplateSource     string  `json:"templateSource,omitempty"` // workspace (default), blueprints, or custom
-	TemplateRepo       string  `json:"templateRepo,omitempty"`   // owner/repo or URL (custom only)
-	TemplatesDir       string  `json:"templatesDir,omitempty"`   // repo-relative directory (default: blueprints/netlab)
-	Template           string  `json:"template,omitempty"`       // filename (e.g. spine-leaf.yml)
-	ClabTarball        string  `json:"clabTarball,omitempty"`
-	ClabConfigDir      string  `json:"clabConfigDir,omitempty"`
-	ClabCleanup        bool    `json:"clabCleanup,omitempty"`
+type UserNetlabRunRequest struct {
+	Message          string  `json:"message,omitempty"`
+	GitBranch        string  `json:"gitBranch,omitempty"`
+	Environment      JSONMap `json:"environment,omitempty"`
+	Action           string  `json:"action,omitempty"`  // up, create, restart, collect, status, down
+	Cleanup          bool    `json:"cleanup,omitempty"` // for down/restart, remove workdir when true
+	NetlabServer     string  `json:"netlabServer,omitempty"`
+	NetlabPassword   string  `json:"netlabPassword,omitempty"`
+	NetlabUserDir    string  `json:"netlabUserDir,omitempty"`
+	NetlabMultilabID string  `json:"netlabMultilabId,omitempty"`
+	NetlabDeployment string  `json:"netlabDeployment,omitempty"`
+	TopologyPath     string  `json:"topologyPath,omitempty"`   // remote workdir-relative (or absolute) topology file
+	TopologyURL      string  `json:"topologyUrl,omitempty"`    // remote URL (only if netlab supports it)
+	TemplateSource   string  `json:"templateSource,omitempty"` // user (default), blueprints, external, or custom
+	TemplateRepo     string  `json:"templateRepo,omitempty"`   // owner/repo or URL (custom only)
+	TemplatesDir     string  `json:"templatesDir,omitempty"`   // repo-relative directory (default: blueprints/netlab)
+	Template         string  `json:"template,omitempty"`       // filename (e.g. spine-leaf.yml)
+	ClabTarball      string  `json:"clabTarball,omitempty"`
+	ClabConfigDir    string  `json:"clabConfigDir,omitempty"`
+	ClabCleanup      bool    `json:"clabCleanup,omitempty"`
 }
 
-type WorkspaceContainerlabRunRequest struct {
+type UserContainerlabRunRequest struct {
 	Message        string  `json:"message,omitempty"`
 	GitBranch      string  `json:"gitBranch,omitempty"`
 	Environment    JSONMap `json:"environment,omitempty"`
 	Action         string  `json:"action,omitempty"` // deploy, destroy
 	NetlabServer   string  `json:"netlabServer,omitempty"`
-	TemplateSource string  `json:"templateSource,omitempty"` // workspace (default), blueprints, or custom
+	TemplateSource string  `json:"templateSource,omitempty"` // user (default), blueprints, external, or custom
 	TemplateRepo   string  `json:"templateRepo,omitempty"`   // owner/repo or URL (custom only)
 	TemplatesDir   string  `json:"templatesDir,omitempty"`   // repo-relative directory (default: blueprints/containerlab)
 	Template       string  `json:"template,omitempty"`       // filename (e.g. lab.yml)
@@ -381,11 +375,11 @@ type WorkspaceContainerlabRunRequest struct {
 	Reconfigure    bool    `json:"reconfigure,omitempty"`
 }
 
-type WorkspaceEveNgRunRequest struct {
+type UserEveNgRunRequest struct {
 	Message        string `json:"message,omitempty"`
 	Action         string `json:"action,omitempty"` // create, start, stop, destroy
 	EveServer      string `json:"eveServer,omitempty"`
-	TemplateSource string `json:"templateSource,omitempty"` // workspace (default), blueprints, or custom
+	TemplateSource string `json:"templateSource,omitempty"` // user (default), blueprints, external, or custom
 	TemplateRepo   string `json:"templateRepo,omitempty"`   // owner/repo or URL (custom only)
 	TemplatesDir   string `json:"templatesDir,omitempty"`   // repo-relative directory (default: blueprints/eve-ng)
 	Template       string `json:"template,omitempty"`       // directory name under templates dir
@@ -394,15 +388,13 @@ type WorkspaceEveNgRunRequest struct {
 	LabPath        string `json:"labPath,omitempty"`
 }
 
-// RunWorkspaceNetlab triggers a netlab run for a workspace.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/runs/netlab-run
-func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *WorkspaceNetlabRunRequest) (*WorkspaceRunResponse, error) {
+// RunUserNetlab triggers a netlab run for a user context.
+func (s *Service) RunUserNetlab(ctx context.Context, id string, req *UserNetlabRunRequest) (*UserRunResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -413,16 +405,13 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 	if req == nil {
-		req = &WorkspaceNetlabRunRequest{}
+		req = &UserNetlabRunRequest{}
 	}
 
-	templateSource := strings.ToLower(strings.TrimSpace(req.TemplateSource))
-	if templateSource == "" {
-		templateSource = "workspace"
-	}
+	templateSource := canonicalTemplateSource(req.TemplateSource, "user")
 	serverRef := strings.TrimSpace(req.NetlabServer)
 	if serverRef == "" {
-		serverRef = strings.TrimSpace(pc.workspace.NetlabServer)
+		serverRef = strings.TrimSpace(pc.context.NetlabServer)
 	}
 	server, err := s.resolveNetlabServerConfig(ctx, pc, serverRef)
 	if err != nil {
@@ -453,12 +442,11 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 		deploymentName = runID
 	}
 
-	workspaceRoot := fmt.Sprintf("/home/%s/netlab", pc.claims.Username)
+	userRoot := fmt.Sprintf("/home/%s/netlab", pc.claims.Username)
 
-	// Backwards-compat for older runner scripts/config.
-	workspaceDir := strings.TrimSpace(req.NetlabWorkspaceDir)
-	if workspaceDir == "" {
-		workspaceDir = fmt.Sprintf("%s/%s/%s", workspaceRoot, strings.TrimSpace(pc.workspace.Slug), deploymentName)
+	userDir := strings.TrimSpace(req.NetlabUserDir)
+	if userDir == "" {
+		userDir = fmt.Sprintf("%s/%s/%s", userRoot, strings.TrimSpace(pc.context.Slug), deploymentName)
 	}
 
 	topologyPath := strings.TrimSpace(req.TopologyPath)
@@ -466,14 +454,14 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 	templateName := strings.Trim(strings.TrimSpace(req.Template), "/")
 	if topologyPath == "" && topologyURL == "" {
 		if templateName != "" {
-			owner := pc.workspace.GiteaOwner
-			repo := pc.workspace.GiteaRepo
-			branch := strings.TrimSpace(pc.workspace.DefaultBranch)
+			owner := pc.context.GiteaOwner
+			repo := pc.context.GiteaRepo
+			branch := strings.TrimSpace(pc.context.DefaultBranch)
 			policy, _ := loadGovernancePolicy(ctx, s.db)
 
 			switch templateSource {
 			case "blueprints", "blueprint":
-				ref := strings.TrimSpace(pc.workspace.Blueprint)
+				ref := strings.TrimSpace(pc.context.Blueprint)
 				if ref == "" {
 					ref = "skyforge/blueprints"
 				}
@@ -488,9 +476,9 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 				}
 				owner, repo = parts[0], parts[1]
 				branch = ""
-			case "workspace":
-				if !pc.workspace.IsPublic {
-					return nil, errs.B().Code(errs.FailedPrecondition).Msg("workspace repo is private; netlab BYOS requires a public topologyUrl (use the public blueprints repo or make the repo public)").Err()
+			case "user":
+				if !pc.context.IsPublic {
+					return nil, errs.B().Code(errs.FailedPrecondition).Msg("personal repo is private; netlab BYOS requires a public topologyUrl (use the public blueprints repo or make the repo public)").Err()
 				}
 			case "custom", "external":
 				// Allowed only when enabled; URL access still depends on repo visibility.
@@ -549,8 +537,8 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 			actor,
 			actorIsAdmin,
 			impersonated,
-			"workspace.run.netlab",
-			pc.workspace.ID,
+			"user.run.netlab",
+			pc.context.ID,
 			fmt.Sprintf("action=%s server=%s", action, strings.TrimSpace(server.Name)),
 		)
 	}
@@ -565,18 +553,18 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 		"serverRef":  serverRef,
 		"deployment": deploymentName,
 		"priority":   taskPriorityInteractive,
-		"dedupeKey":  fmt.Sprintf("netlab:%s:%s:%s", pc.workspace.ID, action, deploymentName),
+		"dedupeKey":  fmt.Sprintf("netlab:%s:%s:%s", pc.context.ID, action, deploymentName),
 		"spec": map[string]any{
-			"action":        action,
-			"server":        serverRef,
-			"serverLabel":   strings.TrimSpace(server.Name),
-			"deployment":    deploymentName,
-			"workspaceRoot": workspaceRoot,
-			"workspaceDir":  strings.TrimSpace(workspaceDir),
-			"topologyPath":  topologyPath,
-			"topologyUrl":   topologyURL,
-			"cleanup":       req.Cleanup,
-			"environment":   envMap,
+			"action":       action,
+			"server":       serverRef,
+			"serverLabel":  strings.TrimSpace(server.Name),
+			"deployment":   deploymentName,
+			"userRoot":     userRoot,
+			"userDir":      strings.TrimSpace(userDir),
+			"topologyPath": topologyPath,
+			"topologyUrl":  topologyURL,
+			"cleanup":      req.Cleanup,
+			"environment":  envMap,
 		},
 	})
 	if err != nil {
@@ -586,9 +574,9 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 	allowActive := action == "down"
 	var task *TaskRecord
 	if allowActive {
-		task, err = createTaskAllowActive(ctx, s.db, pc.workspace.ID, nil, "netlab-run", message, pc.claims.Username, meta)
+		task, err = createTaskAllowActive(ctx, s.db, pc.context.ID, nil, "netlab-run", message, pc.claims.Username, meta)
 	} else {
-		task, err = createTask(ctx, s.db, pc.workspace.ID, nil, "netlab-run", message, pc.claims.Username, meta)
+		task, err = createTask(ctx, s.db, pc.context.ID, nil, "netlab-run", message, pc.claims.Username, meta)
 	}
 	if err != nil {
 		return nil, err
@@ -600,22 +588,20 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 		log.Printf("netlab task encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode run").Err()
 	}
-	return &WorkspaceRunResponse{
-		WorkspaceID: pc.workspace.ID,
-		Task:        taskJSON,
-		User:        pc.claims.Username,
+	return &UserRunResponse{
+		OwnerUsername: pc.context.ID,
+		Task:          taskJSON,
+		User:          pc.claims.Username,
 	}, nil
 }
 
-// RunWorkspaceContainerlab triggers a Containerlab run for a workspace.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/runs/containerlab-run
-func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *WorkspaceContainerlabRunRequest) (*WorkspaceRunResponse, error) {
+// RunUserContainerlab triggers a Containerlab run for a user context.
+func (s *Service) RunUserContainerlab(ctx context.Context, id string, req *UserContainerlabRunRequest) (*UserRunResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -626,12 +612,12 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 	if req == nil {
-		req = &WorkspaceContainerlabRunRequest{}
+		req = &UserContainerlabRunRequest{}
 	}
 
 	serverRef := strings.TrimSpace(req.NetlabServer)
 	if serverRef == "" {
-		serverRef = strings.TrimSpace(pc.workspace.NetlabServer)
+		serverRef = strings.TrimSpace(pc.context.NetlabServer)
 	}
 	server, err := s.resolveContainerlabServerConfig(ctx, pc, serverRef)
 	if err != nil {
@@ -668,25 +654,21 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 	if deploymentName == "" {
 		deploymentName = strings.TrimSpace(template)
 	}
-	labName := containerlabLabName(pc.workspace.Slug, deploymentName)
+	labName := containerlabLabName(pc.context.Slug, deploymentName)
 
 	var topologyJSON string
 	var topologySourceURL string
 	if action == "deploy" {
-		templatesDir := normalizeContainerlabTemplatesDir(req.TemplateSource, req.TemplatesDir)
+		templateSource := canonicalTemplateSource(req.TemplateSource, "user")
+		templatesDir := normalizeContainerlabTemplatesDir(templateSource, req.TemplatesDir)
 		if !isSafeRelativePath(templatesDir) {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("templatesDir must be a safe repo-relative path").Err()
 		}
 		filePath := path.Join(templatesDir, template)
 
 		// Prefer topologySourceUrl (clab-api-server supports git/raw URLs) to avoid sending full topology content.
-		// For private workspace repos, the BYOS host might not be able to fetch the raw URL, so we keep a
+		// For private user repos, the BYOS host might not be able to fetch the raw URL, so we keep a
 		// fallback mode that uploads topology content directly.
-		templateSource := strings.ToLower(strings.TrimSpace(req.TemplateSource))
-		if templateSource == "" {
-			templateSource = "workspace"
-		}
-
 		// External repos can be either a Gitea owner/repo or a full git URL.
 		if templateSource == "external" {
 			found := externalTemplateRepoByIDForContext(pc, strings.TrimSpace(req.TemplateRepo))
@@ -728,7 +710,7 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 				topologyJSON = string(topologyBytes)
 			} else {
 				policy, _ := loadGovernancePolicy(ctx, s.db)
-				ref, err := resolveTemplateRepoForProject(s.cfg, pc, policy, req.TemplateSource, req.TemplateRepo)
+				ref, err := resolveTemplateRepoForProject(s.cfg, pc, policy, templateSource, req.TemplateRepo)
 				if err != nil {
 					return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 				}
@@ -736,12 +718,12 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 			}
 		} else {
 			policy, _ := loadGovernancePolicy(ctx, s.db)
-			ref, err := resolveTemplateRepoForProject(s.cfg, pc, policy, req.TemplateSource, req.TemplateRepo)
+			ref, err := resolveTemplateRepoForProject(s.cfg, pc, policy, templateSource, req.TemplateRepo)
 			if err != nil {
 				return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 			}
 
-			shouldUseSource := templateSource != "workspace" || pc.workspace.IsPublic
+			shouldUseSource := templateSource != "user" || pc.context.IsPublic
 			if shouldUseSource {
 				topologySourceURL = giteaRawFileURL(s.cfg, ref.Owner, ref.Repo, ref.Branch, filePath)
 			} else {
@@ -783,8 +765,8 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 			actor,
 			actorIsAdmin,
 			impersonated,
-			"workspace.run.containerlab",
-			pc.workspace.ID,
+			"user.run.containerlab",
+			pc.context.ID,
 			fmt.Sprintf("action=%s server=%s", action, strings.TrimSpace(server.Name)),
 		)
 	}
@@ -800,7 +782,7 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 		"labName":   labName,
 		"template":  template,
 		"priority":  taskPriorityInteractive,
-		"dedupeKey": fmt.Sprintf("containerlab:%s:%s:%s", pc.workspace.ID, action, labName),
+		"dedupeKey": fmt.Sprintf("containerlab:%s:%s:%s", pc.context.ID, action, labName),
 		"spec": map[string]any{
 			"action":            action,
 			"netlabServer":      serverRef,
@@ -820,9 +802,9 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 	allowActive := action == "destroy"
 	var task *TaskRecord
 	if allowActive {
-		task, err = createTaskAllowActive(ctx, s.db, pc.workspace.ID, nil, "containerlab-run", message, pc.claims.Username, meta)
+		task, err = createTaskAllowActive(ctx, s.db, pc.context.ID, nil, "containerlab-run", message, pc.claims.Username, meta)
 	} else {
-		task, err = createTask(ctx, s.db, pc.workspace.ID, nil, "containerlab-run", message, pc.claims.Username, meta)
+		task, err = createTask(ctx, s.db, pc.context.ID, nil, "containerlab-run", message, pc.claims.Username, meta)
 	}
 	if err != nil {
 		return nil, err
@@ -834,22 +816,20 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 		log.Printf("containerlab task encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode run").Err()
 	}
-	return &WorkspaceRunResponse{
-		WorkspaceID: pc.workspace.ID,
-		Task:        taskJSON,
-		User:        pc.claims.Username,
+	return &UserRunResponse{
+		OwnerUsername: pc.context.ID,
+		Task:          taskJSON,
+		User:          pc.claims.Username,
 	}, nil
 }
 
-// RunWorkspaceEveNg triggers an EVE-NG lab run for a workspace.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/runs/eve-ng-run
-func (s *Service) RunWorkspaceEveNg(ctx context.Context, id string, req *WorkspaceEveNgRunRequest) (*WorkspaceRunResponse, error) {
+// RunUserEveNg triggers an EVE-NG lab run for a user context.
+func (s *Service) RunUserEveNg(ctx context.Context, id string, req *UserEveNgRunRequest) (*UserRunResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -860,12 +840,12 @@ func (s *Service) RunWorkspaceEveNg(ctx context.Context, id string, req *Workspa
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 	if req == nil {
-		req = &WorkspaceEveNgRunRequest{}
+		req = &UserEveNgRunRequest{}
 	}
 
 	serverRef := strings.TrimSpace(req.EveServer)
 	if serverRef == "" {
-		serverRef = strings.TrimSpace(pc.workspace.EveServer)
+		serverRef = strings.TrimSpace(pc.context.EveServer)
 	}
 	server, err := s.resolveEveServerConfig(ctx, pc, serverRef)
 	if err != nil {
@@ -882,10 +862,7 @@ func (s *Service) RunWorkspaceEveNg(ctx context.Context, id string, req *Workspa
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid eve-ng action (use create, start, stop, or destroy)").Err()
 	}
 
-	templateSource := strings.ToLower(strings.TrimSpace(req.TemplateSource))
-	if templateSource == "" {
-		templateSource = "blueprints"
-	}
+	templateSource := canonicalTemplateSource(req.TemplateSource, "blueprints")
 	templatesDir := normalizeEveNgTemplatesDir(templateSource, req.TemplatesDir)
 	if !isSafeRelativePath(templatesDir) {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("templatesDir must be a safe repo-relative path").Err()
@@ -901,7 +878,7 @@ func (s *Service) RunWorkspaceEveNg(ctx context.Context, id string, req *Workspa
 	}
 	labPath := strings.TrimSpace(req.LabPath)
 	if labPath == "" {
-		labPath = path.Join("skyforge", pc.workspace.Slug, deploymentName+".unl")
+		labPath = path.Join("skyforge", pc.context.Slug, deploymentName+".unl")
 	}
 
 	message := strings.TrimSpace(req.Message)
@@ -918,8 +895,8 @@ func (s *Service) RunWorkspaceEveNg(ctx context.Context, id string, req *Workspa
 			actor,
 			actorIsAdmin,
 			impersonated,
-			"workspace.run.eve-ng",
-			pc.workspace.ID,
+			"user.run.eve-ng",
+			pc.context.ID,
 			fmt.Sprintf("action=%s server=%s", action, strings.TrimSpace(server.Name)),
 		)
 	}
@@ -931,7 +908,7 @@ func (s *Service) RunWorkspaceEveNg(ctx context.Context, id string, req *Workspa
 		"labPath":   labPath,
 		"template":  template,
 		"priority":  taskPriorityInteractive,
-		"dedupeKey": fmt.Sprintf("eve-ng:%s:%s:%s", pc.workspace.ID, action, labPath),
+		"dedupeKey": fmt.Sprintf("eve-ng:%s:%s:%s", pc.context.ID, action, labPath),
 		"spec": map[string]any{
 			"action":         action,
 			"server":         serverRef,
@@ -953,9 +930,9 @@ func (s *Service) RunWorkspaceEveNg(ctx context.Context, id string, req *Workspa
 	allowActive := action == "stop" || action == "destroy"
 	var task *TaskRecord
 	if allowActive {
-		task, err = createTaskAllowActive(ctx, s.db, pc.workspace.ID, nil, "eve-ng-run", message, pc.claims.Username, meta)
+		task, err = createTaskAllowActive(ctx, s.db, pc.context.ID, nil, "eve-ng-run", message, pc.claims.Username, meta)
 	} else {
-		task, err = createTask(ctx, s.db, pc.workspace.ID, nil, "eve-ng-run", message, pc.claims.Username, meta)
+		task, err = createTask(ctx, s.db, pc.context.ID, nil, "eve-ng-run", message, pc.claims.Username, meta)
 	}
 	if err != nil {
 		return nil, err
@@ -967,20 +944,20 @@ func (s *Service) RunWorkspaceEveNg(ctx context.Context, id string, req *Workspa
 		log.Printf("eve-ng task encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode run").Err()
 	}
-	return &WorkspaceRunResponse{
-		WorkspaceID: pc.workspace.ID,
-		Task:        taskJSON,
-		User:        pc.claims.Username,
+	return &UserRunResponse{
+		OwnerUsername: pc.context.ID,
+		Task:          taskJSON,
+		User:          pc.claims.Username,
 	}, nil
 }
 
-func populateAWSAuthEnv(ctx context.Context, cfg Config, db *sql.DB, store awsSSOTokenStore, workspace SkyforgeWorkspace, username string, env map[string]any) error {
-	switch strings.ToLower(strings.TrimSpace(workspace.AWSAuthMethod)) {
+func populateAWSAuthEnv(ctx context.Context, cfg Config, db *sql.DB, store awsSSOTokenStore, scope SkyforgeUserContext, username string, env map[string]any) error {
+	switch strings.ToLower(strings.TrimSpace(scope.AWSAuthMethod)) {
 	case "sso":
-		accountID := strings.TrimSpace(workspace.AWSAccountID)
-		roleName := strings.TrimSpace(workspace.AWSRoleName)
+		accountID := strings.TrimSpace(scope.AWSAccountID)
+		roleName := strings.TrimSpace(scope.AWSRoleName)
 		if accountID == "" || roleName == "" {
-			return errs.B().Code(errs.InvalidArgument).Msg("workspace is missing awsAccountId/awsRoleName").Err()
+			return errs.B().Code(errs.InvalidArgument).Msg("user context is missing awsAccountId/awsRoleName").Err()
 		}
 		ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
@@ -1008,13 +985,13 @@ func populateAWSAuthEnv(ctx context.Context, cfg Config, db *sql.DB, store awsSS
 		}
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
-		rec, err := getWorkspaceAWSStaticCredentials(ctx, db, newSecretBox(cfg.SessionSecret), workspace.ID)
+		rec, err := getOwnerAWSStaticCredentials(ctx, db, newSecretBox(cfg.SessionSecret), scope.ID)
 		if err != nil {
 			log.Printf("aws static get: %v", err)
 			return errs.B().Code(errs.Unavailable).Msg("aws static credentials unavailable").Err()
 		}
 		if rec == nil || rec.AccessKeyID == "" || rec.SecretAccessKey == "" {
-			return errs.B().Code(errs.InvalidArgument).Msg("aws static credentials are not configured for this workspace").Err()
+			return errs.B().Code(errs.InvalidArgument).Msg("aws static credentials are not configured for this user context").Err()
 		}
 		env["TF_VAR_aws_access_key_id"] = rec.AccessKeyID
 		env["TF_VAR_aws_secret_access_key"] = rec.SecretAccessKey
@@ -1027,8 +1004,8 @@ func populateAWSAuthEnv(ctx context.Context, cfg Config, db *sql.DB, store awsSS
 	return nil
 }
 
-func shouldUseAWS(workspace SkyforgeWorkspace) bool {
-	authMethod := strings.ToLower(strings.TrimSpace(workspace.AWSAuthMethod))
+func shouldUseAWS(scope SkyforgeUserContext) bool {
+	authMethod := strings.ToLower(strings.TrimSpace(scope.AWSAuthMethod))
 	if authMethod == "" {
 		authMethod = "sso"
 	}
@@ -1036,19 +1013,19 @@ func shouldUseAWS(workspace SkyforgeWorkspace) bool {
 	case "static":
 		return true
 	case "sso":
-		return strings.TrimSpace(workspace.AWSAccountID) != "" && strings.TrimSpace(workspace.AWSRoleName) != ""
+		return strings.TrimSpace(scope.AWSAccountID) != "" && strings.TrimSpace(scope.AWSRoleName) != ""
 	default:
 		return false
 	}
 }
 
-func populateAzureAuthEnv(ctx context.Context, cfg Config, db *sql.DB, workspace SkyforgeWorkspace, env map[string]any) error {
+func populateAzureAuthEnv(ctx context.Context, cfg Config, db *sql.DB, scope SkyforgeUserContext, env map[string]any) error {
 	if db == nil {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	rec, err := getWorkspaceAzureCredentials(ctx, db, newSecretBox(cfg.SessionSecret), workspace.ID)
+	rec, err := getOwnerAzureCredentials(ctx, db, newSecretBox(cfg.SessionSecret), scope.ID)
 	if err != nil {
 		log.Printf("azure creds get: %v", err)
 		return errs.B().Code(errs.Unavailable).Msg("azure credentials unavailable").Err()
@@ -1065,13 +1042,13 @@ func populateAzureAuthEnv(ctx context.Context, cfg Config, db *sql.DB, workspace
 	return nil
 }
 
-func populateGCPAuthEnv(ctx context.Context, cfg Config, db *sql.DB, workspace SkyforgeWorkspace, env map[string]any) error {
+func populateGCPAuthEnv(ctx context.Context, cfg Config, db *sql.DB, scope SkyforgeUserContext, env map[string]any) error {
 	if db == nil {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	rec, err := getWorkspaceGCPCredentials(ctx, db, newSecretBox(cfg.SessionSecret), workspace.ID)
+	rec, err := getOwnerGCPCredentials(ctx, db, newSecretBox(cfg.SessionSecret), scope.ID)
 	if err != nil {
 		log.Printf("gcp creds get: %v", err)
 		return errs.B().Code(errs.Unavailable).Msg("gcp credentials unavailable").Err()

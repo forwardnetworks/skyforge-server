@@ -27,8 +27,8 @@ func netlabMultilabNumericID(multilabID string) int {
 
 func (s *Service) runNetlabC9sDeploymentAction(
 	ctx context.Context,
-	pc *workspaceContext,
-	dep *WorkspaceDeployment,
+	pc *ownerContext,
+	dep *UserDeployment,
 	envJSON JSONMap,
 	action string,
 	netlabServer string,
@@ -39,7 +39,7 @@ func (s *Service) runNetlabC9sDeploymentAction(
 	labName string,
 	k8sNamespace string,
 	setOverrides []string,
-) (*WorkspaceRunResponse, error) {
+) (*UserRunResponse, error) {
 	if pc == nil || dep == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("deployment context unavailable").Err()
 	}
@@ -70,9 +70,9 @@ func (s *Service) runNetlabC9sDeploymentAction(
 	if mode == "remote" {
 		netlabServer = strings.TrimSpace(netlabServer)
 		if netlabServer == "" {
-			netlabServer = strings.TrimSpace(pc.workspace.NetlabServer)
+			netlabServer = strings.TrimSpace(pc.context.NetlabServer)
 		}
-		server, err := s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, netlabServer)
+		server, err := s.resolveUserNetlabServerConfig(ctx, pc.context.ID, netlabServer)
 		if err != nil {
 			return nil, errs.B().Code(errs.FailedPrecondition).Msg(err.Error()).Err()
 		}
@@ -109,17 +109,17 @@ func (s *Service) runNetlabC9sDeploymentAction(
 	if deploymentName == "" {
 		deploymentName = multilabID
 	}
-	workspaceRoot := fmt.Sprintf("/home/%s/netlab", strings.TrimSpace(pc.claims.Username))
-	workspaceDir := fmt.Sprintf("%s/%s/%s", workspaceRoot, strings.TrimSpace(pc.workspace.Slug), deploymentName)
+	userRoot := fmt.Sprintf("/home/%s/netlab", strings.TrimSpace(pc.claims.Username))
+	userDir := fmt.Sprintf("%s/%s/%s", userRoot, strings.TrimSpace(pc.context.Slug), deploymentName)
 	clabTarball := fmt.Sprintf("containerlab-%s.tar.gz", deploymentName)
 
 	labName = strings.TrimSpace(labName)
 	if labName == "" {
-		labName = containerlabLabName(pc.workspace.Slug, deploymentName)
+		labName = containerlabLabName(pc.context.Slug, deploymentName)
 	}
 	k8sNamespace = strings.TrimSpace(k8sNamespace)
 	if k8sNamespace == "" {
-		k8sNamespace = clabernetesWorkspaceNamespace(pc.workspace.Slug)
+		k8sNamespace = clabernetesOwnerNamespace(pc.context.Slug)
 	}
 	topologyName := clabernetesTopologyName(labName)
 
@@ -142,8 +142,8 @@ func (s *Service) runNetlabC9sDeploymentAction(
 			actor,
 			actorIsAdmin,
 			impersonated,
-			"workspace.run.netlab.c9s",
-			pc.workspace.ID,
+			"user.run.netlab.c9s",
+			pc.context.ID,
 			fmt.Sprintf("action=%s server=%s namespace=%s topology=%s", action, serverName, k8sNamespace, topologyName),
 		)
 	}
@@ -156,18 +156,18 @@ func (s *Service) runNetlabC9sDeploymentAction(
 		"namespace":    k8sNamespace,
 		"topologyName": topologyName,
 		"labName":      labName,
-		"dedupeKey":    fmt.Sprintf("netlab-c9s:%s:%s:%s", pc.workspace.ID, action, dep.ID),
+		"dedupeKey":    fmt.Sprintf("netlab-c9s:%s:%s:%s", pc.context.ID, action, dep.ID),
 		"spec": netlabC9sTaskSpec{
 			Action:          action,
 			Server:          serverName,
 			Deployment:      deploymentName,
 			DeploymentID:    dep.ID,
-			WorkspaceRoot:   workspaceRoot,
+			UserRoot:        userRoot,
 			TemplateSource:  templateSource,
 			TemplateRepo:    strings.TrimSpace(templateRepo),
 			TemplatesDir:    strings.TrimSpace(templatesDir),
 			Template:        template,
-			WorkspaceDir:    workspaceDir,
+			UserDir:         userDir,
 			MultilabNumeric: multilabNumeric,
 			TopologyPath:    "",
 			ClabTarball:     clabTarball,
@@ -186,9 +186,9 @@ func (s *Service) runNetlabC9sDeploymentAction(
 	allowActive := action == "destroy"
 	var task *TaskRecord
 	if allowActive {
-		task, err = createTaskAllowActive(ctx, s.db, pc.workspace.ID, &dep.ID, "netlab-c9s-run", message, pc.claims.Username, meta)
+		task, err = createTaskAllowActive(ctx, s.db, pc.context.ID, &dep.ID, "netlab-c9s-run", message, pc.claims.Username, meta)
 	} else {
-		task, err = createTask(ctx, s.db, pc.workspace.ID, &dep.ID, "netlab-c9s-run", message, pc.claims.Username, meta)
+		task, err = createTask(ctx, s.db, pc.context.ID, &dep.ID, "netlab-c9s-run", message, pc.claims.Username, meta)
 	}
 	if err != nil {
 		return nil, err
@@ -201,9 +201,9 @@ func (s *Service) runNetlabC9sDeploymentAction(
 		log.Printf("netlab c9s task encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode run").Err()
 	}
-	return &WorkspaceRunResponse{
-		WorkspaceID: pc.workspace.ID,
-		Task:        taskJSON,
-		User:        pc.claims.Username,
+	return &UserRunResponse{
+		OwnerUsername: pc.context.ID,
+		Task:          taskJSON,
+		User:          pc.claims.Username,
 	}, nil
 }

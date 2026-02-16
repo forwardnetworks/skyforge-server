@@ -9,14 +9,14 @@ import (
 	"encore.app/internal/tasknotify"
 )
 
-func UpdateDeploymentStatus(ctx context.Context, db *sql.DB, workspaceID, deploymentID string, status string, finishedAt *time.Time) error {
+func UpdateDeploymentStatus(ctx context.Context, db *sql.DB, ownerID, deploymentID string, status string, finishedAt *time.Time) error {
 	if db == nil {
 		return errDBUnavailable
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	deploymentID = strings.TrimSpace(deploymentID)
 	status = strings.TrimSpace(status)
-	if workspaceID == "" || deploymentID == "" {
+	if ownerID == "" || deploymentID == "" {
 		return nil
 	}
 	if status == "" {
@@ -31,10 +31,10 @@ func UpdateDeploymentStatus(ctx context.Context, db *sql.DB, workspaceID, deploy
   last_status=$1,
   last_finished_at=$2,
   updated_at=now()
-WHERE id=$3 AND workspace_id=$4`,
-		status, finished, deploymentID, workspaceID)
+WHERE id=$3 AND owner_id=$4`,
+		status, finished, deploymentID, ownerID)
 	if err == nil {
-		_ = tasknotify.NotifyDeploymentEvent(ctx, db, workspaceID, deploymentID)
+		_ = tasknotify.NotifyDeploymentEvent(ctx, db, ownerID, deploymentID)
 		_ = tasknotify.NotifyDashboardUpdate(ctx, db)
 	}
 	return err

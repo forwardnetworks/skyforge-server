@@ -122,9 +122,9 @@ func normalizeNetlabTemplateSelectionWithSource(source, templatesDir, templateFi
 
 func (e *Engine) giteaClient() *gitea.Client {
 	return gitea.New(gitea.Config{
-		APIURL:      strings.TrimRight(strings.TrimSpace(e.cfg.Workspaces.GiteaAPIURL), "/"),
-		Username:    strings.TrimSpace(e.cfg.Workspaces.GiteaUsername),
-		Password:    strings.TrimSpace(e.cfg.Workspaces.GiteaPassword),
+		APIURL:      strings.TrimRight(strings.TrimSpace(e.cfg.Scopes.GiteaAPIURL), "/"),
+		Username:    strings.TrimSpace(e.cfg.Scopes.GiteaUsername),
+		Password:    strings.TrimSpace(e.cfg.Scopes.GiteaPassword),
 		Timeout:     20 * time.Second,
 		RepoPrivate: true,
 	})
@@ -142,19 +142,19 @@ func (e *Engine) giteaDefaultBranch(owner, repo string) string {
 	return branch
 }
 
-func (e *Engine) resolveTemplateRepoForWorkspace(pc *workspaceContext, source string, customRepo string) (templateRepoRef, error) {
+func (e *Engine) resolveTemplateRepoForOwner(pc *ownerContext, source string, customRepo string) (templateRepoRef, error) {
 	if pc == nil {
-		return templateRepoRef{}, fmt.Errorf("workspace context unavailable")
+		return templateRepoRef{}, fmt.Errorf("owner context unavailable")
 	}
-	owner := strings.TrimSpace(pc.workspace.GiteaOwner)
-	repo := strings.TrimSpace(pc.workspace.GiteaRepo)
-	branch := strings.TrimSpace(pc.workspace.DefaultBranch)
+	owner := strings.TrimSpace(pc.owner.GiteaOwner)
+	repo := strings.TrimSpace(pc.owner.GiteaRepo)
+	branch := strings.TrimSpace(pc.owner.DefaultBranch)
 
 	switch strings.ToLower(strings.TrimSpace(source)) {
-	case "", "workspace":
+	case "", "scope":
 		// default
 	case "blueprints", "blueprint":
-		ref := strings.TrimSpace(pc.workspace.Blueprint)
+		ref := strings.TrimSpace(pc.owner.Blueprint)
 		if ref == "" {
 			ref = "skyforge/blueprints"
 		}
@@ -165,17 +165,17 @@ func (e *Engine) resolveTemplateRepoForWorkspace(pc *workspaceContext, source st
 		owner, repo = parts[0], parts[1]
 		branch = ""
 	case "external":
-		if !pc.workspace.AllowExternalTemplateRepos {
-			return templateRepoRef{}, fmt.Errorf("external template repos are not enabled for this workspace")
+		if !pc.owner.AllowExternalTemplateRepos {
+			return templateRepoRef{}, fmt.Errorf("external template repos are not enabled for this owner")
 		}
 		repoID := strings.TrimSpace(customRepo)
 		if repoID == "" {
 			return templateRepoRef{}, fmt.Errorf("external repo id is required")
 		}
 		var found *ExternalTemplateRepo
-		for i := range pc.workspace.ExternalTemplateRepos {
-			if strings.TrimSpace(pc.workspace.ExternalTemplateRepos[i].ID) == repoID {
-				found = &pc.workspace.ExternalTemplateRepos[i]
+		for i := range pc.owner.ExternalTemplateRepos {
+			if strings.TrimSpace(pc.owner.ExternalTemplateRepos[i].ID) == repoID {
+				found = &pc.owner.ExternalTemplateRepos[i]
 				break
 			}
 		}
@@ -189,8 +189,8 @@ func (e *Engine) resolveTemplateRepoForWorkspace(pc *workspaceContext, source st
 		owner, repo = parts[0], parts[1]
 		branch = strings.TrimSpace(found.DefaultBranch)
 	case "custom":
-		if !pc.workspace.AllowExternalTemplateRepos {
-			return templateRepoRef{}, fmt.Errorf("custom template repos are not enabled for this workspace")
+		if !pc.owner.AllowExternalTemplateRepos {
+			return templateRepoRef{}, fmt.Errorf("custom template repos are not enabled for this owner")
 		}
 		customOwner, customName, err := parseGiteaRepoRef(customRepo)
 		if err != nil {
@@ -262,12 +262,12 @@ func (e *Engine) readGiteaFileBytes(ctx context.Context, owner, repo, filePath, 
 //
 // The bundle root is flattened: the template directory contents are written at the tar root, and
 // the selected topology is renamed to topology.yml.
-func (e *Engine) buildNetlabTopologyBundleB64(ctx context.Context, pc *workspaceContext, templateSource, templateRepo, templatesDir, templateFile string) (string, error) {
+func (e *Engine) buildNetlabTopologyBundleB64(ctx context.Context, pc *ownerContext, templateSource, templateRepo, templatesDir, templateFile string) (string, error) {
 	if e == nil {
 		return "", fmt.Errorf("engine unavailable")
 	}
 	if pc == nil {
-		return "", fmt.Errorf("workspace context unavailable")
+		return "", fmt.Errorf("owner context unavailable")
 	}
 	templatesDir, templateFile, templatePath := normalizeNetlabTemplateSelectionWithSource(templateSource, templatesDir, templateFile)
 	if templateFile == "" {
@@ -276,7 +276,7 @@ func (e *Engine) buildNetlabTopologyBundleB64(ctx context.Context, pc *workspace
 	if !isSafeRelativePath(templatesDir) {
 		return "", fmt.Errorf("templatesDir must be a safe repo-relative path")
 	}
-	ref, err := e.resolveTemplateRepoForWorkspace(pc, templateSource, templateRepo)
+	ref, err := e.resolveTemplateRepoForOwner(pc, templateSource, templateRepo)
 	if err != nil {
 		return "", err
 	}

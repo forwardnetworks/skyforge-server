@@ -32,7 +32,7 @@ type ForwardAssuranceSummaryParams struct {
 }
 
 type ForwardAssuranceSummaryResponse struct {
-	WorkspaceID      string `json:"workspaceId"`
+	OwnerUsername    string `json:"ownerUsername"`
 	NetworkRef       string `json:"networkRef"`
 	ForwardNetworkID string `json:"forwardNetworkId"`
 	GeneratedAt      string `json:"generatedAt"`
@@ -123,11 +123,11 @@ type ForwardAssuranceLiveCount struct {
 }
 
 type ForwardAssuranceNQEPosture struct {
-	PackID      string         `json:"packId"`
-	SnapshotID  string         `json:"snapshotId,omitempty"`
-	GeneratedAt string         `json:"generatedAt"`
-	TotalsBySeverity map[string]int `json:"totalsBySeverity,omitempty"`
-	TopFindings []ForwardAssuranceNQEPostureFinding `json:"topFindings,omitempty"`
+	PackID           string                              `json:"packId"`
+	SnapshotID       string                              `json:"snapshotId,omitempty"`
+	GeneratedAt      string                              `json:"generatedAt"`
+	TotalsBySeverity map[string]int                      `json:"totalsBySeverity,omitempty"`
+	TopFindings      []ForwardAssuranceNQEPostureFinding `json:"topFindings,omitempty"`
 }
 
 type ForwardAssuranceNQEPostureFinding struct {
@@ -306,10 +306,10 @@ func topFailureReasons(m map[string]int, kind string, out *[]ForwardAssuranceFai
 	}
 }
 
-func computeForwardAssuranceSummaryFromLive(now time.Time, workspaceID, networkRef, forwardNetworkID string, snapshot forwardSnapshotInfo, haveSnapshot bool, metrics forwardSnapshotMetrics, haveMetrics bool, vuln forwardVulnerabilityAnalysis, haveVuln bool, capAsOf time.Time, capRollups []CapacityRollupRow, capErr error) ForwardAssuranceSummaryResponse {
+func computeForwardAssuranceSummaryFromLive(now time.Time, ownerID, networkRef, forwardNetworkID string, snapshot forwardSnapshotInfo, haveSnapshot bool, metrics forwardSnapshotMetrics, haveMetrics bool, vuln forwardVulnerabilityAnalysis, haveVuln bool, capAsOf time.Time, capRollups []CapacityRollupRow, capErr error) ForwardAssuranceSummaryResponse {
 	now = now.UTC()
 	out := ForwardAssuranceSummaryResponse{
-		WorkspaceID:      workspaceID,
+		OwnerUsername:    ownerID,
 		NetworkRef:       networkRef,
 		ForwardNetworkID: forwardNetworkID,
 		GeneratedAt:      now.Format(time.RFC3339Nano),
@@ -484,9 +484,9 @@ func saveForwardAssuranceSummary(ctx context.Context, db *sql.DB, sum ForwardAss
 	}
 	_, err = db.ExecContext(ctxQ, `
 INSERT INTO sf_forward_assurance_summaries (
-  workspace_id, forward_network_id, network_ref, snapshot_id, generated_at, summary_json
+  owner_username, forward_network_id, network_ref, snapshot_id, generated_at, summary_json
 ) VALUES ($1,$2,$3,$4,now(),$5::jsonb)
-`, strings.TrimSpace(sum.WorkspaceID), strings.TrimSpace(sum.ForwardNetworkID), strings.TrimSpace(sum.NetworkRef), strings.TrimSpace(sum.Snapshot.SnapshotID), string(b))
+`, strings.TrimSpace(sum.OwnerUsername), strings.TrimSpace(sum.ForwardNetworkID), strings.TrimSpace(sum.NetworkRef), strings.TrimSpace(sum.Snapshot.SnapshotID), string(b))
 	return err
 }
 
@@ -603,7 +603,7 @@ WHERE username=$1 AND received_at >= $2
 	return out, warnings
 }
 
-func loadLatestForwardAssuranceSummary(ctx context.Context, db *sql.DB, workspaceID, forwardNetworkID, networkRef string) (ForwardAssuranceSummaryResponse, time.Time, bool, error) {
+func loadLatestForwardAssuranceSummary(ctx context.Context, db *sql.DB, ownerID, forwardNetworkID, networkRef string) (ForwardAssuranceSummaryResponse, time.Time, bool, error) {
 	if db == nil {
 		return ForwardAssuranceSummaryResponse{}, time.Time{}, false, fmt.Errorf("db unavailable")
 	}
@@ -614,10 +614,10 @@ func loadLatestForwardAssuranceSummary(ctx context.Context, db *sql.DB, workspac
 	err := db.QueryRowContext(ctxQ, `
 SELECT generated_at, summary_json::text
 FROM sf_forward_assurance_summaries
-WHERE workspace_id=$1 AND forward_network_id=$2 AND network_ref=$3
+WHERE owner_username=$1 AND forward_network_id=$2 AND network_ref=$3
 ORDER BY generated_at DESC, id DESC
 LIMIT 1
-`, strings.TrimSpace(workspaceID), strings.TrimSpace(forwardNetworkID), strings.TrimSpace(networkRef)).Scan(&generatedAt, &raw)
+`, strings.TrimSpace(ownerID), strings.TrimSpace(forwardNetworkID), strings.TrimSpace(networkRef)).Scan(&generatedAt, &raw)
 	if err != nil {
 		return ForwardAssuranceSummaryResponse{}, time.Time{}, false, err
 	}
@@ -628,7 +628,7 @@ LIMIT 1
 	return sum, generatedAt.UTC(), true, nil
 }
 
-func shouldStoreForwardAssuranceSummary(ctx context.Context, db *sql.DB, workspaceID, forwardNetworkID, networkRef string, minAge time.Duration) bool {
+func shouldStoreForwardAssuranceSummary(ctx context.Context, db *sql.DB, ownerID, forwardNetworkID, networkRef string, minAge time.Duration) bool {
 	if db == nil {
 		return false
 	}
@@ -638,8 +638,8 @@ func shouldStoreForwardAssuranceSummary(ctx context.Context, db *sql.DB, workspa
 	err := db.QueryRowContext(ctxQ, `
 SELECT COALESCE(MAX(generated_at), 'epoch'::timestamptz)
 FROM sf_forward_assurance_summaries
-WHERE workspace_id=$1 AND forward_network_id=$2 AND network_ref=$3
-`, strings.TrimSpace(workspaceID), strings.TrimSpace(forwardNetworkID), strings.TrimSpace(networkRef)).Scan(&newest)
+WHERE owner_username=$1 AND forward_network_id=$2 AND network_ref=$3
+`, strings.TrimSpace(ownerID), strings.TrimSpace(forwardNetworkID), strings.TrimSpace(networkRef)).Scan(&newest)
 	if err != nil {
 		return false
 	}
@@ -905,11 +905,11 @@ func computeAssuranceNQEPosture(ctx context.Context, client *forwardClient, forw
 	}
 
 	return &ForwardAssuranceNQEPosture{
-		PackID:      packID,
-		SnapshotID:  snapshotID,
-		GeneratedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		PackID:           packID,
+		SnapshotID:       snapshotID,
+		GeneratedAt:      time.Now().UTC().Format(time.RFC3339Nano),
 		TotalsBySeverity: totals,
-		TopFindings: findings,
+		TopFindings:      findings,
 	}, nil
 }
 
@@ -960,15 +960,13 @@ func anyToStringSlice(v any) []string {
 	return out
 }
 
-// GetWorkspaceForwardNetworkAssuranceSummary returns a demo-oriented assurance summary computed from live Forward calls.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/forward-networks/:networkRef/assurance/summary
-func (s *Service) GetWorkspaceForwardNetworkAssuranceSummary(ctx context.Context, id, networkRef string, params *ForwardAssuranceSummaryParams) (*ForwardAssuranceSummaryResponse, error) {
+// GetUserForwardNetworkAssuranceSummary returns a demo-oriented assurance summary computed from live Forward calls.
+func (s *Service) GetUserForwardNetworkAssuranceSummary(ctx context.Context, id, networkRef string, params *ForwardAssuranceSummaryParams) (*ForwardAssuranceSummaryResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -978,7 +976,7 @@ func (s *Service) GetWorkspaceForwardNetworkAssuranceSummary(ctx context.Context
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.context.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -989,7 +987,7 @@ func (s *Service) GetWorkspaceForwardNetworkAssuranceSummary(ctx context.Context
 		forceFresh = parseOptionalBoolQuery(params.Fresh)
 	}
 	if !forceFresh && s.db != nil {
-		cached, generatedAt, ok, err := loadLatestForwardAssuranceSummary(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID, net.ID)
+		cached, generatedAt, ok, err := loadLatestForwardAssuranceSummary(ctx, s.db, pc.context.ID, net.ForwardNetworkID, net.ID)
 		if err == nil && ok && time.Since(generatedAt) < 30*time.Second {
 			cached.LiveSignals, cached.Warnings = s.countLiveSignals(ctx, pc.claims.Username, 60)
 			cached.Warnings = append(cached.Warnings, "served cached forward summary")
@@ -1029,9 +1027,9 @@ func (s *Service) GetWorkspaceForwardNetworkAssuranceSummary(ctx context.Context
 	var capAsOf time.Time
 	var capRows []CapacityRollupRow
 	var capErr error
-	capAsOf, capRows, capErr = loadLatestCapacityRollupsForForwardNetwork(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID)
+	capAsOf, capRows, capErr = loadLatestCapacityRollupsForForwardNetwork(ctx, s.db, pc.context.ID, net.ForwardNetworkID)
 
-	sum := computeForwardAssuranceSummaryFromLive(time.Now(), pc.workspace.ID, net.ID, net.ForwardNetworkID, snap, haveSnap, met, haveMet, vul, haveVul, capAsOf, capRows, capErr)
+	sum := computeForwardAssuranceSummaryFromLive(time.Now(), pc.context.ID, net.ID, net.ForwardNetworkID, snap, haveSnap, met, haveMet, vul, haveVul, capAsOf, capRows, capErr)
 	sum.LiveSignals, sum.Warnings = s.countLiveSignals(ctx, pc.claims.Username, 60)
 
 	// Best-effort: attach an NQE posture summary (shows "NQE does the math").
@@ -1047,7 +1045,7 @@ func (s *Service) GetWorkspaceForwardNetworkAssuranceSummary(ctx context.Context
 	}
 
 	// Best-effort cache write (rate-limited).
-	if s.db != nil && shouldStoreForwardAssuranceSummary(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID, net.ID, 2*time.Minute) {
+	if s.db != nil && shouldStoreForwardAssuranceSummary(ctx, s.db, pc.context.ID, net.ForwardNetworkID, net.ID, 2*time.Minute) {
 		if err := saveForwardAssuranceSummary(ctx, s.db, sum); err != nil && !isMissingDBRelation(err) {
 			rlog.Error("failed to save forward assurance summary", "error", err)
 		}
@@ -1056,22 +1054,20 @@ func (s *Service) GetWorkspaceForwardNetworkAssuranceSummary(ctx context.Context
 	return &sum, nil
 }
 
-// RefreshWorkspaceForwardNetworkAssurance recomputes the live summary, stores it in history (best-effort), and returns it.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/forward-networks/:networkRef/assurance/refresh
-func (s *Service) RefreshWorkspaceForwardNetworkAssurance(ctx context.Context, id, networkRef string) (*ForwardAssuranceSummaryResponse, error) {
+// RefreshUserForwardNetworkAssurance recomputes the live summary, stores it in history (best-effort), and returns it.
+func (s *Service) RefreshUserForwardNetworkAssurance(ctx context.Context, id, networkRef string) (*ForwardAssuranceSummaryResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
 	if pc.access == "viewer" {
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
-	sum, err := s.GetWorkspaceForwardNetworkAssuranceSummary(ctx, id, networkRef, &ForwardAssuranceSummaryParams{Fresh: "1"})
+	sum, err := s.GetUserForwardNetworkAssuranceSummary(ctx, id, networkRef, &ForwardAssuranceSummaryParams{Fresh: "1"})
 	if err != nil {
 		return nil, err
 	}
@@ -1085,7 +1081,7 @@ func (s *Service) RefreshWorkspaceForwardNetworkAssurance(ctx context.Context, i
 	// Best-effort: index to Elastic (category=assurance).
 	s.indexElasticAsync(pc.claims.Username, "assurance", time.Now().UTC(), map[string]any{
 		"generated_at":       sum.GeneratedAt,
-		"workspace_id":       sum.WorkspaceID,
+		"owner_username":     sum.OwnerUsername,
 		"network_ref":        sum.NetworkRef,
 		"forward_network_id": sum.ForwardNetworkID,
 		"snapshot_id":        sum.Snapshot.SnapshotID,
@@ -1105,11 +1101,9 @@ type ForwardAssuranceDemoSeedResponse struct {
 	} `json:"inserted"`
 }
 
-// SeedWorkspaceForwardNetworkAssuranceDemo inserts a small set of synthetic events for demo purposes.
+// SeedUserForwardNetworkAssuranceDemo inserts a small set of synthetic events for demo purposes.
 // Admin-only. It also claims a test CIDR for the current admin user so syslog counts show up.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/forward-networks/:networkRef/assurance/demo/seed
-func (s *Service) SeedWorkspaceForwardNetworkAssuranceDemo(ctx context.Context, id, networkRef string) (*ForwardAssuranceDemoSeedResponse, error) {
+func (s *Service) SeedUserForwardNetworkAssuranceDemo(ctx context.Context, id, networkRef string) (*ForwardAssuranceDemoSeedResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -1117,7 +1111,7 @@ func (s *Service) SeedWorkspaceForwardNetworkAssuranceDemo(ctx context.Context, 
 	if !user.IsAdmin || user.SelectedRole != "ADMIN" {
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -1125,7 +1119,7 @@ func (s *Service) SeedWorkspaceForwardNetworkAssuranceDemo(ctx context.Context, 
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 	// Ensure network exists/accessible (even though we don't use it directly).
-	if _, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef); err != nil {
+	if _, err := resolveUserForwardNetwork(ctx, s.db, pc.context.ID, pc.claims.Username, networkRef); err != nil {
 		return nil, err
 	}
 
@@ -1208,15 +1202,13 @@ VALUES ($1, $2, 'demo-seed', 'POST', 'demo', $3::inet, '{}', '{"demo":true}')
 	return out, nil
 }
 
-// ListWorkspaceForwardNetworkAssuranceSummaryHistory returns recent stored summaries (if enabled via migrations).
-//
-//encore:api auth method=GET path=/api/workspaces/:id/forward-networks/:networkRef/assurance/summary/history
-func (s *Service) ListWorkspaceForwardNetworkAssuranceSummaryHistory(ctx context.Context, id, networkRef string, params *ForwardAssuranceHistoryParams) (*ForwardAssuranceHistoryResponse, error) {
+// ListUserForwardNetworkAssuranceSummaryHistory returns recent stored summaries (if enabled via migrations).
+func (s *Service) ListUserForwardNetworkAssuranceSummaryHistory(ctx context.Context, id, networkRef string, params *ForwardAssuranceHistoryParams) (*ForwardAssuranceHistoryResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -1226,7 +1218,7 @@ func (s *Service) ListWorkspaceForwardNetworkAssuranceSummaryHistory(ctx context
 	if !s.cfg.Features.ForwardEnabled {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward Networks integrations are disabled").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.context.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -1241,10 +1233,10 @@ func (s *Service) ListWorkspaceForwardNetworkAssuranceSummaryHistory(ctx context
 	rows, err := s.db.QueryContext(ctxQ, `
 SELECT id, generated_at, COALESCE(snapshot_id,''), summary_json::text
 FROM sf_forward_assurance_summaries
-WHERE workspace_id=$1 AND forward_network_id=$2 AND network_ref=$3
+WHERE owner_username=$1 AND forward_network_id=$2 AND network_ref=$3
 ORDER BY generated_at DESC, id DESC
 LIMIT $4
-`, pc.workspace.ID, net.ForwardNetworkID, net.ID, limit)
+`, pc.context.ID, net.ForwardNetworkID, net.ID, limit)
 	if err != nil {
 		if isMissingDBRelation(err) {
 			return &ForwardAssuranceHistoryResponse{Items: []ForwardAssuranceHistoryItem{}}, nil

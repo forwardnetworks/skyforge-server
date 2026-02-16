@@ -12,12 +12,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func clabernetesWorkspaceNamespace(workspaceSlug string) string {
-	workspaceSlug = strings.TrimSpace(workspaceSlug)
-	if workspaceSlug == "" {
+func clabernetesOwnerNamespace(scopeSlug string) string {
+	scopeSlug = strings.TrimSpace(scopeSlug)
+	if scopeSlug == "" {
 		return "ws"
 	}
-	return sanitizeKubeNameFallback("ws-"+workspaceSlug, "ws")
+	return sanitizeKubeNameFallback("ws-"+scopeSlug, "ws")
 }
 
 func clabernetesTopologyName(labName string) string {
@@ -30,8 +30,8 @@ func clabernetesTopologyName(labName string) string {
 
 func (s *Service) runClabernetesDeploymentAction(
 	ctx context.Context,
-	pc *workspaceContext,
-	dep *WorkspaceDeployment,
+	pc *ownerContext,
+	dep *UserDeployment,
 	envJSON JSONMap,
 	action string,
 	templateSource string,
@@ -40,7 +40,7 @@ func (s *Service) runClabernetesDeploymentAction(
 	template string,
 	labName string,
 	k8sNamespace string,
-) (*WorkspaceRunResponse, error) {
+) (*UserRunResponse, error) {
 	if pc == nil || dep == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("deployment context unavailable").Err()
 	}
@@ -61,11 +61,11 @@ func (s *Service) runClabernetesDeploymentAction(
 
 	labName = strings.TrimSpace(labName)
 	if labName == "" {
-		labName = containerlabLabName(pc.workspace.Slug, dep.Name)
+		labName = containerlabLabName(pc.context.Slug, dep.Name)
 	}
 	k8sNamespace = strings.TrimSpace(k8sNamespace)
 	if k8sNamespace == "" {
-		k8sNamespace = clabernetesWorkspaceNamespace(pc.workspace.Slug)
+		k8sNamespace = clabernetesOwnerNamespace(pc.context.Slug)
 	}
 	topologyName := clabernetesTopologyName(labName)
 
@@ -158,8 +158,8 @@ func (s *Service) runClabernetesDeploymentAction(
 			actor,
 			actorIsAdmin,
 			impersonated,
-			"workspace.run.clabernetes",
-			pc.workspace.ID,
+			"user.run.clabernetes",
+			pc.context.ID,
 			fmt.Sprintf("action=%s namespace=%s topology=%s", action, k8sNamespace, topologyName),
 		)
 	}
@@ -193,9 +193,9 @@ func (s *Service) runClabernetesDeploymentAction(
 	allowActive := action == "destroy"
 	var task *TaskRecord
 	if allowActive {
-		task, err = createTaskAllowActive(ctx, s.db, pc.workspace.ID, &dep.ID, "clabernetes-run", message, pc.claims.Username, meta)
+		task, err = createTaskAllowActive(ctx, s.db, pc.context.ID, &dep.ID, "clabernetes-run", message, pc.claims.Username, meta)
 	} else {
-		task, err = createTask(ctx, s.db, pc.workspace.ID, &dep.ID, "clabernetes-run", message, pc.claims.Username, meta)
+		task, err = createTask(ctx, s.db, pc.context.ID, &dep.ID, "clabernetes-run", message, pc.claims.Username, meta)
 	}
 	if err != nil {
 		return nil, err
@@ -208,9 +208,9 @@ func (s *Service) runClabernetesDeploymentAction(
 		log.Printf("clabernetes task encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode run").Err()
 	}
-	return &WorkspaceRunResponse{
-		WorkspaceID: pc.workspace.ID,
-		Task:        taskJSON,
-		User:        pc.claims.Username,
+	return &UserRunResponse{
+		OwnerUsername: pc.context.ID,
+		Task:          taskJSON,
+		User:          pc.claims.Username,
 	}, nil
 }

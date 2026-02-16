@@ -12,8 +12,8 @@ const (
 )
 
 const (
-	TaskTypeUserBootstrap      = "user-bootstrap"
-	TaskTypeWorkspaceBootstrap = "workspace-bootstrap"
+	TaskTypeUserBootstrap    = "user-bootstrap"
+	TaskTypeContextBootstrap = "context-bootstrap"
 
 	TaskTypeNetlabRun                    = "netlab-run"
 	TaskTypeNetlabC9sRun                 = "netlab-c9s-run"

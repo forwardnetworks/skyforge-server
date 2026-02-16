@@ -108,20 +108,20 @@ func clearCachedLDAPPassword(db *sql.DB, username string) {
 
 func (s *Service) bootstrapUserLabs(username string) {
 	// Legacy: the old implementation wrote to a shared filesystem (per-user "home" + cloned repos).
-	// Skyforge runs multi-replica now and should remain stateless; Coder workspaces should
+	// Skyforge runs multi-replica now and should remain stateless; Coder scopes should
 	// manage per-user home directories independently. Keep this as a no-op for compatibility.
 	_ = username
 }
 
 func ensureLabCatalogRepos(cfg Config) error {
-	owner := strings.TrimSpace(cfg.Workspaces.GiteaUsername)
+	owner := strings.TrimSpace(cfg.Scopes.GiteaUsername)
 	if owner == "" {
 		return fmt.Errorf("gitea username not configured")
 	}
-	if err := ensureGiteaRepo(cfg, owner, netlabCatalogRepo, cfg.Workspaces.GiteaRepoPrivate); err != nil {
+	if err := ensureGiteaRepo(cfg, owner, netlabCatalogRepo, cfg.Scopes.GiteaRepoPrivate); err != nil {
 		return err
 	}
-	if err := ensureGiteaRepo(cfg, owner, cloudCatalogRepo, cfg.Workspaces.GiteaRepoPrivate); err != nil {
+	if err := ensureGiteaRepo(cfg, owner, cloudCatalogRepo, cfg.Scopes.GiteaRepoPrivate); err != nil {
 		return err
 	}
 	return nil

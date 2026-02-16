@@ -9,18 +9,18 @@ import (
 	"time"
 )
 
-func listPolicyReportRuns(ctx context.Context, db *sql.DB, workspaceID string, forwardNetworkID string, packID string, status string, limit int) ([]PolicyReportRun, error) {
+func listPolicyReportRuns(ctx context.Context, db *sql.DB, ownerID string, forwardNetworkID string, packID string, status string, limit int) ([]PolicyReportRun, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	forwardNetworkID = strings.TrimSpace(forwardNetworkID)
 	packID = strings.TrimSpace(packID)
 	status = strings.ToUpper(strings.TrimSpace(status))
-	if workspaceID == "" {
+	if ownerID == "" {
 		return nil, fmt.Errorf("invalid input")
 	}
 	if limit <= 0 || limit > 500 {
@@ -28,11 +28,11 @@ func listPolicyReportRuns(ctx context.Context, db *sql.DB, workspaceID string, f
 	}
 
 	query := `
-SELECT id, workspace_id, forward_network_id, snapshot_id, pack_id, title, status, COALESCE(error,''), created_by,
+SELECT id, owner_username, forward_network_id, snapshot_id, pack_id, title, status, COALESCE(error,''), created_by,
        started_at, finished_at, request
   FROM sf_policy_report_runs
- WHERE workspace_id=$1`
-	args := []any{workspaceID}
+ WHERE owner_username=$1`
+	args := []any{ownerID}
 	i := 2
 	if forwardNetworkID != "" {
 		query += fmt.Sprintf(" AND forward_network_id=$%d", i)
@@ -63,7 +63,7 @@ SELECT id, workspace_id, forward_network_id, snapshot_id, pack_id, title, status
 		var r PolicyReportRun
 		var finished sql.NullTime
 		var requestJSON []byte
-		if err := rows.Scan(&r.ID, &r.WorkspaceID, &r.ForwardNetworkID, &r.SnapshotID, &r.PackID, &r.Title, &r.Status, &r.Error, &r.CreatedBy, &r.StartedAt, &finished, &requestJSON); err != nil {
+		if err := rows.Scan(&r.ID, &r.OwnerUsername, &r.ForwardNetworkID, &r.SnapshotID, &r.PackID, &r.Title, &r.Status, &r.Error, &r.CreatedBy, &r.StartedAt, &finished, &requestJSON); err != nil {
 			return nil, err
 		}
 		r.Title = strings.TrimSpace(r.Title)
@@ -79,16 +79,16 @@ SELECT id, workspace_id, forward_network_id, snapshot_id, pack_id, title, status
 	return out, nil
 }
 
-func getPolicyReportRun(ctx context.Context, db *sql.DB, workspaceID string, runID string) (*PolicyReportRun, []PolicyReportRunCheck, error) {
+func getPolicyReportRun(ctx context.Context, db *sql.DB, ownerID string, runID string) (*PolicyReportRun, []PolicyReportRunCheck, error) {
 	if db == nil {
 		return nil, nil, fmt.Errorf("db is not configured")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	runID = strings.TrimSpace(runID)
-	if workspaceID == "" || runID == "" {
+	if ownerID == "" || runID == "" {
 		return nil, nil, fmt.Errorf("invalid input")
 	}
 
@@ -96,11 +96,11 @@ func getPolicyReportRun(ctx context.Context, db *sql.DB, workspaceID string, run
 	var finished sql.NullTime
 	var requestJSON []byte
 	err := db.QueryRowContext(ctx, `
-SELECT id, workspace_id, forward_network_id, snapshot_id, pack_id, title, status, COALESCE(error,''), created_by,
+SELECT id, owner_username, forward_network_id, snapshot_id, pack_id, title, status, COALESCE(error,''), created_by,
        started_at, finished_at, request
   FROM sf_policy_report_runs
- WHERE workspace_id=$1 AND id=$2
-`, workspaceID, runID).Scan(&r.ID, &r.WorkspaceID, &r.ForwardNetworkID, &r.SnapshotID, &r.PackID, &r.Title, &r.Status, &r.Error, &r.CreatedBy, &r.StartedAt, &finished, &requestJSON)
+ WHERE owner_username=$1 AND id=$2
+`, ownerID, runID).Scan(&r.ID, &r.OwnerUsername, &r.ForwardNetworkID, &r.SnapshotID, &r.PackID, &r.Title, &r.Status, &r.Error, &r.CreatedBy, &r.StartedAt, &finished, &requestJSON)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -135,17 +135,17 @@ SELECT run_id, check_id, total
 	return &r, checks, nil
 }
 
-func listPolicyReportRunFindings(ctx context.Context, db *sql.DB, workspaceID string, runID string, checkID string, limit int) ([]PolicyReportRunFinding, error) {
+func listPolicyReportRunFindings(ctx context.Context, db *sql.DB, ownerID string, runID string, checkID string, limit int) ([]PolicyReportRunFinding, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	runID = strings.TrimSpace(runID)
 	checkID = strings.TrimSpace(checkID)
-	if workspaceID == "" || runID == "" {
+	if ownerID == "" || runID == "" {
 		return nil, fmt.Errorf("invalid input")
 	}
 	if limit <= 0 || limit > 2000 {
@@ -156,8 +156,8 @@ func listPolicyReportRunFindings(ctx context.Context, db *sql.DB, workspaceID st
 SELECT f.run_id, f.check_id, f.finding_id, f.risk_score, COALESCE(f.asset_key,''), f.finding
   FROM sf_policy_report_run_findings f
   JOIN sf_policy_report_runs r ON (r.id=f.run_id)
- WHERE r.workspace_id=$1 AND f.run_id=$2`
-	args := []any{workspaceID, runID}
+ WHERE r.owner_username=$1 AND f.run_id=$2`
+	args := []any{ownerID, runID}
 	i := 3
 	if checkID != "" {
 		query += fmt.Sprintf(" AND f.check_id=$%d", i)
@@ -190,18 +190,18 @@ SELECT f.run_id, f.check_id, f.finding_id, f.risk_score, COALESCE(f.asset_key,''
 	return out, nil
 }
 
-func listPolicyReportFindingsAgg(ctx context.Context, db *sql.DB, workspaceID string, forwardNetworkID string, checkID string, status string, limit int) ([]PolicyReportFindingAgg, error) {
+func listPolicyReportFindingsAgg(ctx context.Context, db *sql.DB, ownerID string, forwardNetworkID string, checkID string, status string, limit int) ([]PolicyReportFindingAgg, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	forwardNetworkID = strings.TrimSpace(forwardNetworkID)
 	checkID = strings.TrimSpace(checkID)
 	status = strings.ToUpper(strings.TrimSpace(status))
-	if workspaceID == "" {
+	if ownerID == "" {
 		return nil, fmt.Errorf("invalid input")
 	}
 	if limit <= 0 || limit > 2000 {
@@ -209,11 +209,11 @@ func listPolicyReportFindingsAgg(ctx context.Context, db *sql.DB, workspaceID st
 	}
 
 	query := `
-SELECT workspace_id, forward_network_id, check_id, finding_id, status, risk_score, COALESCE(asset_key,''), finding,
+SELECT owner_username, forward_network_id, check_id, finding_id, status, risk_score, COALESCE(asset_key,''), finding,
        first_seen_at, last_seen_at, resolved_at, last_run_id
   FROM sf_policy_report_findings_agg
- WHERE workspace_id=$1`
-	args := []any{workspaceID}
+ WHERE owner_username=$1`
+	args := []any{ownerID}
 	i := 2
 	if forwardNetworkID != "" {
 		query += fmt.Sprintf(" AND forward_network_id=$%d", i)
@@ -246,7 +246,7 @@ SELECT workspace_id, forward_network_id, check_id, finding_id, status, risk_scor
 		var findingJSON []byte
 		var resolved sql.NullTime
 		var lastRun sql.NullString
-		if err := rows.Scan(&f.WorkspaceID, &f.ForwardNetworkID, &f.CheckID, &f.FindingID, &f.Status, &f.RiskScore, &asset, &findingJSON, &f.FirstSeenAt, &f.LastSeenAt, &resolved, &lastRun); err != nil {
+		if err := rows.Scan(&f.OwnerUsername, &f.ForwardNetworkID, &f.CheckID, &f.FindingID, &f.Status, &f.RiskScore, &asset, &findingJSON, &f.FirstSeenAt, &f.LastSeenAt, &resolved, &lastRun); err != nil {
 			return nil, err
 		}
 		f.AssetKey = strings.TrimSpace(asset)

@@ -9,7 +9,7 @@ import (
 
 type RunningTask struct {
 	TaskID       int
-	WorkspaceID  string
+	OwnerID      string
 	DeploymentID string
 	StartedAt    time.Time
 }
@@ -42,7 +42,7 @@ func FindStuckRunningTasks(ctx context.Context, db *sql.DB, opts RunningReconcil
 	cutoffHard := time.Now().Add(-hardMaxRuntime).UTC()
 	cutoffIdle := time.Now().Add(-maxIdle).UTC()
 
-	rows, err := db.QueryContext(ctx, `SELECT id, workspace_id, deployment_id, started_at
+	rows, err := db.QueryContext(ctx, `SELECT id, owner_id, deployment_id, started_at
 FROM sf_tasks
 WHERE status='running'
   AND started_at IS NOT NULL
@@ -64,17 +64,17 @@ LIMIT $3`, cutoffHard, cutoffIdle, limit)
 
 	type row struct {
 		id           int
-		workspaceID  string
+		ownerID      string
 		deploymentID sql.NullString
 		startedAt    time.Time
 	}
 	out := make([]RunningTask, 0, 16)
 	for rows.Next() {
 		var r row
-		if err := rows.Scan(&r.id, &r.workspaceID, &r.deploymentID, &r.startedAt); err != nil {
+		if err := rows.Scan(&r.id, &r.ownerID, &r.deploymentID, &r.startedAt); err != nil {
 			return nil, err
 		}
-		if r.id <= 0 || strings.TrimSpace(r.workspaceID) == "" {
+		if r.id <= 0 || strings.TrimSpace(r.ownerID) == "" {
 			continue
 		}
 		dep := ""
@@ -83,7 +83,7 @@ LIMIT $3`, cutoffHard, cutoffIdle, limit)
 		}
 		out = append(out, RunningTask{
 			TaskID:       r.id,
-			WorkspaceID:  strings.TrimSpace(r.workspaceID),
+			OwnerID:      strings.TrimSpace(r.ownerID),
 			DeploymentID: dep,
 			StartedAt:    r.startedAt,
 		})

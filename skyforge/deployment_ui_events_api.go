@@ -27,20 +27,18 @@ type ListDeploymentUIEventsParams struct {
 }
 
 type ListDeploymentUIEventsResponse struct {
-	WorkspaceID  string              `json:"workspaceId"`
-	DeploymentID string              `json:"deploymentId"`
-	Events       []DeploymentUIEvent `json:"events"`
+	OwnerUsername string              `json:"ownerUsername"`
+	DeploymentID  string              `json:"deploymentId"`
+	Events        []DeploymentUIEvent `json:"events"`
 }
 
-// ListWorkspaceDeploymentUIEvents returns recent UI/graph events for a deployment.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/ui-events
-func (s *Service) ListWorkspaceDeploymentUIEvents(ctx context.Context, id, deploymentID string, params *ListDeploymentUIEventsParams) (*ListDeploymentUIEventsResponse, error) {
+// ListUserDeploymentUIEvents returns recent UI/graph events for a deployment.
+func (s *Service) ListUserDeploymentUIEvents(ctx context.Context, id, deploymentID string, params *ListDeploymentUIEventsParams) (*ListDeploymentUIEventsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -64,14 +62,14 @@ func (s *Service) ListWorkspaceDeploymentUIEvents(ctx context.Context, id, deplo
 
 	ctxQ, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	rows, err := listDeploymentUIEventsAfter(ctxQ, s.db, pc.workspace.ID, deploymentID, after, limit)
+	rows, err := listDeploymentUIEventsAfter(ctxQ, s.db, pc.context.ID, deploymentID, after, limit)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to list events").Err()
 	}
 	return &ListDeploymentUIEventsResponse{
-		WorkspaceID:  pc.workspace.ID,
-		DeploymentID: deploymentID,
-		Events:       rows,
+		OwnerUsername: pc.context.ID,
+		DeploymentID:  deploymentID,
+		Events:        rows,
 	}, nil
 }
 
@@ -81,8 +79,6 @@ type UIEventsSSEPayload struct {
 }
 
 // DeploymentUIEventsStream streams deployment UI events as SSE.
-//
-//encore:api auth raw method=GET path=/api/workspaces/:id/deployments/:deploymentID/ui-events/events
 func (s *Service) DeploymentUIEventsStream(w http.ResponseWriter, req *http.Request) {
 	if s == nil || s.db == nil || s.sessionManager == nil {
 		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
@@ -93,18 +89,21 @@ func (s *Service) DeploymentUIEventsStream(w http.ResponseWriter, req *http.Requ
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	workspaceKey := strings.TrimSpace(req.PathValue("id"))
+	ownerKey := strings.TrimSpace(req.PathValue("id"))
 	deploymentID := strings.TrimSpace(req.PathValue("deploymentID"))
-	if workspaceKey == "" || deploymentID == "" {
+	if ownerKey == "" || deploymentID == "" {
 		// Best-effort path param extraction (PathValue is only populated when the
 		// underlying mux supports it).
 		parts := strings.Split(strings.Trim(req.URL.Path, "/"), "/")
-		// expected: api/workspaces/<id>/deployments/<deploymentID>/ui-events/events
+		// expected:
+		// - api/users/me/deployments/<deploymentID>/ui-events/events
+		// - api/contexts/<id>/deployments/<deploymentID>/ui-events/events
+		// - api/deployments/<deploymentID>/ui-events/events
 		for i := 0; i+1 < len(parts); i++ {
 			switch parts[i] {
-			case "workspaces":
-				if workspaceKey == "" {
-					workspaceKey = strings.TrimSpace(parts[i+1])
+			case "users", "contexts", "scopes":
+				if ownerKey == "" {
+					ownerKey = strings.TrimSpace(parts[i+1])
 				}
 			case "deployments":
 				if deploymentID == "" {
@@ -113,19 +112,22 @@ func (s *Service) DeploymentUIEventsStream(w http.ResponseWriter, req *http.Requ
 			}
 		}
 	}
-	if workspaceKey == "" || deploymentID == "" {
+	if ownerKey == "" && deploymentID != "" {
+		ownerKey = personalOwnerRouteKey
+	}
+	if ownerKey == "" || deploymentID == "" {
 		http.Error(w, "invalid path params", http.StatusBadRequest)
 		return
 	}
-	if wk, err := s.resolveWorkspaceKeyForClaims(claims, workspaceKey); err == nil && strings.TrimSpace(wk) != "" {
-		workspaceKey = strings.TrimSpace(wk)
+	if wk, err := s.resolveOwnerKeyForClaims(claims, ownerKey); err == nil && strings.TrimSpace(wk) != "" {
+		ownerKey = strings.TrimSpace(wk)
 	}
-	_, _, ws, err := s.loadWorkspaceByKey(workspaceKey)
+	_, _, ws, err := s.loadOwnerContextByKey(ownerKey)
 	if err != nil || strings.TrimSpace(ws.ID) == "" {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	if workspaceAccessLevelForClaims(s.cfg, ws, claims) == "none" {
+	if ownerAccessLevelForClaims(s.cfg, ws, claims) == "none" {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -181,10 +183,10 @@ func (s *Service) DeploymentUIEventsStream(w http.ResponseWriter, req *http.Requ
 	}
 }
 
-func insertDeploymentUIEvent(ctx context.Context, db *sql.DB, workspaceID, deploymentID, createdBy, eventType string, payload any) error {
-	workspaceID = strings.TrimSpace(workspaceID)
+func insertDeploymentUIEvent(ctx context.Context, db *sql.DB, ownerID, deploymentID, createdBy, eventType string, payload any) error {
+	ownerID = strings.TrimSpace(ownerID)
 	deploymentID = strings.TrimSpace(deploymentID)
-	if db == nil || workspaceID == "" || deploymentID == "" {
+	if db == nil || ownerID == "" || deploymentID == "" {
 		return nil
 	}
 	createdBy = strings.TrimSpace(createdBy)
@@ -203,13 +205,13 @@ func insertDeploymentUIEvent(ctx context.Context, db *sql.DB, workspaceID, deplo
 	ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	_, err := db.ExecContext(ctxReq, `
-		INSERT INTO sf_deployment_ui_events (workspace_id, deployment_id, created_by, event_type, payload)
+		INSERT INTO sf_deployment_ui_events (owner_username, deployment_id, created_by, event_type, payload)
 		VALUES ($1, $2, $3, $4, $5::jsonb)
-	`, workspaceID, deploymentID, createdBy, eventType, string(raw))
+	`, ownerID, deploymentID, createdBy, eventType, string(raw))
 	return err
 }
 
-func listDeploymentUIEventsAfter(ctx context.Context, db *sql.DB, workspaceID, deploymentID string, afterID int64, limit int) ([]DeploymentUIEvent, error) {
+func listDeploymentUIEventsAfter(ctx context.Context, db *sql.DB, ownerID, deploymentID string, afterID int64, limit int) ([]DeploymentUIEvent, error) {
 	if db == nil {
 		return nil, nil
 	}
@@ -221,10 +223,10 @@ func listDeploymentUIEventsAfter(ctx context.Context, db *sql.DB, workspaceID, d
 	rows, err := db.QueryContext(ctxReq, `
 		SELECT id, created_at, created_by, event_type, payload
 		FROM sf_deployment_ui_events
-		WHERE workspace_id=$1 AND deployment_id=$2 AND id > $3
+		WHERE owner_username=$1 AND deployment_id=$2 AND id > $3
 		ORDER BY id ASC
 		LIMIT $4
-	`, workspaceID, deploymentID, afterID, limit)
+	`, ownerID, deploymentID, afterID, limit)
 	if err != nil {
 		if isMissingDBRelation(err) {
 			return nil, nil

@@ -68,7 +68,7 @@ SELECT id, name,
        COALESCE(forward_username_enc, ''), COALESCE(forward_password_enc, ''),
        updated_at
   FROM sf_credentials
- WHERE provider='forward' AND owner_username=$1 AND workspace_id IS NULL
+ WHERE provider='forward' AND owner_username=$1 AND owner_username IS NULL
  ORDER BY updated_at DESC, name ASC
 `, user.Username)
 	if err != nil {
@@ -286,7 +286,7 @@ UPDATE sf_credentials
        forward_username_enc=$4,
        forward_password_enc=$5,
        updated_at=now()
- WHERE id=$6 AND provider='forward' AND owner_username=$7 AND workspace_id IS NULL
+ WHERE id=$6 AND provider='forward' AND owner_username=$7 AND owner_username IS NULL
 `, name, encBase, req.SkipTLSVerify, encUser, encPass, id, user.Username)
 	if err != nil {
 		log.Printf("forward credential set update: %v", err)
@@ -336,14 +336,14 @@ func (s *Service) DeleteUserForwardCredentialSet(ctx context.Context, id string)
 SELECT
   (SELECT COUNT(*) FROM sf_user_forward_collectors WHERE credential_id=$1) +
   (SELECT COUNT(*) FROM sf_policy_report_forward_network_credentials WHERE credential_id=$1) +
-  (SELECT COUNT(*) FROM sf_workspace_forward_credentials WHERE credential_id=$1)
+  (SELECT COUNT(*) FROM sf_owner_forward_credentials WHERE credential_id=$1)
 `, id).Scan(&refs); err == nil && refs > 0 {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("credential set is in use").Err()
 	}
 
 	res, err := s.db.ExecContext(ctxReq, `
 DELETE FROM sf_credentials
- WHERE id=$1 AND provider='forward' AND owner_username=$2 AND workspace_id IS NULL
+ WHERE id=$1 AND provider='forward' AND owner_username=$2 AND owner_username IS NULL
 `, id, user.Username)
 	if err != nil {
 		if isMissingDBRelation(err) {

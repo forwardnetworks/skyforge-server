@@ -839,20 +839,18 @@ func suiteKeyForPathsAssurance(req *PolicyReportPathsEnforcementBypassRequest, k
 	return hex.EncodeToString(h[:])
 }
 
-// PostWorkspacePolicyReportPathsEnforcementBypass evaluates a set of flows and returns
+// PostUserPolicyReportPathsEnforcementBypass evaluates a set of flows and returns
 // violation-style findings when traffic doesn't traverse enforcement points.
 //
 // This is meant to highlight a core Forward advantage: authoritative path computation.
 // It complements NQE policy analytics by showing when traffic can bypass expected controls
 // due to routing/topology changes or missing collectors.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/paths/enforcement-bypass
-func (s *Service) PostWorkspacePolicyReportPathsEnforcementBypass(ctx context.Context, id string, req *PolicyReportPathsEnforcementBypassRequest) (*PolicyReportNQEResponse, error) {
+func (s *Service) PostUserPolicyReportPathsEnforcementBypass(ctx context.Context, id string, req *PolicyReportPathsEnforcementBypassRequest) (*PolicyReportNQEResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -867,7 +865,7 @@ func (s *Service) PostWorkspacePolicyReportPathsEnforcementBypass(ctx context.Co
 		return &PolicyReportNQEResponse{SnapshotID: strings.TrimSpace(req.SnapshotID), Total: 0, Results: json.RawMessage("[]")}, nil
 	}
 
-	client, err := s.policyReportsForwardClient(ctx, pc.workspace.ID, pc.claims.Username, networkID)
+	client, err := s.policyReportsForwardClient(ctx, pc.context.ID, pc.claims.Username, networkID)
 	if err != nil {
 		return nil, err
 	}
@@ -879,23 +877,21 @@ func (s *Service) PostWorkspacePolicyReportPathsEnforcementBypass(ctx context.Co
 	return out, nil
 }
 
-// PostWorkspacePolicyReportPathsEnforcementBypassStore runs Paths Assurance and persists it as a Policy Report run.
+// PostUserPolicyReportPathsEnforcementBypassStore runs Paths Assurance and persists it as a Policy Report run.
 //
 // This is intentionally a thin wrapper around the live Paths endpoint so the UI can:
 // - schedule it (via presets later, if desired)
 // - trend it via stored runs and ACTIVE/RESOLVED findings
-//
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/paths/enforcement-bypass/store
-func (s *Service) PostWorkspacePolicyReportPathsEnforcementBypassStore(ctx context.Context, id string, req *PolicyReportPathsEnforcementBypassStoreRequest) (*PolicyReportPathsEnforcementBypassStoreResponse, error) {
+func (s *Service) PostUserPolicyReportPathsEnforcementBypassStore(ctx context.Context, id string, req *PolicyReportPathsEnforcementBypassStoreRequest) (*PolicyReportPathsEnforcementBypassStoreResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceEditor(pc); err != nil {
+	if err := requireUserEditor(pc); err != nil {
 		return nil, err
 	}
 	if s.db == nil {
@@ -935,7 +931,7 @@ func (s *Service) PostWorkspacePolicyReportPathsEnforcementBypassStore(ctx conte
 	}
 
 	startedAt := time.Now().UTC()
-	client, err := s.policyReportsForwardClient(ctx, pc.workspace.ID, pc.claims.Username, networkID)
+	client, err := s.policyReportsForwardClient(ctx, pc.context.ID, pc.claims.Username, networkID)
 	if err != nil {
 		return nil, err
 	}
@@ -957,7 +953,7 @@ func (s *Service) PostWorkspacePolicyReportPathsEnforcementBypassStore(ctx conte
 	reqJSON, _ := json.Marshal(req)
 	run := PolicyReportRun{
 		ID:               uuid.New().String(),
-		WorkspaceID:      pc.workspace.ID,
+		OwnerUsername:    pc.context.ID,
 		ForwardNetworkID: networkID,
 		SnapshotID:       strings.TrimSpace(req.SnapshotID),
 		PackID:           "paths-assurance",

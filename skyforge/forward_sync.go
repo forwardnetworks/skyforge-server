@@ -217,13 +217,13 @@ func stripANSICodes(value string) string {
 	return b.String()
 }
 
-func (s *Service) forwardConfigForWorkspace(ctx context.Context, workspaceID string) (*forwardCredentials, error) {
+func (s *Service) forwardConfigForOwner(ctx context.Context, ownerID string) (*forwardCredentials, error) {
 	if s.db == nil {
 		return nil, fmt.Errorf("database unavailable")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	rec, err := getWorkspaceForwardCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), workspaceID)
+	rec, err := getOwnerForwardCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), ownerID)
 	if err != nil {
 		return nil, err
 	}
@@ -348,7 +348,7 @@ WHERE username=$1 AND id=$2`, username, collectorConfigID).Scan(
 	}, nil
 }
 
-func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *workspaceContext, dep *WorkspaceDeployment) (map[string]any, error) {
+func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *ownerContext, dep *UserDeployment) (map[string]any, error) {
 	cfgAny, _ := fromJSONMap(dep.Config)
 	if cfgAny == nil {
 		cfgAny = map[string]any{}
@@ -535,7 +535,7 @@ func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *wor
 	}
 
 	if changed {
-		if err := s.updateDeploymentConfig(ctx, pc.workspace.ID, dep.ID, cfgAny); err != nil {
+		if err := s.updateDeploymentConfig(ctx, pc.context.ID, dep.ID, cfgAny); err != nil {
 			return cfgAny, err
 		}
 	}
@@ -601,7 +601,7 @@ func isForwardJumpServerMissing(err error) bool {
 	return strings.Contains(msg, "jump server") && strings.Contains(msg, "not found")
 }
 
-func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *workspaceContext, dep *WorkspaceDeployment, logText string) (int, error) {
+func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *ownerContext, dep *UserDeployment, logText string) (int, error) {
 	cfgAny, _ := fromJSONMap(dep.Config)
 	if cfgAny == nil {
 		cfgAny = map[string]any{}
@@ -613,7 +613,7 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *
 
 	forwardCfg, err := s.forwardConfigForUser(ctx, pc.claims.Username)
 	if err != nil || forwardCfg == nil {
-		// Workspace isn't configured for Forward; treat as a best-effort no-op.
+		// Scope isn't configured for Forward; treat as a best-effort no-op.
 		if s != nil && s.db != nil && taskID > 0 {
 			_ = appendTaskEvent(context.Background(), s.db, taskID, "forward.devices.upload.skipped", map[string]any{
 				"source": "netlab",
@@ -908,7 +908,7 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *
 	}
 	if changed {
 		cfgAny[forwardCliCredentialMap] = credentialIDsByDevice
-		if err := s.updateDeploymentConfig(ctx, pc.workspace.ID, dep.ID, cfgAny); err != nil {
+		if err := s.updateDeploymentConfig(ctx, pc.context.ID, dep.ID, cfgAny); err != nil {
 			return 0, err
 		}
 	}
@@ -943,7 +943,7 @@ func applyForwardOverrides(base *forwardCredentials, override *forwardCredential
 	return base
 }
 
-func (s *Service) updateDeploymentConfig(ctx context.Context, workspaceID, deploymentID string, cfgAny map[string]any) error {
+func (s *Service) updateDeploymentConfig(ctx context.Context, ownerID, deploymentID string, cfgAny map[string]any) error {
 	if s.db == nil {
 		return fmt.Errorf("database unavailable")
 	}
@@ -957,6 +957,6 @@ func (s *Service) updateDeploymentConfig(ctx context.Context, workspaceID, deplo
 	_, err = s.db.ExecContext(ctx, `UPDATE sf_deployments SET
   config=$1,
   updated_at=now()
-WHERE workspace_id=$2 AND id=$3`, cfgBytes, workspaceID, deploymentID)
+WHERE owner_username=$2 AND id=$3`, cfgBytes, ownerID, deploymentID)
 	return err
 }

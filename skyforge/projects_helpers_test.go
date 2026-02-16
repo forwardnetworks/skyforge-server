@@ -2,7 +2,7 @@ package skyforge
 
 import "testing"
 
-func TestTrackWorkspaceRouteUsage(t *testing.T) {
+func TestTrackOwnerRouteUsage(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name           string
@@ -29,7 +29,7 @@ func TestTrackWorkspaceRouteUsage(t *testing.T) {
 			wantNormalized: "self",
 		},
 		{
-			name:           "workspace id legacy",
+			name:           "scope id legacy",
 			in:             "ws-123",
 			wantLegacy:     true,
 			wantNormalized: "ws-123",
@@ -40,7 +40,7 @@ func TestTrackWorkspaceRouteUsage(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			legacy, normalized := trackWorkspaceRouteUsage(tt.in)
+			legacy, normalized := trackOwnerRouteUsage(tt.in)
 			if legacy != tt.wantLegacy {
 				t.Fatalf("legacy mismatch: got %v want %v", legacy, tt.wantLegacy)
 			}
@@ -51,19 +51,29 @@ func TestTrackWorkspaceRouteUsage(t *testing.T) {
 	}
 }
 
-func TestWorkspaceStrictModeEnabled(t *testing.T) {
-	t.Setenv("SKYFORGE_WORKSPACE_ROUTES_STRICT", "true")
-	if !workspaceStrictModeEnabled() {
+func TestOwnerStrictModeEnabled(t *testing.T) {
+	t.Setenv("SKYFORGE_OWNER_ROUTES_STRICT", "")
+	if !ownerStrictModeEnabled() {
+		t.Fatalf("expected strict mode enabled by default")
+	}
+
+	t.Setenv("SKYFORGE_OWNER_ROUTES_STRICT", "true")
+	if !ownerStrictModeEnabled() {
 		t.Fatalf("expected strict mode enabled for true")
 	}
 
-	t.Setenv("SKYFORGE_WORKSPACE_ROUTES_STRICT", "1")
-	if !workspaceStrictModeEnabled() {
+	t.Setenv("SKYFORGE_OWNER_ROUTES_STRICT", "1")
+	if !ownerStrictModeEnabled() {
 		t.Fatalf("expected strict mode enabled for 1")
 	}
 
-	t.Setenv("SKYFORGE_WORKSPACE_ROUTES_STRICT", "false")
-	if workspaceStrictModeEnabled() {
-		t.Fatalf("expected strict mode disabled for false")
+	t.Setenv("SKYFORGE_OWNER_ROUTES_STRICT", "false")
+	if !ownerStrictModeEnabled() {
+		t.Fatalf("expected strict mode enabled even when false is set")
+	}
+
+	t.Setenv("SKYFORGE_OWNER_ROUTES_STRICT", "no")
+	if !ownerStrictModeEnabled() {
+		t.Fatalf("expected strict mode enabled even when no is set")
 	}
 }

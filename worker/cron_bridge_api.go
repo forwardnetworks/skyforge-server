@@ -80,17 +80,17 @@ func CronReconcileRunningTasksBridge(ctx context.Context, params *InternalCronAu
 	return CronReconcileRunningTasks(ctx)
 }
 
-// CronWorkspaceSyncBridge triggers workspace sync maintenance.
+// CronUserContextSyncBridge triggers user-context sync maintenance.
 //
-//encore:api public method=POST path=/internal/bridge/workspaces/sync
-func CronWorkspaceSyncBridge(ctx context.Context, params *InternalCronAuth) error {
+//encore:api public method=POST path=/internal/bridge/users/sync
+func CronUserContextSyncBridge(ctx context.Context, params *InternalCronAuth) error {
 	if params == nil {
 		return errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
 	if err := requireInternalCron(params.Token); err != nil {
 		return err
 	}
-	return CronWorkspaceSync(ctx)
+	return CronUserContextSync(ctx)
 }
 
 // CronCloudCredentialChecksBridge triggers cloud credential checks maintenance.

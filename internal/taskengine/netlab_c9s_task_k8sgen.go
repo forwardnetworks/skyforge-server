@@ -595,7 +595,7 @@ func patchNetlabBundleB64(bundleB64 string, patchTopology func([]byte) ([]byte, 
 	return base64.StdEncoding.EncodeToString(out.Bytes()), nil
 }
 
-// runNetlabC9sTaskK8sGenerator runs a netlab generator job inside the workspace namespace,
+// runNetlabC9sTaskK8sGenerator runs a netlab generator job inside the owner namespace,
 // waits for it to complete, then reads the generated manifest/configmaps.
 //
 // Contract:
@@ -624,8 +624,8 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 	if pullPolicy == "" {
 		pullPolicy = "IfNotPresent"
 	}
-	if spec.WorkspaceCtx == nil {
-		return nil, nil, nil, fmt.Errorf("workspace context unavailable")
+	if spec.OwnerCtx == nil {
+		return nil, nil, nil, fmt.Errorf("owner context unavailable")
 	}
 	if strings.TrimSpace(spec.Template) == "" {
 		return nil, nil, nil, fmt.Errorf("netlab template is required")
@@ -633,7 +633,7 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 
 	ns := strings.TrimSpace(spec.K8sNamespace)
 	if ns == "" {
-		ns = clabernetesWorkspaceNamespace(spec.WorkspaceCtx.workspace.Slug)
+		ns = clabernetesOwnerNamespace(spec.OwnerCtx.owner.Slug)
 	}
 	topologyName := strings.TrimSpace(spec.TopologyName)
 	if topologyName == "" {
@@ -642,7 +642,7 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 
 	// Build the flattened topology bundle (tar.gz base64). This is copied into the generator pod
 	// via a ConfigMap.
-	bundleB64, err := e.buildNetlabTopologyBundleB64(ctx, spec.WorkspaceCtx, spec.TemplateSource, spec.TemplateRepo, spec.TemplatesDir, spec.Template)
+	bundleB64, err := e.buildNetlabTopologyBundleB64(ctx, spec.OwnerCtx, spec.TemplateSource, spec.TemplateRepo, spec.TemplatesDir, spec.Template)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -664,8 +664,8 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 	community := "public"
 	trapHost := ""
 	trapPort := 0
-	if spec.WorkspaceCtx != nil && strings.TrimSpace(spec.DeploymentID) != "" {
-		dep, depErr := e.loadDeployment(ctx, strings.TrimSpace(spec.WorkspaceCtx.workspace.ID), strings.TrimSpace(spec.DeploymentID))
+	if spec.OwnerCtx != nil && strings.TrimSpace(spec.DeploymentID) != "" {
+		dep, depErr := e.loadDeployment(ctx, strings.TrimSpace(spec.OwnerCtx.owner.ID), strings.TrimSpace(spec.DeploymentID))
 		if depErr == nil && dep != nil {
 			cfgAny, _ := fromJSONMap(dep.Config)
 			enabled := false
@@ -682,7 +682,7 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 				}
 			}
 			if enabled {
-				if c, tokErr := e.ensureUserSnmpTrapToken(ctx, strings.TrimSpace(spec.WorkspaceCtx.claims.Username)); tokErr == nil {
+				if c, tokErr := e.ensureUserSnmpTrapToken(ctx, strings.TrimSpace(spec.OwnerCtx.claims.Username)); tokErr == nil {
 					if strings.TrimSpace(c) != "" {
 						community = strings.TrimSpace(c)
 					}
@@ -708,8 +708,8 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 	if err := kubeEnsureNamespace(ctx, ns); err != nil {
 		return nil, nil, nil, err
 	}
-	// The generator runs in the workspace namespace and pulls its image from GHCR.
-	// Ensure the image pull secret exists in the workspace namespace before creating the Job.
+	// The generator runs in the owner namespace and pulls its image from GHCR.
+	// Ensure the image pull secret exists in the owner namespace before creating the Job.
 	if err := kubeEnsureNamespaceImagePullSecret(ctx, ns, strings.TrimSpace(e.cfg.ImagePullSecretName), strings.TrimSpace(e.cfg.ImagePullSecretNamespace)); err != nil {
 		return nil, nil, nil, err
 	}
@@ -728,7 +728,7 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 		_, _ = kubeDeleteConfigMap(context.Background(), ns, bundleCM)
 	}()
 
-	// Ensure the generator SA has permissions to create/patch ConfigMaps in the workspace namespace.
+	// Ensure the generator SA has permissions to create/patch ConfigMaps in the owner namespace.
 	const saName = "skyforge-netlab-generator"
 	const roleName = "skyforge-netlab-generator"
 	const rbName = "skyforge-netlab-generator"

@@ -21,7 +21,7 @@ type forwardMetricsSyncSourceLabels struct {
 	Source string
 }
 
-type workspaceRouteUsageLabels struct {
+type userRouteUsageLabels struct {
 	Mode string
 }
 
@@ -41,11 +41,11 @@ var (
 	labsRunningRequests = metrics.NewCounter[uint64]("skyforge_labs_running_requests_total", metrics.CounterConfig{})
 	labsErrors          = metrics.NewCounter[uint64]("skyforge_labs_errors_total", metrics.CounterConfig{})
 
-	workspaceSyncManualRequests = metrics.NewCounter[uint64]("skyforge_workspace_sync_manual_requests_total", metrics.CounterConfig{})
-	workspaceSyncAdminRequests  = metrics.NewCounter[uint64]("skyforge_workspace_sync_admin_requests_total", metrics.CounterConfig{})
-	workspaceSyncFailures       = metrics.NewCounter[uint64]("skyforge_workspace_sync_failures_total", metrics.CounterConfig{})
-	workspaceSyncErrors         = metrics.NewCounter[uint64]("skyforge_workspace_sync_errors_total", metrics.CounterConfig{})
-	workspaceSyncBackgroundRuns = metrics.NewCounter[uint64]("skyforge_workspace_sync_background_runs_total", metrics.CounterConfig{})
+	userSyncManualRequests = metrics.NewCounter[uint64]("skyforge_user_sync_manual_requests_total", metrics.CounterConfig{})
+	userSyncAdminRequests  = metrics.NewCounter[uint64]("skyforge_user_sync_admin_requests_total", metrics.CounterConfig{})
+	userSyncFailures       = metrics.NewCounter[uint64]("skyforge_user_sync_failures_total", metrics.CounterConfig{})
+	userSyncErrors         = metrics.NewCounter[uint64]("skyforge_user_sync_errors_total", metrics.CounterConfig{})
+	userSyncBackgroundRuns = metrics.NewCounter[uint64]("skyforge_user_sync_background_runs_total", metrics.CounterConfig{})
 
 	forwardMetricsSnapshotsStored = metrics.NewCounter[uint64]("skyforge_forward_metrics_snapshots_stored_total", metrics.CounterConfig{})
 )
@@ -79,6 +79,6 @@ var (
 	forwardMetricsSyncFailuresTotal = metrics.NewCounterGroup[forwardMetricsSyncSourceLabels, uint64]("skyforge_forward_metrics_sync_failures_total", metrics.CounterConfig{})
 	forwardMetricsLastRunUnix       = metrics.NewGaugeGroup[forwardMetricsSyncSourceLabels, float64]("skyforge_forward_metrics_sync_last_run_unix", metrics.GaugeConfig{})
 
-	workspaceRouteUsageTotal    = metrics.NewCounterGroup[workspaceRouteUsageLabels, uint64]("skyforge_workspace_route_usage_total", metrics.CounterConfig{})
-	workspaceRouteRejectedTotal = metrics.NewCounterGroup[workspaceRouteUsageLabels, uint64]("skyforge_workspace_route_rejected_total", metrics.CounterConfig{})
+	userRouteUsageTotal    = metrics.NewCounterGroup[userRouteUsageLabels, uint64]("skyforge_user_route_usage_total", metrics.CounterConfig{})
+	userRouteRejectedTotal = metrics.NewCounterGroup[userRouteUsageLabels, uint64]("skyforge_user_route_rejected_total", metrics.CounterConfig{})
 )

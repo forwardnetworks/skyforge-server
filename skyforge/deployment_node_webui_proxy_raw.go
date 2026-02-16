@@ -28,7 +28,7 @@ func webuiProxyClusterHost(serviceName, namespace string, port int) string {
 }
 
 func webuiProxyBasePath(reqPath string) string {
-	// /api/workspaces/:id/deployments/:deploymentID/nodes/:node/webui/*rest
+	// /api/users/me/deployments/:deploymentID/nodes/:node/webui/*rest
 	if reqPath == "" {
 		return ""
 	}
@@ -83,20 +83,23 @@ func (s *Service) deploymentNodeWebUIProxy(w http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	workspaceKey := strings.TrimSpace(req.PathValue("id"))
+	ownerKey := strings.TrimSpace(req.PathValue("id"))
 	deploymentID := strings.TrimSpace(req.PathValue("deploymentID"))
 	node := strings.TrimSpace(req.PathValue("node"))
 	rest := req.PathValue("rest")
 
 	// Best-effort path param extraction for muxes that don't populate PathValue.
-	if workspaceKey == "" || deploymentID == "" || node == "" {
+	if ownerKey == "" || deploymentID == "" || node == "" {
 		parts := strings.Split(strings.Trim(req.URL.Path, "/"), "/")
-		// expected: api/workspaces/<id>/deployments/<deploymentID>/nodes/<node>/webui/<rest?>
+		// expected:
+		// - api/users/me/deployments/<deploymentID>/nodes/<node>/webui/<rest?>
+		// - api/contexts/<id>/deployments/<deploymentID>/nodes/<node>/webui/<rest?>
+		// - api/deployments/<deploymentID>/nodes/<node>/webui/<rest?>
 		for i := 0; i+1 < len(parts); i++ {
 			switch parts[i] {
-			case "workspaces":
-				if workspaceKey == "" {
-					workspaceKey = strings.TrimSpace(parts[i+1])
+			case "users", "contexts", "scopes":
+				if ownerKey == "" {
+					ownerKey = strings.TrimSpace(parts[i+1])
 				}
 			case "deployments":
 				if deploymentID == "" {
@@ -109,26 +112,29 @@ func (s *Service) deploymentNodeWebUIProxy(w http.ResponseWriter, req *http.Requ
 			}
 		}
 	}
-	if workspaceKey == "" || deploymentID == "" || node == "" {
+	if ownerKey == "" && deploymentID != "" {
+		ownerKey = personalOwnerRouteKey
+	}
+	if ownerKey == "" || deploymentID == "" || node == "" {
 		http.Error(w, "invalid path params", http.StatusBadRequest)
 		return
 	}
-	if wk, err := s.resolveWorkspaceKeyForClaims(claims, workspaceKey); err == nil && strings.TrimSpace(wk) != "" {
-		workspaceKey = strings.TrimSpace(wk)
+	if wk, err := s.resolveOwnerKeyForClaims(claims, ownerKey); err == nil && strings.TrimSpace(wk) != "" {
+		ownerKey = strings.TrimSpace(wk)
 	}
 
-	_, _, ws, err := s.loadWorkspaceByKey(workspaceKey)
+	_, _, ws, err := s.loadOwnerContextByKey(ownerKey)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	if workspaceAccessLevelForClaims(s.cfg, ws, claims) == "none" {
+	if ownerAccessLevelForClaims(s.cfg, ws, claims) == "none" {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
 	ctx := req.Context()
-	dep, err := s.getWorkspaceDeployment(ctx, ws.ID, deploymentID)
+	dep, err := s.getUserDeployment(ctx, ws.ID, deploymentID)
 	if err != nil || dep == nil {
 		http.Error(w, "deployment not found", http.StatusNotFound)
 		return
@@ -145,7 +151,7 @@ func (s *Service) deploymentNodeWebUIProxy(w http.ResponseWriter, req *http.Requ
 	k8sNamespace = strings.TrimSpace(k8sNamespace)
 	topologyName = strings.TrimSpace(topologyName)
 	if k8sNamespace == "" {
-		k8sNamespace = clabernetesWorkspaceNamespace(ws.Slug)
+		k8sNamespace = clabernetesOwnerNamespace(ws.Slug)
 	}
 	if topologyName == "" {
 		labName, _ := cfgAny["labName"].(string)
@@ -278,28 +284,22 @@ func (s *Service) deploymentNodeWebUIProxy(w http.ResponseWriter, req *http.Requ
 }
 
 // DeploymentNodeWebUIProxy (GET)
-//
-//encore:api auth raw method=GET path=/api/workspaces/:id/deployments/:deploymentID/nodes/:node/webui/*rest
 func (s *Service) DeploymentNodeWebUIProxy(w http.ResponseWriter, req *http.Request) {
 	s.deploymentNodeWebUIProxy(w, req)
 }
 
-//encore:api auth raw method=POST path=/api/workspaces/:id/deployments/:deploymentID/nodes/:node/webui/*rest
 func (s *Service) DeploymentNodeWebUIProxyPost(w http.ResponseWriter, req *http.Request) {
 	s.deploymentNodeWebUIProxy(w, req)
 }
 
-//encore:api auth raw method=PUT path=/api/workspaces/:id/deployments/:deploymentID/nodes/:node/webui/*rest
 func (s *Service) DeploymentNodeWebUIProxyPut(w http.ResponseWriter, req *http.Request) {
 	s.deploymentNodeWebUIProxy(w, req)
 }
 
-//encore:api auth raw method=DELETE path=/api/workspaces/:id/deployments/:deploymentID/nodes/:node/webui/*rest
 func (s *Service) DeploymentNodeWebUIProxyDelete(w http.ResponseWriter, req *http.Request) {
 	s.deploymentNodeWebUIProxy(w, req)
 }
 
-//encore:api auth raw method=PATCH path=/api/workspaces/:id/deployments/:deploymentID/nodes/:node/webui/*rest
 func (s *Service) DeploymentNodeWebUIProxyPatch(w http.ResponseWriter, req *http.Request) {
 	s.deploymentNodeWebUIProxy(w, req)
 }

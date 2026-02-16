@@ -18,7 +18,7 @@ import (
 type AssuranceStudioRun struct {
 	ID string `json:"id"`
 
-	WorkspaceID      string `json:"workspaceId"`
+	OwnerUsername    string `json:"ownerUsername"`
 	NetworkRef       string `json:"networkRef"`
 	ForwardNetworkID string `json:"forwardNetworkId"`
 	ScenarioID       string `json:"scenarioId,omitempty"`
@@ -41,9 +41,9 @@ type AssuranceStudioRunDetail struct {
 }
 
 type AssuranceStudioListRunsResponse struct {
-	WorkspaceID string               `json:"workspaceId"`
-	NetworkRef  string               `json:"networkRef"`
-	Runs        []AssuranceStudioRun `json:"runs"`
+	OwnerUsername string               `json:"ownerUsername"`
+	NetworkRef    string               `json:"networkRef"`
+	Runs          []AssuranceStudioRun `json:"runs"`
 }
 
 type AssuranceStudioCreateRunRequest struct {
@@ -67,15 +67,13 @@ func validateAssuranceRunStatus(s string) (string, error) {
 	return s, nil
 }
 
-// ListWorkspaceForwardNetworkAssuranceStudioRuns lists stored Assurance Studio run artifacts.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/forward-networks/:networkRef/assurance/studio/runs
-func (s *Service) ListWorkspaceForwardNetworkAssuranceStudioRuns(ctx context.Context, id, networkRef string) (*AssuranceStudioListRunsResponse, error) {
+// ListUserForwardNetworkAssuranceStudioRuns lists stored Assurance Studio run artifacts.
+func (s *Service) ListUserForwardNetworkAssuranceStudioRuns(ctx context.Context, id, networkRef string) (*AssuranceStudioListRunsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +81,7 @@ func (s *Service) ListWorkspaceForwardNetworkAssuranceStudioRuns(ctx context.Con
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.context.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -92,16 +90,16 @@ func (s *Service) ListWorkspaceForwardNetworkAssuranceStudioRuns(ctx context.Con
 	defer cancel()
 
 	rows, err := s.db.QueryContext(ctxReq, `
-SELECT id, workspace_id, network_ref, forward_network_id, scenario_id, title, status, COALESCE(error,''),
+SELECT id, owner_username, network_ref, forward_network_id, scenario_id, title, status, COALESCE(error,''),
        created_by, started_at, finished_at, created_at, updated_at
   FROM sf_assurance_studio_runs
- WHERE workspace_id=$1 AND network_ref=$2
+ WHERE owner_username=$1 AND network_ref=$2
  ORDER BY started_at DESC
  LIMIT 50
-`, pc.workspace.ID, net.ID)
+`, pc.context.ID, net.ID)
 	if err != nil {
 		if isMissingDBRelation(err) {
-			return &AssuranceStudioListRunsResponse{WorkspaceID: pc.workspace.ID, NetworkRef: net.ID, Runs: []AssuranceStudioRun{}}, nil
+			return &AssuranceStudioListRunsResponse{OwnerUsername: pc.context.ID, NetworkRef: net.ID, Runs: []AssuranceStudioRun{}}, nil
 		}
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to list runs").Err()
 	}
@@ -120,7 +118,7 @@ SELECT id, workspace_id, network_ref, forward_network_id, scenario_id, title, st
 
 		if err := rows.Scan(
 			&id,
-			&r.WorkspaceID,
+			&r.OwnerUsername,
 			&netRef,
 			&r.ForwardNetworkID,
 			&scenarioID,
@@ -157,21 +155,19 @@ SELECT id, workspace_id, network_ref, forward_network_id, scenario_id, title, st
 	})
 
 	return &AssuranceStudioListRunsResponse{
-		WorkspaceID: pc.workspace.ID,
-		NetworkRef:  net.ID,
-		Runs:        out,
+		OwnerUsername: pc.context.ID,
+		NetworkRef:    net.ID,
+		Runs:          out,
 	}, nil
 }
 
-// CreateWorkspaceForwardNetworkAssuranceStudioRun stores a run artifact (results JSON) for later review/export.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/forward-networks/:networkRef/assurance/studio/runs
-func (s *Service) CreateWorkspaceForwardNetworkAssuranceStudioRun(ctx context.Context, id, networkRef string, req *AssuranceStudioCreateRunRequest) (*AssuranceStudioRun, error) {
+// CreateUserForwardNetworkAssuranceStudioRun stores a run artifact (results JSON) for later review/export.
+func (s *Service) CreateUserForwardNetworkAssuranceStudioRun(ctx context.Context, id, networkRef string, req *AssuranceStudioCreateRunRequest) (*AssuranceStudioRun, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +181,7 @@ func (s *Service) CreateWorkspaceForwardNetworkAssuranceStudioRun(ctx context.Co
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("request required").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.context.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +201,7 @@ func (s *Service) CreateWorkspaceForwardNetworkAssuranceStudioRun(ctx context.Co
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid scenarioId").Err()
 		}
 
-		// Ensure scenario belongs to this workspace+network.
+		// Ensure scenario belongs to this scope+network.
 		ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
 
@@ -213,9 +209,9 @@ func (s *Service) CreateWorkspaceForwardNetworkAssuranceStudioRun(ctx context.Co
 		err = s.db.QueryRowContext(ctxReq, `
 SELECT id
   FROM sf_assurance_studio_scenarios
- WHERE workspace_id=$1 AND network_ref=$2 AND id=$3
+ WHERE owner_username=$1 AND network_ref=$2 AND id=$3
  LIMIT 1
-`, pc.workspace.ID, net.ID, parsed).Scan(&tmp)
+`, pc.context.ID, net.ID, parsed).Scan(&tmp)
 		if err != nil {
 			if err == sql.ErrNoRows {
 				return nil, errs.B().Code(errs.NotFound).Msg("scenario not found").Err()
@@ -264,19 +260,19 @@ SELECT id
 
 	_, err = s.db.ExecContext(ctxReq, `
 INSERT INTO sf_assurance_studio_runs(
-  id, workspace_id, network_ref, forward_network_id, scenario_id,
+  id, owner_username, network_ref, forward_network_id, scenario_id,
   title, status, error, request, results,
   created_by, started_at, finished_at, created_at, updated_at
 )
 VALUES ($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''),$9,$10,$11,$12,$12,$12,$12)
-`, runID, pc.workspace.ID, net.ID, net.ForwardNetworkID, scenarioUUID, title, status, errText, reqJSON, resultsJSON, strings.ToLower(strings.TrimSpace(pc.claims.Username)), now)
+`, runID, pc.context.ID, net.ID, net.ForwardNetworkID, scenarioUUID, title, status, errText, reqJSON, resultsJSON, strings.ToLower(strings.TrimSpace(pc.claims.Username)), now)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist run").Err()
 	}
 
 	out := &AssuranceStudioRun{
 		ID:               runID.String(),
-		WorkspaceID:      pc.workspace.ID,
+		OwnerUsername:    pc.context.ID,
 		NetworkRef:       net.ID,
 		ForwardNetworkID: net.ForwardNetworkID,
 		Title:            title,
@@ -294,15 +290,13 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''),$9,$10,$11,$12,$12,$12,$12)
 	return out, nil
 }
 
-// GetWorkspaceForwardNetworkAssuranceStudioRun returns a stored run artifact (including results JSON).
-//
-//encore:api auth method=GET path=/api/workspaces/:id/forward-networks/:networkRef/assurance/studio/runs/:runId
-func (s *Service) GetWorkspaceForwardNetworkAssuranceStudioRun(ctx context.Context, id, networkRef, runId string) (*AssuranceStudioRunDetail, error) {
+// GetUserForwardNetworkAssuranceStudioRun returns a stored run artifact (including results JSON).
+func (s *Service) GetUserForwardNetworkAssuranceStudioRun(ctx context.Context, id, networkRef, runId string) (*AssuranceStudioRunDetail, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -310,7 +304,7 @@ func (s *Service) GetWorkspaceForwardNetworkAssuranceStudioRun(ctx context.Conte
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.context.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -335,13 +329,13 @@ func (s *Service) GetWorkspaceForwardNetworkAssuranceStudioRun(ctx context.Conte
 	var resultsJSON []byte
 
 	err = s.db.QueryRowContext(ctxReq, `
-SELECT id, workspace_id, network_ref, forward_network_id, scenario_id, title, status, COALESCE(error,''),
+SELECT id, owner_username, network_ref, forward_network_id, scenario_id, title, status, COALESCE(error,''),
        created_by, started_at, finished_at, created_at, updated_at, request, results
   FROM sf_assurance_studio_runs
- WHERE workspace_id=$1 AND network_ref=$2 AND id=$3
+ WHERE owner_username=$1 AND network_ref=$2 AND id=$3
  LIMIT 1
-`, pc.workspace.ID, net.ID, parsedID).Scan(
-		&rid, &r.WorkspaceID, &nref, &r.ForwardNetworkID, &scenarioID, &r.Title, &r.Status, &r.Error,
+`, pc.context.ID, net.ID, parsedID).Scan(
+		&rid, &r.OwnerUsername, &nref, &r.ForwardNetworkID, &scenarioID, &r.Title, &r.Status, &r.Error,
 		&r.CreatedBy, &startedAt, &finishedAt, &createdAt, &updatedAt, &reqJSON, &resultsJSON,
 	)
 	if err != nil {

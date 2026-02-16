@@ -16,7 +16,7 @@ ENCORERUNTIME_NOPANIC=1 go test ./...
 
 echo "[3/4] Frontend: ensure Assurance Studio uses unified evaluate endpoint"
 cd "$portal_dir"
-route_file="src/routes/dashboard/forward-networks/\$networkRef.assurance-studio.tsx"
+route_file="src/routes/dashboard/fwd/\$networkRef.assurance-studio.tsx"
 
 if rg -n "postAssuranceStudioEvaluate" "$route_file" >/dev/null; then
   : # ok
@@ -41,4 +41,3 @@ else
 fi
 
 echo "OK"
-

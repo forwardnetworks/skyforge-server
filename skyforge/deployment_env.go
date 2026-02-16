@@ -17,7 +17,7 @@ import (
 
 var envKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-func (s *Service) mergeDeploymentEnvironment(ctx context.Context, workspaceID, username string, cfgAny map[string]any) (map[string]string, error) {
+func (s *Service) mergeDeploymentEnvironment(ctx context.Context, ownerID, username string, cfgAny map[string]any) (map[string]string, error) {
 	if s.db == nil {
 		return map[string]string{}, nil
 	}
@@ -29,7 +29,7 @@ func (s *Service) mergeDeploymentEnvironment(ctx context.Context, workspaceID, u
 		if scope == "user" {
 			groupEnv, err = loadUserVariableGroupsByID(ctx, s.db, username, groupIDs)
 		} else {
-			groupEnv, err = loadWorkspaceVariableGroupsByID(ctx, s.db, workspaceID, groupIDs)
+			groupEnv, err = loadOwnerVariableGroupsByID(ctx, s.db, ownerID, groupIDs)
 		}
 		if err != nil {
 			return nil, err
@@ -51,11 +51,11 @@ func (s *Service) mergeDeploymentEnvironment(ctx context.Context, workspaceID, u
 func parseEnvGroupScope(raw any) string {
 	if v, ok := raw.(string); ok {
 		switch strings.ToLower(strings.TrimSpace(v)) {
-		case "user":
+		case "user", "personal", "scope", "workspace":
 			return "user"
 		}
 	}
-	return "workspace"
+	return "user"
 }
 
 func parseEnvGroupIDs(raw any) []int {
@@ -128,18 +128,18 @@ func normalizeEnvOverrideKey(key string) string {
 	return key
 }
 
-func loadWorkspaceVariableGroupsByID(ctx context.Context, db *sql.DB, workspaceID string, groupIDs []int) (map[string]string, error) {
+func loadOwnerVariableGroupsByID(ctx context.Context, db *sql.DB, ownerID string, groupIDs []int) (map[string]string, error) {
 	if len(groupIDs) == 0 {
 		return map[string]string{}, nil
 	}
 	placeholders := make([]string, 0, len(groupIDs))
 	args := make([]any, 0, len(groupIDs)+1)
-	args = append(args, workspaceID)
+	args = append(args, ownerID)
 	for i, id := range groupIDs {
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i+2))
 		args = append(args, id)
 	}
-	query := fmt.Sprintf(`SELECT id, variables FROM sf_workspace_variable_groups WHERE workspace_id=$1 AND id IN (%s)`, strings.Join(placeholders, ","))
+	query := fmt.Sprintf(`SELECT id, variables FROM sf_owner_variable_groups WHERE owner_username=$1 AND id IN (%s)`, strings.Join(placeholders, ","))
 
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()

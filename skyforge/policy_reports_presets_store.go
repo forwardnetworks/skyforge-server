@@ -36,16 +36,16 @@ func normalizeIntervalMinutes(v int) int {
 	return v
 }
 
-func createPolicyReportPreset(ctx context.Context, db *sql.DB, workspaceID, actor string, req *PolicyReportCreatePresetRequest) (*PolicyReportPreset, error) {
+func createPolicyReportPreset(ctx context.Context, db *sql.DB, ownerID, actor string, req *PolicyReportCreatePresetRequest) (*PolicyReportPreset, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	actor = strings.ToLower(strings.TrimSpace(actor))
-	if workspaceID == "" || actor == "" || req == nil {
+	if ownerID == "" || actor == "" || req == nil {
 		return nil, fmt.Errorf("invalid input")
 	}
 	forwardNetworkID := strings.TrimSpace(req.ForwardNetworkID)
@@ -132,7 +132,6 @@ func createPolicyReportPreset(ctx context.Context, db *sql.DB, workspaceID, acto
 
 	out := &PolicyReportPreset{
 		ID:               id,
-		WorkspaceID:      workspaceID,
 		ForwardNetworkID: forwardNetworkID,
 		Name:             name,
 		Description:      strings.TrimSpace(req.Description),
@@ -160,11 +159,11 @@ func createPolicyReportPreset(ctx context.Context, db *sql.DB, workspaceID, acto
 
 	_, err := db.ExecContext(ctx, `
 INSERT INTO sf_policy_report_presets(
-  id, workspace_id, forward_network_id, name, description, kind, pack_id, title_template, snapshot_id,
+  id, owner_username, forward_network_id, name, description, kind, pack_id, title_template, snapshot_id,
   checks, query_options, max_per_check, max_total, enabled, interval_minutes, next_run_at, owner_username, created_at, updated_at
 )
 VALUES ($1,$2,$3,$4,NULLIF($5,''),$6,$7,NULLIF($8,''),$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
-`, out.ID, out.WorkspaceID, out.ForwardNetworkID, out.Name, out.Description, out.Kind, out.PackID, out.TitleTemplate, out.SnapshotID,
+	`, out.ID, "", out.ForwardNetworkID, out.Name, out.Description, out.Kind, out.PackID, out.TitleTemplate, out.SnapshotID,
 		string(checksJSON), string(queryOptionsJSON), out.MaxPerCheck, out.MaxTotal, out.Enabled, out.IntervalMinutes, out.NextRunAt, out.OwnerUsername, out.CreatedAt, out.UpdatedAt)
 	if err != nil {
 		return nil, err
@@ -172,17 +171,17 @@ VALUES ($1,$2,$3,$4,NULLIF($5,''),$6,$7,NULLIF($8,''),$9,$10,$11,$12,$13,$14,$15
 	return out, nil
 }
 
-func updatePolicyReportPreset(ctx context.Context, db *sql.DB, workspaceID, actor, presetID string, req *PolicyReportUpdatePresetRequest) (*PolicyReportPreset, error) {
+func updatePolicyReportPreset(ctx context.Context, db *sql.DB, ownerID, actor, presetID string, req *PolicyReportUpdatePresetRequest) (*PolicyReportPreset, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	actor = strings.ToLower(strings.TrimSpace(actor))
 	presetID = strings.TrimSpace(presetID)
-	if workspaceID == "" || actor == "" || presetID == "" || req == nil {
+	if ownerID == "" || actor == "" || presetID == "" || req == nil {
 		return nil, fmt.Errorf("invalid input")
 	}
 	forwardNetworkID := strings.TrimSpace(req.ForwardNetworkID)
@@ -262,8 +261,8 @@ func updatePolicyReportPreset(ctx context.Context, db *sql.DB, workspaceID, acto
 	err := db.QueryRowContext(ctx, `
 SELECT next_run_at, COALESCE(last_run_id::text,''), last_run_at, COALESCE(last_error,'')
   FROM sf_policy_report_presets
- WHERE workspace_id=$1 AND id=$2
-`, workspaceID, presetID).Scan(&prevNext, &prevLastRun, &prevLastAt, &prevLastErr)
+ WHERE owner_username=$1 AND id=$2
+`, ownerID, presetID).Scan(&prevNext, &prevLastRun, &prevLastAt, &prevLastErr)
 	if err != nil {
 		return nil, err
 	}
@@ -296,14 +295,14 @@ UPDATE sf_policy_report_presets
        interval_minutes=$13,
        next_run_at=$14,
        updated_at=$15
- WHERE workspace_id=$16 AND id=$17
+ WHERE owner_username=$16 AND id=$17
 `, forwardNetworkID, name, strings.TrimSpace(req.Description), kind, packID, func() string {
 		if t := strings.TrimSpace(req.TitleTemplate); t != "" {
 			return t
 		}
 		return name
 	}(), strings.TrimSpace(req.SnapshotID),
-		string(checksJSON), string(queryOptionsJSON), req.MaxPerCheck, req.MaxTotal, enabled, interval, nextRunAt, now, workspaceID, presetID)
+		string(checksJSON), string(queryOptionsJSON), req.MaxPerCheck, req.MaxTotal, enabled, interval, nextRunAt, now, ownerID, presetID)
 	if err != nil {
 		return nil, err
 	}
@@ -324,7 +323,6 @@ UPDATE sf_policy_report_presets
 
 	out := &PolicyReportPreset{
 		ID:               presetID,
-		WorkspaceID:      workspaceID,
 		ForwardNetworkID: forwardNetworkID,
 		Name:             name,
 		Description:      strings.TrimSpace(req.Description),
@@ -354,19 +352,19 @@ UPDATE sf_policy_report_presets
 	return out, nil
 }
 
-func deletePolicyReportPreset(ctx context.Context, db *sql.DB, workspaceID, presetID string) error {
+func deletePolicyReportPreset(ctx context.Context, db *sql.DB, ownerID, presetID string) error {
 	if db == nil {
 		return fmt.Errorf("db is not configured")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	presetID = strings.TrimSpace(presetID)
-	if workspaceID == "" || presetID == "" {
+	if ownerID == "" || presetID == "" {
 		return fmt.Errorf("invalid input")
 	}
-	res, err := db.ExecContext(ctx, `DELETE FROM sf_policy_report_presets WHERE workspace_id=$1 AND id=$2`, workspaceID, presetID)
+	res, err := db.ExecContext(ctx, `DELETE FROM sf_policy_report_presets WHERE owner_username=$1 AND id=$2`, ownerID, presetID)
 	if err != nil {
 		return err
 	}
@@ -377,16 +375,16 @@ func deletePolicyReportPreset(ctx context.Context, db *sql.DB, workspaceID, pres
 	return nil
 }
 
-func listPolicyReportPresets(ctx context.Context, db *sql.DB, workspaceID, forwardNetworkID string, enabled *bool, limit int) ([]PolicyReportPreset, error) {
+func listPolicyReportPresets(ctx context.Context, db *sql.DB, ownerID, forwardNetworkID string, enabled *bool, limit int) ([]PolicyReportPreset, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	forwardNetworkID = strings.TrimSpace(forwardNetworkID)
-	if workspaceID == "" {
+	if ownerID == "" {
 		return nil, fmt.Errorf("invalid input")
 	}
 	if limit <= 0 || limit > 500 {
@@ -394,12 +392,12 @@ func listPolicyReportPresets(ctx context.Context, db *sql.DB, workspaceID, forwa
 	}
 
 	query := `
-SELECT id, workspace_id, forward_network_id, name, COALESCE(description,''), kind, pack_id, COALESCE(title_template,''), snapshot_id,
+SELECT id, owner_username, forward_network_id, name, COALESCE(description,''), kind, pack_id, COALESCE(title_template,''), snapshot_id,
        checks, query_options, max_per_check, max_total, enabled, interval_minutes,
        next_run_at, COALESCE(last_run_id::text,''), last_run_at, COALESCE(last_error,''), owner_username, created_at, updated_at
   FROM sf_policy_report_presets
- WHERE workspace_id=$1`
-	args := []any{workspaceID}
+ WHERE owner_username=$1`
+	args := []any{ownerID}
 	i := 2
 	if forwardNetworkID != "" {
 		query += fmt.Sprintf(" AND forward_network_id=$%d", i)
@@ -427,7 +425,7 @@ SELECT id, workspace_id, forward_network_id, name, COALESCE(description,''), kin
 		var checksJSON, queryOptionsJSON []byte
 		var nextRun, lastRunAt sql.NullTime
 		if err := rows.Scan(
-			&p.ID, &p.WorkspaceID, &p.ForwardNetworkID, &p.Name, &desc, &p.Kind, &p.PackID, &titleTmpl, &p.SnapshotID,
+			&p.ID, &p.OwnerUsername, &p.ForwardNetworkID, &p.Name, &desc, &p.Kind, &p.PackID, &titleTmpl, &p.SnapshotID,
 			&checksJSON, &queryOptionsJSON, &p.MaxPerCheck, &p.MaxTotal, &p.Enabled, &p.IntervalMinutes,
 			&nextRun, &lastRunID, &lastRunAt, &lastErr, &p.OwnerUsername, &p.CreatedAt, &p.UpdatedAt,
 		); err != nil {

@@ -9,55 +9,62 @@ import (
 
 	"encore.dev/beta/errs"
 
+	"encore.app/internal/skyforgecore"
 	"encore.app/storage"
 )
 
-type workspaceCreateContextKey string
+type contextCreateContextKey string
 
-const workspaceCreateInternalKey workspaceCreateContextKey = "allow_workspace_create_internal"
+const contextCreateInternalKey contextCreateContextKey = "allow_context_create_internal"
 
-type WorkspacesListParams struct {
+type UsersListParams struct {
 	All string `query:"all" encore:"optional"`
 }
 
-type WorkspacesListResponse struct {
-	User       string              `json:"user"`
-	Workspaces []SkyforgeWorkspace `json:"workspaces"`
+type UsersListResponse struct {
+	User     string                `json:"user"`
+	Contexts []SkyforgeUserContext `json:"contexts"`
+	Scopes   []SkyforgeUserContext `json:"-"` // legacy internal field
 }
 
 const defaultBlueprintCatalog = "skyforge/blueprints"
 
-func defaultWorkspaceSlug(username string) string {
+func defaultContextSlug(username string) string {
 	normalized := strings.ToLower(strings.TrimSpace(username))
 	if normalized == "" {
 		normalized = "user"
 	}
-	return slugify(fmt.Sprintf("workspace-%s", normalized))
+	return slugify(fmt.Sprintf("scope-%s", normalized))
 }
 
-func defaultWorkspaceName(username string) string {
+func defaultContextName(username string) string {
 	normalized := strings.TrimSpace(username)
 	if normalized == "" {
 		normalized = "User"
 	}
-	return fmt.Sprintf("%s Workspace", normalized)
+	return fmt.Sprintf("%s Personal", normalized)
 }
 
-func defaultWorkspaceRepo() string {
-	return "workspace"
+func defaultContextRepo() string {
+	return "user"
 }
 
-func (s *Service) ensureDefaultWorkspace(ctx context.Context, user *AuthUser) (*SkyforgeWorkspace, error) {
+// Legacy helper aliases; prefer context* names.
+func defaultUserSlug(username string) string { return defaultContextSlug(username) }
+func defaultUserName(username string) string { return defaultContextName(username) }
+func defaultUserRepo() string                { return defaultContextRepo() }
+
+func (s *Service) ensureDefaultOwnerContext(ctx context.Context, user *AuthUser) (*SkyforgeUserContext, error) {
 	if user == nil {
 		return nil, nil
 	}
-	workspaces, err := s.workspaceStore.load()
+	contexts, err := s.scopeStore.load()
 	if err != nil {
 		return nil, err
 	}
-	baseSlug := defaultWorkspaceSlug(user.Username)
+	baseSlug := defaultContextSlug(user.Username)
 	slug := baseSlug
-	for _, w := range workspaces {
+	for _, w := range contexts {
 		if strings.EqualFold(w.CreatedBy, user.Username) && strings.EqualFold(w.Slug, baseSlug) {
 			s.maybeQueueUserBootstrap(ctx, w.ID, user)
 			return &w, nil
@@ -66,13 +73,13 @@ func (s *Service) ensureDefaultWorkspace(ctx context.Context, user *AuthUser) (*
 			slug = fmt.Sprintf("%s-%d", baseSlug, time.Now().Unix()%10000)
 		}
 	}
-	req := &WorkspaceCreateRequest{
-		Name:      defaultWorkspaceName(user.Username),
+	req := &UserCreateRequest{
+		Name:      defaultContextName(user.Username),
 		Slug:      slug,
 		Blueprint: defaultBlueprintCatalog,
 	}
-	internalCtx := context.WithValue(ctx, workspaceCreateInternalKey, true)
-	created, err := s.CreateWorkspace(internalCtx, req)
+	internalCtx := context.WithValue(ctx, contextCreateInternalKey, true)
+	created, err := s.CreateOwnerContext(internalCtx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -82,12 +89,12 @@ func (s *Service) ensureDefaultWorkspace(ctx context.Context, user *AuthUser) (*
 	return created, nil
 }
 
-func (s *Service) maybeQueueUserBootstrap(ctx context.Context, workspaceID string, user *AuthUser) {
+func (s *Service) maybeQueueUserBootstrap(ctx context.Context, ownerID string, user *AuthUser) {
 	if s == nil || s.db == nil || user == nil {
 		return
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
+	ownerID = strings.TrimSpace(ownerID)
+	if ownerID == "" {
 		return
 	}
 	username := strings.TrimSpace(user.Username)
@@ -112,36 +119,36 @@ func (s *Service) maybeQueueUserBootstrap(ctx context.Context, workspaceID strin
 	if err != nil {
 		return
 	}
-	task, err := createTask(ctx, s.db, workspaceID, nil, "user-bootstrap", "Skyforge user bootstrap", username, meta)
+	task, err := createTask(ctx, s.db, ownerID, nil, "user-bootstrap", "Skyforge user bootstrap", username, meta)
 	if err != nil {
 		return
 	}
 	s.queueTask(task)
 }
 
-func (s *Service) resolveWorkspaceForUser(ctx context.Context, user *AuthUser, workspaceKey string) (*SkyforgeWorkspace, error) {
-	workspaceKey = strings.TrimSpace(workspaceKey)
-	if workspaceKey == "" || isPersonalWorkspaceKey(workspaceKey) {
-		workspace, err := s.ensureDefaultWorkspace(ctx, user)
+func (s *Service) resolveUserForUser(ctx context.Context, user *AuthUser, ownerKey string) (*SkyforgeUserContext, error) {
+	ownerKey = strings.TrimSpace(ownerKey)
+	if ownerKey == "" || isPersonalOwnerKey(ownerKey) {
+		scope, err := s.ensureDefaultOwnerContext(ctx, user)
 		if err != nil {
 			return nil, err
 		}
-		if workspace == nil {
-			return nil, errs.B().Code(errs.InvalidArgument).Msg("workspace_id is required").Err()
+		if scope == nil {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("owner_username is required").Err()
 		}
-		return workspace, nil
+		return scope, nil
 	}
-	wc, err := s.workspaceContextForUser(user, workspaceKey)
+	wc, err := s.ownerContextForUser(user, ownerKey)
 	if err != nil {
 		return nil, err
 	}
-	return &wc.workspace, nil
+	return &wc.context, nil
 }
 
-// GetWorkspaces returns workspaces visible to the authenticated user.
+// GetUsers returns user contexts visible to the authenticated user.
 //
-//encore:api auth method=GET path=/api/workspaces tag:list-workspaces
-func (s *Service) GetWorkspaces(ctx context.Context, params *WorkspacesListParams) (*WorkspacesListResponse, error) {
+// Deprecated public route removed: /api/scopes
+func (s *Service) GetUsers(ctx context.Context, params *UsersListParams) (*UsersListResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -149,79 +156,80 @@ func (s *Service) GetWorkspaces(ctx context.Context, params *WorkspacesListParam
 	claims := claimsFromAuthUser(user)
 	isAdmin := isAdminUser(s.cfg, user.Username)
 
-	if _, err := s.ensureDefaultWorkspace(ctx, user); err != nil {
-		log.Printf("default workspace ensure: %v", err)
+	if _, err := s.ensureDefaultOwnerContext(ctx, user); err != nil {
+		log.Printf("default context ensure: %v", err)
 	}
-	workspaces, err := s.workspaceStore.load()
+	contexts, err := s.scopeStore.load()
 	if err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load workspaces").Err()
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load user contexts").Err()
 	}
 	all := false
 	_ = params
 	if !isAdmin && !all {
 		changed := false
-		changedWorkspaces := make([]SkyforgeWorkspace, 0)
-		for i := range workspaces {
-			if role, ok := syncGroupMembershipForUser(&workspaces[i], claims); ok {
+		changedScopes := make([]SkyforgeUserContext, 0)
+		for i := range contexts {
+			if role, ok := syncGroupMembershipForUser(&contexts[i], claims); ok {
 				changed = true
-				changedWorkspaces = append(changedWorkspaces, workspaces[i])
-				log.Printf("workspace group sync: %s -> %s (%s)", user.Username, workspaces[i].Slug, role)
+				changedScopes = append(changedScopes, contexts[i])
+				log.Printf("context group sync: %s -> %s (%s)", user.Username, contexts[i].Slug, role)
 			}
 		}
 		if changed {
 			updatedAll := true
-			for _, w := range changedWorkspaces {
-				if err := s.workspaceStore.upsert(w); err != nil {
+			for _, w := range changedScopes {
+				if err := s.scopeStore.upsert(w); err != nil {
 					updatedAll = false
-					log.Printf("workspace upsert after group sync (%s): %v", w.ID, err)
+					log.Printf("context upsert after group sync (%s): %v", w.ID, err)
 				}
 			}
 			if updatedAll {
-				for _, w := range changedWorkspaces {
-					syncGiteaCollaboratorsForWorkspace(s.cfg, w)
+				for _, w := range changedScopes {
+					syncGiteaCollaboratorsForScope(s.cfg, w)
 				}
 			}
 		}
-		filtered := make([]SkyforgeWorkspace, 0, len(workspaces))
-		for _, w := range workspaces {
-			if workspaceAccessLevelForClaims(s.cfg, w, claims) != "none" {
+		filtered := make([]SkyforgeUserContext, 0, len(contexts))
+		for _, w := range contexts {
+			if ownerAccessLevelForClaims(s.cfg, w, claims) != "none" {
 				filtered = append(filtered, w)
 			}
 		}
-		workspaces = filtered
+		contexts = filtered
 	}
 	if !all {
-		baseSlug := defaultWorkspaceSlug(user.Username)
-		personal := (*SkyforgeWorkspace)(nil)
-		for i := range workspaces {
-			if strings.EqualFold(workspaces[i].CreatedBy, user.Username) && strings.EqualFold(workspaces[i].Slug, baseSlug) {
-				w := workspaces[i]
+		baseSlug := defaultContextSlug(user.Username)
+		personal := (*SkyforgeUserContext)(nil)
+		for i := range contexts {
+			if strings.EqualFold(contexts[i].CreatedBy, user.Username) && strings.EqualFold(contexts[i].Slug, baseSlug) {
+				w := contexts[i]
 				personal = &w
 				break
 			}
 		}
 		if personal == nil {
-			for i := range workspaces {
-				if strings.EqualFold(workspaces[i].CreatedBy, user.Username) {
-					w := workspaces[i]
+			for i := range contexts {
+				if strings.EqualFold(contexts[i].CreatedBy, user.Username) {
+					w := contexts[i]
 					personal = &w
 					break
 				}
 			}
 		}
 		if personal != nil {
-			workspaces = []SkyforgeWorkspace{*personal}
+			contexts = []SkyforgeUserContext{*personal}
 		}
 	}
 
 	_ = ctx
-	return &WorkspacesListResponse{
-		User:       user.Username,
-		Workspaces: workspaces,
+	return &UsersListResponse{
+		User:     user.Username,
+		Contexts: contexts,
+		Scopes:   contexts,
 	}, nil
 }
 
-type WorkspaceCreateRequest struct {
+type UserCreateRequest struct {
 	Name                       string                 `json:"name"`
 	Slug                       string                 `json:"slug,omitempty"`
 	Description                string                 `json:"description,omitempty"`
@@ -242,12 +250,12 @@ type BlueprintSyncResponse struct {
 	Status string `json:"status"`
 }
 
-// CreateWorkspace provisions a new Skyforge workspace.
+// CreateOwnerContext provisions a new Skyforge user context.
 //
-//encore:api auth method=POST path=/api/workspaces
-func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateRequest) (*SkyforgeWorkspace, error) {
-	if allow, _ := ctx.Value(workspaceCreateInternalKey).(bool); !allow {
-		return nil, errs.B().Code(errs.FailedPrecondition).Msg("workspace management has been removed; personal scope is automatic").Err()
+// Deprecated public route removed: /api/scopes
+func (s *Service) CreateOwnerContext(ctx context.Context, req *UserCreateRequest) (*SkyforgeUserContext, error) {
+	if allow, _ := ctx.Value(contextCreateInternalKey).(bool); !allow {
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("shared context management has been removed; personal user context is automatic").Err()
 	}
 	user, err := requireAuthUser()
 	if err != nil {
@@ -269,7 +277,7 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 	}
 
 	if strings.TrimSpace(req.NetlabServer) != "" {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("netlabServer cannot be set at workspace creation (configure in workspace settings)").Err()
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("netlabServer cannot be set during user context creation (configure in user settings)").Err()
 	}
 	netlabServer := ""
 	externalRepos := []ExternalTemplateRepo{}
@@ -285,17 +293,17 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 
 	owner := user.Username
 	repo := slug
-	if slug == defaultWorkspaceSlug(user.Username) {
-		repo = defaultWorkspaceRepo()
+	if slug == defaultContextSlug(user.Username) {
+		repo = defaultContextRepo()
 	}
 	terraformStateKey := fmt.Sprintf("tf-%s/primary.tfstate", slug)
 	artifactsBucket := storage.StorageBucketName
 
-	workspaces, err := s.workspaceStore.load()
+	contexts, err := s.scopeStore.load()
 	if err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load workspaces").Err()
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load user contexts").Err()
 	}
-	for _, existing := range workspaces {
+	for _, existing := range contexts {
 		if existing.Slug == slug {
 			return &existing, nil
 		}
@@ -315,7 +323,7 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 	if profile.Email == "" && strings.TrimSpace(s.cfg.CorpEmailDomain) != "" {
 		profile.Email = fmt.Sprintf("%s@%s", profile.Username, strings.TrimSpace(s.cfg.CorpEmailDomain))
 	}
-	// Provisioning the Gitea user is a best-effort side-effect. Workspace creation
+	// Provisioning the Gitea user is a best-effort side-effect. Scope creation
 	// should succeed even if the downstream integration is temporarily unavailable.
 	if err := ensureGiteaUserFromProfile(s.cfg, profile); err != nil {
 		log.Printf("ensureGiteaUserFromProfile: %v", err)
@@ -331,8 +339,8 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 			log.Printf("ensureBlueprintCatalogRepo: %v", err)
 		}
 	}
-	// Workspace creation should not be blocked on provisioning downstream tooling.
-	// Gitea provisioning/sync is best-effort and can be retried via workspace sync.
+	// Scope creation should not be blocked on provisioning downstream tooling.
+	// Gitea provisioning/sync is best-effort and can be retried via periodic user/context sync.
 	{
 		repoPrivate := !req.IsPublic
 		if err := ensureGiteaRepoFromBlueprint(giteaCfg, owner, repo, blueprint, repoPrivate); err != nil {
@@ -362,7 +370,7 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 	netlabRunID := 0
 	containerlabRunID := 0
 
-	created := SkyforgeWorkspace{
+	created := SkyforgeUserContext{
 		ID:                         fmt.Sprintf("%d-%s", time.Now().Unix(), slug),
 		Slug:                       slug,
 		Name:                       name,
@@ -397,12 +405,12 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 	if created.AWSAuthMethod == "" {
 		created.AWSAuthMethod = "sso"
 	}
-	if err := s.workspaceStore.upsert(created); err != nil {
-		log.Printf("workspace upsert: %v", err)
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist workspace").Err()
+	if err := s.scopeStore.upsert(created); err != nil {
+		log.Printf("context upsert: %v", err)
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist user context").Err()
 	}
 	if s.db != nil {
-		_ = notifyWorkspacesUpdatePG(ctx, s.db, "*")
+		_ = notifyUsersUpdatePG(ctx, s.db, "*")
 		_ = notifyDashboardUpdatePG(ctx, s.db)
 	}
 	if s.db != nil {
@@ -412,14 +420,14 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 			ctx,
 			s.db,
 			user.Username,
-			fmt.Sprintf("Workspace created: %s", created.Name),
-			fmt.Sprintf("Skyforge provisioned workspace %s (%s).", created.Name, created.Slug),
+			fmt.Sprintf("Personal context created: %s", created.Name),
+			fmt.Sprintf("Skyforge provisioned user context %s (%s).", created.Name, created.Slug),
 			"SYSTEM",
-			"workspaces",
+			"user-contexts",
 			created.ID,
 			"low",
 		); err != nil {
-			log.Printf("create notification (workspace): %v", err)
+			log.Printf("create notification (context): %v", err)
 		}
 	}
 	{
@@ -432,26 +440,26 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 			actor,
 			actorIsAdmin,
 			impersonated,
-			"workspace.create",
+			"context.create",
 			created.ID,
 			fmt.Sprintf("slug=%s repo=%s/%s", created.Slug, created.GiteaOwner, created.GiteaRepo),
 		)
 	}
-	syncGiteaCollaboratorsForWorkspace(giteaCfg, created)
+	syncGiteaCollaboratorsForScope(giteaCfg, created)
 
 	// Offload repo seeding + blueprint sync to the task queue for durability/retries.
-	// Workspace creation should succeed even if downstream provisioning is temporarily unavailable.
+	// Context creation should succeed even if downstream provisioning is temporarily unavailable.
 	if s.db != nil {
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 		meta, err := toJSONMap(map[string]any{
-			"dedupeKey": fmt.Sprintf("workspace-bootstrap:%s", strings.TrimSpace(created.ID)),
+			"dedupeKey": fmt.Sprintf("context-bootstrap:%s", strings.TrimSpace(created.ID)),
 			"spec":      map[string]any{},
 		})
 		if err != nil {
-			log.Printf("workspace bootstrap meta encode: %v", err)
-		} else if task, err := createTask(ctx, s.db, created.ID, nil, "workspace-bootstrap", "Skyforge workspace bootstrap", user.Username, meta); err != nil {
-			log.Printf("workspace bootstrap task create: %v", err)
+			log.Printf("context bootstrap meta encode: %v", err)
+		} else if task, err := createTask(ctx, s.db, created.ID, nil, skyforgecore.TaskTypeContextBootstrap, "Skyforge context bootstrap", user.Username, meta); err != nil {
+			log.Printf("context bootstrap task create: %v", err)
 		} else {
 			s.queueTask(task)
 		}
@@ -460,22 +468,22 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 	return &created, nil
 }
 
-// SyncWorkspaceBlueprint syncs a workspace's blueprint catalog into the repo.
+// SyncUserBlueprint syncs a user context's blueprint catalog into the repo.
 //
-//encore:api auth method=POST path=/api/workspaces/:workspaceID/blueprint/sync
-func (s *Service) SyncWorkspaceBlueprint(ctx context.Context, workspaceID string) (*BlueprintSyncResponse, error) {
+// Deprecated public route removed: /api/scopes/:ownerID/blueprint/sync
+func (s *Service) SyncUserBlueprint(ctx context.Context, ownerID string) (*BlueprintSyncResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, workspaceID)
+	pc, err := s.ownerContextForUser(user, ownerID)
 	if err != nil {
 		return nil, err
 	}
 	if pc.access == "viewer" {
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
-	blueprint := strings.TrimSpace(pc.workspace.Blueprint)
+	blueprint := strings.TrimSpace(pc.context.Blueprint)
 	if blueprint == "" {
 		blueprint = defaultBlueprintCatalog
 	}
@@ -504,21 +512,21 @@ func (s *Service) SyncWorkspaceBlueprint(ctx context.Context, workspaceID string
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to provision gitea user").Err()
 	}
 	giteaCfg := s.cfg
-	targetBranch := strings.TrimSpace(pc.workspace.DefaultBranch)
+	targetBranch := strings.TrimSpace(pc.context.DefaultBranch)
 	if targetBranch == "" {
 		targetBranch = "main"
 	}
-	if err := syncBlueprintCatalogIntoWorkspaceRepo(s.cfg, giteaCfg, pc.workspace.GiteaOwner, pc.workspace.GiteaRepo, blueprint, targetBranch, pc.claims); err != nil {
-		log.Printf("syncBlueprintCatalogIntoWorkspaceRepo: %v", err)
-		if fallbackErr := syncBlueprintCatalogIntoWorkspaceRepo(s.cfg, s.cfg, pc.workspace.GiteaOwner, pc.workspace.GiteaRepo, blueprint, targetBranch, pc.claims); fallbackErr != nil {
-			log.Printf("syncBlueprintCatalogIntoWorkspaceRepo fallback: %v", fallbackErr)
+	if err := syncBlueprintCatalogIntoUserRepo(s.cfg, giteaCfg, pc.context.GiteaOwner, pc.context.GiteaRepo, blueprint, targetBranch, pc.claims); err != nil {
+		log.Printf("syncBlueprintCatalogIntoUserRepo: %v", err)
+		if fallbackErr := syncBlueprintCatalogIntoUserRepo(s.cfg, s.cfg, pc.context.GiteaOwner, pc.context.GiteaRepo, blueprint, targetBranch, pc.claims); fallbackErr != nil {
+			log.Printf("syncBlueprintCatalogIntoUserRepo fallback: %v", fallbackErr)
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to sync blueprint").Err()
 		}
 	}
 
 	// Netlab template listing walks the repo tree via Gitea API; cache it in Redis for speed.
-	// Since this sync mutates the workspace repo, invalidate any cached listings.
-	invalidateNetlabTemplatesCacheForRepoBranch(s.cfg, pc.workspace.GiteaOwner, pc.workspace.GiteaRepo, targetBranch)
+	// Since this sync mutates the context repo, invalidate any cached listings.
+	invalidateNetlabTemplatesCacheForRepoBranch(s.cfg, pc.context.GiteaOwner, pc.context.GiteaRepo, targetBranch)
 
 	_ = ctx
 	return &BlueprintSyncResponse{Status: "ok"}, nil

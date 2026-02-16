@@ -53,14 +53,14 @@ func (s *Service) notifyTaskEvent(ctx context.Context, task *TaskRecord, status 
 		return nil
 	}
 
-	_, _, workspace, err := s.loadWorkspaceByKey(task.WorkspaceID)
+	_, _, scope, err := s.loadOwnerContextByKey(task.OwnerID)
 	if err != nil {
 		// Fall back to notifying just the actor.
 		_, err := createNotification(ctx, s.db, task.CreatedBy, title, message, typ, category, referenceID, priority)
 		return err
 	}
 
-	recipients := workspaceNotificationRecipients(workspace)
+	recipients := ownerNotificationRecipients(scope)
 	if len(recipients) == 0 {
 		recipients = []string{task.CreatedBy}
 	}

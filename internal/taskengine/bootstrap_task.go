@@ -24,20 +24,20 @@ type userBootstrapTaskSpec struct {
 }
 
 func ensureLabCatalogRepos(cfg skyforgecore.Config) error {
-	owner := strings.TrimSpace(cfg.Workspaces.GiteaUsername)
+	owner := strings.TrimSpace(cfg.Scopes.GiteaUsername)
 	if owner == "" {
 		return fmt.Errorf("gitea username not configured")
 	}
-	if err := ensureGiteaRepo(cfg, owner, netlabCatalogRepo, cfg.Workspaces.GiteaRepoPrivate); err != nil {
+	if err := ensureGiteaRepo(cfg, owner, netlabCatalogRepo, cfg.Scopes.GiteaRepoPrivate); err != nil {
 		return err
 	}
-	if err := ensureGiteaRepo(cfg, owner, cloudCatalogRepo, cfg.Workspaces.GiteaRepoPrivate); err != nil {
+	if err := ensureGiteaRepo(cfg, owner, cloudCatalogRepo, cfg.Scopes.GiteaRepoPrivate); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (e *Engine) dispatchUserBootstrapTask(ctx context.Context, task *taskstore.TaskRecord, log Logger) error {
+func (e *Engine) dispatchOwnerContextBootstrapTask(ctx context.Context, task *taskstore.TaskRecord, log Logger) error {
 	if task == nil {
 		return nil
 	}
@@ -83,21 +83,21 @@ func (e *Engine) dispatchUserBootstrapTask(ctx context.Context, task *taskstore.
 	return nil
 }
 
-func (e *Engine) dispatchWorkspaceBootstrapTask(ctx context.Context, task *taskstore.TaskRecord, log Logger) error {
+func (e *Engine) dispatchUserBootstrapTask(ctx context.Context, task *taskstore.TaskRecord, log Logger) error {
 	if task == nil {
 		return nil
 	}
 	if log == nil {
 		log = noopLogger{}
 	}
-	ws, err := e.loadWorkspaceByKey(ctx, task.WorkspaceID)
+	ws, err := e.loadOwnerProfileByKey(ctx, task.OwnerID)
 	if err != nil {
 		return err
 	}
 	owner := strings.TrimSpace(ws.GiteaOwner)
 	repo := strings.TrimSpace(ws.GiteaRepo)
 	if owner == "" || repo == "" {
-		return fmt.Errorf("gitea owner/repo not configured for workspace")
+		return fmt.Errorf("gitea owner/repo not configured for scope")
 	}
 
 	branch := strings.TrimSpace(ws.DefaultBranch)
@@ -109,7 +109,7 @@ func (e *Engine) dispatchWorkspaceBootstrapTask(ctx context.Context, task *tasks
 	if stateKey == "" {
 		stateKey = fmt.Sprintf("tf-%s/primary.tfstate", strings.TrimSpace(ws.Slug))
 	}
-	storageEndpoint := strings.TrimSpace(e.cfg.Workspaces.ObjectStorageEndpoint)
+	storageEndpoint := strings.TrimSpace(e.cfg.Scopes.ObjectStorageEndpoint)
 	if storageEndpoint == "" {
 		storageEndpoint = "minio:9000"
 	}
@@ -145,7 +145,7 @@ func (e *Engine) dispatchWorkspaceBootstrapTask(ctx context.Context, task *tasks
         msg: "Replace playbook.yml with your Ansible automation."
 `
 
-	if err := taskdispatch.WithTaskStep(ctx, e.db, task.ID, "workspace.seed_repo", func() error {
+	if err := taskdispatch.WithTaskStep(ctx, e.db, task.ID, "user.seed_repo", func() error {
 		if err := ensureGiteaFile(e.cfg, owner, repo, "backend.tf", backendTF, "chore: configure terraform backend", branch, nil); err != nil {
 			return err
 		}
@@ -164,7 +164,7 @@ func (e *Engine) dispatchWorkspaceBootstrapTask(ctx context.Context, task *tasks
 	if blueprint == "" {
 		blueprint = defaultBlueprintCatalog
 	}
-	if err := taskdispatch.WithTaskStep(ctx, e.db, task.ID, "workspace.sync_blueprints", func() error {
+	if err := taskdispatch.WithTaskStep(ctx, e.db, task.ID, "user.sync_blueprints", func() error {
 		if err := ensureBlueprintCatalogRepo(e.cfg, blueprint); err != nil {
 			return err
 		}
@@ -185,6 +185,6 @@ func (e *Engine) dispatchWorkspaceBootstrapTask(ctx context.Context, task *tasks
 		return err
 	}
 
-	log.Infof("Workspace bootstrap completed for %s/%s", owner, repo)
+	log.Infof("Context bootstrap completed for %s/%s", owner, repo)
 	return nil
 }

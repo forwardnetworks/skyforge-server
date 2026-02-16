@@ -5,12 +5,12 @@ type netlabTaskSpec struct {
 	Server          string            `json:"server,omitempty"`
 	Deployment      string            `json:"deployment,omitempty"`
 	DeploymentID    string            `json:"deploymentId,omitempty"`
-	WorkspaceRoot   string            `json:"workspaceRoot,omitempty"`
+	UserRoot        string            `json:"userRoot,omitempty"`
+	UserDir         string            `json:"userDir,omitempty"`
 	TemplateSource  string            `json:"templateSource,omitempty"`
 	TemplateRepo    string            `json:"templateRepo,omitempty"`
 	TemplatesDir    string            `json:"templatesDir,omitempty"`
 	Template        string            `json:"template,omitempty"`
-	WorkspaceDir    string            `json:"workspaceDir,omitempty"`
 	MultilabNumeric int               `json:"multilabNumeric,omitempty"`
 	Cleanup         bool              `json:"cleanup,omitempty"`
 	TopologyPath    string            `json:"topologyPath,omitempty"`
@@ -25,12 +25,12 @@ type netlabC9sTaskSpec struct {
 	Server          string            `json:"server,omitempty"`
 	Deployment      string            `json:"deployment,omitempty"`
 	DeploymentID    string            `json:"deploymentId,omitempty"`
-	WorkspaceRoot   string            `json:"workspaceRoot,omitempty"`
+	UserRoot        string            `json:"userRoot,omitempty"`
+	UserDir         string            `json:"userDir,omitempty"`
 	TemplateSource  string            `json:"templateSource,omitempty"`
 	TemplateRepo    string            `json:"templateRepo,omitempty"`
 	TemplatesDir    string            `json:"templatesDir,omitempty"`
 	Template        string            `json:"template,omitempty"`
-	WorkspaceDir    string            `json:"workspaceDir,omitempty"`
 	MultilabNumeric int               `json:"multilabNumeric,omitempty"`
 	TopologyPath    string            `json:"topologyPath,omitempty"`
 	ClabTarball     string            `json:"clabTarball,omitempty"`

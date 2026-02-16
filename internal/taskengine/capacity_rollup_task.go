@@ -36,7 +36,7 @@ func (e *Engine) dispatchCapacityRollupTask(ctx context.Context, task *taskstore
 	var specIn capacityRollupTaskSpec
 	_ = decodeTaskSpec(task, &specIn)
 
-	ws, err := e.loadWorkspaceByKey(ctx, task.WorkspaceID)
+	ws, err := e.loadOwnerProfileByKey(ctx, task.OwnerID)
 	if err != nil {
 		return err
 	}
@@ -44,8 +44,8 @@ func (e *Engine) dispatchCapacityRollupTask(ctx context.Context, task *taskstore
 	if username == "" {
 		username = ws.primaryOwner()
 	}
-	pc := &workspaceContext{
-		workspace: *ws,
+	pc := &ownerContext{
+		owner: *ws,
 		claims: SessionClaims{
 			Username: username,
 		},
@@ -113,14 +113,14 @@ type fwdDeviceMetricHistoryResponse struct {
 	Metrics []fwdDeviceMetricHistory `json:"metrics"`
 }
 
-func (e *Engine) runCapacityRollup(ctx context.Context, pc *workspaceContext, deploymentID string, taskID int, log Logger) error {
+func (e *Engine) runCapacityRollup(ctx context.Context, pc *ownerContext, deploymentID string, taskID int, log Logger) error {
 	if e == nil || e.db == nil {
 		return fmt.Errorf("engine unavailable")
 	}
 	if pc == nil {
-		return fmt.Errorf("workspace context unavailable")
+		return fmt.Errorf("owner context unavailable")
 	}
-	dep, err := e.loadDeployment(ctx, pc.workspace.ID, deploymentID)
+	dep, err := e.loadDeployment(ctx, pc.owner.ID, deploymentID)
 	if err != nil {
 		return err
 	}
@@ -163,7 +163,7 @@ func (e *Engine) runCapacityRollup(ctx context.Context, pc *workspaceContext, de
 	}
 
 	// Refresh NQE cache and load lightweight enrichment maps.
-	inv, invErr := e.refreshCapacityInventoryCache(ctx, e.db, client, pc.workspace.ID, &deploymentID, networkID, log)
+	inv, invErr := e.refreshCapacityInventoryCache(ctx, e.db, client, pc.owner.ID, &deploymentID, networkID, log)
 	if invErr != nil && log != nil {
 		log.Errorf("capacity inventory refresh failed: %v", invErr)
 	}
@@ -171,32 +171,32 @@ func (e *Engine) runCapacityRollup(ctx context.Context, pc *workspaceContext, de
 	// Compute interface rollups for INGRESS/EGRESS.
 	for _, w := range windows {
 		threshold := 0.85 // ratio in [0..1]; stays consistent with Forward utilization semantics
-		if err := e.rollupInterfaceMetric(ctx, client, pc.workspace.ID, &deploymentID, networkID, periodEnd, w, "UTILIZATION", "util_ingress", "INGRESS", &threshold, inv, taskID, log); err != nil {
+		if err := e.rollupInterfaceMetric(ctx, client, pc.owner.ID, &deploymentID, networkID, periodEnd, w, "UTILIZATION", "util_ingress", "INGRESS", &threshold, inv, taskID, log); err != nil {
 			log.Errorf("interface rollup failed (window=%s type=%s dir=%s): %v", w.Label, "UTILIZATION", "INGRESS", err)
 		}
-		if err := e.rollupInterfaceMetric(ctx, client, pc.workspace.ID, &deploymentID, networkID, periodEnd, w, "UTILIZATION", "util_egress", "EGRESS", &threshold, inv, taskID, log); err != nil {
+		if err := e.rollupInterfaceMetric(ctx, client, pc.owner.ID, &deploymentID, networkID, periodEnd, w, "UTILIZATION", "util_egress", "EGRESS", &threshold, inv, taskID, log); err != nil {
 			log.Errorf("interface rollup failed (window=%s type=%s dir=%s): %v", w.Label, "UTILIZATION", "EGRESS", err)
 		}
 
 		// Interface error rate and packet loss (best-effort).
-		if err := e.rollupInterfaceMetric(ctx, client, pc.workspace.ID, &deploymentID, networkID, periodEnd, w, "ERROR", "if_error_ingress", "INGRESS", nil, inv, taskID, log); err != nil {
+		if err := e.rollupInterfaceMetric(ctx, client, pc.owner.ID, &deploymentID, networkID, periodEnd, w, "ERROR", "if_error_ingress", "INGRESS", nil, inv, taskID, log); err != nil {
 			log.Errorf("interface rollup failed (window=%s type=%s dir=%s): %v", w.Label, "ERROR", "INGRESS", err)
 		}
-		if err := e.rollupInterfaceMetric(ctx, client, pc.workspace.ID, &deploymentID, networkID, periodEnd, w, "ERROR", "if_error_egress", "EGRESS", nil, inv, taskID, log); err != nil {
+		if err := e.rollupInterfaceMetric(ctx, client, pc.owner.ID, &deploymentID, networkID, periodEnd, w, "ERROR", "if_error_egress", "EGRESS", nil, inv, taskID, log); err != nil {
 			log.Errorf("interface rollup failed (window=%s type=%s dir=%s): %v", w.Label, "ERROR", "EGRESS", err)
 		}
-		if err := e.rollupInterfaceMetric(ctx, client, pc.workspace.ID, &deploymentID, networkID, periodEnd, w, "PACKET_LOSS", "if_packet_loss_ingress", "INGRESS", nil, inv, taskID, log); err != nil {
+		if err := e.rollupInterfaceMetric(ctx, client, pc.owner.ID, &deploymentID, networkID, periodEnd, w, "PACKET_LOSS", "if_packet_loss_ingress", "INGRESS", nil, inv, taskID, log); err != nil {
 			log.Errorf("interface rollup failed (window=%s type=%s dir=%s): %v", w.Label, "PACKET_LOSS", "INGRESS", err)
 		}
-		if err := e.rollupInterfaceMetric(ctx, client, pc.workspace.ID, &deploymentID, networkID, periodEnd, w, "PACKET_LOSS", "if_packet_loss_egress", "EGRESS", nil, inv, taskID, log); err != nil {
+		if err := e.rollupInterfaceMetric(ctx, client, pc.owner.ID, &deploymentID, networkID, periodEnd, w, "PACKET_LOSS", "if_packet_loss_egress", "EGRESS", nil, inv, taskID, log); err != nil {
 			log.Errorf("interface rollup failed (window=%s type=%s dir=%s): %v", w.Label, "PACKET_LOSS", "EGRESS", err)
 		}
 
 		// CPU + memory devices.
-		if err := e.rollupDeviceMetric(ctx, client, pc.workspace.ID, &deploymentID, networkID, periodEnd, w, "CPU", inv, taskID, log); err != nil {
+		if err := e.rollupDeviceMetric(ctx, client, pc.owner.ID, &deploymentID, networkID, periodEnd, w, "CPU", inv, taskID, log); err != nil {
 			log.Errorf("device rollup failed (window=%s type=%s): %v", w.Label, "CPU", err)
 		}
-		if err := e.rollupDeviceMetric(ctx, client, pc.workspace.ID, &deploymentID, networkID, periodEnd, w, "MEMORY", inv, taskID, log); err != nil {
+		if err := e.rollupDeviceMetric(ctx, client, pc.owner.ID, &deploymentID, networkID, periodEnd, w, "MEMORY", inv, taskID, log); err != nil {
 			log.Errorf("device rollup failed (window=%s type=%s): %v", w.Label, "MEMORY", err)
 		}
 	}
@@ -213,7 +213,7 @@ func (e *Engine) runCapacityRollup(ctx context.Context, pc *workspaceContext, de
 func (e *Engine) rollupInterfaceMetric(
 	ctx context.Context,
 	client *forwardClient,
-	workspaceID string, deploymentID *string, networkID string,
+	ownerID string, deploymentID *string, networkID string,
 	periodEnd time.Time,
 	w windowSpec,
 	metricType string,
@@ -301,7 +301,7 @@ func (e *Engine) rollupInterfaceMetric(
 	for _, m := range metrics {
 		objID := fmt.Sprintf("%s:%s:%s", strings.TrimSpace(m.DeviceName), strings.TrimSpace(m.InterfaceName), strings.TrimSpace(m.Direction))
 		row := capacityRollupInsert{
-			WorkspaceID:      workspaceID,
+			OwnerID:          ownerID,
 			DeploymentID:     deploymentID,
 			ForwardNetworkID: networkID,
 			ObjectType:       "interface",
@@ -433,7 +433,7 @@ func (e *Engine) rollupInterfaceMetric(
 func (e *Engine) rollupDeviceMetric(
 	ctx context.Context,
 	client *forwardClient,
-	workspaceID string, deploymentID *string, networkID string,
+	ownerID string, deploymentID *string, networkID string,
 	periodEnd time.Time,
 	w windowSpec,
 	typ string,
@@ -509,7 +509,7 @@ func (e *Engine) rollupDeviceMetric(
 	for _, m := range metrics {
 		objID := strings.TrimSpace(m.DeviceName)
 		row := capacityRollupInsert{
-			WorkspaceID:      workspaceID,
+			OwnerID:          ownerID,
 			DeploymentID:     deploymentID,
 			ForwardNetworkID: networkID,
 			ObjectType:       "device",
@@ -616,7 +616,7 @@ func (e *Engine) rollupDeviceMetric(
 }
 
 type capacityRollupInsert struct {
-	WorkspaceID        string
+	OwnerID            string
 	DeploymentID       *string
 	ForwardNetworkID   string
 	ObjectType         string
@@ -651,12 +651,12 @@ func insertCapacityRollup(ctx context.Context, db *sql.DB, row capacityRollupIns
 	var err error
 	if depVal != nil {
 		_, err = db.ExecContext(ctxReq, `INSERT INTO sf_capacity_rollups (
-	  workspace_id, deployment_id, forward_network_id,
+	  owner_id, deployment_id, forward_network_id,
 	  object_type, object_id, metric, window_label,
 	  period_end, samples, avg, p95, p99, max,
 	  slope_per_day, forecast_crossing_ts, threshold, details
 	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
-	ON CONFLICT (workspace_id, deployment_id, object_type, object_id, metric, window_label, period_end)
+	ON CONFLICT (owner_id, deployment_id, object_type, object_id, metric, window_label, period_end)
 	DO UPDATE SET
 	  forward_network_id = EXCLUDED.forward_network_id,
 	  samples = EXCLUDED.samples,
@@ -669,7 +669,7 @@ func insertCapacityRollup(ctx context.Context, db *sql.DB, row capacityRollupIns
   threshold = EXCLUDED.threshold,
   details = EXCLUDED.details,
   created_at = now()`,
-			row.WorkspaceID, depVal, row.ForwardNetworkID,
+			row.OwnerID, depVal, row.ForwardNetworkID,
 			row.ObjectType, row.ObjectID, row.Metric, row.Window,
 			row.PeriodEnd, row.Samples, nullFloatPtr(row.Avg), nullFloatPtr(row.P95), nullFloatPtr(row.P99), nullFloatPtr(row.Max),
 			nullFloatPtr(row.SlopePerDay), nullTimePtr(row.ForecastCrossingTS), nullFloatPtr(row.Threshold), detailsBytes,
@@ -679,12 +679,12 @@ func insertCapacityRollup(ctx context.Context, db *sql.DB, row capacityRollupIns
 
 	// Network-scoped rollup row (deployment_id IS NULL).
 	_, err = db.ExecContext(ctxReq, `INSERT INTO sf_capacity_rollups (
-  workspace_id, deployment_id, forward_network_id,
+  owner_id, deployment_id, forward_network_id,
   object_type, object_id, metric, window_label,
   period_end, samples, avg, p95, p99, max,
   slope_per_day, forecast_crossing_ts, threshold, details
 ) VALUES ($1,NULL,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-ON CONFLICT (workspace_id, forward_network_id, object_type, object_id, metric, window_label, period_end) WHERE deployment_id IS NULL
+ON CONFLICT (owner_id, forward_network_id, object_type, object_id, metric, window_label, period_end) WHERE deployment_id IS NULL
 DO UPDATE SET
   samples = EXCLUDED.samples,
   avg = EXCLUDED.avg,
@@ -696,7 +696,7 @@ DO UPDATE SET
   threshold = EXCLUDED.threshold,
   details = EXCLUDED.details,
   created_at = now()`,
-		row.WorkspaceID, row.ForwardNetworkID,
+		row.OwnerID, row.ForwardNetworkID,
 		row.ObjectType, row.ObjectID, row.Metric, row.Window,
 		row.PeriodEnd, row.Samples, nullFloatPtr(row.Avg), nullFloatPtr(row.P95), nullFloatPtr(row.P99), nullFloatPtr(row.Max),
 		nullFloatPtr(row.SlopePerDay), nullTimePtr(row.ForecastCrossingTS), nullFloatPtr(row.Threshold), detailsBytes,

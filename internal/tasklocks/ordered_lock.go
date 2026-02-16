@@ -12,7 +12,7 @@ import (
 )
 
 // AcquireOrderedTaskLock acquires an advisory lock for a queued task and enforces
-// per-deployment/per-workspace ordering by waiting until the task is the oldest
+// per-deployment/per-scope ordering by waiting until the task is the oldest
 // queued task for its scope.
 //
 // The caller must call the returned unlock function.
@@ -26,8 +26,8 @@ func AcquireOrderedTaskLock(ctx context.Context, db *sql.DB, task *taskstore.Tas
 
 	unlock = func() {}
 
-	workspaceID := strings.TrimSpace(task.WorkspaceID)
-	if workspaceID == "" {
+	ownerID := strings.TrimSpace(task.OwnerID)
+	if ownerID == "" {
 		return func() {}, nil
 	}
 
@@ -46,7 +46,7 @@ func AcquireOrderedTaskLock(ctx context.Context, db *sql.DB, task *taskstore.Tas
 	}
 
 	if deploymentID != "" {
-		lockKey := pglocks.DeploymentAdvisoryLockKey(workspaceID, deploymentID)
+		lockKey := pglocks.DeploymentAdvisoryLockKey(ownerID, deploymentID)
 		for {
 			lock, ok, err := pglocks.TryAdvisoryLock(ctx, db, lockKey)
 			if err != nil {
@@ -63,7 +63,7 @@ func AcquireOrderedTaskLock(ctx context.Context, db *sql.DB, task *taskstore.Tas
 				continue
 			}
 
-			oldestQueuedID, err := taskstore.GetOldestQueuedDeploymentTaskID(ctx, db, workspaceID, deploymentID)
+			oldestQueuedID, err := taskstore.GetOldestQueuedDeploymentTaskID(ctx, db, ownerID, deploymentID)
 			if err != nil {
 				_ = lock.Unlock(context.Background())
 				rlog.Error("deployment queue check error", "err", err)
@@ -85,11 +85,11 @@ func AcquireOrderedTaskLock(ctx context.Context, db *sql.DB, task *taskstore.Tas
 		}
 	}
 
-	lockKey := pglocks.WorkspaceAdvisoryLockKey(workspaceID)
+	lockKey := pglocks.UserAdvisoryLockKey(ownerID)
 	for {
 		lock, ok, err := pglocks.TryAdvisoryLock(ctx, db, lockKey)
 		if err != nil {
-			rlog.Error("workspace lock error", "err", err)
+			rlog.Error("scope lock error", "err", err)
 			if err := sleep(); err != nil {
 				return func() {}, err
 			}
@@ -102,10 +102,10 @@ func AcquireOrderedTaskLock(ctx context.Context, db *sql.DB, task *taskstore.Tas
 			continue
 		}
 
-		oldestQueuedID, err := taskstore.GetOldestQueuedWorkspaceTaskID(ctx, db, workspaceID)
+		oldestQueuedID, err := taskstore.GetOldestQueuedOwnerTaskID(ctx, db, ownerID)
 		if err != nil {
 			_ = lock.Unlock(context.Background())
-			rlog.Error("workspace queue check error", "err", err)
+			rlog.Error("scope queue check error", "err", err)
 			if err := sleep(); err != nil {
 				return func() {}, err
 			}

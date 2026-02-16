@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func loadWorkspacesSnapshot(ctx context.Context, svc *Service, claims *SessionClaims, all bool) ([]SkyforgeWorkspace, error) {
+func loadUsersSnapshot(ctx context.Context, svc *Service, claims *SessionClaims, all bool) ([]SkyforgeUserContext, error) {
 	if svc == nil || svc.db == nil {
 		return nil, fmt.Errorf("service unavailable")
 	}
@@ -27,64 +27,58 @@ func loadWorkspacesSnapshot(ctx context.Context, svc *Service, claims *SessionCl
 		IsAdmin:     isAdminForClaims(svc.cfg, claims),
 	}
 
-	if _, err := svc.ensureDefaultWorkspace(ctx, user); err != nil {
-		log.Printf("default workspace ensure: %v", err)
+	if _, err := svc.ensureDefaultOwnerContext(ctx, user); err != nil {
+		log.Printf("default scope ensure: %v", err)
 	}
-	workspaces, err := svc.workspaceStore.load()
+	scopes, err := svc.scopeStore.load()
 	if err != nil {
 		return nil, err
 	}
 
-	// Best-effort sync group membership like GetWorkspaces does.
+	// Best-effort sync group membership like GetUsers does.
 	changed := false
-	changedWorkspaces := make([]SkyforgeWorkspace, 0)
-	for i := range workspaces {
-		if role, ok := syncGroupMembershipForUser(&workspaces[i], claims); ok {
+	changedScopes := make([]SkyforgeUserContext, 0)
+	for i := range scopes {
+		if role, ok := syncGroupMembershipForUser(&scopes[i], claims); ok {
 			changed = true
-			changedWorkspaces = append(changedWorkspaces, workspaces[i])
-			log.Printf("workspace group sync: %s -> %s (%s)", claims.Username, workspaces[i].Slug, role)
+			changedScopes = append(changedScopes, scopes[i])
+			log.Printf("context group sync: %s -> %s (%s)", claims.Username, scopes[i].Slug, role)
 		}
 	}
 	if changed {
 		updatedAll := true
-		for _, w := range changedWorkspaces {
-			if err := svc.workspaceStore.upsert(w); err != nil {
+		for _, w := range changedScopes {
+			if err := svc.scopeStore.upsert(w); err != nil {
 				updatedAll = false
-				log.Printf("workspaces upsert after group sync (%s): %v", w.ID, err)
+				log.Printf("scopes upsert after group sync (%s): %v", w.ID, err)
 			}
 		}
 		if updatedAll {
-			for _, w := range changedWorkspaces {
-				syncGiteaCollaboratorsForWorkspace(svc.cfg, w)
+			for _, w := range changedScopes {
+				syncGiteaCollaboratorsForScope(svc.cfg, w)
 			}
 			if svc.db != nil {
-				_ = notifyWorkspacesUpdatePG(ctx, svc.db, "*")
+				_ = notifyUsersUpdatePG(ctx, svc.db, "*")
 				_ = notifyDashboardUpdatePG(ctx, svc.db)
 			}
 		}
 	}
 
 	if !all {
-		filtered := make([]SkyforgeWorkspace, 0, len(workspaces))
-		for _, w := range workspaces {
-			if workspaceAccessLevelForClaims(svc.cfg, w, claims) != "none" {
+		filtered := make([]SkyforgeUserContext, 0, len(scopes))
+		for _, w := range scopes {
+			if ownerAccessLevelForClaims(svc.cfg, w, claims) != "none" {
 				filtered = append(filtered, w)
 			}
 		}
-		workspaces = filtered
+		scopes = filtered
 	}
-	sort.Slice(workspaces, func(i, j int) bool { return workspaces[i].Name < workspaces[j].Name })
+	sort.Slice(scopes, func(i, j int) bool { return scopes[i].Name < scopes[j].Name })
 
-	return workspaces, nil
+	return scopes, nil
 }
 
-// WorkspacesEvents streams the workspace list as Server-Sent Events (SSE).
-//
-// Query params:
-// - all=true (admin only; default false)
-//
-//encore:api auth raw method=GET path=/api/workspaces-events
-func (s *Service) WorkspacesEvents(w http.ResponseWriter, req *http.Request) {
+func (s *Service) scopesEvents(w http.ResponseWriter, req *http.Request) {
 	if s == nil || s.db == nil || s.sessionManager == nil {
 		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
 		return
@@ -130,7 +124,7 @@ func (s *Service) WorkspacesEvents(w http.ResponseWriter, req *http.Request) {
 				if !ok {
 					return
 				}
-				if n.Channel != pgNotifyWorkspacesChannel {
+				if n.Channel != pgNotifyUsersChannel {
 					continue
 				}
 				payload := strings.ToLower(strings.TrimSpace(n.Payload))
@@ -154,14 +148,14 @@ func (s *Service) WorkspacesEvents(w http.ResponseWriter, req *http.Request) {
 
 	for {
 		if reload {
-			workspaces, err := loadWorkspacesSnapshot(ctx, s, claims, all)
+			scopes, err := loadUsersSnapshot(ctx, s, claims, all)
 			if err != nil {
 				stream.comment("retry")
 				stream.flush()
 			} else {
 				payloadBytes, _ := json.Marshal(map[string]any{
 					"user":        claims.Username,
-					"workspaces":  workspaces,
+					"contexts":    scopes,
 					"refreshedAt": time.Now().UTC().Format(time.RFC3339),
 				})
 				payload := strings.TrimSpace(string(payloadBytes))
@@ -185,4 +179,14 @@ func (s *Service) WorkspacesEvents(w http.ResponseWriter, req *http.Request) {
 			stream.flush()
 		}
 	}
+}
+
+// UsersEvents streams the personal scope list as Server-Sent Events (SSE).
+//
+// Query params:
+// - all=true (admin only; default false)
+//
+// Deprecated public route removed: /api/scopes-events
+func (s *Service) UsersEvents(w http.ResponseWriter, req *http.Request) {
+	s.scopesEvents(w, req)
 }

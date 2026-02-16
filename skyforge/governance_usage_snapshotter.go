@@ -108,42 +108,42 @@ func snapshotClusterLoadUsage(ctx context.Context, db *sql.DB) error {
 
 	if len(cpuVals) > 0 {
 		_, _ = insertGovernanceUsage(ctx, db, GovernanceUsageInput{
-			Provider:    governanceUsageProvider,
-			ScopeType:   "cluster",
-			Metric:      "node.cpu_active.p95",
-			Value:       governanceutil.Percentile(cpuVals, 0.95),
-			Unit:        "percent",
-			WorkspaceID: "",
+			Provider:      governanceUsageProvider,
+			UserType:      "cluster",
+			Metric:        "node.cpu_active.p95",
+			Value:         governanceutil.Percentile(cpuVals, 0.95),
+			Unit:          "percent",
+			OwnerUsername: "",
 		})
 	}
 	if len(memVals) > 0 {
 		_, _ = insertGovernanceUsage(ctx, db, GovernanceUsageInput{
-			Provider:    governanceUsageProvider,
-			ScopeType:   "cluster",
-			Metric:      "node.mem_used.p95",
-			Value:       governanceutil.Percentile(memVals, 0.95),
-			Unit:        "percent",
-			WorkspaceID: "",
+			Provider:      governanceUsageProvider,
+			UserType:      "cluster",
+			Metric:        "node.mem_used.p95",
+			Value:         governanceutil.Percentile(memVals, 0.95),
+			Unit:          "percent",
+			OwnerUsername: "",
 		})
 	}
 	if len(diskVals) > 0 {
 		_, _ = insertGovernanceUsage(ctx, db, GovernanceUsageInput{
-			Provider:    governanceUsageProvider,
-			ScopeType:   "cluster",
-			Metric:      "node.disk_used.p95",
-			Value:       governanceutil.Percentile(diskVals, 0.95),
-			Unit:        "percent",
-			WorkspaceID: "",
+			Provider:      governanceUsageProvider,
+			UserType:      "cluster",
+			Metric:        "node.disk_used.p95",
+			Value:         governanceutil.Percentile(diskVals, 0.95),
+			Unit:          "percent",
+			OwnerUsername: "",
 		})
 	}
 
 	_, _ = insertGovernanceUsage(ctx, db, GovernanceUsageInput{
-		Provider:    governanceUsageProvider,
-		ScopeType:   "cluster",
-		Metric:      "node.count",
-		Value:       float64(len(uniqueKeys(latest))),
-		Unit:        "count",
-		WorkspaceID: "",
+		Provider:      governanceUsageProvider,
+		UserType:      "cluster",
+		Metric:        "node.count",
+		Value:         float64(len(uniqueKeys(latest))),
+		Unit:          "count",
+		OwnerUsername: "",
 	})
 
 	return nil
@@ -238,60 +238,60 @@ func snapshotUserActivityUsage(ctx context.Context, db *sql.DB) error {
 
 	// Cluster totals.
 	_, _ = insertGovernanceUsage(ctx, db, GovernanceUsageInput{
-		Provider:  governanceUsageProvider,
-		ScopeType: "cluster",
-		Metric:    "users.active_24h",
-		Value:     float64(activeUsers24h),
-		Unit:      "count",
+		Provider: governanceUsageProvider,
+		UserType: "cluster",
+		Metric:   "users.active_24h",
+		Value:    float64(activeUsers24h),
+		Unit:     "count",
 	})
 
 	_, _ = insertGovernanceUsage(ctx, db, GovernanceUsageInput{
-		Provider:  governanceUsageProvider,
-		ScopeType: "cluster",
-		Metric:    "deployments.total",
-		Value:     float64(sumIntMap(deployTotal)),
-		Unit:      "count",
+		Provider: governanceUsageProvider,
+		UserType: "cluster",
+		Metric:   "deployments.total",
+		Value:    float64(sumIntMap(deployTotal)),
+		Unit:     "count",
 	})
 
 	_, _ = insertGovernanceUsage(ctx, db, GovernanceUsageInput{
-		Provider:  governanceUsageProvider,
-		ScopeType: "cluster",
-		Metric:    "deployments.active",
-		Value:     float64(sumIntMap(activeDeploymentsByUser)),
-		Unit:      "count",
+		Provider: governanceUsageProvider,
+		UserType: "cluster",
+		Metric:   "deployments.active",
+		Value:    float64(sumIntMap(activeDeploymentsByUser)),
+		Unit:     "count",
 	})
 
 	_, _ = insertGovernanceUsage(ctx, db, GovernanceUsageInput{
-		Provider:  governanceUsageProvider,
-		ScopeType: "cluster",
-		Metric:    "collectors.total",
-		Value:     float64(sumIntMap(collectorTotal)),
-		Unit:      "count",
+		Provider: governanceUsageProvider,
+		UserType: "cluster",
+		Metric:   "collectors.total",
+		Value:    float64(sumIntMap(collectorTotal)),
+		Unit:     "count",
 	})
 
 	_, _ = insertGovernanceUsage(ctx, db, GovernanceUsageInput{
-		Provider:  governanceUsageProvider,
-		ScopeType: "cluster",
-		Metric:    "tasks.running",
-		Value:     float64(runningTasks),
-		Unit:      "count",
+		Provider: governanceUsageProvider,
+		UserType: "cluster",
+		Metric:   "tasks.running",
+		Value:    float64(runningTasks),
+		Unit:     "count",
 	})
 
 	_, _ = insertGovernanceUsage(ctx, db, GovernanceUsageInput{
-		Provider:  governanceUsageProvider,
-		ScopeType: "cluster",
-		Metric:    "tasks.queued",
-		Value:     float64(queuedTasks),
-		Unit:      "count",
+		Provider: governanceUsageProvider,
+		UserType: "cluster",
+		Metric:   "tasks.queued",
+		Value:    float64(queuedTasks),
+		Unit:     "count",
 	})
 
 	if oldestQueuedAgeSeconds > 0 {
 		_, _ = insertGovernanceUsage(ctx, db, GovernanceUsageInput{
-			Provider:  governanceUsageProvider,
-			ScopeType: "cluster",
-			Metric:    "tasks.oldest_queued_age_seconds",
-			Value:     float64(oldestQueuedAgeSeconds),
-			Unit:      "seconds",
+			Provider: governanceUsageProvider,
+			UserType: "cluster",
+			Metric:   "tasks.oldest_queued_age_seconds",
+			Value:    float64(oldestQueuedAgeSeconds),
+			Unit:     "seconds",
 		})
 	}
 
@@ -303,42 +303,42 @@ func snapshotUserActivityUsage(ctx context.Context, db *sql.DB) error {
 		}
 		if v := deployTotal[user]; v > 0 {
 			_, _ = insertGovernanceUsage(ctx, db, GovernanceUsageInput{
-				Provider:  governanceUsageProvider,
-				ScopeType: "user",
-				ScopeID:   user,
-				Metric:    "deployments.total",
-				Value:     float64(v),
-				Unit:      "count",
+				Provider:      governanceUsageProvider,
+				UserType:      "user",
+				OwnerUsername: user,
+				Metric:        "deployments.total",
+				Value:         float64(v),
+				Unit:          "count",
 			})
 		}
 		if v := activeDeploymentsByUser[user]; v > 0 {
 			_, _ = insertGovernanceUsage(ctx, db, GovernanceUsageInput{
-				Provider:  governanceUsageProvider,
-				ScopeType: "user",
-				ScopeID:   user,
-				Metric:    "deployments.active",
-				Value:     float64(v),
-				Unit:      "count",
+				Provider:      governanceUsageProvider,
+				UserType:      "user",
+				OwnerUsername: user,
+				Metric:        "deployments.active",
+				Value:         float64(v),
+				Unit:          "count",
 			})
 		}
 		if v := collectorTotal[user]; v > 0 {
 			_, _ = insertGovernanceUsage(ctx, db, GovernanceUsageInput{
-				Provider:  governanceUsageProvider,
-				ScopeType: "user",
-				ScopeID:   user,
-				Metric:    "collectors.total",
-				Value:     float64(v),
-				Unit:      "count",
+				Provider:      governanceUsageProvider,
+				UserType:      "user",
+				OwnerUsername: user,
+				Metric:        "collectors.total",
+				Value:         float64(v),
+				Unit:          "count",
 			})
 		}
 		if v := runningTasksByUser[user]; v > 0 {
 			_, _ = insertGovernanceUsage(ctx, db, GovernanceUsageInput{
-				Provider:  governanceUsageProvider,
-				ScopeType: "user",
-				ScopeID:   user,
-				Metric:    "tasks.running",
-				Value:     float64(v),
-				Unit:      "count",
+				Provider:      governanceUsageProvider,
+				UserType:      "user",
+				OwnerUsername: user,
+				Metric:        "tasks.running",
+				Value:         float64(v),
+				Unit:          "count",
 			})
 		}
 	}
@@ -393,11 +393,11 @@ func snapshotK8sInventoryUsage(ctx context.Context, db *sql.DB) error {
 
 	for _, m := range metrics {
 		_, _ = insertGovernanceUsage(ctxReq, db, GovernanceUsageInput{
-			Provider:  governanceUsageProvider,
-			ScopeType: "cluster",
-			Metric:    m.metric,
-			Value:     float64(m.value),
-			Unit:      m.unit,
+			Provider: governanceUsageProvider,
+			UserType: "cluster",
+			Metric:   m.metric,
+			Value:    float64(m.value),
+			Unit:     m.unit,
 		})
 	}
 

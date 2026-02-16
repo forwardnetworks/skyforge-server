@@ -9,8 +9,8 @@ func TestSanitizeCoderLaunchPath(t *testing.T) {
 		want string
 	}{
 		{name: "empty", in: "", want: "/coder/"},
-		{name: "trimmed", in: " /coder/workspaces ", want: "/coder/workspaces"},
-		{name: "no leading slash", in: "coder/workspaces", want: "/coder/workspaces"},
+		{name: "trimmed", in: " /coder/scopes ", want: "/coder/scopes"},
+		{name: "no leading slash", in: "coder/scopes", want: "/coder/scopes"},
 		{name: "invalid prefix", in: "/dashboard", want: "/coder/"},
 	}
 	for _, tc := range tests {

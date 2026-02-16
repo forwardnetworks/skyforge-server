@@ -16,7 +16,6 @@ import (
 type forwardCredentialSet struct {
 	ID            string
 	OwnerUsername string
-	WorkspaceID   string
 	Name          string
 
 	BaseURL       string
@@ -54,7 +53,6 @@ func (c forwardCredentialSet) toForwardClientCreds() forwardCredentials {
 type forwardCredentialSetCipherRow struct {
 	ID            string
 	OwnerUsername string
-	WorkspaceID   string
 	Name          string
 
 	BaseURLEnc       sql.NullString
@@ -95,8 +93,7 @@ func decryptNullStringOrEmpty(box *secretBox, v sql.NullString) (string, error) 
 func decodeForwardCredentialSet(box *secretBox, row forwardCredentialSetCipherRow) (*forwardCredentialSet, error) {
 	out := &forwardCredentialSet{
 		ID:            strings.TrimSpace(row.ID),
-		OwnerUsername: strings.ToLower(strings.TrimSpace(row.OwnerUsername)),
-		WorkspaceID:   strings.TrimSpace(row.WorkspaceID),
+		OwnerUsername: strings.TrimSpace(row.OwnerUsername),
 		Name:          strings.TrimSpace(row.Name),
 		SkipTLSVerify: row.SkipTLSVerify.Valid && row.SkipTLSVerify.Bool,
 	}
@@ -157,7 +154,7 @@ func getUserForwardCredentialSetCipherRow(ctx context.Context, db *sql.DB, owner
 	}
 	var row forwardCredentialSetCipherRow
 	err := db.QueryRowContext(ctx, `
-SELECT id, owner_username, COALESCE(workspace_id, ''), name,
+SELECT id, owner_username, COALESCE(owner_username, ''), name,
        COALESCE(base_url_enc, ''), COALESCE(skip_tls_verify, false),
        COALESCE(forward_username_enc, ''), COALESCE(forward_password_enc, ''),
        COALESCE(collector_id_enc, ''), COALESCE(collector_username_enc, ''), COALESCE(authorization_key_enc, ''),
@@ -165,9 +162,9 @@ SELECT id, owner_username, COALESCE(workspace_id, ''), name,
        COALESCE(jump_host_enc, ''), COALESCE(jump_username_enc, ''), COALESCE(jump_private_key_enc, ''), COALESCE(jump_cert_enc, ''),
        created_at, updated_at
   FROM sf_credentials
- WHERE id=$1 AND provider='forward' AND owner_username=$2 AND workspace_id IS NULL
+ WHERE id=$1 AND provider='forward' AND owner_username=$2 AND owner_username IS NULL
 `, id, ownerUsername).Scan(
-		&row.ID, &row.OwnerUsername, &row.WorkspaceID, &row.Name,
+		&row.ID, &row.OwnerUsername, &row.OwnerUsername, &row.Name,
 		&row.BaseURLEnc, &row.SkipTLSVerify,
 		&row.UsernameEnc, &row.PasswordEnc,
 		&row.CollectorIDEnc, &row.CollectorUserEnc, &row.AuthKeyEnc,
@@ -197,18 +194,18 @@ func getUserForwardCredentialSet(ctx context.Context, db *sql.DB, box *secretBox
 	return dec, nil
 }
 
-func getWorkspaceForwardCredentialSetCipherRow(ctx context.Context, db *sql.DB, workspaceID, id string) (*forwardCredentialSetCipherRow, error) {
+func getOwnerForwardCredentialSetCipherRow(ctx context.Context, db *sql.DB, ownerID, id string) (*forwardCredentialSetCipherRow, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	id = strings.TrimSpace(id)
-	if workspaceID == "" || id == "" {
+	if ownerID == "" || id == "" {
 		return nil, fmt.Errorf("invalid input")
 	}
 	var row forwardCredentialSetCipherRow
 	err := db.QueryRowContext(ctx, `
-SELECT id, COALESCE(owner_username, ''), workspace_id, name,
+SELECT id, COALESCE(owner_username, ''), owner_username, name,
        COALESCE(base_url_enc, ''), COALESCE(skip_tls_verify, false),
        COALESCE(forward_username_enc, ''), COALESCE(forward_password_enc, ''),
        COALESCE(collector_id_enc, ''), COALESCE(collector_username_enc, ''), COALESCE(authorization_key_enc, ''),
@@ -216,9 +213,9 @@ SELECT id, COALESCE(owner_username, ''), workspace_id, name,
        COALESCE(jump_host_enc, ''), COALESCE(jump_username_enc, ''), COALESCE(jump_private_key_enc, ''), COALESCE(jump_cert_enc, ''),
        created_at, updated_at
   FROM sf_credentials
- WHERE id=$1 AND provider='forward' AND workspace_id=$2 AND owner_username IS NULL
-`, id, workspaceID).Scan(
-		&row.ID, &row.OwnerUsername, &row.WorkspaceID, &row.Name,
+ WHERE id=$1 AND provider='forward' AND owner_username=$2 AND owner_username IS NULL
+`, id, ownerID).Scan(
+		&row.ID, &row.OwnerUsername, &row.OwnerUsername, &row.Name,
 		&row.BaseURLEnc, &row.SkipTLSVerify,
 		&row.UsernameEnc, &row.PasswordEnc,
 		&row.CollectorIDEnc, &row.CollectorUserEnc, &row.AuthKeyEnc,
@@ -235,14 +232,14 @@ SELECT id, COALESCE(owner_username, ''), workspace_id, name,
 	return &row, nil
 }
 
-func getWorkspaceForwardCredentialSet(ctx context.Context, db *sql.DB, box *secretBox, workspaceID, id string) (*forwardCredentialSet, error) {
-	row, err := getWorkspaceForwardCredentialSetCipherRow(ctx, db, workspaceID, id)
+func getOwnerForwardCredentialSet(ctx context.Context, db *sql.DB, box *secretBox, ownerID, id string) (*forwardCredentialSet, error) {
+	row, err := getOwnerForwardCredentialSetCipherRow(ctx, db, ownerID, id)
 	if err != nil || row == nil {
 		return nil, err
 	}
 	dec, err := decodeForwardCredentialSet(box, *row)
 	if err != nil {
-		log.Printf("workspace forward credential set decrypt (%s/%s): %v", workspaceID, id, err)
+		log.Printf("user-context forward credential set decrypt (%s/%s): %v", ownerID, id, err)
 		return nil, nil
 	}
 	return dec, nil
@@ -289,7 +286,7 @@ func insertUserForwardCredentialSet(ctx context.Context, tx *sql.Tx, box *secret
 
 	_, err = tx.ExecContext(ctx, `
 INSERT INTO sf_credentials (
-  id, owner_username, workspace_id, provider, name,
+  id, owner_username, owner_username, provider, name,
   base_url_enc, skip_tls_verify, forward_username_enc, forward_password_enc,
   collector_id_enc, collector_username_enc, authorization_key_enc,
   created_at, updated_at
@@ -327,7 +324,7 @@ func upsertUserForwardCredentialSetBasic(ctx context.Context, tx *sql.Tx, box *s
 
 	_, err = tx.ExecContext(ctx, `
 INSERT INTO sf_credentials (
-  id, owner_username, workspace_id, provider, name,
+  id, owner_username, owner_username, provider, name,
   base_url_enc, skip_tls_verify, forward_username_enc, forward_password_enc,
   created_at, updated_at
 ) VALUES ($1,$2,NULL,'forward',$3,$4,$5,$6,$7,now(),now())
@@ -383,7 +380,7 @@ func upsertUserForwardCredentialSetWithCollector(ctx context.Context, tx *sql.Tx
 
 	_, err = tx.ExecContext(ctx, `
 INSERT INTO sf_credentials (
-  id, owner_username, workspace_id, provider, name,
+  id, owner_username, owner_username, provider, name,
   base_url_enc, skip_tls_verify, forward_username_enc, forward_password_enc,
   collector_id_enc, collector_username_enc, authorization_key_enc,
   created_at, updated_at
@@ -398,19 +395,19 @@ ON CONFLICT (id) DO UPDATE SET
   collector_username_enc=excluded.collector_username_enc,
   authorization_key_enc=excluded.authorization_key_enc,
   updated_at=now()
-WHERE sf_credentials.owner_username=excluded.owner_username AND sf_credentials.provider='forward' AND sf_credentials.workspace_id IS NULL
+WHERE sf_credentials.owner_username=excluded.owner_username AND sf_credentials.provider='forward' AND sf_credentials.owner_username IS NULL
 `, id, ownerUsername, name, encBase, cfg.SkipTLSVerify, encUser, encPass, encCollectorID, encCollectorUser, encAuthKey)
 	return err
 }
 
-func upsertWorkspaceForwardCredentialSet(ctx context.Context, tx *sql.Tx, box *secretBox, id, workspaceID, name string, cfg forwardCredentials) error {
+func upsertUserForwardCredentialSet(ctx context.Context, tx *sql.Tx, box *secretBox, id, ownerID, name string, cfg forwardCredentials) error {
 	if tx == nil || box == nil {
 		return fmt.Errorf("db is not configured")
 	}
 	id = strings.TrimSpace(id)
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	name = strings.TrimSpace(name)
-	if id == "" || workspaceID == "" || name == "" {
+	if id == "" || ownerID == "" || name == "" {
 		return fmt.Errorf("invalid input")
 	}
 
@@ -466,7 +463,7 @@ func upsertWorkspaceForwardCredentialSet(ctx context.Context, tx *sql.Tx, box *s
 
 	_, err = tx.ExecContext(ctx, `
 INSERT INTO sf_credentials (
-  id, owner_username, workspace_id, provider, name,
+  id, owner_username, owner_username, provider, name,
   base_url_enc, skip_tls_verify, forward_username_enc, forward_password_enc,
   collector_id_enc, collector_username_enc,
   device_username_enc, device_password_enc,
@@ -488,6 +485,6 @@ ON CONFLICT (id) DO UPDATE SET
   jump_private_key_enc=excluded.jump_private_key_enc,
   jump_cert_enc=excluded.jump_cert_enc,
   updated_at=now()
-`, id, workspaceID, name, encBase, cfg.SkipTLSVerify, encUser, encPass, encCollectorID, encCollectorUser, encDevUser, encDevPass, encJumpHost, encJumpUser, encJumpKey, encJumpCert)
+`, id, ownerID, name, encBase, cfg.SkipTLSVerify, encUser, encPass, encCollectorID, encCollectorUser, encDevUser, encDevPass, encJumpHost, encJumpUser, encJumpKey, encJumpCert)
 	return err
 }

@@ -135,7 +135,7 @@ type AssuranceTrafficDemand struct {
 }
 
 type AssuranceTrafficSeedResponse struct {
-	WorkspaceID      string `json:"workspaceId"`
+	OwnerUsername    string `json:"ownerUsername"`
 	NetworkRef       string `json:"networkRef"`
 	ForwardNetworkID string `json:"forwardNetworkId"`
 	SnapshotID       string `json:"snapshotId,omitempty"`
@@ -160,15 +160,13 @@ type trafficSeedEndpointRow struct {
 	MgmtIP     string   `json:"mgmtIp"`
 }
 
-// PostWorkspaceForwardNetworkAssuranceTrafficSeeds discovers seed endpoints via NQE and produces a starter demand set.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/forward-networks/:networkRef/assurance/traffic/seeds
-func (s *Service) PostWorkspaceForwardNetworkAssuranceTrafficSeeds(ctx context.Context, id, networkRef string, req *AssuranceTrafficSeedRequest) (*AssuranceTrafficSeedResponse, error) {
+// PostUserForwardNetworkAssuranceTrafficSeeds discovers seed endpoints via NQE and produces a starter demand set.
+func (s *Service) PostUserForwardNetworkAssuranceTrafficSeeds(ctx context.Context, id, networkRef string, req *AssuranceTrafficSeedRequest) (*AssuranceTrafficSeedResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +174,7 @@ func (s *Service) PostWorkspaceForwardNetworkAssuranceTrafficSeeds(ctx context.C
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.context.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -417,7 +415,7 @@ func (s *Service) PostWorkspaceForwardNetworkAssuranceTrafficSeeds(ctx context.C
 	}
 
 	return &AssuranceTrafficSeedResponse{
-		WorkspaceID:      pc.workspace.ID,
+		OwnerUsername:    pc.context.ID,
 		NetworkRef:       net.ID,
 		ForwardNetworkID: net.ForwardNetworkID,
 		SnapshotID:       snapOut,
@@ -521,7 +519,7 @@ type AssuranceTrafficEvaluateSummary struct {
 }
 
 type AssuranceTrafficEvaluateResponse struct {
-	WorkspaceID      string  `json:"workspaceId"`
+	OwnerUsername    string  `json:"ownerUsername"`
 	NetworkRef       string  `json:"networkRef"`
 	ForwardNetworkID string  `json:"forwardNetworkId"`
 	SnapshotID       string  `json:"snapshotId,omitempty"`
@@ -536,16 +534,14 @@ type AssuranceTrafficEvaluateResponse struct {
 	InterfaceImpacts []AssuranceTrafficInterfaceImpact `json:"interfaceImpacts,omitempty"`
 }
 
-// PostWorkspaceForwardNetworkAssuranceTrafficEvaluate evaluates demands by calling Forward paths-bulk and overlaying
+// PostUserForwardNetworkAssuranceTrafficEvaluate evaluates demands by calling Forward paths-bulk and overlaying
 // capacity/security constraints. This is a demo-first "rank + explain" view (no prediction/simulation).
-//
-//encore:api auth method=POST path=/api/workspaces/:id/forward-networks/:networkRef/assurance/traffic/evaluate
-func (s *Service) PostWorkspaceForwardNetworkAssuranceTrafficEvaluate(ctx context.Context, id, networkRef string, req *AssuranceTrafficEvaluateRequest) (*AssuranceTrafficEvaluateResponse, error) {
+func (s *Service) PostUserForwardNetworkAssuranceTrafficEvaluate(ctx context.Context, id, networkRef string, req *AssuranceTrafficEvaluateRequest) (*AssuranceTrafficEvaluateResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -562,7 +558,7 @@ func (s *Service) PostWorkspaceForwardNetworkAssuranceTrafficEvaluate(ctx contex
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("too many demands (max 200)").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.context.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -657,11 +653,11 @@ func (s *Service) PostWorkspaceForwardNetworkAssuranceTrafficEvaluate(ctx contex
 	}
 
 	// Capacity rollups/inventory.
-	asOfTS, rollups, rollErr := loadLatestCapacityRollupsForForwardNetwork(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID)
+	asOfTS, rollups, rollErr := loadLatestCapacityRollupsForForwardNetwork(ctx, s.db, pc.context.ID, net.ForwardNetworkID)
 	if rollErr != nil {
 		rollups = []CapacityRollupRow{}
 	}
-	_, _, _, ifaces, _, _, _, _, invErr := loadLatestCapacityInventoryForForwardNetwork(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID)
+	_, _, _, ifaces, _, _, _, _, invErr := loadLatestCapacityInventoryForForwardNetwork(ctx, s.db, pc.context.ID, net.ForwardNetworkID)
 	if invErr != nil {
 		ifaces = []CapacityInterfaceInventoryRow{}
 	}
@@ -712,7 +708,7 @@ func (s *Service) PostWorkspaceForwardNetworkAssuranceTrafficEvaluate(ctx contex
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to decode Forward paths response").Err()
 	}
 	out := assuranceTrafficEvaluateFromFwdOut(
-		pc.workspace.ID,
+		pc.context.ID,
 		net.ID,
 		net.ForwardNetworkID,
 		req,
@@ -732,7 +728,7 @@ func (s *Service) PostWorkspaceForwardNetworkAssuranceTrafficEvaluate(ctx contex
 }
 
 func assuranceTrafficEvaluateFromFwdOut(
-	workspaceID string,
+	ownerID string,
 	networkRef string,
 	forwardNetworkID string,
 	req *AssuranceTrafficEvaluateRequest,
@@ -938,7 +934,7 @@ func assuranceTrafficEvaluateFromFwdOut(
 	}
 
 	out := &AssuranceTrafficEvaluateResponse{
-		WorkspaceID:      workspaceID,
+		OwnerUsername:    ownerID,
 		NetworkRef:       networkRef,
 		ForwardNetworkID: forwardNetworkID,
 		SnapshotID:       strings.TrimSpace(req.SnapshotID),

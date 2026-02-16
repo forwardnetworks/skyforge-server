@@ -21,7 +21,7 @@ Netlab: {
 	StateRoot:  "/var/lib/skyforge/netlab"
 }
 
-Workspaces: {
+Scopes: {
 	DataDir: "/var/lib/skyforge"
 	GiteaAPIURL: ""
 	GiteaUsername: "skyforge"

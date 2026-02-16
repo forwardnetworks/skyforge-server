@@ -10,7 +10,7 @@ Assurance Studio contains multiple integrations (Routing, Capacity Management, S
 
 Assurance Studio uses:
 
-- `POST /api/workspaces/:id/forward-networks/:networkRef/assurance/studio/evaluate`
+- `POST /api/fwd/:networkRef/assurance/studio/evaluate`
 
 Implementation: `skyforge/assurance_studio_evaluate_api.go`.
 
@@ -35,4 +35,3 @@ It checks:
 - Backend compiles and the unit test asserts a single Forward `paths-bulk` call when all phases are enabled.
 - The Assurance Studio route does not call the legacy per-integration endpoints.
 - Portal TypeScript type-check passes.
-

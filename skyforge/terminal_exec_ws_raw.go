@@ -295,8 +295,6 @@ func resolveClabernetesNodePod(ctx context.Context, ns, topologyName, node strin
 // - node: required (clabernetes/topologyNode)
 // - container: optional
 // - command: optional (defaults to "sh"; for EOS nodes use "Cli")
-//
-//encore:api auth raw method=GET path=/api/workspaces/:id/deployments/:deploymentID/terminal/ws
 func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 	if s == nil || s.db == nil || s.sessionManager == nil {
 		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
@@ -308,18 +306,21 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	workspaceKey := strings.TrimSpace(req.PathValue("id"))
+	ownerKey := strings.TrimSpace(req.PathValue("id"))
 	deploymentID := strings.TrimSpace(req.PathValue("deploymentID"))
-	if workspaceKey == "" || deploymentID == "" {
+	if ownerKey == "" || deploymentID == "" {
 		// Best-effort path param extraction (PathValue is only populated when the
 		// underlying mux supports it).
 		parts := strings.Split(strings.Trim(req.URL.Path, "/"), "/")
-		// expected: api/workspaces/<id>/deployments/<deploymentID>/terminal/ws
+		// expected:
+		// - api/users/me/deployments/<deploymentID>/terminal/ws
+		// - api/contexts/<id>/deployments/<deploymentID>/terminal/ws
+		// - api/deployments/<deploymentID>/terminal/ws
 		for i := 0; i+1 < len(parts); i++ {
 			switch parts[i] {
-			case "workspaces":
-				if workspaceKey == "" {
-					workspaceKey = strings.TrimSpace(parts[i+1])
+			case "users", "contexts", "scopes":
+				if ownerKey == "" {
+					ownerKey = strings.TrimSpace(parts[i+1])
 				}
 			case "deployments":
 				if deploymentID == "" {
@@ -328,27 +329,30 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 			}
 		}
 	}
-	if workspaceKey == "" || deploymentID == "" {
+	if ownerKey == "" && deploymentID != "" {
+		ownerKey = personalOwnerRouteKey
+	}
+	if ownerKey == "" || deploymentID == "" {
 		http.Error(w, "invalid path params", http.StatusBadRequest)
 		return
 	}
-	if wk, err := s.resolveWorkspaceKeyForClaims(claims, workspaceKey); err == nil && strings.TrimSpace(wk) != "" {
-		workspaceKey = strings.TrimSpace(wk)
+	if wk, err := s.resolveOwnerKeyForClaims(claims, ownerKey); err == nil && strings.TrimSpace(wk) != "" {
+		ownerKey = strings.TrimSpace(wk)
 	}
 
-	_, _, ws, err := s.loadWorkspaceByKey(workspaceKey)
+	_, _, ws, err := s.loadOwnerContextByKey(ownerKey)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	if workspaceAccessLevelForClaims(s.cfg, ws, claims) == "none" {
+	if ownerAccessLevelForClaims(s.cfg, ws, claims) == "none" {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
 	ctx, cancel := context.WithCancel(req.Context())
 	defer cancel()
-	dep, err := s.getWorkspaceDeployment(ctx, ws.ID, deploymentID)
+	dep, err := s.getUserDeployment(ctx, ws.ID, deploymentID)
 	if err != nil || dep == nil {
 		http.Error(w, "deployment not found", http.StatusNotFound)
 		return
@@ -383,7 +387,7 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 	k8sNamespace = strings.TrimSpace(k8sNamespace)
 	topologyName = strings.TrimSpace(topologyName)
 	if k8sNamespace == "" {
-		k8sNamespace = clabernetesWorkspaceNamespace(ws.Slug)
+		k8sNamespace = clabernetesOwnerNamespace(ws.Slug)
 	}
 	if topologyName == "" {
 		// When config is absent, fall back to labName-derived topology name.

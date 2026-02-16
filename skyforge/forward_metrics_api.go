@@ -34,7 +34,7 @@ type ForwardMetricsSnapshot struct {
 }
 
 type ForwardMetricsSummaryResponse struct {
-	WorkspaceID      string                  `json:"workspaceId"`
+	OwnerUsername    string                  `json:"ownerUsername"`
 	NetworkRef       string                  `json:"networkRef"`
 	ForwardNetworkID string                  `json:"forwardNetworkId"`
 	Snapshot         *ForwardMetricsSnapshot `json:"snapshot,omitempty"`
@@ -42,7 +42,7 @@ type ForwardMetricsSummaryResponse struct {
 }
 
 type ForwardMetricsHistoryResponse struct {
-	WorkspaceID      string                   `json:"workspaceId"`
+	OwnerUsername    string                   `json:"ownerUsername"`
 	NetworkRef       string                   `json:"networkRef"`
 	ForwardNetworkID string                   `json:"forwardNetworkId"`
 	Items            []ForwardMetricsSnapshot `json:"items"`
@@ -111,12 +111,11 @@ func collectForwardMetricsSnapshot(ctx context.Context, client *forwardClient) (
 	return snapshotID, met, metricsBody, nil
 }
 
-func persistForwardMetricsSnapshot(ctx context.Context, db *sql.DB, workspaceID, ownerUsername, networkRef, forwardNetworkID, snapshotID string, met forwardSnapshotMetrics, raw []byte, source string) error {
+func persistForwardMetricsSnapshot(ctx context.Context, db *sql.DB, ownerID, ownerUsername, networkRef, forwardNetworkID, snapshotID string, met forwardSnapshotMetrics, raw []byte, source string) error {
 	if db == nil {
 		return sql.ErrConnDone
 	}
 	row := forwardMetricsSnapshotRow{
-		WorkspaceID:                   strings.TrimSpace(workspaceID),
 		OwnerUsername:                 strings.ToLower(strings.TrimSpace(ownerUsername)),
 		NetworkRef:                    strings.TrimSpace(networkRef),
 		ForwardNetworkID:              strings.TrimSpace(forwardNetworkID),
@@ -142,21 +141,20 @@ func persistForwardMetricsSnapshot(ctx context.Context, db *sql.DB, workspaceID,
 	return insertForwardMetricsSnapshot(ctx, db, row)
 }
 
-func forwardMetricsSyncOne(ctx context.Context, db *sql.DB, client *forwardClient, workspaceID, ownerUsername, networkRef, forwardNetworkID, source string) (*forwardMetricsSnapshotRow, error) {
+func forwardMetricsSyncOne(ctx context.Context, db *sql.DB, client *forwardClient, ownerID, ownerUsername, networkRef, forwardNetworkID, source string) (*forwardMetricsSnapshotRow, error) {
 	snapshotID, met, raw, err := collectForwardMetricsSnapshot(ctx, client)
 	if err != nil {
 		return nil, err
 	}
-	if err := persistForwardMetricsSnapshot(ctx, db, workspaceID, ownerUsername, networkRef, forwardNetworkID, snapshotID, met, raw, source); err != nil {
+	if err := persistForwardMetricsSnapshot(ctx, db, ownerID, ownerUsername, networkRef, forwardNetworkID, snapshotID, met, raw, source); err != nil {
 		return nil, err
 	}
 	forwardMetricsSnapshotsStored.Add(1)
-	row, _ := latestForwardMetricsSnapshot(ctx, db, workspaceID, ownerUsername, networkRef, forwardNetworkID)
+	row, _ := latestForwardMetricsSnapshot(ctx, db, ownerID, ownerUsername, networkRef, forwardNetworkID)
 	if row != nil {
 		return row, nil
 	}
 	return &forwardMetricsSnapshotRow{
-		WorkspaceID:      workspaceID,
 		OwnerUsername:    ownerUsername,
 		NetworkRef:       networkRef,
 		ForwardNetworkID: forwardNetworkID,
@@ -206,7 +204,6 @@ func syncForwardMetricsCron(ctx context.Context, db *sql.DB, cfg Config) error {
 	}
 
 	type netRow struct {
-		WorkspaceID       string
 		OwnerUsername     string
 		CreatedBy         string
 		NetworkRef        string
@@ -217,7 +214,7 @@ func syncForwardMetricsCron(ctx context.Context, db *sql.DB, cfg Config) error {
 	ctxReq, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	rows, err := db.QueryContext(ctxReq, `
-SELECT COALESCE(workspace_id,''),
+SELECT COALESCE(owner_username,''),
        COALESCE(owner_username,''),
        COALESCE(created_by,''),
        id::text,
@@ -238,10 +235,10 @@ SELECT COALESCE(workspace_id,''),
 	networks := make([]netRow, 0, 128)
 	for rows.Next() {
 		var r netRow
-		if err := rows.Scan(&r.WorkspaceID, &r.OwnerUsername, &r.CreatedBy, &r.NetworkRef, &r.ForwardNetworkID, &r.CollectorConfigID); err != nil {
+		if err := rows.Scan(&r.OwnerUsername, &r.OwnerUsername, &r.CreatedBy, &r.NetworkRef, &r.ForwardNetworkID, &r.CollectorConfigID); err != nil {
 			continue
 		}
-		r.WorkspaceID = strings.TrimSpace(r.WorkspaceID)
+		r.OwnerUsername = strings.TrimSpace(r.OwnerUsername)
 		r.OwnerUsername = strings.ToLower(strings.TrimSpace(r.OwnerUsername))
 		r.CreatedBy = strings.ToLower(strings.TrimSpace(r.CreatedBy))
 		r.NetworkRef = strings.TrimSpace(r.NetworkRef)
@@ -253,7 +250,7 @@ SELECT COALESCE(workspace_id,''),
 		if r.OwnerUsername == "" {
 			r.OwnerUsername = r.CreatedBy
 		}
-		if r.OwnerUsername == "" && r.WorkspaceID == "" {
+		if r.OwnerUsername == "" {
 			continue
 		}
 		networks = append(networks, r)
@@ -271,7 +268,7 @@ SELECT COALESCE(workspace_id,''),
 	success := 0
 	failed := 0
 	for _, net := range networks {
-		creds, err := resolveForwardCredentialsFor(ctx, db, cfg.SessionSecret, net.WorkspaceID, net.OwnerUsername, net.ForwardNetworkID, forwardCredResolveOpts{CollectorConfigID: net.CollectorConfigID})
+		creds, err := resolveForwardCredentialsFor(ctx, db, cfg.SessionSecret, net.OwnerUsername, net.OwnerUsername, net.ForwardNetworkID, forwardCredResolveOpts{CollectorConfigID: net.CollectorConfigID})
 		if err != nil || creds == nil {
 			failed++
 			continue
@@ -282,7 +279,7 @@ SELECT COALESCE(workspace_id,''),
 			continue
 		}
 		netCtx, cancelNet := context.WithTimeout(ctx, 30*time.Second)
-		_, err = forwardMetricsSyncOne(netCtx, db, client, net.WorkspaceID, net.OwnerUsername, net.NetworkRef, net.ForwardNetworkID, "cron")
+		_, err = forwardMetricsSyncOne(netCtx, db, client, net.OwnerUsername, net.OwnerUsername, net.NetworkRef, net.ForwardNetworkID, "cron")
 		cancelNet()
 		if err != nil {
 			failed++
@@ -298,15 +295,13 @@ SELECT COALESCE(workspace_id,''),
 	return nil
 }
 
-// GetWorkspaceForwardNetworkMetricsSummary returns the latest stored Forward metrics sample.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/forward-networks/:networkRef/metrics/summary
-func (s *Service) GetWorkspaceForwardNetworkMetricsSummary(ctx context.Context, id, networkRef string) (*ForwardMetricsSummaryResponse, error) {
+// GetUserForwardNetworkMetricsSummary returns the latest stored Forward metrics sample.
+func (s *Service) GetUserForwardNetworkMetricsSummary(ctx context.Context, id, networkRef string) (*ForwardMetricsSummaryResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -314,16 +309,16 @@ func (s *Service) GetWorkspaceForwardNetworkMetricsSummary(ctx context.Context, 
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.context.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	row, err := latestForwardMetricsSnapshot(ctxReq, s.db, pc.workspace.ID, pc.claims.Username, net.ID, net.ForwardNetworkID)
+	row, err := latestForwardMetricsSnapshot(ctxReq, s.db, pc.context.ID, pc.claims.Username, net.ID, net.ForwardNetworkID)
 	if err != nil {
 		if isMissingDBRelation(err) {
-			return &ForwardMetricsSummaryResponse{WorkspaceID: pc.workspace.ID, NetworkRef: net.ID, ForwardNetworkID: net.ForwardNetworkID, Stale: true}, nil
+			return &ForwardMetricsSummaryResponse{OwnerUsername: pc.context.ID, NetworkRef: net.ID, ForwardNetworkID: net.ForwardNetworkID, Stale: true}, nil
 		}
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load forward metrics").Err()
 	}
@@ -332,7 +327,7 @@ func (s *Service) GetWorkspaceForwardNetworkMetricsSummary(ctx context.Context, 
 		stale = forwardMetricsStaleAt(row.CollectedAt)
 	}
 	return &ForwardMetricsSummaryResponse{
-		WorkspaceID:      pc.workspace.ID,
+		OwnerUsername:    pc.context.ID,
 		NetworkRef:       net.ID,
 		ForwardNetworkID: net.ForwardNetworkID,
 		Snapshot:         forwardMetricsSnapshotFromRow(row),
@@ -340,15 +335,13 @@ func (s *Service) GetWorkspaceForwardNetworkMetricsSummary(ctx context.Context, 
 	}, nil
 }
 
-// GetWorkspaceForwardNetworkMetricsHistory returns recent stored Forward metrics samples.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/forward-networks/:networkRef/metrics/history
-func (s *Service) GetWorkspaceForwardNetworkMetricsHistory(ctx context.Context, id, networkRef string, q *ForwardMetricsHistoryQuery) (*ForwardMetricsHistoryResponse, error) {
+// GetUserForwardNetworkMetricsHistory returns recent stored Forward metrics samples.
+func (s *Service) GetUserForwardNetworkMetricsHistory(ctx context.Context, id, networkRef string, q *ForwardMetricsHistoryQuery) (*ForwardMetricsHistoryResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -356,7 +349,7 @@ func (s *Service) GetWorkspaceForwardNetworkMetricsHistory(ctx context.Context, 
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.context.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -370,10 +363,10 @@ func (s *Service) GetWorkspaceForwardNetworkMetricsHistory(ctx context.Context, 
 
 	ctxReq, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	rows, err := listForwardMetricsSnapshots(ctxReq, s.db, pc.workspace.ID, pc.claims.Username, net.ID, net.ForwardNetworkID, limit)
+	rows, err := listForwardMetricsSnapshots(ctxReq, s.db, pc.context.ID, pc.claims.Username, net.ID, net.ForwardNetworkID, limit)
 	if err != nil {
 		if isMissingDBRelation(err) {
-			return &ForwardMetricsHistoryResponse{WorkspaceID: pc.workspace.ID, NetworkRef: net.ID, ForwardNetworkID: net.ForwardNetworkID, Items: []ForwardMetricsSnapshot{}}, nil
+			return &ForwardMetricsHistoryResponse{OwnerUsername: pc.context.ID, NetworkRef: net.ID, ForwardNetworkID: net.ForwardNetworkID, Items: []ForwardMetricsSnapshot{}}, nil
 		}
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load forward metrics history").Err()
 	}
@@ -384,22 +377,20 @@ func (s *Service) GetWorkspaceForwardNetworkMetricsHistory(ctx context.Context, 
 		}
 	}
 	return &ForwardMetricsHistoryResponse{
-		WorkspaceID:      pc.workspace.ID,
+		OwnerUsername:    pc.context.ID,
 		NetworkRef:       net.ID,
 		ForwardNetworkID: net.ForwardNetworkID,
 		Items:            items,
 	}, nil
 }
 
-// RefreshWorkspaceForwardNetworkMetrics forces a live Forward metrics fetch and stores it.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/forward-networks/:networkRef/metrics/refresh
-func (s *Service) RefreshWorkspaceForwardNetworkMetrics(ctx context.Context, id, networkRef string) (*ForwardMetricsSummaryResponse, error) {
+// RefreshUserForwardNetworkMetrics forces a live Forward metrics fetch and stores it.
+func (s *Service) RefreshUserForwardNetworkMetrics(ctx context.Context, id, networkRef string) (*ForwardMetricsSummaryResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -410,7 +401,7 @@ func (s *Service) RefreshWorkspaceForwardNetworkMetrics(ctx context.Context, id,
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.context.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -423,14 +414,14 @@ func (s *Service) RefreshWorkspaceForwardNetworkMetrics(ctx context.Context, id,
 	forwardMetricsLastRunUnix.With(forwardMetricsSyncSourceLabels{Source: "manual"}).Set(float64(time.Now().Unix()))
 	ctxReq, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	row, err := forwardMetricsSyncOne(ctxReq, s.db, client, pc.workspace.ID, pc.claims.Username, net.ID, net.ForwardNetworkID, "manual")
+	row, err := forwardMetricsSyncOne(ctxReq, s.db, client, pc.context.ID, pc.claims.Username, net.ID, net.ForwardNetworkID, "manual")
 	if err != nil {
 		forwardMetricsSyncFailuresTotal.With(forwardMetricsSyncSourceLabels{Source: "manual"}).Add(1)
 		return nil, errs.B().Code(errs.Unavailable).Msg("forward metrics refresh failed").Err()
 	}
 
 	return &ForwardMetricsSummaryResponse{
-		WorkspaceID:      pc.workspace.ID,
+		OwnerUsername:    pc.context.ID,
 		NetworkRef:       net.ID,
 		ForwardNetworkID: net.ForwardNetworkID,
 		Snapshot:         forwardMetricsSnapshotFromRow(row),

@@ -12,9 +12,8 @@ import (
 )
 
 type RunsListParams struct {
-	WorkspaceID string `query:"workspace_id" encore:"optional"`
-	Limit       string `query:"limit" encore:"optional"`
-	Owner       string `query:"owner" encore:"optional"`
+	Limit string `query:"limit" encore:"optional"`
+	Owner string `query:"owner" encore:"optional"`
 }
 
 type RunsListResponse struct {
@@ -38,20 +37,14 @@ func (s *Service) GetRuns(ctx context.Context, params *RunsListParams) (*RunsLis
 		}
 	}
 
-	workspace, err := s.resolveWorkspaceForUser(ctx, user, "")
+	scope, err := s.resolveUserForUser(ctx, user, personalOwnerRouteKey)
 	if err != nil {
 		return nil, err
-	}
-	if params != nil && strings.TrimSpace(params.WorkspaceID) != "" {
-		workspace, err = s.resolveWorkspaceForUser(ctx, user, params.WorkspaceID)
-		if err != nil {
-			return nil, err
-		}
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	tasks, err := listTasks(ctx, s.db, workspace.ID, limit)
+	tasks, err := listTasks(ctx, s.db, scope.ID, limit)
 	if err != nil {
 		runErrors.Add(1)
 		log.Printf("listTasks: %v", err)
@@ -73,7 +66,6 @@ func (s *Service) GetRuns(ctx context.Context, params *RunsListParams) (*RunsLis
 	runItems := make([]map[string]any, 0, len(tasks))
 	for _, task := range tasks {
 		run := taskToRunInfo(task)
-		run["workspaceId"] = workspace.ID
 		runItems = append(runItems, run)
 	}
 	tasksJSON, err := toJSONMapSlice(runItems)
@@ -89,9 +81,8 @@ func (s *Service) GetRuns(ctx context.Context, params *RunsListParams) (*RunsLis
 }
 
 type RunsCreateResponse struct {
-	WorkspaceID string  `json:"workspaceId"`
-	Task        JSONMap `json:"task"`
-	User        string  `json:"user"`
+	Task JSONMap `json:"task"`
+	User string  `json:"user"`
 }
 
 // CreateRun is a reserved endpoint for admin-triggered native tasks.
@@ -104,34 +95,31 @@ func (s *Service) CreateRun(ctx context.Context, req *RunRequest) (*RunsCreateRe
 		return nil, err
 	}
 	if !isAdminUser(s.cfg, user.Username) {
-		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden (use workspace run endpoints)").Err()
+		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden (use user run endpoints)").Err()
 	}
 	if req == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid payload").Err()
 	}
-	workspaceKey := ""
-	if req.WorkspaceID != nil {
-		workspaceKey = *req.WorkspaceID
+	scopeKey := personalOwnerRouteKey
+	if req.OwnerUsername != nil {
+		scopeKey = strings.TrimSpace(*req.OwnerUsername)
+		if scopeKey == "" {
+			scopeKey = personalOwnerRouteKey
+		}
 	}
-	if workspaceKey == "" {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("workspace_id is required").Err()
-	}
-	if _, err := s.resolveWorkspaceForUser(ctx, user, workspaceKey); err != nil {
+	if _, err := s.resolveUserForUser(ctx, user, scopeKey); err != nil {
 		return nil, err
 	}
 	return nil, errs.B().Code(errs.Unimplemented).Msg("direct run creation is not supported in native mode").Err()
 }
 
-type RunsOutputParams struct {
-	WorkspaceID string `query:"workspace_id" encore:"optional"`
-}
+type RunsOutputParams struct{}
 
 type RunsCancelResponse struct {
-	TaskID      int      `json:"task_id"`
-	WorkspaceID string   `json:"workspaceId"`
-	Status      string   `json:"status"`
-	Task        *JSONMap `json:"task,omitempty"`
-	User        string   `json:"user"`
+	TaskID int      `json:"task_id"`
+	Status string   `json:"status"`
+	Task   *JSONMap `json:"task,omitempty"`
+	User   string   `json:"user"`
 }
 
 // CancelRun cancels a queued or running task.
@@ -149,7 +137,7 @@ func (s *Service) CancelRun(ctx context.Context, id int, params *RunsOutputParam
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	// Load task first to determine workspace/deployment ownership.
+	// Load task first to determine scope/deployment ownership.
 	task, err := getTask(ctx, s.db, id)
 	if err != nil {
 		return nil, errs.B().Code(errs.NotFound).Msg("task not found").Err()
@@ -158,23 +146,12 @@ func (s *Service) CancelRun(ctx context.Context, id int, params *RunsOutputParam
 		return nil, errs.B().Code(errs.NotFound).Msg("task not found").Err()
 	}
 
-	// Resolve workspace access (also enforces user membership).
-	workspaceKey := ""
-	if params != nil {
-		workspaceKey = strings.TrimSpace(params.WorkspaceID)
-	}
-	workspace, err := s.resolveWorkspaceForUser(ctx, user, workspaceKey)
+	// Enforce task ownership within current user's accessible scope.
+	pc, err := s.ownerContextForUser(user, task.OwnerID)
 	if err != nil {
-		return nil, err
-	}
-	if workspace.ID != task.WorkspaceID {
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
 	// Viewers can see runs but shouldn't cancel them.
-	pc, err := s.workspaceContextForUser(user, workspace.ID)
-	if err != nil {
-		return nil, err
-	}
 	if pc.access == "viewer" {
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
@@ -200,17 +177,17 @@ func (s *Service) CancelRun(ctx context.Context, id int, params *RunsOutputParam
 	}
 	if task.DeploymentID.Valid {
 		finishedAt := time.Now().UTC()
-		if err := s.updateDeploymentStatus(ctx, task.WorkspaceID, task.DeploymentID.String, "canceled", &finishedAt); err != nil {
+		if err := s.updateDeploymentStatus(ctx, task.OwnerID, task.DeploymentID.String, "canceled", &finishedAt); err != nil {
 			log.Printf("cancel deployment status: %v", err)
 		}
 
 		// Kick the next queued run for this deployment to avoid "stuck queued" after cancel.
-		workspaceID := strings.TrimSpace(task.WorkspaceID)
+		ownerID := strings.TrimSpace(task.OwnerID)
 		deploymentID := strings.TrimSpace(task.DeploymentID.String)
-		if workspaceID != "" && deploymentID != "" {
-			if nextID, err := getOldestQueuedDeploymentTaskID(ctx, s.db, workspaceID, deploymentID); err == nil && nextID > 0 {
+		if ownerID != "" && deploymentID != "" {
+			if nextID, err := getOldestQueuedDeploymentTaskID(ctx, s.db, ownerID, deploymentID); err == nil && nextID > 0 {
 				ctxKick, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				s.enqueueTaskID(ctxKick, nextID, workspaceID, deploymentID, 0)
+				s.enqueueTaskID(ctxKick, nextID, ownerID, deploymentID, 0)
 				cancel()
 			}
 		}
@@ -218,16 +195,15 @@ func (s *Service) CancelRun(ctx context.Context, id int, params *RunsOutputParam
 
 	taskJSON, err := toJSONMap(taskToRunInfo(*task))
 	if err != nil {
-		return &RunsCancelResponse{TaskID: task.ID, WorkspaceID: workspace.ID, Status: "canceled", User: user.Username}, nil
+		return &RunsCancelResponse{TaskID: task.ID, Status: "canceled", User: user.Username}, nil
 	}
-	return &RunsCancelResponse{TaskID: task.ID, WorkspaceID: workspace.ID, Status: "canceled", Task: &taskJSON, User: user.Username}, nil
+	return &RunsCancelResponse{TaskID: task.ID, Status: "canceled", Task: &taskJSON, User: user.Username}, nil
 }
 
 type RunsOutputResponse struct {
-	TaskID      int       `json:"task_id"`
-	WorkspaceID string    `json:"workspaceId"`
-	Output      []JSONMap `json:"output"`
-	User        string    `json:"user"`
+	TaskID int       `json:"task_id"`
+	Output []JSONMap `json:"output"`
+	User   string    `json:"user"`
 }
 
 // GetRunOutput returns output for a specific native task.
@@ -242,13 +218,15 @@ func (s *Service) GetRunOutput(ctx context.Context, id int, params *RunsOutputPa
 	if id <= 0 {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid task id").Err()
 	}
-	workspaceKey := ""
-	if params != nil {
-		workspaceKey = strings.TrimSpace(params.WorkspaceID)
-	}
-	workspace, err := s.resolveWorkspaceForUser(ctx, user, workspaceKey)
+	task, err := getTask(ctx, s.db, id)
 	if err != nil {
-		return nil, err
+		return nil, errs.B().Code(errs.NotFound).Msg("task not found").Err()
+	}
+	if task == nil {
+		return nil, errs.B().Code(errs.NotFound).Msg("task not found").Err()
+	}
+	if _, err := s.ownerContextForUser(user, task.OwnerID); err != nil {
+		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
@@ -275,9 +253,8 @@ func (s *Service) GetRunOutput(ctx context.Context, id int, params *RunsOutputPa
 	}
 	_ = ctx
 	return &RunsOutputResponse{
-		TaskID:      id,
-		WorkspaceID: workspace.ID,
-		Output:      outputJSON,
-		User:        user.Username,
+		TaskID: id,
+		Output: outputJSON,
+		User:   user.Username,
 	}, nil
 }

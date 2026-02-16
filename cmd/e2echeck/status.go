@@ -333,7 +333,7 @@ func renderE2EStatusMarkdown(s e2eStatusFile) string {
 	if strings.TrimSpace(s.GeneratedAt) != "" {
 		lines = append(lines, fmt.Sprintf("Last updated: %s", s.GeneratedAt), "")
 	}
-	lines = append(lines, "Scope: baseline **deploy + SSH reachability + VXLAN overlay** for each onboarded Netlab device type (netlab-c9s → clabernetes + vrnetlab hybrid).", "")
+	lines = append(lines, "Coverage: baseline **deploy + SSH reachability + VXLAN overlay** for each onboarded Netlab device type (netlab-c9s -> clabernetes + vrnetlab hybrid).", "")
 	lines = append(lines, "Legend: ✅ pass · ❌ fail · ⏭ skipped · ❔ unknown", "")
 	lines = append(lines, "| Device type | Status | VXLAN | Updated | Notes |", "| --- | --- | --- | --- | --- |")
 

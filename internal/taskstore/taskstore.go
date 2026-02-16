@@ -21,7 +21,7 @@ type JSONMap = jsonmap.JSONMap
 
 type TaskRecord struct {
 	ID           int
-	WorkspaceID  string
+	OwnerID      string
 	DeploymentID sql.NullString
 	TaskType     string
 	Priority     int
@@ -60,7 +60,7 @@ const (
 
 func DefaultTaskPriority(taskType string) int {
 	switch strings.ToLower(strings.TrimSpace(taskType)) {
-	case "workspace.sync", "workspace_sync", "workspace-sync":
+	case "user.sync", "user_sync", "user-sync":
 		return PriorityBackground
 	case "cloud.checks", "cloud_checks", "cloud-checks":
 		return PriorityBackground
@@ -72,28 +72,28 @@ func DefaultTaskPriority(taskType string) int {
 func getJSONMapString(value JSONMap, key string) string { return jsonmap.GetString(value, key) }
 func getJSONMapInt(value JSONMap, key string) int       { return jsonmap.GetInt(value, key) }
 
-func taskDedupeLockKey(workspaceID string, deploymentID *string, taskType, dedupeKey string) int64 {
-	workspaceID = strings.TrimSpace(workspaceID)
+func taskDedupeLockKey(ownerID string, deploymentID *string, taskType, dedupeKey string) int64 {
+	ownerID = strings.TrimSpace(ownerID)
 	taskType = strings.TrimSpace(taskType)
 	dedupeKey = strings.TrimSpace(dedupeKey)
 	dep := ""
 	if deploymentID != nil {
 		dep = strings.TrimSpace(*deploymentID)
 	}
-	sum := sha256.Sum256(fmt.Appendf(nil, "%s:%s:%s:%s", workspaceID, dep, taskType, dedupeKey))
+	sum := sha256.Sum256(fmt.Appendf(nil, "%s:%s:%s:%s", ownerID, dep, taskType, dedupeKey))
 	u := binary.LittleEndian.Uint64(sum[:8])
 	return int64(u)
 }
 
-func CreateTask(ctx context.Context, db *sql.DB, workspaceID string, deploymentID *string, taskType string, message string, createdBy string, metadata JSONMap) (*TaskRecord, error) {
-	return createTaskWithActiveCheck(ctx, db, workspaceID, deploymentID, taskType, message, createdBy, metadata, false)
+func CreateTask(ctx context.Context, db *sql.DB, ownerID string, deploymentID *string, taskType string, message string, createdBy string, metadata JSONMap) (*TaskRecord, error) {
+	return createTaskWithActiveCheck(ctx, db, ownerID, deploymentID, taskType, message, createdBy, metadata, false)
 }
 
-func CreateTaskAllowActive(ctx context.Context, db *sql.DB, workspaceID string, deploymentID *string, taskType string, message string, createdBy string, metadata JSONMap) (*TaskRecord, error) {
-	return createTaskWithActiveCheck(ctx, db, workspaceID, deploymentID, taskType, message, createdBy, metadata, true)
+func CreateTaskAllowActive(ctx context.Context, db *sql.DB, ownerID string, deploymentID *string, taskType string, message string, createdBy string, metadata JSONMap) (*TaskRecord, error) {
+	return createTaskWithActiveCheck(ctx, db, ownerID, deploymentID, taskType, message, createdBy, metadata, true)
 }
 
-func createTaskWithActiveCheck(ctx context.Context, db *sql.DB, workspaceID string, deploymentID *string, taskType string, message string, createdBy string, metadata JSONMap, allowActive bool) (*TaskRecord, error) {
+func createTaskWithActiveCheck(ctx context.Context, db *sql.DB, ownerID string, deploymentID *string, taskType string, message string, createdBy string, metadata JSONMap, allowActive bool) (*TaskRecord, error) {
 	if db == nil {
 		return nil, errDBUnavailable
 	}
@@ -108,7 +108,7 @@ func createTaskWithActiveCheck(ctx context.Context, db *sql.DB, workspaceID stri
 
 	dedupeKey := strings.TrimSpace(getJSONMapString(metadata, "dedupeKey"))
 	if dedupeKey != "" {
-		lockKey := taskDedupeLockKey(workspaceID, deploymentID, taskType, dedupeKey)
+		lockKey := taskDedupeLockKey(ownerID, deploymentID, taskType, dedupeKey)
 		var lock *pglocks.AdvisoryLock
 		locked := false
 		for {
@@ -132,7 +132,7 @@ func createTaskWithActiveCheck(ctx context.Context, db *sql.DB, workspaceID stri
 			defer func() { _ = lock.Unlock(context.Background()) }()
 		}
 
-		rec, err := findActiveTaskByDedupeKey(ctx, db, workspaceID, deploymentID, taskType, dedupeKey)
+		rec, err := findActiveTaskByDedupeKey(ctx, db, ownerID, deploymentID, taskType, dedupeKey)
 		if err != nil {
 			return nil, err
 		}
@@ -149,7 +149,7 @@ func createTaskWithActiveCheck(ctx context.Context, db *sql.DB, workspaceID stri
 	if deploymentID != nil && *deploymentID != "" {
 		dep = sql.NullString{String: *deploymentID, Valid: true}
 
-		queued, err := CountQueuedDeploymentTasks(ctx, db, workspaceID, dep.String)
+		queued, err := CountQueuedDeploymentTasks(ctx, db, ownerID, dep.String)
 		if err != nil {
 			return nil, err
 		}
@@ -160,7 +160,7 @@ func createTaskWithActiveCheck(ctx context.Context, db *sql.DB, workspaceID stri
 
 		if !allowActive {
 			// This check is advisory; tasks can still queue behind an active run.
-			_, _ = HasActiveDeploymentTask(ctx, db, workspaceID, dep.String)
+			_, _ = HasActiveDeploymentTask(ctx, db, ownerID, dep.String)
 		}
 	}
 	var msg sql.NullString
@@ -168,7 +168,7 @@ func createTaskWithActiveCheck(ctx context.Context, db *sql.DB, workspaceID stri
 		msg = sql.NullString{String: message, Valid: true}
 	}
 	row := db.QueryRowContext(ctx, `INSERT INTO sf_tasks (
-  workspace_id,
+  owner_id,
   deployment_id,
   task_type,
   priority,
@@ -177,8 +177,8 @@ func createTaskWithActiveCheck(ctx context.Context, db *sql.DB, workspaceID stri
   metadata,
   created_by
 ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-RETURNING id, created_at`, workspaceID, dep, taskType, priority, "queued", msg, metaBytes, createdBy)
-	rec := &TaskRecord{WorkspaceID: workspaceID, DeploymentID: dep, TaskType: taskType, Priority: priority, Status: "queued", Message: msg, Metadata: metadata, CreatedBy: createdBy}
+RETURNING id, created_at`, ownerID, dep, taskType, priority, "queued", msg, metaBytes, createdBy)
+	rec := &TaskRecord{OwnerID: ownerID, DeploymentID: dep, TaskType: taskType, Priority: priority, Status: "queued", Message: msg, Metadata: metadata, CreatedBy: createdBy}
 	if err := row.Scan(&rec.ID, &rec.CreatedAt); err != nil {
 		return nil, err
 	}
@@ -190,46 +190,46 @@ RETURNING id, created_at`, workspaceID, dep, taskType, priority, "queued", msg, 
 	return rec, nil
 }
 
-func CountQueuedDeploymentTasks(ctx context.Context, db *sql.DB, workspaceID string, deploymentID string) (int, error) {
+func CountQueuedDeploymentTasks(ctx context.Context, db *sql.DB, ownerID string, deploymentID string) (int, error) {
 	if db == nil {
 		return 0, errDBUnavailable
 	}
 	var count int
 	err := db.QueryRowContext(ctx, `SELECT COUNT(*)
 FROM sf_tasks
-WHERE workspace_id=$1
+WHERE owner_id=$1
   AND deployment_id=$2
-  AND status='queued'`, workspaceID, deploymentID).Scan(&count)
+  AND status='queued'`, ownerID, deploymentID).Scan(&count)
 	if err != nil {
 		return 0, err
 	}
 	return count, nil
 }
 
-func HasActiveDeploymentTask(ctx context.Context, db *sql.DB, workspaceID string, deploymentID string) (bool, error) {
+func HasActiveDeploymentTask(ctx context.Context, db *sql.DB, ownerID string, deploymentID string) (bool, error) {
 	if db == nil {
 		return false, errDBUnavailable
 	}
 	var count int
 	err := db.QueryRowContext(ctx, `SELECT COUNT(*)
 FROM sf_tasks
-WHERE workspace_id=$1
+WHERE owner_id=$1
   AND deployment_id=$2
-  AND status IN ('queued','running')`, workspaceID, deploymentID).Scan(&count)
+  AND status IN ('queued','running')`, ownerID, deploymentID).Scan(&count)
 	if err != nil {
 		return false, err
 	}
 	return count > 0, nil
 }
 
-func findActiveTaskByDedupeKey(ctx context.Context, db *sql.DB, workspaceID string, deploymentID *string, taskType string, dedupeKey string) (*TaskRecord, error) {
+func findActiveTaskByDedupeKey(ctx context.Context, db *sql.DB, ownerID string, deploymentID *string, taskType string, dedupeKey string) (*TaskRecord, error) {
 	if db == nil {
 		return nil, errDBUnavailable
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	taskType = strings.TrimSpace(taskType)
 	dedupeKey = strings.TrimSpace(dedupeKey)
-	if workspaceID == "" || taskType == "" || dedupeKey == "" {
+	if ownerID == "" || taskType == "" || dedupeKey == "" {
 		return nil, nil
 	}
 
@@ -240,11 +240,11 @@ func findActiveTaskByDedupeKey(ctx context.Context, db *sql.DB, workspaceID stri
 
 	query := `SELECT id
 FROM sf_tasks
-WHERE workspace_id=$1
+WHERE owner_id=$1
   AND task_type=$2
   AND status IN ('queued','running')
   AND metadata->>'dedupeKey'=$3`
-	args := []any{workspaceID, taskType, dedupeKey}
+	args := []any{ownerID, taskType, dedupeKey}
 	if dep.Valid {
 		query += "\n  AND deployment_id=$4"
 		args = append(args, dep.String)
@@ -385,12 +385,12 @@ func GetTask(ctx context.Context, db *sql.DB, taskID int) (*TaskRecord, error) {
 	if db == nil {
 		return nil, errDBUnavailable
 	}
-	row := db.QueryRowContext(ctx, `SELECT id, workspace_id, deployment_id, task_type, priority, status, message, metadata, created_by, created_at, started_at, finished_at, error
+	row := db.QueryRowContext(ctx, `SELECT id, owner_id, deployment_id, task_type, priority, status, message, metadata, created_by, created_at, started_at, finished_at, error
 FROM sf_tasks
 WHERE id=$1`, taskID)
 	rec := TaskRecord{}
 	var metaBytes []byte
-	if err := row.Scan(&rec.ID, &rec.WorkspaceID, &rec.DeploymentID, &rec.TaskType, &rec.Priority, &rec.Status, &rec.Message, &metaBytes, &rec.CreatedBy, &rec.CreatedAt, &rec.StartedAt, &rec.FinishedAt, &rec.Error); err != nil {
+	if err := row.Scan(&rec.ID, &rec.OwnerID, &rec.DeploymentID, &rec.TaskType, &rec.Priority, &rec.Status, &rec.Message, &metaBytes, &rec.CreatedBy, &rec.CreatedAt, &rec.StartedAt, &rec.FinishedAt, &rec.Error); err != nil {
 		return nil, err
 	}
 	if len(metaBytes) > 0 {

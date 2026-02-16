@@ -21,9 +21,9 @@ type Deps struct {
 
 	Notify func(ctx context.Context, task *taskstore.TaskRecord, status string, errMsg string) error
 
-	UpdateDeploymentStatus func(ctx context.Context, workspaceID string, deploymentID string, status string, finishedAt time.Time) error
+	UpdateDeploymentStatus func(ctx context.Context, ownerID string, deploymentID string, status string, finishedAt time.Time) error
 
-	EnqueueNextDeploymentTask func(ctx context.Context, nextTaskID int, workspaceID string, deploymentID string)
+	EnqueueNextDeploymentTask func(ctx context.Context, nextTaskID int, ownerID string, deploymentID string)
 
 	OnStarted  func(task *taskstore.TaskRecord, startedAt time.Time)
 	OnFinished func(task *taskstore.TaskRecord, status string, startedAt time.Time)
@@ -69,7 +69,7 @@ func ProcessQueuedTask(ctx context.Context, db *sql.DB, taskID int, deps Deps, l
 			_ = deps.Notify(ctx, task, "canceled", "")
 		}
 		if task.DeploymentID.Valid && deps.UpdateDeploymentStatus != nil {
-			_ = deps.UpdateDeploymentStatus(ctx, task.WorkspaceID, task.DeploymentID.String, "canceled", time.Now())
+			_ = deps.UpdateDeploymentStatus(ctx, task.OwnerID, task.DeploymentID.String, "canceled", time.Now())
 		}
 		return nil
 	}
@@ -118,18 +118,18 @@ func ProcessQueuedTask(ctx context.Context, db *sql.DB, taskID int, deps Deps, l
 		_ = deps.Notify(ctx, task, status, errMsg)
 	}
 	if task.DeploymentID.Valid && deps.UpdateDeploymentStatus != nil {
-		_ = deps.UpdateDeploymentStatus(ctx, task.WorkspaceID, task.DeploymentID.String, status, time.Now())
+		_ = deps.UpdateDeploymentStatus(ctx, task.OwnerID, task.DeploymentID.String, status, time.Now())
 	}
 
 	// Kick the next queued task for this deployment. This reduces reliance on periodic
 	// reconciliation and avoids "stuck queued" after cancel/worker restarts.
 	if deps.EnqueueNextDeploymentTask != nil && task.DeploymentID.Valid {
-		workspaceID := strings.TrimSpace(task.WorkspaceID)
+		ownerID := strings.TrimSpace(task.OwnerID)
 		deploymentID := strings.TrimSpace(task.DeploymentID.String)
-		if workspaceID != "" && deploymentID != "" {
-			if nextID, err := taskstore.GetOldestQueuedDeploymentTaskID(ctx, db, workspaceID, deploymentID); err == nil && nextID > 0 {
+		if ownerID != "" && deploymentID != "" {
+			if nextID, err := taskstore.GetOldestQueuedDeploymentTaskID(ctx, db, ownerID, deploymentID); err == nil && nextID > 0 {
 				ctxKick, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				deps.EnqueueNextDeploymentTask(ctxKick, nextID, workspaceID, deploymentID)
+				deps.EnqueueNextDeploymentTask(ctxKick, nextID, ownerID, deploymentID)
 				cancel()
 			}
 		}

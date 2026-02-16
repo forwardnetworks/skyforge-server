@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -13,67 +12,64 @@ import (
 	"encore.dev/beta/errs"
 )
 
-var errWorkspaceNotFound = errors.New("workspace not found")
-var workspaceLegacyKeyWarned sync.Map
+var errOwnerNotFound = errors.New("user context not found")
+var ownerLegacyKeyWarned sync.Map
 
-func workspaceStrictModeEnabled() bool {
-	raw := strings.TrimSpace(os.Getenv("SKYFORGE_WORKSPACE_ROUTES_STRICT"))
-	return strings.EqualFold(raw, "true") || raw == "1" || strings.EqualFold(raw, "yes")
+func ownerStrictModeEnabled() bool {
+	return true
 }
 
-func trackWorkspaceRouteUsage(workspaceKey string) (legacy bool, normalized string) {
-	normalized = strings.TrimSpace(workspaceKey)
+func trackOwnerRouteUsage(ownerKey string) (legacy bool, normalized string) {
+	normalized = strings.TrimSpace(ownerKey)
 	if normalized == "" {
-		workspaceRouteUsageTotal.With(workspaceRouteUsageLabels{Mode: "personal_empty"}).Add(1)
+		userRouteUsageTotal.With(userRouteUsageLabels{Mode: "personal_empty"}).Add(1)
 		return false, "me"
 	}
-	if isPersonalWorkspaceKey(normalized) {
-		workspaceRouteUsageTotal.With(workspaceRouteUsageLabels{Mode: "personal_alias"}).Add(1)
+	if isPersonalOwnerKey(normalized) {
+		userRouteUsageTotal.With(userRouteUsageLabels{Mode: "personal_alias"}).Add(1)
 		return false, normalized
 	}
-	workspaceRouteUsageTotal.With(workspaceRouteUsageLabels{Mode: "legacy_key"}).Add(1)
+	userRouteUsageTotal.With(userRouteUsageLabels{Mode: "legacy_key"}).Add(1)
 	return true, normalized
 }
 
-func warnWorkspaceLegacyKeyOnce(workspaceKey string) {
-	key := strings.ToLower(strings.TrimSpace(workspaceKey))
+func warnOwnerLegacyKeyOnce(ownerKey string) {
+	key := strings.ToLower(strings.TrimSpace(ownerKey))
 	if key == "" {
 		return
 	}
-	if _, loaded := workspaceLegacyKeyWarned.LoadOrStore(key, struct{}{}); loaded {
+	if _, loaded := ownerLegacyKeyWarned.LoadOrStore(key, struct{}{}); loaded {
 		return
 	}
-	log.Printf("workspace route deprecation: legacy workspace key %q used; migrate to /api/user/workspace/*", workspaceKey)
+	log.Printf("legacy owner route key %q used; only personal per-user access is allowed", ownerKey)
 }
 
-func (s *Service) loadWorkspaceByKey(workspaceKey string) ([]SkyforgeWorkspace, int, SkyforgeWorkspace, error) {
-	workspaceKey = strings.TrimSpace(workspaceKey)
-	if workspaceKey == "" {
-		return nil, -1, SkyforgeWorkspace{}, errors.New("workspace id is required")
+func (s *Service) loadOwnerContextByKey(ownerKey string) ([]SkyforgeUserContext, int, SkyforgeUserContext, error) {
+	ownerKey = strings.TrimSpace(ownerKey)
+	if ownerKey == "" {
+		return nil, -1, SkyforgeUserContext{}, errors.New("owner username is required")
 	}
-	workspaces, err := s.workspaceStore.load()
+	scopes, err := s.scopeStore.load()
 	if err != nil {
-		return nil, -1, SkyforgeWorkspace{}, err
+		return nil, -1, SkyforgeUserContext{}, err
 	}
-	for i, w := range workspaces {
-		if w.ID == workspaceKey || w.Slug == workspaceKey {
-			return workspaces, i, w, nil
+	for i, w := range scopes {
+		if w.ID == ownerKey || w.Slug == ownerKey {
+			return scopes, i, w, nil
 		}
 	}
-	return workspaces, -1, SkyforgeWorkspace{}, errWorkspaceNotFound
+	return scopes, -1, SkyforgeUserContext{}, errOwnerNotFound
 }
 
-type workspaceContext struct {
-	workspaces   []SkyforgeWorkspace
-	idx          int
-	workspace    SkyforgeWorkspace
+type ownerContext struct {
+	context      SkyforgeUserContext
 	access       string
 	claims       *SessionClaims
 	userSettings *UserSettingsResponse
 }
 
-func isPersonalWorkspaceKey(workspaceKey string) bool {
-	key := strings.ToLower(strings.TrimSpace(workspaceKey))
+func isPersonalOwnerKey(scopeKey string) bool {
+	key := strings.ToLower(strings.TrimSpace(scopeKey))
 	return key == "me" || key == "self" || key == "personal"
 }
 
@@ -97,18 +93,17 @@ func authUserFromClaims(claims *SessionClaims, cfg Config) *AuthUser {
 	}
 }
 
-func (s *Service) resolveWorkspaceKeyForClaims(claims *SessionClaims, workspaceKey string) (string, error) {
-	legacy, normalized := trackWorkspaceRouteUsage(workspaceKey)
-	workspaceKey = normalized
+func (s *Service) resolveOwnerKeyForClaims(claims *SessionClaims, ownerKey string) (string, error) {
+	legacy, normalized := trackOwnerRouteUsage(ownerKey)
+	ownerKey = normalized
 	if legacy {
-		warnWorkspaceLegacyKeyOnce(workspaceKey)
-		if workspaceStrictModeEnabled() {
-			workspaceRouteRejectedTotal.With(workspaceRouteUsageLabels{Mode: "legacy_key"}).Add(1)
-			return "", errs.B().Code(errs.FailedPrecondition).Msg("workspace-scoped routes are deprecated; use /api/user/workspace/*").Err()
-		}
+		warnOwnerLegacyKeyOnce(ownerKey)
+		userRouteRejectedTotal.With(userRouteUsageLabels{Mode: "legacy_key"}).Add(1)
+		return "", errs.B().Code(errs.FailedPrecondition).Msg("only personal per-user access is supported").Err()
 	}
-	if !isPersonalWorkspaceKey(workspaceKey) {
-		return workspaceKey, nil
+	if !isPersonalOwnerKey(ownerKey) {
+		userRouteRejectedTotal.With(userRouteUsageLabels{Mode: "legacy_key"}).Add(1)
+		return "", errs.B().Code(errs.FailedPrecondition).Msg("only personal per-user access is supported").Err()
 	}
 	user := authUserFromClaims(claims, s.cfg)
 	if user == nil {
@@ -116,53 +111,53 @@ func (s *Service) resolveWorkspaceKeyForClaims(claims *SessionClaims, workspaceK
 	}
 	ctxEnsure, cancelEnsure := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancelEnsure()
-	def, err := s.ensureDefaultWorkspace(ctxEnsure, user)
+	def, err := s.ensureDefaultOwnerContext(ctxEnsure, user)
 	if err != nil {
-		return "", errs.B().Code(errs.Unavailable).Msg("failed to resolve personal scope").Err()
+		return "", errs.B().Code(errs.Unavailable).Msg("failed to resolve personal user context").Err()
 	}
 	if def == nil || strings.TrimSpace(def.ID) == "" {
-		return "", errs.B().Code(errs.NotFound).Msg("personal scope not found").Err()
+		return "", errs.B().Code(errs.NotFound).Msg("personal user context not found").Err()
 	}
 	return strings.TrimSpace(def.ID), nil
 }
 
-func (s *Service) workspaceContextForUser(user *AuthUser, workspaceKey string) (*workspaceContext, error) {
+func (s *Service) ownerContextForUser(user *AuthUser, ownerKey string) (*ownerContext, error) {
 	if user == nil {
 		return nil, errs.B().Code(errs.Unauthenticated).Msg("authentication required").Err()
 	}
-	legacy, normalized := trackWorkspaceRouteUsage(workspaceKey)
-	workspaceKey = normalized
+	legacy, normalized := trackOwnerRouteUsage(ownerKey)
+	ownerKey = normalized
 	if legacy {
-		warnWorkspaceLegacyKeyOnce(workspaceKey)
-		if workspaceStrictModeEnabled() {
-			workspaceRouteRejectedTotal.With(workspaceRouteUsageLabels{Mode: "legacy_key"}).Add(1)
-			return nil, errs.B().Code(errs.FailedPrecondition).Msg("workspace-scoped routes are deprecated; use /api/user/workspace/*").Err()
-		}
+		warnOwnerLegacyKeyOnce(ownerKey)
+		userRouteRejectedTotal.With(userRouteUsageLabels{Mode: "legacy_key"}).Add(1)
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("only personal per-user access is supported").Err()
+	}
+	if !isPersonalOwnerKey(ownerKey) {
+		userRouteRejectedTotal.With(userRouteUsageLabels{Mode: "legacy_key"}).Add(1)
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("only personal per-user access is supported").Err()
 	}
 	claims := claimsFromAuthUser(user)
-	if isPersonalWorkspaceKey(workspaceKey) {
-		ctxEnsure, cancelEnsure := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancelEnsure()
-		def, err := s.ensureDefaultWorkspace(ctxEnsure, user)
-		if err != nil {
-			return nil, errs.B().Code(errs.Unavailable).Msg("failed to resolve personal scope").Err()
-		}
-		if def == nil || strings.TrimSpace(def.ID) == "" {
-			return nil, errs.B().Code(errs.NotFound).Msg("personal scope not found").Err()
-		}
-		workspaceKey = def.ID
-	}
-	workspaces, idx, workspace, err := s.loadWorkspaceByKey(workspaceKey)
+	ctxEnsure, cancelEnsure := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelEnsure()
+	def, err := s.ensureDefaultOwnerContext(ctxEnsure, user)
 	if err != nil {
-		if errors.Is(err, errWorkspaceNotFound) {
-			return nil, errs.B().Code(errs.NotFound).Msg("workspace not found").Err()
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to resolve personal user context").Err()
+	}
+	if def == nil || strings.TrimSpace(def.ID) == "" {
+		return nil, errs.B().Code(errs.NotFound).Msg("personal user context not found").Err()
+	}
+	ownerKey = def.ID
+	_, _, scope, err := s.loadOwnerContextByKey(ownerKey)
+	if err != nil {
+		if errors.Is(err, errOwnerNotFound) {
+			return nil, errs.B().Code(errs.NotFound).Msg("user context not found").Err()
 		}
-		if err.Error() == "workspace id is required" {
+		if err.Error() == "owner username is required" {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 		}
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load workspaces").Err()
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load user contexts").Err()
 	}
-	access := workspaceAccessLevelForClaims(s.cfg, workspace, claims)
+	access := ownerAccessLevelForClaims(s.cfg, scope, claims)
 	if access == "none" {
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
@@ -187,10 +182,8 @@ func (s *Service) workspaceContextForUser(user *AuthUser, workspaceKey string) (
 			}
 		}
 	}
-	return &workspaceContext{
-		workspaces:   workspaces,
-		idx:          idx,
-		workspace:    workspace,
+	return &ownerContext{
+		context:      scope,
 		access:       access,
 		claims:       claims,
 		userSettings: userSettings,

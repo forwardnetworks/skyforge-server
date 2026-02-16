@@ -789,7 +789,7 @@ func (s *Service) ClearUserForwardCollector(ctx context.Context) (*UserForwardCo
 	if len(credIDs) > 0 {
 		// Best-effort: delete only the credential sets referenced by collector configs.
 		for _, id := range credIDs {
-			_, _ = tx.ExecContext(ctxReq, `DELETE FROM sf_credentials WHERE id=$1 AND provider='forward' AND owner_username=$2 AND workspace_id IS NULL`, strings.TrimSpace(id), user.Username)
+			_, _ = tx.ExecContext(ctxReq, `DELETE FROM sf_credentials WHERE id=$1 AND provider='forward' AND owner_username=$2 AND owner_username IS NULL`, strings.TrimSpace(id), user.Username)
 		}
 	}
 	if err := tx.Commit(); err != nil {

@@ -34,15 +34,13 @@ type DeploymentNodeInterface struct {
 	EdgeID    string `json:"edgeId,omitempty"`
 }
 
-// GetWorkspaceDeploymentNodeInterfaces returns interface stats (launcher container) for a clabernetes node.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/nodes/:node/interfaces
-func (s *Service) GetWorkspaceDeploymentNodeInterfaces(ctx context.Context, id, deploymentID, node string) (*DeploymentNodeInterfacesResponse, error) {
+// GetUserDeploymentNodeInterfaces returns interface stats (launcher container) for a clabernetes node.
+func (s *Service) GetUserDeploymentNodeInterfaces(ctx context.Context, id, deploymentID, node string) (*DeploymentNodeInterfacesResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +52,7 @@ func (s *Service) GetWorkspaceDeploymentNodeInterfaces(ctx context.Context, id, 
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("node is required").Err()
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+	dep, err := s.getUserDeployment(ctx, pc.context.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +67,7 @@ func (s *Service) GetWorkspaceDeploymentNodeInterfaces(ctx context.Context, id, 
 	k8sNamespace = strings.TrimSpace(k8sNamespace)
 	topologyName = strings.TrimSpace(topologyName)
 	if k8sNamespace == "" {
-		k8sNamespace = clabernetesWorkspaceNamespace(pc.workspace.Slug)
+		k8sNamespace = clabernetesOwnerNamespace(pc.context.Slug)
 	}
 	if topologyName == "" {
 		labName, _ := cfgAny["labName"].(string)

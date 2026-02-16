@@ -301,47 +301,60 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		cloudCredentialChecks = time.Duration(enc.CloudCheckIntervalMinutes) * time.Minute
 	}
 
-	workspacesCfg := skyforgecore.WorkspacesConfig{
-		DataDir:                strings.TrimSpace(enc.Workspaces.DataDir),
-		GiteaAPIURL:            strings.TrimRight(strings.TrimSpace(enc.Workspaces.GiteaAPIURL), "/"),
-		GiteaUsername:          strings.TrimSpace(enc.Workspaces.GiteaUsername),
+	scopesCfg := skyforgecore.UsersConfig{
+		DataDir:                strings.TrimSpace(enc.Scopes.DataDir),
+		GiteaAPIURL:            strings.TrimRight(strings.TrimSpace(enc.Scopes.GiteaAPIURL), "/"),
+		GiteaUsername:          strings.TrimSpace(enc.Scopes.GiteaUsername),
 		GiteaPassword:          strings.TrimSpace(sec.GiteaPassword),
-		GiteaRepoPrivate:       enc.Workspaces.GiteaRepoPrivate,
-		DeleteMode:             strings.TrimSpace(enc.Workspaces.DeleteMode),
+		GiteaRepoPrivate:       enc.Scopes.GiteaRepoPrivate,
+		DeleteMode:             strings.TrimSpace(enc.Scopes.DeleteMode),
 		ObjectStorageEndpoint:  strings.TrimRight(strings.TrimSpace(enc.ObjectStorage.Endpoint), "/"),
 		ObjectStorageUseSSL:    enc.ObjectStorage.UseSSL,
 		ObjectStorageAccessKey: strings.TrimSpace(sec.ObjectStorageAccessKey),
 		ObjectStorageSecretKey: strings.TrimSpace(sec.ObjectStorageSecretKey),
 	}
-	if strings.TrimSpace(workspacesCfg.DataDir) == "" {
-		workspacesCfg.DataDir = "/var/lib/skyforge"
+	if strings.TrimSpace(scopesCfg.DataDir) == "" {
+		if v := strings.TrimSpace(os.Getenv("SKYFORGE_USER_DATA_DIR")); v != "" {
+			scopesCfg.DataDir = v
+		} else if v := strings.TrimSpace(os.Getenv("SKYFORGE_SCOPES_DATA_DIR")); v != "" {
+			scopesCfg.DataDir = v
+		}
+	}
+	if strings.TrimSpace(scopesCfg.DataDir) == "" {
+		scopesCfg.DataDir = "/var/lib/skyforge"
 	}
 	// Back-compat + robustness: allow the older SKYFORGE_* env vars (injected by Helm configmaps)
 	// to fill gaps if ENCORE_CFG is missing or partially configured.
-	if strings.TrimSpace(workspacesCfg.GiteaAPIURL) == "" {
+	if strings.TrimSpace(scopesCfg.GiteaAPIURL) == "" {
 		if v := strings.TrimRight(strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_API_URL")), "/"); v != "" {
-			workspacesCfg.GiteaAPIURL = v
+			scopesCfg.GiteaAPIURL = v
 		} else if giteaBaseURL != "" {
-			workspacesCfg.GiteaAPIURL = giteaBaseURL + "/api/v1"
+			scopesCfg.GiteaAPIURL = giteaBaseURL + "/api/v1"
 		}
 	}
-	if strings.TrimSpace(workspacesCfg.GiteaUsername) == "" {
+	if strings.TrimSpace(scopesCfg.GiteaUsername) == "" {
 		if v := strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_USERNAME")); v != "" {
-			workspacesCfg.GiteaUsername = v
+			scopesCfg.GiteaUsername = v
 		} else {
-			workspacesCfg.GiteaUsername = "skyforge"
+			scopesCfg.GiteaUsername = "skyforge"
 		}
 	}
-	if strings.TrimSpace(workspacesCfg.GiteaPassword) == "" {
+	if strings.TrimSpace(scopesCfg.GiteaPassword) == "" {
 		if v := strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_PASSWORD")); v != "" {
-			workspacesCfg.GiteaPassword = v
+			scopesCfg.GiteaPassword = v
 		}
 	}
-	if strings.TrimSpace(workspacesCfg.DeleteMode) == "" {
-		workspacesCfg.DeleteMode = "live"
+	if strings.TrimSpace(scopesCfg.DeleteMode) == "" {
+		if v := strings.TrimSpace(os.Getenv("SKYFORGE_USER_DELETE_MODE")); v != "" {
+			scopesCfg.DeleteMode = v
+		} else if v := strings.TrimSpace(os.Getenv("SKYFORGE_SCOPE_DELETE_MODE")); v != "" {
+			scopesCfg.DeleteMode = v
+		} else {
+			scopesCfg.DeleteMode = "live"
+		}
 	}
-	if strings.TrimSpace(workspacesCfg.ObjectStorageEndpoint) == "" {
-		workspacesCfg.ObjectStorageEndpoint = "minio:9000"
+	if strings.TrimSpace(scopesCfg.ObjectStorageEndpoint) == "" {
+		scopesCfg.ObjectStorageEndpoint = "minio:9000"
 	}
 
 	terraformBinaryPath := strings.TrimSpace(enc.Terraform.BinaryPath)
@@ -416,7 +429,7 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		LDAP:                      ldapCfg,
 		LDAPLookupBindDN:          ldapLookupBindDN,
 		LDAPLookupBindPassword:    ldapLookupBindPassword,
-		Workspaces:                workspacesCfg,
+		Scopes:                    scopesCfg,
 		TerraformBinaryPath:       terraformBinaryPath,
 		TerraformVersion:          terraformVersion,
 		TerraformURL:              terraformURL,
@@ -478,47 +491,47 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		StateRoot:  strings.TrimSpace(enc.Netlab.StateRoot),
 	}
 
-	workspacesCfg := skyforgecore.WorkspacesConfig{
-		DataDir:                strings.TrimSpace(enc.Workspaces.DataDir),
-		GiteaAPIURL:            strings.TrimRight(strings.TrimSpace(enc.Workspaces.GiteaAPIURL), "/"),
-		GiteaUsername:          strings.TrimSpace(enc.Workspaces.GiteaUsername),
+	scopesCfg := skyforgecore.UsersConfig{
+		DataDir:                strings.TrimSpace(enc.Scopes.DataDir),
+		GiteaAPIURL:            strings.TrimRight(strings.TrimSpace(enc.Scopes.GiteaAPIURL), "/"),
+		GiteaUsername:          strings.TrimSpace(enc.Scopes.GiteaUsername),
 		GiteaPassword:          strings.TrimSpace(sec.GiteaPassword),
-		GiteaRepoPrivate:       enc.Workspaces.GiteaRepoPrivate,
-		DeleteMode:             strings.TrimSpace(enc.Workspaces.DeleteMode),
+		GiteaRepoPrivate:       enc.Scopes.GiteaRepoPrivate,
+		DeleteMode:             strings.TrimSpace(enc.Scopes.DeleteMode),
 		ObjectStorageEndpoint:  strings.TrimRight(strings.TrimSpace(enc.ObjectStorage.Endpoint), "/"),
 		ObjectStorageUseSSL:    enc.ObjectStorage.UseSSL,
 		ObjectStorageAccessKey: strings.TrimSpace(sec.ObjectStorageAccessKey),
 		ObjectStorageSecretKey: strings.TrimSpace(sec.ObjectStorageSecretKey),
 	}
-	if strings.TrimSpace(workspacesCfg.DataDir) == "" {
-		workspacesCfg.DataDir = "/var/lib/skyforge"
+	if strings.TrimSpace(scopesCfg.DataDir) == "" {
+		scopesCfg.DataDir = "/var/lib/skyforge"
 	}
 	// Back-compat + robustness: allow the SKYFORGE_* env vars (injected by Helm configmaps)
 	// to fill gaps if ENCORE_CFG is missing or partially configured.
-	if strings.TrimSpace(workspacesCfg.GiteaAPIURL) == "" {
+	if strings.TrimSpace(scopesCfg.GiteaAPIURL) == "" {
 		if v := strings.TrimRight(strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_API_URL")), "/"); v != "" {
-			workspacesCfg.GiteaAPIURL = v
+			scopesCfg.GiteaAPIURL = v
 		} else if base := strings.TrimRight(strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_URL")), "/"); base != "" {
-			workspacesCfg.GiteaAPIURL = base + "/api/v1"
+			scopesCfg.GiteaAPIURL = base + "/api/v1"
 		}
 	}
-	if strings.TrimSpace(workspacesCfg.GiteaUsername) == "" {
+	if strings.TrimSpace(scopesCfg.GiteaUsername) == "" {
 		if v := strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_USERNAME")); v != "" {
-			workspacesCfg.GiteaUsername = v
+			scopesCfg.GiteaUsername = v
 		} else {
-			workspacesCfg.GiteaUsername = "skyforge"
+			scopesCfg.GiteaUsername = "skyforge"
 		}
 	}
-	if strings.TrimSpace(workspacesCfg.GiteaPassword) == "" {
+	if strings.TrimSpace(scopesCfg.GiteaPassword) == "" {
 		if v := strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_PASSWORD")); v != "" {
-			workspacesCfg.GiteaPassword = v
+			scopesCfg.GiteaPassword = v
 		}
 	}
-	if strings.TrimSpace(workspacesCfg.DeleteMode) == "" {
-		workspacesCfg.DeleteMode = "live"
+	if strings.TrimSpace(scopesCfg.DeleteMode) == "" {
+		scopesCfg.DeleteMode = "live"
 	}
-	if strings.TrimSpace(workspacesCfg.ObjectStorageEndpoint) == "" {
-		workspacesCfg.ObjectStorageEndpoint = "minio:9000"
+	if strings.TrimSpace(scopesCfg.ObjectStorageEndpoint) == "" {
+		scopesCfg.ObjectStorageEndpoint = "minio:9000"
 	}
 
 	terraformBinaryPath := strings.TrimSpace(enc.Terraform.BinaryPath)
@@ -622,7 +635,7 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		TaskWorkerEnabled:                        enc.TaskWorkerEnabled,
 		SessionSecret:                            sec.SessionSecret,
 		Netlab:                                   netlabCfg,
-		Workspaces:                               workspacesCfg,
+		Scopes:                                   scopesCfg,
 		TerraformBinaryPath:                      terraformBinaryPath,
 		TerraformVersion:                         terraformVersion,
 		TerraformURL:                             terraformURL,

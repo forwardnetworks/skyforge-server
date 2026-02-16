@@ -11,31 +11,18 @@ import (
 	"encore.dev/beta/errs"
 )
 
-type WorkspaceVariableGroup struct {
-	ID        int               `json:"id"`
-	Name      string            `json:"name"`
-	Variables map[string]string `json:"variables"`
+type UserOwnerVariableGroupListResponse struct {
+	OwnerUsername string               `json:"ownerUsername"`
+	Groups        []*UserVariableGroup `json:"groups"`
 }
 
-type WorkspaceVariableGroupListResponse struct {
-	WorkspaceID string                    `json:"workspaceId"`
-	Groups      []*WorkspaceVariableGroup `json:"groups"`
-}
-
-type WorkspaceVariableGroupUpsertRequest struct {
-	Name      string            `json:"name"`
-	Variables map[string]string `json:"variables"`
-}
-
-// ListWorkspaceVariableGroups lists variable groups for a workspace.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/variable-groups
-func (s *Service) ListWorkspaceVariableGroups(ctx context.Context, id string) (*WorkspaceVariableGroupListResponse, error) {
+// ListOwnerVariableGroups lists variable groups for a user context.
+func (s *Service) ListOwnerVariableGroups(ctx context.Context, id string) (*UserOwnerVariableGroupListResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -44,14 +31,14 @@ func (s *Service) ListWorkspaceVariableGroups(ctx context.Context, id string) (*
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, variables FROM sf_workspace_variable_groups WHERE workspace_id=$1 ORDER BY name`, pc.workspace.ID)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, variables FROM sf_owner_variable_groups WHERE owner_username=$1 ORDER BY name`, pc.context.ID)
 	if err != nil {
 		log.Printf("variable groups list: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to query variable groups").Err()
 	}
 	defer rows.Close()
 
-	groups := []*WorkspaceVariableGroup{}
+	groups := []*UserVariableGroup{}
 	for rows.Next() {
 		var (
 			idVal int
@@ -65,24 +52,22 @@ func (s *Service) ListWorkspaceVariableGroups(ctx context.Context, id string) (*
 		if len(raw) > 0 {
 			_ = json.Unmarshal(raw, &vars)
 		}
-		groups = append(groups, &WorkspaceVariableGroup{ID: idVal, Name: name, Variables: vars})
+		groups = append(groups, &UserVariableGroup{ID: idVal, Name: name, Variables: vars})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to query variable groups").Err()
 	}
 	sort.Slice(groups, func(i, j int) bool { return strings.ToLower(groups[i].Name) < strings.ToLower(groups[j].Name) })
-	return &WorkspaceVariableGroupListResponse{WorkspaceID: pc.workspace.ID, Groups: groups}, nil
+	return &UserOwnerVariableGroupListResponse{OwnerUsername: pc.context.ID, Groups: groups}, nil
 }
 
-// CreateWorkspaceVariableGroup creates a variable group for a workspace.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/variable-groups
-func (s *Service) CreateWorkspaceVariableGroup(ctx context.Context, id string, req *WorkspaceVariableGroupUpsertRequest) (*WorkspaceVariableGroup, error) {
+// CreateOwnerVariableGroup creates a variable group for a user context.
+func (s *Service) CreateOwnerVariableGroup(ctx context.Context, id string, req *UserVariableGroupUpsertRequest) (*UserVariableGroup, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -106,27 +91,25 @@ func (s *Service) CreateWorkspaceVariableGroup(ctx context.Context, id string, r
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	var groupID int
-	err = s.db.QueryRowContext(ctx, `INSERT INTO sf_workspace_variable_groups (workspace_id, name, variables)
+	err = s.db.QueryRowContext(ctx, `INSERT INTO sf_owner_variable_groups (owner_username, name, variables)
 VALUES ($1,$2,$3)
-RETURNING id`, pc.workspace.ID, strings.TrimSpace(req.Name), payload).Scan(&groupID)
+RETURNING id`, pc.context.ID, strings.TrimSpace(req.Name), payload).Scan(&groupID)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("variable group already exists").Err()
 		}
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to create variable group").Err()
 	}
-	return &WorkspaceVariableGroup{ID: groupID, Name: strings.TrimSpace(req.Name), Variables: vars}, nil
+	return &UserVariableGroup{ID: groupID, Name: strings.TrimSpace(req.Name), Variables: vars}, nil
 }
 
-// UpdateWorkspaceVariableGroup updates a variable group for a workspace.
-//
-//encore:api auth method=PUT path=/api/workspaces/:id/variable-groups/:groupID
-func (s *Service) UpdateWorkspaceVariableGroup(ctx context.Context, id string, groupID int, req *WorkspaceVariableGroupUpsertRequest) (*WorkspaceVariableGroup, error) {
+// UpdateOwnerVariableGroup updates a variable group for a user context.
+func (s *Service) UpdateOwnerVariableGroup(ctx context.Context, id string, groupID int, req *UserVariableGroupUpsertRequest) (*UserVariableGroup, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -149,25 +132,23 @@ func (s *Service) UpdateWorkspaceVariableGroup(ctx context.Context, id string, g
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	res, err := s.db.ExecContext(ctx, `UPDATE sf_workspace_variable_groups SET name=$1, variables=$2, updated_at=now() WHERE id=$3 AND workspace_id=$4`, strings.TrimSpace(req.Name), payload, groupID, pc.workspace.ID)
+	res, err := s.db.ExecContext(ctx, `UPDATE sf_owner_variable_groups SET name=$1, variables=$2, updated_at=now() WHERE id=$3 AND owner_username=$4`, strings.TrimSpace(req.Name), payload, groupID, pc.context.ID)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to update variable group").Err()
 	}
 	if count, _ := res.RowsAffected(); count == 0 {
 		return nil, errs.B().Code(errs.NotFound).Msg("variable group not found").Err()
 	}
-	return &WorkspaceVariableGroup{ID: groupID, Name: strings.TrimSpace(req.Name), Variables: vars}, nil
+	return &UserVariableGroup{ID: groupID, Name: strings.TrimSpace(req.Name), Variables: vars}, nil
 }
 
-// DeleteWorkspaceVariableGroup deletes a variable group for a workspace.
-//
-//encore:api auth method=DELETE path=/api/workspaces/:id/variable-groups/:groupID
-func (s *Service) DeleteWorkspaceVariableGroup(ctx context.Context, id string, groupID int) (*WorkspaceVariableGroupListResponse, error) {
+// DeleteOwnerVariableGroup deletes a variable group for a user context.
+func (s *Service) DeleteOwnerVariableGroup(ctx context.Context, id string, groupID int) (*UserOwnerVariableGroupListResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -179,12 +160,12 @@ func (s *Service) DeleteWorkspaceVariableGroup(ctx context.Context, id string, g
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	res, err := s.db.ExecContext(ctx, `DELETE FROM sf_workspace_variable_groups WHERE id=$1 AND workspace_id=$2`, groupID, pc.workspace.ID)
+	res, err := s.db.ExecContext(ctx, `DELETE FROM sf_owner_variable_groups WHERE id=$1 AND owner_username=$2`, groupID, pc.context.ID)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to delete variable group").Err()
 	}
 	if count, _ := res.RowsAffected(); count == 0 {
 		return nil, errs.B().Code(errs.NotFound).Msg("variable group not found").Err()
 	}
-	return s.ListWorkspaceVariableGroups(ctx, id)
+	return s.ListOwnerVariableGroups(ctx, id)
 }

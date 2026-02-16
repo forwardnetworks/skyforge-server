@@ -22,7 +22,7 @@ Non-goal: alerting / continuous monitoring / ticket automation (demo can be manu
 ## Shared Backend Contract
 
 Canonical endpoint for Studio runs:
-- `POST /api/workspaces/:id/forward-networks/:networkRef/assurance/studio/evaluate`
+- `POST /api/fwd/:networkRef/assurance/studio/evaluate`
 
 Behavior:
 - Always uses a single Forward `paths-bulk` run per evaluation request.
@@ -69,4 +69,3 @@ Deep-link only:
 Acceptance for demo:
 - Show violations list with a short reason.
 - Provide “Open full Policy Reports” CTA for deeper posture/segmentation review.
-

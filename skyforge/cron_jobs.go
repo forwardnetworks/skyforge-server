@@ -83,12 +83,12 @@ func CronEnqueueCapacityRollups(ctx context.Context) error {
 	_ = cfg // reserved for future knobs (rate limits, enable flags, etc.)
 
 	type depRow struct {
-		workspaceID      string
+		ownerID          string
 		deploymentID     string
 		createdBy        string
 		forwardNetworkID string
 	}
-	rows, err := db.QueryContext(ctxReq, `SELECT workspace_id, id::text, created_by, COALESCE(config->>'forwardNetworkId','')
+	rows, err := db.QueryContext(ctxReq, `SELECT owner_username, id::text, created_by, COALESCE(config->>'forwardNetworkId','')
 FROM sf_deployments
 WHERE COALESCE(config->>'forwardEnabled','false') IN ('true','1','yes')
   AND COALESCE(config->>'forwardNetworkId','') <> ''
@@ -102,24 +102,24 @@ LIMIT 500`)
 	enqueued := 0
 	for rows.Next() {
 		var r depRow
-		if scanErr := rows.Scan(&r.workspaceID, &r.deploymentID, &r.createdBy, &r.forwardNetworkID); scanErr != nil {
+		if scanErr := rows.Scan(&r.ownerID, &r.deploymentID, &r.createdBy, &r.forwardNetworkID); scanErr != nil {
 			continue
 		}
-		r.workspaceID = strings.TrimSpace(r.workspaceID)
+		r.ownerID = strings.TrimSpace(r.ownerID)
 		r.deploymentID = strings.TrimSpace(r.deploymentID)
 		r.createdBy = strings.TrimSpace(r.createdBy)
-		if r.workspaceID == "" || r.deploymentID == "" || r.createdBy == "" {
+		if r.ownerID == "" || r.deploymentID == "" || r.createdBy == "" {
 			continue
 		}
 
 		meta, _ := toJSONMap(map[string]any{"deploymentId": r.deploymentID, "cron": true})
 		msg := fmt.Sprintf("Capacity rollup (cron)")
-		task, err := createTaskAllowActive(ctx, db, r.workspaceID, &r.deploymentID, "capacity-rollup", msg, r.createdBy, meta)
+		task, err := createTaskAllowActive(ctx, db, r.ownerID, &r.deploymentID, "capacity-rollup", msg, r.createdBy, meta)
 		if err != nil || task == nil || task.ID <= 0 {
 			continue
 		}
 
-		key := fmt.Sprintf("%s:%s", r.workspaceID, r.deploymentID)
+		key := fmt.Sprintf("%s:%s", r.ownerID, r.deploymentID)
 		if _, err := taskQueueBackgroundTopic.Publish(ctx, &taskqueue.TaskEnqueuedEvent{TaskID: task.ID, Key: key}); err != nil {
 			_ = taskstore.AppendTaskEvent(context.Background(), db, task.ID, "task.enqueue.publish_failed", map[string]any{
 				"topic": "background",
@@ -134,12 +134,12 @@ LIMIT 500`)
 	//
 	// This allows capacity monitoring to be driven directly by Forward Network ID.
 	type netRow struct {
-		workspaceID       string
+		ownerID           string
 		forwardNetworkID  string
 		collectorConfigID string
 		createdBy         string
 	}
-	nrows, err := db.QueryContext(ctxReq, `SELECT workspace_id, forward_network_id, COALESCE(collector_config_id,''), created_by
+	nrows, err := db.QueryContext(ctxReq, `SELECT owner_username, forward_network_id, COALESCE(collector_config_id,''), created_by
 FROM sf_policy_report_forward_networks
 ORDER BY updated_at DESC
 LIMIT 500`)
@@ -147,14 +147,14 @@ LIMIT 500`)
 		defer nrows.Close()
 		for nrows.Next() {
 			var r netRow
-			if scanErr := nrows.Scan(&r.workspaceID, &r.forwardNetworkID, &r.collectorConfigID, &r.createdBy); scanErr != nil {
+			if scanErr := nrows.Scan(&r.ownerID, &r.forwardNetworkID, &r.collectorConfigID, &r.createdBy); scanErr != nil {
 				continue
 			}
-			r.workspaceID = strings.TrimSpace(r.workspaceID)
+			r.ownerID = strings.TrimSpace(r.ownerID)
 			r.forwardNetworkID = strings.TrimSpace(r.forwardNetworkID)
 			r.collectorConfigID = strings.TrimSpace(r.collectorConfigID)
 			r.createdBy = strings.TrimSpace(r.createdBy)
-			if r.workspaceID == "" || r.forwardNetworkID == "" || r.createdBy == "" {
+			if r.ownerID == "" || r.forwardNetworkID == "" || r.createdBy == "" {
 				continue
 			}
 
@@ -165,12 +165,12 @@ LIMIT 500`)
 			}
 			meta, _ := toJSONMap(metaAny)
 			msg := fmt.Sprintf("Capacity rollup (cron)")
-			task, err := createTaskAllowActive(ctx, db, r.workspaceID, nil, "capacity-rollup-forward-network", msg, r.createdBy, meta)
+			task, err := createTaskAllowActive(ctx, db, r.ownerID, nil, "capacity-rollup-forward-network", msg, r.createdBy, meta)
 			if err != nil || task == nil || task.ID <= 0 {
 				continue
 			}
 
-			key := fmt.Sprintf("%s:%s", r.workspaceID, r.forwardNetworkID)
+			key := fmt.Sprintf("%s:%s", r.ownerID, r.forwardNetworkID)
 			if _, err := taskQueueBackgroundTopic.Publish(ctx, &taskqueue.TaskEnqueuedEvent{TaskID: task.ID, Key: key}); err != nil {
 				_ = taskstore.AppendTaskEvent(context.Background(), db, task.ID, "task.enqueue.publish_failed", map[string]any{
 					"topic": "background",

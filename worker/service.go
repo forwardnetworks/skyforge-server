@@ -90,13 +90,13 @@ func init() {
 				})
 				return err
 			},
-			UpdateDeploymentStatus: func(ctx context.Context, workspaceID string, deploymentID string, status string, finishedAt time.Time) error {
-				return taskstore.UpdateDeploymentStatus(ctx, stdlib, workspaceID, deploymentID, status, &finishedAt)
+			UpdateDeploymentStatus: func(ctx context.Context, ownerID string, deploymentID string, status string, finishedAt time.Time) error {
+				return taskstore.UpdateDeploymentStatus(ctx, stdlib, ownerID, deploymentID, status, &finishedAt)
 			},
-			EnqueueNextDeploymentTask: func(ctx context.Context, nextTaskID int, workspaceID string, deploymentID string) {
-				key := strings.TrimSpace(workspaceID)
+			EnqueueNextDeploymentTask: func(ctx context.Context, nextTaskID int, ownerID string, deploymentID string) {
+				key := strings.TrimSpace(ownerID)
 				if strings.TrimSpace(deploymentID) != "" {
-					key = fmt.Sprintf("%s:%s", strings.TrimSpace(workspaceID), strings.TrimSpace(deploymentID))
+					key = fmt.Sprintf("%s:%s", strings.TrimSpace(ownerID), strings.TrimSpace(deploymentID))
 				}
 				ev := &taskqueue.TaskEnqueuedEvent{TaskID: nextTaskID, Key: key}
 				priority := 0
@@ -123,7 +123,7 @@ func runQueuedTaskFallbackLoop() {
 	//
 	// The loop is intentionally conservative:
 	// - only considers tasks that have been queued for at least minAge
-	// - at most one queued task per (workspace, deployment) key
+	// - at most one queued task per (scope, deployment) key
 	// - low concurrency so we don't stampede the DB / task locks
 	if role := strings.ToLower(strings.TrimSpace(os.Getenv("SKYFORGE_ROLE"))); role != "" && role != "worker" {
 		return

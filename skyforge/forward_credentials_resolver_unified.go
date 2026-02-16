@@ -19,11 +19,11 @@ type forwardCredResolveOpts struct {
 	CollectorConfigID string
 }
 
-func resolveForwardCredentialsFor(ctx context.Context, db *sql.DB, sessionSecret string, workspaceID, username, forwardNetworkID string, opts forwardCredResolveOpts) (*forwardCredentials, error) {
+func resolveForwardCredentialsFor(ctx context.Context, db *sql.DB, sessionSecret string, ownerID, username, forwardNetworkID string, opts forwardCredResolveOpts) (*forwardCredentials, error) {
 	if db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	username = strings.ToLower(strings.TrimSpace(username))
 	forwardNetworkID = strings.TrimSpace(forwardNetworkID)
 	opts.ExplicitCredentialID = strings.TrimSpace(opts.ExplicitCredentialID)
@@ -48,8 +48,8 @@ func resolveForwardCredentialsFor(ctx context.Context, db *sql.DB, sessionSecret
 				return &cfg, nil
 			}
 		}
-		if workspaceID != "" {
-			if set, err := getWorkspaceForwardCredentialSet(ctxReq, db, box, workspaceID, opts.ExplicitCredentialID); err == nil && set != nil {
+		if ownerID != "" {
+			if set, err := getUserForwardCredentialSet(ctxReq, db, box, ownerID, opts.ExplicitCredentialID); err == nil && set != nil {
 				cfg := set.toForwardClientCreds()
 				if strings.TrimSpace(cfg.BaseURL) == "" {
 					cfg.BaseURL = defaultForwardBaseURL
@@ -64,10 +64,10 @@ func resolveForwardCredentialsFor(ctx context.Context, db *sql.DB, sessionSecret
 	}
 
 	// 2) Policy Reports per-user per-network credentials (if configured).
-	if workspaceID != "" && username != "" && forwardNetworkID != "" {
+	if ownerID != "" && username != "" && forwardNetworkID != "" {
 		ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
-		if pr, err := getPolicyReportForwardCreds(ctxReq, db, box, workspaceID, username, forwardNetworkID); err == nil && pr != nil {
+		if pr, err := getPolicyReportForwardCreds(ctxReq, db, box, ownerID, username, forwardNetworkID); err == nil && pr != nil {
 			cfg := forwardCredentials{
 				BaseURL:       pr.BaseURL,
 				SkipTLSVerify: pr.SkipTLSVerify,
@@ -111,13 +111,13 @@ func resolveForwardCredentialsFor(ctx context.Context, db *sql.DB, sessionSecret
 		}
 	}
 
-	// 5) Workspace-level Forward credentials.
-	if workspaceID != "" {
+	// 5) Scope-level Forward credentials.
+	if ownerID != "" {
 		ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
-		cfg, err := getWorkspaceForwardCredentials(ctxReq, db, box, workspaceID)
+		cfg, err := getOwnerForwardCredentials(ctxReq, db, box, ownerID)
 		if err != nil {
-			log.Printf("forward credentials resolution: workspace lookup failed for workspace=%s: %v", workspaceID, err)
+			log.Printf("forward credentials resolution: user-context lookup failed for owner=%s: %v", ownerID, err)
 			resolutionErr = err
 		}
 		if cfg != nil {
@@ -134,7 +134,7 @@ func resolveForwardCredentialsFor(ctx context.Context, db *sql.DB, sessionSecret
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward credentials").Err()
 	}
 
-	return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward is not configured for this user/network or workspace").Err()
+	return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward is not configured for this user/network or user context").Err()
 }
 
 func forwardConfigForUser(ctx context.Context, db *sql.DB, sessionSecret string, username string) (*forwardCredentials, error) {

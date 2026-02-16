@@ -4,7 +4,7 @@ import "time"
 
 type PolicyReportZone struct {
 	ID               string    `json:"id"`
-	WorkspaceID      string    `json:"workspaceId"`
+	OwnerUsername    string    `json:"ownerUsername"`
 	ForwardNetworkID string    `json:"forwardNetworkId"`
 	Name             string    `json:"name"`
 	Description      string    `json:"description,omitempty"`

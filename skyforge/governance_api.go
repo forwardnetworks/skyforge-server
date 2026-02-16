@@ -13,7 +13,7 @@ import (
 type GovernanceSummary struct {
 	ResourceCount     int                     `json:"resourceCount"`
 	ActiveResources   int                     `json:"activeResources"`
-	WorkspacesTracked int                     `json:"workspacesTracked"`
+	UsersTracked      int                     `json:"usersTracked"`
 	CostLast30Days    float64                 `json:"costLast30Days"`
 	CostCurrency      string                  `json:"costCurrency"`
 	LastCostPeriodEnd string                  `json:"lastCostPeriodEnd,omitempty"`
@@ -29,8 +29,9 @@ type ProviderCostBreakdown struct {
 
 type GovernanceResource struct {
 	ID            string          `json:"id"`
-	WorkspaceID   string          `json:"workspaceId,omitempty"`
-	WorkspaceName string          `json:"workspaceName,omitempty"`
+	OwnerUsername string          `json:"ownerUsername,omitempty"`
+	UserLabel     string          `json:"userLabel,omitempty"`
+	UserName      string          `json:"-"` // legacy internal field
 	Provider      string          `json:"provider"`
 	ResourceID    string          `json:"resourceId"`
 	ResourceType  string          `json:"resourceType"`
@@ -48,8 +49,9 @@ type GovernanceResource struct {
 
 type GovernanceCostSnapshot struct {
 	ID            string          `json:"id"`
-	WorkspaceID   string          `json:"workspaceId,omitempty"`
-	WorkspaceName string          `json:"workspaceName,omitempty"`
+	OwnerUsername string          `json:"ownerUsername,omitempty"`
+	UserLabel     string          `json:"userLabel,omitempty"`
+	UserName      string          `json:"-"` // legacy internal field
 	ResourceID    string          `json:"resourceId,omitempty"`
 	Provider      string          `json:"provider"`
 	PeriodStart   string          `json:"periodStart"`
@@ -63,11 +65,11 @@ type GovernanceCostSnapshot struct {
 
 type GovernanceUsageSnapshot struct {
 	ID            string          `json:"id"`
-	WorkspaceID   string          `json:"workspaceId,omitempty"`
-	WorkspaceName string          `json:"workspaceName,omitempty"`
+	UserOwnerID   string          `json:"-"` // legacy internal field
+	UserName      string          `json:"-"` // legacy internal field
 	Provider      string          `json:"provider"`
-	ScopeType     string          `json:"scopeType"`
-	ScopeID       string          `json:"scopeId,omitempty"`
+	UserType      string          `json:"userType,omitempty"`
+	OwnerUsername string          `json:"ownerUsername,omitempty"`
 	Metric        string          `json:"metric"`
 	Value         float64         `json:"value"`
 	Unit          string          `json:"unit,omitempty"`
@@ -82,18 +84,18 @@ type GovernanceResourceIngestRequest struct {
 }
 
 type GovernanceResourceInput struct {
-	WorkspaceID  string            `json:"workspaceId,omitempty"`
-	Provider     string            `json:"provider"`
-	ResourceID   string            `json:"resourceId"`
-	ResourceType string            `json:"resourceType"`
-	Name         string            `json:"name,omitempty"`
-	Region       string            `json:"region,omitempty"`
-	AccountID    string            `json:"accountId,omitempty"`
-	Owner        string            `json:"owner,omitempty"`
-	Status       string            `json:"status,omitempty"`
-	EventType    string            `json:"eventType,omitempty"`
-	Tags         map[string]string `json:"tags,omitempty"`
-	Metadata     map[string]string `json:"metadata,omitempty"`
+	OwnerUsername string            `json:"ownerUsername,omitempty"`
+	Provider      string            `json:"provider"`
+	ResourceID    string            `json:"resourceId"`
+	ResourceType  string            `json:"resourceType"`
+	Name          string            `json:"name,omitempty"`
+	Region        string            `json:"region,omitempty"`
+	AccountID     string            `json:"accountId,omitempty"`
+	Owner         string            `json:"owner,omitempty"`
+	Status        string            `json:"status,omitempty"`
+	EventType     string            `json:"eventType,omitempty"`
+	Tags          map[string]string `json:"tags,omitempty"`
+	Metadata      map[string]string `json:"metadata,omitempty"`
 }
 
 type GovernanceCostIngestRequest struct {
@@ -101,15 +103,15 @@ type GovernanceCostIngestRequest struct {
 }
 
 type GovernanceCostInput struct {
-	WorkspaceID string            `json:"workspaceId,omitempty"`
-	ResourceID  string            `json:"resourceId,omitempty"`
-	Provider    string            `json:"provider"`
-	PeriodStart string            `json:"periodStart"`
-	PeriodEnd   string            `json:"periodEnd"`
-	Amount      float64           `json:"amount"`
-	Currency    string            `json:"currency,omitempty"`
-	Source      string            `json:"source,omitempty"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
+	OwnerUsername string            `json:"ownerUsername,omitempty"`
+	ResourceID    string            `json:"resourceId,omitempty"`
+	Provider      string            `json:"provider"`
+	PeriodStart   string            `json:"periodStart"`
+	PeriodEnd     string            `json:"periodEnd"`
+	Amount        float64           `json:"amount"`
+	Currency      string            `json:"currency,omitempty"`
+	Source        string            `json:"source,omitempty"`
+	Metadata      map[string]string `json:"metadata,omitempty"`
 }
 
 type GovernanceUsageIngestRequest struct {
@@ -117,37 +119,37 @@ type GovernanceUsageIngestRequest struct {
 }
 
 type GovernanceUsageInput struct {
-	WorkspaceID string            `json:"workspaceId,omitempty"`
-	Provider    string            `json:"provider"`
-	ScopeType   string            `json:"scopeType"`
-	ScopeID     string            `json:"scopeId,omitempty"`
-	Metric      string            `json:"metric"`
-	Value       float64           `json:"value"`
-	Unit        string            `json:"unit,omitempty"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
+	OwnerContextID string            `json:"ownerContextId,omitempty"`
+	Provider       string            `json:"provider"`
+	UserType       string            `json:"userType"`
+	OwnerUsername  string            `json:"ownerUsername,omitempty"`
+	Metric         string            `json:"metric"`
+	Value          float64           `json:"value"`
+	Unit           string            `json:"unit,omitempty"`
+	Metadata       map[string]string `json:"metadata,omitempty"`
 }
 
 type GovernanceResourceQuery struct {
-	WorkspaceID string `query:"workspace_id" encore:"optional"`
-	Provider    string `query:"provider" encore:"optional"`
-	Status      string `query:"status" encore:"optional"`
-	Owner       string `query:"owner" encore:"optional"`
-	Type        string `query:"type" encore:"optional"`
-	Query       string `query:"q" encore:"optional"`
-	Limit       int    `query:"limit" encore:"optional"`
+	OwnerUsername string `query:"owner_username" encore:"optional"`
+	Provider      string `query:"provider" encore:"optional"`
+	Status        string `query:"status" encore:"optional"`
+	Owner         string `query:"owner" encore:"optional"`
+	Type          string `query:"type" encore:"optional"`
+	Query         string `query:"q" encore:"optional"`
+	Limit         int    `query:"limit" encore:"optional"`
 }
 
 type GovernanceCostQuery struct {
-	WorkspaceID string `query:"workspace_id" encore:"optional"`
-	Provider    string `query:"provider" encore:"optional"`
-	Limit       int    `query:"limit" encore:"optional"`
+	OwnerUsername string `query:"owner_username" encore:"optional"`
+	Provider      string `query:"provider" encore:"optional"`
+	Limit         int    `query:"limit" encore:"optional"`
 }
 
 type GovernanceUsageQuery struct {
-	WorkspaceID string `query:"workspace_id" encore:"optional"`
-	Provider    string `query:"provider" encore:"optional"`
-	Metric      string `query:"metric" encore:"optional"`
-	Limit       int    `query:"limit" encore:"optional"`
+	OwnerUsername string `query:"owner_username" encore:"optional"`
+	Provider      string `query:"provider" encore:"optional"`
+	Metric        string `query:"metric" encore:"optional"`
+	Limit         int    `query:"limit" encore:"optional"`
 }
 
 type GovernanceResourcesResponse struct {
@@ -179,6 +181,49 @@ func requireAdmin() (*AuthUser, error) {
 	return user, nil
 }
 
+func normalizeGovernanceSummary(summary *GovernanceSummary) *GovernanceSummary {
+	if summary == nil {
+		return nil
+	}
+	return summary
+}
+
+func normalizeGovernanceResources(resources []GovernanceResource) []GovernanceResource {
+	for i := range resources {
+		if strings.TrimSpace(resources[i].UserLabel) == "" {
+			if u := strings.TrimSpace(resources[i].OwnerUsername); u != "" {
+				resources[i].UserLabel = u
+			} else {
+				resources[i].UserLabel = strings.TrimSpace(resources[i].UserName)
+			}
+		}
+	}
+	return resources
+}
+
+func normalizeGovernanceCosts(costs []GovernanceCostSnapshot) []GovernanceCostSnapshot {
+	for i := range costs {
+		if strings.TrimSpace(costs[i].UserLabel) == "" {
+			if u := strings.TrimSpace(costs[i].OwnerUsername); u != "" {
+				costs[i].UserLabel = u
+			} else {
+				costs[i].UserLabel = strings.TrimSpace(costs[i].UserName)
+			}
+		}
+	}
+	return costs
+}
+
+func normalizeGovernanceUsage(usage []GovernanceUsageSnapshot) []GovernanceUsageSnapshot {
+	for i := range usage {
+		if strings.TrimSpace(usage[i].UserType) == "" {
+			usage[i].UserType = strings.TrimSpace(usage[i].UserType)
+		}
+		usage[i].UserType = usage[i].UserType
+	}
+	return usage
+}
+
 // GetGovernanceSummary returns governance summary metrics (admin only).
 //
 //encore:api auth method=GET path=/api/admin/governance/summary tag:admin
@@ -196,14 +241,14 @@ func (s *Service) GetGovernanceSummary(ctx context.Context) (*GovernanceSummary,
 		return &GovernanceSummary{
 			ResourceCount:     0,
 			ActiveResources:   0,
-			WorkspacesTracked: 0,
+			UsersTracked:      0,
 			CostLast30Days:    0,
 			CostCurrency:      "USD",
 			LastCostPeriodEnd: "",
 			ProviderBreakdown: nil,
 		}, nil
 	}
-	return summary, nil
+	return normalizeGovernanceSummary(summary), nil
 }
 
 // ListGovernanceResources lists tracked resources (admin only).
@@ -224,7 +269,7 @@ func (s *Service) ListGovernanceResources(ctx context.Context, params *Governanc
 		rlog.Warn("governance resources load failed", "error", err)
 		return &GovernanceResourcesResponse{Resources: []GovernanceResource{}}, nil
 	}
-	return &GovernanceResourcesResponse{Resources: resources}, nil
+	return &GovernanceResourcesResponse{Resources: normalizeGovernanceResources(resources)}, nil
 }
 
 // ListGovernanceCosts lists cost snapshots (admin only).
@@ -245,7 +290,7 @@ func (s *Service) ListGovernanceCosts(ctx context.Context, params *GovernanceCos
 		rlog.Warn("governance costs load failed", "error", err)
 		return &GovernanceCostResponse{Costs: []GovernanceCostSnapshot{}}, nil
 	}
-	return &GovernanceCostResponse{Costs: costs}, nil
+	return &GovernanceCostResponse{Costs: normalizeGovernanceCosts(costs)}, nil
 }
 
 // ListGovernanceUsage lists usage snapshots (admin only).
@@ -266,7 +311,7 @@ func (s *Service) ListGovernanceUsage(ctx context.Context, params *GovernanceUsa
 		rlog.Warn("governance usage load failed", "error", err)
 		return &GovernanceUsageResponse{Usage: []GovernanceUsageSnapshot{}}, nil
 	}
-	return &GovernanceUsageResponse{Usage: usage}, nil
+	return &GovernanceUsageResponse{Usage: normalizeGovernanceUsage(usage)}, nil
 }
 
 // IngestGovernanceResources ingests resource inventory (admin only).
@@ -310,7 +355,7 @@ func (s *Service) IngestGovernanceResources(ctx context.Context, params *Governa
 	})
 	writeAuditEvent(ctx, s.db, user.Username, user.IsAdmin, "", "governance.resources.ingest", "", string(details))
 
-	return &GovernanceResourcesResponse{Resources: resources}, nil
+	return &GovernanceResourcesResponse{Resources: normalizeGovernanceResources(resources)}, nil
 }
 
 // IngestGovernanceCosts ingests cost snapshots (admin only).
@@ -340,7 +385,7 @@ func (s *Service) IngestGovernanceCosts(ctx context.Context, params *GovernanceC
 		"count": len(costs),
 	})
 	writeAuditEvent(ctx, s.db, user.Username, user.IsAdmin, "", "governance.costs.ingest", "", string(details))
-	return &GovernanceCostResponse{Costs: costs}, nil
+	return &GovernanceCostResponse{Costs: normalizeGovernanceCosts(costs)}, nil
 }
 
 // IngestGovernanceUsage ingests usage snapshots (admin only).
@@ -370,7 +415,7 @@ func (s *Service) IngestGovernanceUsage(ctx context.Context, params *GovernanceU
 		"count": len(usage),
 	})
 	writeAuditEvent(ctx, s.db, user.Username, user.IsAdmin, "", "governance.usage.ingest", "", string(details))
-	return &GovernanceUsageResponse{Usage: usage}, nil
+	return &GovernanceUsageResponse{Usage: normalizeGovernanceUsage(usage)}, nil
 }
 
 // SyncGovernanceSources refreshes inventory from known sources (admin only).

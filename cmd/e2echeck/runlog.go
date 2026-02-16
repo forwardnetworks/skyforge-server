@@ -18,12 +18,12 @@ type e2eRunLogger struct {
 }
 
 type e2eRunLogEntry struct {
-	At          string `json:"at"`
-	BaseURL     string `json:"baseUrl"`
-	Workspace   string `json:"workspace"`
-	WorkspaceID string `json:"workspaceId"`
-	Test        string `json:"test"`
-	Kind        string `json:"kind"`
+	At      string `json:"at"`
+	BaseURL string `json:"baseUrl"`
+	Owner   string `json:"owner,omitempty"`
+	OwnerID string `json:"ownerId,omitempty"`
+	Test    string `json:"test"`
+	Kind    string `json:"kind"`
 
 	Device     string `json:"device,omitempty"`
 	Template   string `json:"template,omitempty"`

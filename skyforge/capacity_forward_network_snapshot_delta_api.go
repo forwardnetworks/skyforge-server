@@ -55,7 +55,7 @@ type CapacityBgpNeighborDeltaRow struct {
 }
 
 type ForwardNetworkCapacitySnapshotDeltaResponse struct {
-	WorkspaceID      string `json:"workspaceId"`
+	OwnerUsername    string `json:"ownerUsername"`
 	NetworkRef       string `json:"networkRef"`
 	ForwardNetworkID string `json:"forwardNetworkId"`
 
@@ -70,17 +70,15 @@ type ForwardNetworkCapacitySnapshotDeltaResponse struct {
 	InterfaceDelta []CapacityInterfaceDeltaRow `json:"interfaceDelta,omitempty"`
 }
 
-// GetWorkspaceForwardNetworkCapacitySnapshotDelta compares the last two processed snapshot inventories.
+// GetUserForwardNetworkCapacitySnapshotDelta compares the last two processed snapshot inventories.
 //
 // This is a lightweight "changes tab" view: route scale + BGP scale deltas, plus basic inventory drift.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/forward-networks/:networkRef/capacity/snapshot-delta
-func (s *Service) GetWorkspaceForwardNetworkCapacitySnapshotDelta(ctx context.Context, id, networkRef string) (*ForwardNetworkCapacitySnapshotDeltaResponse, error) {
+func (s *Service) GetUserForwardNetworkCapacitySnapshotDelta(ctx context.Context, id, networkRef string) (*ForwardNetworkCapacitySnapshotDeltaResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -88,18 +86,18 @@ func (s *Service) GetWorkspaceForwardNetworkCapacitySnapshotDelta(ctx context.Co
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.context.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
 
-	latestSID, prevSID, err := loadLatestTwoCapacitySnapshotIDs(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID)
+	latestSID, prevSID, err := loadLatestTwoCapacitySnapshotIDs(ctx, s.db, pc.context.ID, net.ForwardNetworkID)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load snapshot ids").Err()
 	}
 
 	resp := &ForwardNetworkCapacitySnapshotDeltaResponse{
-		WorkspaceID:      pc.workspace.ID,
+		OwnerUsername:    pc.context.ID,
 		NetworkRef:       net.ID,
 		ForwardNetworkID: net.ForwardNetworkID,
 		LatestSnapshotID: latestSID,
@@ -113,32 +111,32 @@ func (s *Service) GetWorkspaceForwardNetworkCapacitySnapshotDelta(ctx context.Co
 		return resp, nil
 	}
 
-	latestRoutes, _ := loadCapacityRouteScaleSnapshot(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID, latestSID)
-	prevRoutes, _ := loadCapacityRouteScaleSnapshot(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID, prevSID)
+	latestRoutes, _ := loadCapacityRouteScaleSnapshot(ctx, s.db, pc.context.ID, net.ForwardNetworkID, latestSID)
+	prevRoutes, _ := loadCapacityRouteScaleSnapshot(ctx, s.db, pc.context.ID, net.ForwardNetworkID, prevSID)
 	resp.RouteDelta = diffRouteScale(prevRoutes, latestRoutes)
 
-	latestBgp, _ := loadCapacityBgpNeighborsSnapshot(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID, latestSID)
-	prevBgp, _ := loadCapacityBgpNeighborsSnapshot(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID, prevSID)
+	latestBgp, _ := loadCapacityBgpNeighborsSnapshot(ctx, s.db, pc.context.ID, net.ForwardNetworkID, latestSID)
+	prevBgp, _ := loadCapacityBgpNeighborsSnapshot(ctx, s.db, pc.context.ID, net.ForwardNetworkID, prevSID)
 	resp.BgpDelta = diffBgpScale(prevBgp, latestBgp)
 
-	latestDevices, _ := loadCapacityDevicesSnapshot(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID, latestSID)
-	prevDevices, _ := loadCapacityDevicesSnapshot(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID, prevSID)
+	latestDevices, _ := loadCapacityDevicesSnapshot(ctx, s.db, pc.context.ID, net.ForwardNetworkID, latestSID)
+	prevDevices, _ := loadCapacityDevicesSnapshot(ctx, s.db, pc.context.ID, net.ForwardNetworkID, prevSID)
 	resp.DeviceDelta = diffDevices(prevDevices, latestDevices)
 
-	latestIfaces, _ := loadCapacityInterfacesSnapshot(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID, latestSID)
-	prevIfaces, _ := loadCapacityInterfacesSnapshot(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID, prevSID)
+	latestIfaces, _ := loadCapacityInterfacesSnapshot(ctx, s.db, pc.context.ID, net.ForwardNetworkID, latestSID)
+	prevIfaces, _ := loadCapacityInterfacesSnapshot(ctx, s.db, pc.context.ID, net.ForwardNetworkID, prevSID)
 	resp.InterfaceDelta = diffInterfaces(prevIfaces, latestIfaces)
 
 	return resp, nil
 }
 
-func loadLatestTwoCapacitySnapshotIDs(ctx context.Context, db *sql.DB, workspaceID, forwardNetworkID string) (latestSID string, prevSID string, err error) {
+func loadLatestTwoCapacitySnapshotIDs(ctx context.Context, db *sql.DB, ownerID, forwardNetworkID string) (latestSID string, prevSID string, err error) {
 	if db == nil {
 		return "", "", fmt.Errorf("db unavailable")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	forwardNetworkID = strings.TrimSpace(forwardNetworkID)
-	if workspaceID == "" || forwardNetworkID == "" {
+	if ownerID == "" || forwardNetworkID == "" {
 		return "", "", fmt.Errorf("invalid identifiers")
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -146,11 +144,11 @@ func loadLatestTwoCapacitySnapshotIDs(ctx context.Context, db *sql.DB, workspace
 
 	rows, err := db.QueryContext(ctxReq, `SELECT snapshot_id, MAX(created_at) AS as_of
 FROM sf_capacity_nqe_cache
-WHERE workspace_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL
+WHERE owner_username=$1 AND forward_network_id=$2 AND deployment_id IS NULL
   AND query_id='capacity-route-scale.nqe' AND snapshot_id <> ''
 GROUP BY snapshot_id
 ORDER BY as_of DESC
-LIMIT 2`, workspaceID, forwardNetworkID)
+LIMIT 2`, ownerID, forwardNetworkID)
 	if err != nil {
 		return "", "", err
 	}
@@ -177,15 +175,15 @@ LIMIT 2`, workspaceID, forwardNetworkID)
 	return latestSID, prevSID, nil
 }
 
-func loadCapacityNQESnapshotPayload(ctx context.Context, db *sql.DB, workspaceID, forwardNetworkID, queryID, snapshotID string) (payload []byte, err error) {
+func loadCapacityNQESnapshotPayload(ctx context.Context, db *sql.DB, ownerID, forwardNetworkID, queryID, snapshotID string) (payload []byte, err error) {
 	if db == nil {
 		return nil, fmt.Errorf("db unavailable")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	forwardNetworkID = strings.TrimSpace(forwardNetworkID)
 	queryID = strings.TrimSpace(queryID)
 	snapshotID = strings.TrimSpace(snapshotID)
-	if workspaceID == "" || forwardNetworkID == "" || queryID == "" || snapshotID == "" {
+	if ownerID == "" || forwardNetworkID == "" || queryID == "" || snapshotID == "" {
 		return nil, fmt.Errorf("invalid identifiers")
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -194,9 +192,9 @@ func loadCapacityNQESnapshotPayload(ctx context.Context, db *sql.DB, workspaceID
 	var b []byte
 	if err := db.QueryRowContext(ctxReq, `SELECT payload
 FROM sf_capacity_nqe_cache
-WHERE workspace_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL AND query_id=$3 AND snapshot_id=$4
+WHERE owner_username=$1 AND forward_network_id=$2 AND deployment_id IS NULL AND query_id=$3 AND snapshot_id=$4
 ORDER BY created_at DESC
-LIMIT 1`, workspaceID, forwardNetworkID, queryID, snapshotID).Scan(&b); err != nil {
+LIMIT 1`, ownerID, forwardNetworkID, queryID, snapshotID).Scan(&b); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
@@ -205,8 +203,8 @@ LIMIT 1`, workspaceID, forwardNetworkID, queryID, snapshotID).Scan(&b); err != n
 	return b, nil
 }
 
-func loadCapacityRouteScaleSnapshot(ctx context.Context, db *sql.DB, workspaceID, forwardNetworkID, snapshotID string) ([]CapacityRouteScaleRow, error) {
-	b, err := loadCapacityNQESnapshotPayload(ctx, db, workspaceID, forwardNetworkID, "capacity-route-scale.nqe", snapshotID)
+func loadCapacityRouteScaleSnapshot(ctx context.Context, db *sql.DB, ownerID, forwardNetworkID, snapshotID string) ([]CapacityRouteScaleRow, error) {
+	b, err := loadCapacityNQESnapshotPayload(ctx, db, ownerID, forwardNetworkID, "capacity-route-scale.nqe", snapshotID)
 	if err != nil || len(b) == 0 {
 		return []CapacityRouteScaleRow{}, err
 	}
@@ -217,8 +215,8 @@ func loadCapacityRouteScaleSnapshot(ctx context.Context, db *sql.DB, workspaceID
 	return out, nil
 }
 
-func loadCapacityBgpNeighborsSnapshot(ctx context.Context, db *sql.DB, workspaceID, forwardNetworkID, snapshotID string) ([]CapacityBgpNeighborRow, error) {
-	b, err := loadCapacityNQESnapshotPayload(ctx, db, workspaceID, forwardNetworkID, "capacity-bgp-neighbors.nqe", snapshotID)
+func loadCapacityBgpNeighborsSnapshot(ctx context.Context, db *sql.DB, ownerID, forwardNetworkID, snapshotID string) ([]CapacityBgpNeighborRow, error) {
+	b, err := loadCapacityNQESnapshotPayload(ctx, db, ownerID, forwardNetworkID, "capacity-bgp-neighbors.nqe", snapshotID)
 	if err != nil || len(b) == 0 {
 		return []CapacityBgpNeighborRow{}, err
 	}
@@ -229,8 +227,8 @@ func loadCapacityBgpNeighborsSnapshot(ctx context.Context, db *sql.DB, workspace
 	return out, nil
 }
 
-func loadCapacityDevicesSnapshot(ctx context.Context, db *sql.DB, workspaceID, forwardNetworkID, snapshotID string) ([]CapacityDeviceInventoryRow, error) {
-	b, err := loadCapacityNQESnapshotPayload(ctx, db, workspaceID, forwardNetworkID, "capacity-devices.nqe", snapshotID)
+func loadCapacityDevicesSnapshot(ctx context.Context, db *sql.DB, ownerID, forwardNetworkID, snapshotID string) ([]CapacityDeviceInventoryRow, error) {
+	b, err := loadCapacityNQESnapshotPayload(ctx, db, ownerID, forwardNetworkID, "capacity-devices.nqe", snapshotID)
 	if err != nil || len(b) == 0 {
 		return []CapacityDeviceInventoryRow{}, err
 	}
@@ -241,8 +239,8 @@ func loadCapacityDevicesSnapshot(ctx context.Context, db *sql.DB, workspaceID, f
 	return out, nil
 }
 
-func loadCapacityInterfacesSnapshot(ctx context.Context, db *sql.DB, workspaceID, forwardNetworkID, snapshotID string) ([]CapacityInterfaceInventoryRow, error) {
-	b, err := loadCapacityNQESnapshotPayload(ctx, db, workspaceID, forwardNetworkID, "capacity-interfaces.nqe", snapshotID)
+func loadCapacityInterfacesSnapshot(ctx context.Context, db *sql.DB, ownerID, forwardNetworkID, snapshotID string) ([]CapacityInterfaceInventoryRow, error) {
+	b, err := loadCapacityNQESnapshotPayload(ctx, db, ownerID, forwardNetworkID, "capacity-interfaces.nqe", snapshotID)
 	if err != nil || len(b) == 0 {
 		return []CapacityInterfaceInventoryRow{}, err
 	}

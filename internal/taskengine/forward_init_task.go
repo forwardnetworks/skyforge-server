@@ -24,7 +24,7 @@ func (e *Engine) dispatchForwardInitTask(ctx context.Context, task *taskstore.Ta
 	var specIn forwardInitTaskSpec
 	_ = decodeTaskSpec(task, &specIn)
 
-	ws, err := e.loadWorkspaceByKey(ctx, task.WorkspaceID)
+	ws, err := e.loadOwnerProfileByKey(ctx, task.OwnerID)
 	if err != nil {
 		return err
 	}
@@ -32,8 +32,8 @@ func (e *Engine) dispatchForwardInitTask(ctx context.Context, task *taskstore.Ta
 	if username == "" {
 		username = ws.primaryOwner()
 	}
-	pc := &workspaceContext{
-		workspace: *ws,
+	pc := &ownerContext{
+		owner: *ws,
 		claims: SessionClaims{
 			Username: username,
 		},
@@ -52,19 +52,19 @@ func (e *Engine) dispatchForwardInitTask(ctx context.Context, task *taskstore.Ta
 	})
 }
 
-func (e *Engine) runForwardInitTask(ctx context.Context, pc *workspaceContext, deploymentID string, log Logger) error {
+func (e *Engine) runForwardInitTask(ctx context.Context, pc *ownerContext, deploymentID string, log Logger) error {
 	if e == nil || e.db == nil {
 		return fmt.Errorf("engine unavailable")
 	}
 	if pc == nil {
-		return fmt.Errorf("workspace context unavailable")
+		return fmt.Errorf("owner context unavailable")
 	}
 	deploymentID = strings.TrimSpace(deploymentID)
 	if deploymentID == "" {
 		return fmt.Errorf("deployment id is required")
 	}
 
-	dep, err := e.loadDeployment(ctx, pc.workspace.ID, deploymentID)
+	dep, err := e.loadDeployment(ctx, pc.owner.ID, deploymentID)
 	if err != nil {
 		return err
 	}
@@ -76,7 +76,7 @@ func (e *Engine) runForwardInitTask(ctx context.Context, pc *workspaceContext, d
 	if err != nil {
 		return err
 	}
-	if err := e.updateDeploymentConfig(ctx, pc.workspace.ID, dep.ID, cfgAny); err != nil {
+	if err := e.updateDeploymentConfig(ctx, pc.owner.ID, dep.ID, cfgAny); err != nil {
 		return err
 	}
 	if log != nil {

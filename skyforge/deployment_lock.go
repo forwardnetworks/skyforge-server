@@ -7,12 +7,12 @@ import (
 	"encore.app/internal/pglocks"
 )
 
-func deploymentAdvisoryLockKey(workspaceID, deploymentID string) int64 {
-	return pglocks.DeploymentAdvisoryLockKey(workspaceID, deploymentID)
+func deploymentAdvisoryLockKey(ownerID, deploymentID string) int64 {
+	return pglocks.DeploymentAdvisoryLockKey(ownerID, deploymentID)
 }
 
-func workspaceAdvisoryLockKey(workspaceID string) int64 {
-	return pglocks.WorkspaceAdvisoryLockKey(workspaceID)
+func ownerAdvisoryLockKey(ownerID string) int64 {
+	return pglocks.UserAdvisoryLockKey(ownerID)
 }
 
 func pgTryAdvisoryLock(ctx context.Context, db *sql.DB, key int64) (*pglocks.AdvisoryLock, bool, error) {

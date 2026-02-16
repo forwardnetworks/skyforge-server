@@ -10,35 +10,33 @@ import (
 	"encore.dev/beta/errs"
 )
 
-type WorkspaceNetlabTemplateRequest struct {
+type UserNetlabTemplateRequest struct {
 	Dir      string `query:"dir" encore:"optional"`
-	Source   string `query:"source" encore:"optional"`   // workspace (default), blueprints, external, custom
+	Source   string `query:"source" encore:"optional"`   // user (default), blueprints, external, custom
 	Repo     string `query:"repo" encore:"optional"`     // external/custom selector (id or repo ref)
 	Template string `query:"template" encore:"optional"` // repo-relative file within Dir (may include subdirs)
 }
 
-type WorkspaceNetlabTemplateResponse struct {
-	WorkspaceID string `json:"workspaceId"`
-	Source      string `json:"source"`
-	Repo        string `json:"repo,omitempty"`
-	Branch      string `json:"branch,omitempty"`
-	Dir         string `json:"dir"`
-	Template    string `json:"template"`
-	Path        string `json:"path"`
-	YAML        string `json:"yaml"`
+type UserNetlabTemplateResponse struct {
+	OwnerUsername string `json:"ownerUsername"`
+	Source        string `json:"source"`
+	Repo          string `json:"repo,omitempty"`
+	Branch        string `json:"branch,omitempty"`
+	Dir           string `json:"dir"`
+	Template      string `json:"template"`
+	Path          string `json:"path"`
+	YAML          string `json:"yaml"`
 }
 
-// GetWorkspaceNetlabTemplate reads a netlab YAML template from a workspace/blueprints/external repo.
+// GetUserNetlabTemplate reads a netlab YAML template from a user/blueprints/external repo.
 //
 // This powers "View template" in the deployment creation flow.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/netlab/template
-func (s *Service) GetWorkspaceNetlabTemplate(ctx context.Context, id string, req *WorkspaceNetlabTemplateRequest) (*WorkspaceNetlabTemplateResponse, error) {
+func (s *Service) GetUserNetlabTemplate(ctx context.Context, id string, req *UserNetlabTemplateRequest) (*UserNetlabTemplateResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -46,10 +44,7 @@ func (s *Service) GetWorkspaceNetlabTemplate(ctx context.Context, id string, req
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid request").Err()
 	}
 
-	source := strings.ToLower(strings.TrimSpace(req.Source))
-	if source == "" {
-		source = "workspace"
-	}
+	source := canonicalTemplateSource(req.Source, "user")
 	template := strings.TrimPrefix(strings.TrimSpace(req.Template), "/")
 	if template == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("template is required").Err()
@@ -58,14 +53,14 @@ func (s *Service) GetWorkspaceNetlabTemplate(ctx context.Context, id string, req
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("template must be a safe repo-relative path").Err()
 	}
 
-	owner := pc.workspace.GiteaOwner
-	repo := pc.workspace.GiteaRepo
-	branch := strings.TrimSpace(pc.workspace.DefaultBranch)
+	owner := pc.context.GiteaOwner
+	repo := pc.context.GiteaRepo
+	branch := strings.TrimSpace(pc.context.DefaultBranch)
 	policy, _ := loadGovernancePolicy(ctx, s.db)
 
 	switch source {
 	case "blueprints", "blueprint":
-		ref := strings.TrimSpace(pc.workspace.Blueprint)
+		ref := strings.TrimSpace(pc.context.Blueprint)
 		if ref == "" {
 			ref = "skyforge/blueprints"
 		}
@@ -115,7 +110,7 @@ func (s *Service) GetWorkspaceNetlabTemplate(ctx context.Context, id string, req
 			return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 		}
 		owner, repo, branch = ref.Owner, ref.Repo, ref.Branch
-	case "workspace":
+	case "user":
 		// default already set
 	default:
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown template source").Err()
@@ -164,9 +159,9 @@ func (s *Service) GetWorkspaceNetlabTemplate(ctx context.Context, id string, req
 	}
 	yamlText = strings.TrimRight(yamlText, "\n") + "\n"
 
-	return &WorkspaceNetlabTemplateResponse{
-		WorkspaceID: pc.workspace.ID,
-		Source:      source,
+	return &UserNetlabTemplateResponse{
+		OwnerUsername: pc.context.ID,
+		Source:        publicTemplateSource(source),
 		Repo: func() string {
 			if source == "external" || source == "custom" {
 				return strings.TrimSpace(req.Repo)

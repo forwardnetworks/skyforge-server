@@ -12,50 +12,48 @@ import (
 	"encore.dev/beta/errs"
 )
 
-type WorkspaceContainerlabTemplatesResponse struct {
-	WorkspaceID string   `json:"workspaceId"`
-	Repo        string   `json:"repo"`
-	Branch      string   `json:"branch"`
-	Dir         string   `json:"dir"`
-	Templates   []string `json:"templates"`
-	HeadSHA     string   `json:"headSha,omitempty"`
-	Cached      bool     `json:"cached"`
-	UpdatedAt   string   `json:"updatedAt,omitempty"`
+type UserContainerlabTemplatesResponse struct {
+	OwnerUsername string   `json:"ownerUsername"`
+	Repo          string   `json:"repo"`
+	Branch        string   `json:"branch"`
+	Dir           string   `json:"dir"`
+	Templates     []string `json:"templates"`
+	HeadSHA       string   `json:"headSha,omitempty"`
+	Cached        bool     `json:"cached"`
+	UpdatedAt     string   `json:"updatedAt,omitempty"`
 }
 
-type WorkspaceContainerlabTemplatesRequest struct {
+type UserContainerlabTemplatesRequest struct {
 	Dir    string `query:"dir" encore:"optional"`
-	Source string `query:"source" encore:"optional"` // "workspace" (default), "blueprints", or "custom"
+	Source string `query:"source" encore:"optional"` // "user" (default), "blueprints", "external", or "custom"
 	Repo   string `query:"repo" encore:"optional"`   // owner/repo or URL (custom only)
 }
 
-// GetWorkspaceContainerlabTemplates lists Containerlab templates for a workspace.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/containerlab/templates
-func (s *Service) GetWorkspaceContainerlabTemplates(ctx context.Context, id string, req *WorkspaceContainerlabTemplatesRequest) (*WorkspaceContainerlabTemplatesResponse, error) {
+// GetUserContainerlabTemplates lists Containerlab templates for a user context.
+func (s *Service) GetUserContainerlabTemplates(ctx context.Context, id string, req *UserContainerlabTemplatesRequest) (*UserContainerlabTemplatesResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
-	source := "workspace"
+	source := canonicalTemplateSource("", "user")
 	if req != nil {
-		if v := strings.ToLower(strings.TrimSpace(req.Source)); v != "" {
-			source = v
+		if v := strings.TrimSpace(req.Source); v != "" {
+			source = canonicalTemplateSource(v, "user")
 		}
 	}
 
-	owner := pc.workspace.GiteaOwner
-	repo := pc.workspace.GiteaRepo
-	branch := strings.TrimSpace(pc.workspace.DefaultBranch)
+	owner := pc.context.GiteaOwner
+	repo := pc.context.GiteaRepo
+	branch := strings.TrimSpace(pc.context.DefaultBranch)
 	policy, _ := loadGovernancePolicy(ctx, s.db)
 
 	switch source {
 	case "blueprints", "blueprint":
-		ref := strings.TrimSpace(pc.workspace.Blueprint)
+		ref := strings.TrimSpace(pc.context.Blueprint)
 		if ref == "" {
 			ref = "skyforge/blueprints"
 		}
@@ -105,7 +103,7 @@ func (s *Service) GetWorkspaceContainerlabTemplates(ctx context.Context, id stri
 			return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 		}
 		owner, repo, branch = ref.Owner, ref.Repo, ref.Branch
-	case "workspace":
+	case "user":
 		// default already set
 	default:
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown template source").Err()
@@ -151,8 +149,8 @@ func (s *Service) GetWorkspaceContainerlabTemplates(ctx context.Context, id stri
 			if headSHA != "" && strings.TrimSpace(got.HeadSHA) != "" && strings.TrimSpace(got.HeadSHA) == headSHA {
 				out := append([]string(nil), got.Templates...)
 				sort.Strings(out)
-				return &WorkspaceContainerlabTemplatesResponse{
-					WorkspaceID: pc.workspace.ID,
+				return &UserContainerlabTemplatesResponse{
+					OwnerUsername: pc.context.ID,
 					Repo: func() string {
 						if owner == "url" {
 							return repo
@@ -172,8 +170,8 @@ func (s *Service) GetWorkspaceContainerlabTemplates(ctx context.Context, id stri
 			if headSHA == "" && time.Since(got.UpdatedAt) < 10*time.Minute {
 				out := append([]string(nil), got.Templates...)
 				sort.Strings(out)
-				return &WorkspaceContainerlabTemplatesResponse{
-					WorkspaceID: pc.workspace.ID,
+				return &UserContainerlabTemplatesResponse{
+					OwnerUsername: pc.context.ID,
 					Repo: func() string {
 						if owner == "url" {
 							return repo
@@ -207,15 +205,15 @@ func (s *Service) GetWorkspaceContainerlabTemplates(ctx context.Context, id stri
 				if cached != nil {
 					out := append([]string(nil), cached.Templates...)
 					sort.Strings(out)
-					return &WorkspaceContainerlabTemplatesResponse{
-						WorkspaceID: pc.workspace.ID,
-						Repo:        repo,
-						Branch:      branch,
-						Dir:         dir,
-						Templates:   out,
-						HeadSHA:     cached.HeadSHA,
-						Cached:      true,
-						UpdatedAt:   cached.UpdatedAt.UTC().Format(time.RFC3339),
+					return &UserContainerlabTemplatesResponse{
+						OwnerUsername: pc.context.ID,
+						Repo:          repo,
+						Branch:        branch,
+						Dir:           dir,
+						Templates:     out,
+						HeadSHA:       cached.HeadSHA,
+						Cached:        true,
+						UpdatedAt:     cached.UpdatedAt.UTC().Format(time.RFC3339),
 					}, nil
 				}
 				return nil, errs.B().Code(errs.Unavailable).Msg("failed to query templates").Err()
@@ -235,15 +233,15 @@ func (s *Service) GetWorkspaceContainerlabTemplates(ctx context.Context, id stri
 			if cached != nil {
 				out := append([]string(nil), cached.Templates...)
 				sort.Strings(out)
-				return &WorkspaceContainerlabTemplatesResponse{
-					WorkspaceID: pc.workspace.ID,
-					Repo:        fmt.Sprintf("%s/%s", owner, repo),
-					Branch:      branch,
-					Dir:         dir,
-					Templates:   out,
-					HeadSHA:     cached.HeadSHA,
-					Cached:      true,
-					UpdatedAt:   cached.UpdatedAt.UTC().Format(time.RFC3339),
+				return &UserContainerlabTemplatesResponse{
+					OwnerUsername: pc.context.ID,
+					Repo:          fmt.Sprintf("%s/%s", owner, repo),
+					Branch:        branch,
+					Dir:           dir,
+					Templates:     out,
+					HeadSHA:       cached.HeadSHA,
+					Cached:        true,
+					UpdatedAt:     cached.UpdatedAt.UTC().Format(time.RFC3339),
 				}, nil
 			}
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to query templates").Err()
@@ -272,8 +270,8 @@ func (s *Service) GetWorkspaceContainerlabTemplates(ctx context.Context, id stri
 	}
 	sort.Strings(templates)
 	_ = ctx
-	return &WorkspaceContainerlabTemplatesResponse{
-		WorkspaceID: pc.workspace.ID,
+	return &UserContainerlabTemplatesResponse{
+		OwnerUsername: pc.context.ID,
 		Repo: func() string {
 			if owner == "url" {
 				return repo

@@ -18,20 +18,20 @@ type CapacityRollupRow struct {
 	CreatedAt          string   `json:"createdAt,omitempty"`
 	ForwardNetworkID   string   `json:"forwardNetworkId,omitempty"`
 	DeploymentID       string   `json:"deploymentId,omitempty"`
-	WorkspaceID        string   `json:"workspaceId,omitempty"`
+	OwnerUsername      string   `json:"ownerUsername,omitempty"`
 }
 
 type DeploymentCapacitySummaryResponse struct {
-	WorkspaceID  string              `json:"workspaceId"`
-	DeploymentID string              `json:"deploymentId"`
-	ForwardID    string              `json:"forwardNetworkId"`
-	AsOf         string              `json:"asOf,omitempty"`
-	Rollups      []CapacityRollupRow `json:"rollups"`
-	Stale        bool                `json:"stale"`
+	OwnerUsername string              `json:"ownerUsername"`
+	DeploymentID  string              `json:"deploymentId"`
+	ForwardID     string              `json:"forwardNetworkId"`
+	AsOf          string              `json:"asOf,omitempty"`
+	Rollups       []CapacityRollupRow `json:"rollups"`
+	Stale         bool                `json:"stale"`
 }
 
 type DeploymentCapacityRefreshResponse struct {
-	WorkspaceID  string  `json:"workspaceId"`
-	DeploymentID string  `json:"deploymentId"`
-	Run          JSONMap `json:"run"`
+	OwnerUsername string  `json:"ownerUsername"`
+	DeploymentID  string  `json:"deploymentId"`
+	Run           JSONMap `json:"run"`
 }

@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 )
 
-type WorkspaceSettingsRequest struct {
+type UserSettingsRequest struct {
 	AllowExternalTemplateRepos     bool                   `json:"allowExternalTemplateRepos,omitempty"`
 	AllowCustomEveServers          bool                   `json:"allowCustomEveServers,omitempty"`
 	AllowCustomNetlabServers       bool                   `json:"allowCustomNetlabServers,omitempty"`
@@ -16,8 +16,9 @@ type WorkspaceSettingsRequest struct {
 	ExternalTemplateRepos          []ExternalTemplateRepo `json:"externalTemplateRepos,omitempty"`
 }
 
-type WorkspaceSettingsResponse struct {
-	Workspace SkyforgeWorkspace `json:"workspace"`
+type OwnerContextSettingsResponse struct {
+	Context       SkyforgeUserContext `json:"context"`
+	LegacyContext SkyforgeUserContext `json:"-"` // legacy internal field
 }
 
 func validateExternalTemplateRepos(repos []ExternalTemplateRepo) ([]ExternalTemplateRepo, error) {
@@ -82,48 +83,46 @@ func validateExternalTemplateRepos(repos []ExternalTemplateRepo) ([]ExternalTemp
 	return out, nil
 }
 
-// UpdateWorkspaceSettings updates workspace-level feature flags and template repo sources.
-//
-//encore:api auth method=PUT path=/api/workspaces/:id/settings
-func (s *Service) UpdateWorkspaceSettings(ctx context.Context, id string, req *WorkspaceSettingsRequest) (*WorkspaceSettingsResponse, error) {
-	pc, err := requireWorkspaceOwner(ctx, s, id)
+// UpdateUserSettings updates user-context feature flags and template repo sources.
+func (s *Service) UpdateUserSettings(ctx context.Context, id string, req *UserSettingsRequest) (*OwnerContextSettingsResponse, error) {
+	pc, err := requireOwnerEditor(ctx, s, id)
 	if err != nil {
 		return nil, err
 	}
 	if req == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("payload required").Err()
 	}
-	workspaces, err := s.workspaceStore.load()
+	scopes, err := s.scopeStore.load()
 	if err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load workspaces").Err()
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load user contexts").Err()
 	}
 	updated := false
-	for i := range workspaces {
-		if workspaces[i].ID != pc.workspace.ID {
+	for i := range scopes {
+		if scopes[i].ID != pc.context.ID {
 			continue
 		}
 		validated, err := validateExternalTemplateRepos(req.ExternalTemplateRepos)
 		if err != nil {
 			return nil, err
 		}
-		workspaces[i].ExternalTemplateRepos = validated
-		workspaces[i].AllowExternalTemplateRepos = req.AllowExternalTemplateRepos
-		workspaces[i].AllowCustomEveServers = req.AllowCustomEveServers
-		workspaces[i].AllowCustomNetlabServers = req.AllowCustomNetlabServers
-		workspaces[i].AllowCustomContainerlabServers = req.AllowCustomContainerlabServers
-		pc.workspace = workspaces[i]
+		scopes[i].ExternalTemplateRepos = validated
+		scopes[i].AllowExternalTemplateRepos = req.AllowExternalTemplateRepos
+		scopes[i].AllowCustomEveServers = req.AllowCustomEveServers
+		scopes[i].AllowCustomNetlabServers = req.AllowCustomNetlabServers
+		scopes[i].AllowCustomContainerlabServers = req.AllowCustomContainerlabServers
+		pc.context = scopes[i]
 		updated = true
 		break
 	}
 	if !updated {
-		return nil, errs.B().Code(errs.NotFound).Msg("workspace not found").Err()
+		return nil, errs.B().Code(errs.NotFound).Msg("user context not found").Err()
 	}
-	if err := s.workspaceStore.upsert(pc.workspace); err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to save workspace settings").Err()
+	if err := s.scopeStore.upsert(pc.context); err != nil {
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to save user settings").Err()
 	}
 	if s.db != nil {
-		_ = notifyWorkspacesUpdatePG(ctx, s.db, "*")
+		_ = notifyUsersUpdatePG(ctx, s.db, "*")
 		_ = notifyDashboardUpdatePG(ctx, s.db)
 	}
-	return &WorkspaceSettingsResponse{Workspace: pc.workspace}, nil
+	return &OwnerContextSettingsResponse{Context: pc.context, LegacyContext: pc.context}, nil
 }

@@ -15,9 +15,9 @@ import (
 
 func main() {
 	var (
-		baseURL       = flag.String("url", strings.TrimSpace(os.Getenv("SKYFORGE_MCP_URL")), "Skyforge MCP endpoint URL (e.g. https://host/api/mcp/rpc or /api/workspaces/<ws>/mcp/forward/<net>/rpc)")
+		baseURL       = flag.String("url", strings.TrimSpace(os.Getenv("SKYFORGE_MCP_URL")), "Skyforge MCP endpoint URL (e.g. https://host/api/mcp/rpc or /api/users/me/mcp/forward/<net>/rpc)")
 		apiToken      = flag.String("token", strings.TrimSpace(os.Getenv("SKYFORGE_API_TOKEN")), "Skyforge API token (Authorization: Bearer ...)")
-		forwardCredID = flag.String("forward-credential-id", strings.TrimSpace(os.Getenv("SKYFORGE_FORWARD_CREDENTIAL_ID")), "Optional Forward credential set id (sent as X-Forward-Credential-Id; only meaningful for Forward-scoped MCP endpoints)")
+		forwardCredID = flag.String("forward-credential-id", strings.TrimSpace(os.Getenv("SKYFORGE_FORWARD_CREDENTIAL_ID")), "Optional Forward credential set id (sent as X-Forward-Credential-Id; only meaningful for Forward-network MCP endpoints)")
 		timeout       = flag.Duration("timeout", 60*time.Second, "HTTP timeout")
 	)
 	flag.Parse()

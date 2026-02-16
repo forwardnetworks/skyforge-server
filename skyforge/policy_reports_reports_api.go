@@ -23,15 +23,13 @@ type PolicyReportRunReportResponse struct {
 	Content string `json:"content"`
 }
 
-// GetWorkspacePolicyReportRunReport renders a stored run into an auditor-friendly report.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/runs/:runId/report
-func (s *Service) GetWorkspacePolicyReportRunReport(ctx context.Context, id string, runId string, req *PolicyReportRunReportRequest) (*PolicyReportRunReportResponse, error) {
+// GetUserPolicyReportRunReport renders a stored run into an auditor-friendly report.
+func (s *Service) GetUserPolicyReportRunReport(ctx context.Context, id string, runId string, req *PolicyReportRunReportRequest) (*PolicyReportRunReportResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +51,7 @@ func (s *Service) GetWorkspacePolicyReportRunReport(ctx context.Context, id stri
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("unsupported format").Err()
 	}
 
-	run, checks, err := getPolicyReportRun(ctx, s.db, pc.workspace.ID, runId)
+	run, checks, err := getPolicyReportRun(ctx, s.db, pc.context.ID, runId)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, errs.B().Code(errs.NotFound).Msg("run not found").Err()
@@ -61,7 +59,7 @@ func (s *Service) GetWorkspacePolicyReportRunReport(ctx context.Context, id stri
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load run").Err()
 	}
 
-	findings, err := listPolicyReportRunFindings(ctx, s.db, pc.workspace.ID, runId, "", limit)
+	findings, err := listPolicyReportRunFindings(ctx, s.db, pc.context.ID, runId, "", limit)
 	if err != nil && !isMissingDBRelation(err) {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load run findings").Err()
 	}

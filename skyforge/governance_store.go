@@ -22,7 +22,7 @@ func loadGovernanceSummary(ctx context.Context, db *sql.DB) (*GovernanceSummary,
 			return &GovernanceSummary{
 				ResourceCount:     0,
 				ActiveResources:   0,
-				WorkspacesTracked: 0,
+				UsersTracked:      0,
 				CostLast30Days:    0,
 				CostCurrency:      "USD",
 				LastCostPeriodEnd: "",
@@ -35,9 +35,9 @@ func loadGovernanceSummary(ctx context.Context, db *sql.DB) (*GovernanceSummary,
 		activeCount = 0
 	}
 
-	var workspaceCount int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT workspace_id) FROM sf_resources WHERE workspace_id IS NOT NULL`).Scan(&workspaceCount); err != nil {
-		workspaceCount = 0
+	var scopeCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT owner_username) FROM sf_resources WHERE owner_username IS NOT NULL`).Scan(&scopeCount); err != nil {
+		scopeCount = 0
 	}
 
 	var totalCost float64
@@ -60,7 +60,7 @@ SELECT provider,
 			return &GovernanceSummary{
 				ResourceCount:     resourceCount,
 				ActiveResources:   activeCount,
-				WorkspacesTracked: workspaceCount,
+				UsersTracked:      scopeCount,
 				CostLast30Days:    totalCost,
 				CostCurrency:      "USD",
 				LastCostPeriodEnd: "",
@@ -92,7 +92,7 @@ SELECT provider,
 	return &GovernanceSummary{
 		ResourceCount:     resourceCount,
 		ActiveResources:   activeCount,
-		WorkspacesTracked: workspaceCount,
+		UsersTracked:      scopeCount,
 		CostLast30Days:    totalCost,
 		CostCurrency:      currency,
 		LastCostPeriodEnd: period,
@@ -110,10 +110,10 @@ func listGovernanceResources(ctx context.Context, db *sql.DB, params *Governance
 	}
 
 	query := `
-SELECT r.id, r.workspace_id, p.name, r.provider, r.resource_id, r.resource_type, r.name, r.region,
+SELECT r.id, r.owner_username, p.name, r.provider, r.resource_id, r.resource_type, r.name, r.region,
        r.account_id, r.owner_username, r.status, r.tags, r.metadata, r.first_seen, r.last_seen, r.updated_at
   FROM sf_resources r
-  LEFT JOIN sf_workspaces p ON p.id = r.workspace_id
+  LEFT JOIN sf_owner_contexts p ON p.id = r.owner_username
  WHERE 1=1`
 
 	var args []any
@@ -128,7 +128,7 @@ SELECT r.id, r.workspace_id, p.name, r.provider, r.resource_id, r.resource_type,
 		argIndex++
 	}
 
-	addFilter("r.workspace_id", params.WorkspaceID)
+	addFilter("r.owner_username", params.OwnerUsername)
 	addFilter("r.provider", params.Provider)
 	addFilter("r.status", params.Status)
 	addFilter("r.owner_username", strings.ToLower(strings.TrimSpace(params.Owner)))
@@ -159,8 +159,8 @@ SELECT r.id, r.workspace_id, p.name, r.provider, r.resource_id, r.resource_type,
 		var tags, metadata []byte
 		if err := rows.Scan(
 			&record.ID,
-			&record.WorkspaceID,
-			&record.WorkspaceName,
+			&record.OwnerUsername,
+			&record.UserName,
 			&record.Provider,
 			&record.ResourceID,
 			&record.ResourceType,
@@ -196,16 +196,16 @@ func listGovernanceCosts(ctx context.Context, db *sql.DB, params *GovernanceCost
 		limit = 50
 	}
 	query := `
-SELECT c.id, c.workspace_id, p.name, c.resource_id, c.provider, c.period_start, c.period_end,
+SELECT c.id, c.owner_username, p.name, c.resource_id, c.provider, c.period_start, c.period_end,
        c.cost_amount::double precision, c.cost_currency, c.source, c.metadata, c.created_at
   FROM sf_cost_snapshots c
-  LEFT JOIN sf_workspaces p ON p.id = c.workspace_id
+  LEFT JOIN sf_owner_contexts p ON p.id = c.owner_username
  WHERE 1=1`
 	var args []any
 	argIndex := 1
-	if strings.TrimSpace(params.WorkspaceID) != "" {
-		query += fmt.Sprintf(" AND c.workspace_id = $%d", argIndex)
-		args = append(args, strings.TrimSpace(params.WorkspaceID))
+	if strings.TrimSpace(params.OwnerUsername) != "" {
+		query += fmt.Sprintf(" AND c.owner_username = $%d", argIndex)
+		args = append(args, strings.TrimSpace(params.OwnerUsername))
 		argIndex++
 	}
 	if strings.TrimSpace(params.Provider) != "" {
@@ -229,15 +229,15 @@ SELECT c.id, c.workspace_id, p.name, c.resource_id, c.provider, c.period_start, 
 	for rows.Next() {
 		var record GovernanceCostSnapshot
 		var resourceID sql.NullString
-		var workspaceID sql.NullString
-		var workspaceName sql.NullString
+		var ownerID sql.NullString
+		var scopeName sql.NullString
 		var metadata []byte
 		var periodStart time.Time
 		var periodEnd time.Time
 		if err := rows.Scan(
 			&record.ID,
-			&workspaceID,
-			&workspaceName,
+			&ownerID,
+			&scopeName,
 			&resourceID,
 			&record.Provider,
 			&periodStart,
@@ -250,11 +250,11 @@ SELECT c.id, c.workspace_id, p.name, c.resource_id, c.provider, c.period_start, 
 		); err != nil {
 			return nil, err
 		}
-		if workspaceID.Valid {
-			record.WorkspaceID = workspaceID.String
+		if ownerID.Valid {
+			record.OwnerUsername = ownerID.String
 		}
-		if workspaceName.Valid {
-			record.WorkspaceName = workspaceName.String
+		if scopeName.Valid {
+			record.UserName = scopeName.String
 		}
 		if resourceID.Valid {
 			record.ResourceID = resourceID.String
@@ -277,16 +277,16 @@ func listGovernanceUsage(ctx context.Context, db *sql.DB, params *GovernanceUsag
 		limit = 50
 	}
 	query := `
-SELECT u.id, u.workspace_id, p.name, u.provider, u.scope_type, u.scope_id, u.metric,
+SELECT u.id, u.owner_context_id, p.name, u.provider, u.owner_type, u.owner_username, u.metric,
        u.value::double precision, u.unit, u.metadata, u.collected_at
   FROM sf_usage_snapshots u
-  LEFT JOIN sf_workspaces p ON p.id = u.workspace_id
+  LEFT JOIN sf_owner_contexts p ON p.id = u.owner_context_id
  WHERE 1=1`
 	var args []any
 	argIndex := 1
-	if strings.TrimSpace(params.WorkspaceID) != "" {
-		query += fmt.Sprintf(" AND u.workspace_id = $%d", argIndex)
-		args = append(args, strings.TrimSpace(params.WorkspaceID))
+	if strings.TrimSpace(params.OwnerUsername) != "" {
+		query += fmt.Sprintf(" AND u.owner_context_id = $%d", argIndex)
+		args = append(args, strings.TrimSpace(params.OwnerUsername))
 		argIndex++
 	}
 	if strings.TrimSpace(params.Provider) != "" {
@@ -314,18 +314,18 @@ SELECT u.id, u.workspace_id, p.name, u.provider, u.scope_type, u.scope_id, u.met
 	var usage []GovernanceUsageSnapshot
 	for rows.Next() {
 		var record GovernanceUsageSnapshot
-		var workspaceID sql.NullString
-		var workspaceName sql.NullString
-		var scopeID sql.NullString
+		var scopeOwnerID sql.NullString
+		var scopeName sql.NullString
+		var ownerID sql.NullString
 		var unit sql.NullString
 		var metadata []byte
 		if err := rows.Scan(
 			&record.ID,
-			&workspaceID,
-			&workspaceName,
+			&scopeOwnerID,
+			&scopeName,
 			&record.Provider,
-			&record.ScopeType,
-			&scopeID,
+			&record.UserType,
+			&ownerID,
 			&record.Metric,
 			&record.Value,
 			&unit,
@@ -334,14 +334,14 @@ SELECT u.id, u.workspace_id, p.name, u.provider, u.scope_type, u.scope_id, u.met
 		); err != nil {
 			return nil, err
 		}
-		if workspaceID.Valid {
-			record.WorkspaceID = workspaceID.String
+		if scopeOwnerID.Valid {
+			record.UserOwnerID = scopeOwnerID.String
 		}
-		if workspaceName.Valid {
-			record.WorkspaceName = workspaceName.String
+		if ownerID.Valid {
+			record.OwnerUsername = ownerID.String
 		}
-		if scopeID.Valid {
-			record.ScopeID = scopeID.String
+		if scopeName.Valid {
+			record.UserName = scopeName.String
 		}
 		if unit.Valid {
 			record.Unit = unit.String
@@ -369,7 +369,7 @@ func upsertGovernanceResource(ctx context.Context, db *sql.DB, input GovernanceR
 
 	tagsJSON, _ := json.Marshal(input.Tags)
 	metadataJSON, _ := json.Marshal(input.Metadata)
-	workspaceID := strings.TrimSpace(input.WorkspaceID)
+	ownerID := strings.TrimSpace(input.OwnerUsername)
 	owner := strings.ToLower(strings.TrimSpace(input.Owner))
 	status := strings.TrimSpace(input.Status)
 	if status == "" {
@@ -381,14 +381,14 @@ func upsertGovernanceResource(ctx context.Context, db *sql.DB, input GovernanceR
 
 	row := db.QueryRowContext(ctx, `
 INSERT INTO sf_resources (
-  id, provider, resource_id, resource_type, workspace_id, name, region, account_id,
+  id, provider, resource_id, resource_type, owner_username, name, region, account_id,
   owner_username, status, tags, metadata, first_seen, last_seen, updated_at
 ) VALUES ($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),
           NULLIF($9,''),$10,$11,$12,$13,$14,$15)
 ON CONFLICT (provider, resource_id)
 DO UPDATE SET
   resource_type=EXCLUDED.resource_type,
-  workspace_id=COALESCE(EXCLUDED.workspace_id, sf_resources.workspace_id),
+  owner_username=COALESCE(EXCLUDED.owner_username, sf_resources.owner_username),
   name=COALESCE(EXCLUDED.name, sf_resources.name),
   region=COALESCE(EXCLUDED.region, sf_resources.region),
   account_id=COALESCE(EXCLUDED.account_id, sf_resources.account_id),
@@ -398,12 +398,12 @@ DO UPDATE SET
   metadata=COALESCE(EXCLUDED.metadata, sf_resources.metadata),
   last_seen=EXCLUDED.last_seen,
   updated_at=EXCLUDED.updated_at
-RETURNING id, workspace_id, name, region, account_id, owner_username, status, tags, metadata, first_seen, last_seen, updated_at`,
+RETURNING id, owner_username, name, region, account_id, owner_username, status, tags, metadata, first_seen, last_seen, updated_at`,
 		resourceUUID,
 		provider,
 		resourceID,
 		resourceType,
-		workspaceID,
+		ownerID,
 		strings.TrimSpace(input.Name),
 		strings.TrimSpace(input.Region),
 		strings.TrimSpace(input.AccountID),
@@ -421,7 +421,7 @@ RETURNING id, workspace_id, name, region, account_id, owner_username, status, ta
 	record.ResourceID = resourceID
 	record.ResourceType = resourceType
 	record.AccountID = strings.TrimSpace(input.AccountID)
-	record.WorkspaceID = workspaceID
+	record.OwnerUsername = ownerID
 	record.Name = strings.TrimSpace(input.Name)
 	record.Region = strings.TrimSpace(input.Region)
 	record.Owner = owner
@@ -432,7 +432,7 @@ RETURNING id, workspace_id, name, region, account_id, owner_username, status, ta
 	var tagsOut, metaOut []byte
 	if err := row.Scan(
 		&record.ID,
-		&record.WorkspaceID,
+		&record.OwnerUsername,
 		&record.Name,
 		&record.Region,
 		&record.AccountID,
@@ -457,12 +457,12 @@ RETURNING id, workspace_id, name, region, account_id, owner_username, status, ta
 	if eventType == "" {
 		eventType = "observed"
 	}
-	_ = insertGovernanceResourceEvent(ctx, db, record.ID, record.WorkspaceID, eventType, input.Metadata, user)
+	_ = insertGovernanceResourceEvent(ctx, db, record.ID, record.OwnerUsername, eventType, input.Metadata, user)
 
 	return record, nil
 }
 
-func insertGovernanceResourceEvent(ctx context.Context, db *sql.DB, resourceID string, workspaceID string, eventType string, metadata map[string]string, user *AuthUser) error {
+func insertGovernanceResourceEvent(ctx context.Context, db *sql.DB, resourceID string, ownerID string, eventType string, metadata map[string]string, user *AuthUser) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	eventID := uuid.New().String()
@@ -474,12 +474,12 @@ func insertGovernanceResourceEvent(ctx context.Context, db *sql.DB, resourceID s
 		actor = user.Username
 		actorIsAdmin = user.IsAdmin
 	}
-	writeAuditEvent(ctx, db, actor, actorIsAdmin, impersonated, "governance.resource."+eventType, workspaceID, string(detailsJSON))
+	writeAuditEvent(ctx, db, actor, actorIsAdmin, impersonated, "governance.resource."+eventType, ownerID, string(detailsJSON))
 	_, err := db.ExecContext(ctx, `
 INSERT INTO sf_resource_events (
-  id, resource_id, event_type, actor_username, actor_is_admin, impersonated_username, workspace_id, details
+  id, resource_id, event_type, actor_username, actor_is_admin, impersonated_username, owner_username, details
 ) VALUES ($1,$2,$3,NULLIF($4,''),$5,NULLIF($6,''),NULLIF($7,''),$8)`,
-		eventID, resourceID, eventType, actor, actorIsAdmin, impersonated, workspaceID, string(detailsJSON),
+		eventID, resourceID, eventType, actor, actorIsAdmin, impersonated, ownerID, string(detailsJSON),
 	)
 	return err
 }
@@ -502,7 +502,7 @@ func insertGovernanceCost(ctx context.Context, db *sql.DB, input GovernanceCostI
 		currency = "USD"
 	}
 	metadataJSON, _ := json.Marshal(input.Metadata)
-	workspaceID := strings.TrimSpace(input.WorkspaceID)
+	ownerID := strings.TrimSpace(input.OwnerUsername)
 	resourceID := strings.TrimSpace(input.ResourceID)
 	if resourceID != "" {
 		if _, err := uuid.Parse(resourceID); err != nil {
@@ -516,7 +516,7 @@ func insertGovernanceCost(ctx context.Context, db *sql.DB, input GovernanceCostI
 	id := uuid.New().String()
 	var record GovernanceCostSnapshot
 	record.ID = id
-	record.WorkspaceID = workspaceID
+	record.OwnerUsername = ownerID
 	record.ResourceID = resourceID
 	record.Provider = provider
 	record.PeriodStart = periodStart.Format("2006-01-02")
@@ -529,22 +529,25 @@ func insertGovernanceCost(ctx context.Context, db *sql.DB, input GovernanceCostI
 
 	_, err = db.ExecContext(ctx, `
 INSERT INTO sf_cost_snapshots (
-  id, resource_id, workspace_id, provider, period_start, period_end,
+  id, resource_id, owner_username, provider, period_start, period_end,
   cost_amount, cost_currency, source, metadata
 ) VALUES ($1,NULLIF($2,''),NULLIF($3,''),$4,$5,$6,$7,$8,NULLIF($9,''),$10)`,
-		id, resourceID, workspaceID, provider, periodStart, periodEnd, input.Amount, currency, record.Source, string(metadataJSON),
+		id, resourceID, ownerID, provider, periodStart, periodEnd, input.Amount, currency, record.Source, string(metadataJSON),
 	)
 	return record, err
 }
 
 func insertGovernanceUsage(ctx context.Context, db *sql.DB, input GovernanceUsageInput) (GovernanceUsageSnapshot, error) {
 	provider := strings.ToLower(strings.TrimSpace(input.Provider))
-	if provider == "" || strings.TrimSpace(input.ScopeType) == "" || strings.TrimSpace(input.Metric) == "" {
+	if provider == "" || strings.TrimSpace(input.UserType) == "" || strings.TrimSpace(input.Metric) == "" {
 		return GovernanceUsageSnapshot{}, fmt.Errorf("missing usage fields")
 	}
 	metadataJSON, _ := json.Marshal(input.Metadata)
-	workspaceID := strings.TrimSpace(input.WorkspaceID)
-	scopeID := strings.TrimSpace(input.ScopeID)
+	scopeOwnerID := strings.TrimSpace(input.OwnerContextID)
+	ownerID := strings.TrimSpace(input.OwnerUsername)
+	if scopeOwnerID == "" {
+		scopeOwnerID = ownerID
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -552,10 +555,10 @@ func insertGovernanceUsage(ctx context.Context, db *sql.DB, input GovernanceUsag
 	id := uuid.New().String()
 	var record GovernanceUsageSnapshot
 	record.ID = id
-	record.WorkspaceID = workspaceID
+	record.UserOwnerID = scopeOwnerID
 	record.Provider = provider
-	record.ScopeType = strings.TrimSpace(input.ScopeType)
-	record.ScopeID = scopeID
+	record.UserType = strings.TrimSpace(input.UserType)
+	record.OwnerUsername = ownerID
 	record.Metric = strings.TrimSpace(input.Metric)
 	record.Value = input.Value
 	record.Unit = strings.TrimSpace(input.Unit)
@@ -564,9 +567,9 @@ func insertGovernanceUsage(ctx context.Context, db *sql.DB, input GovernanceUsag
 
 	_, err := db.ExecContext(ctx, `
 INSERT INTO sf_usage_snapshots (
-  id, workspace_id, provider, scope_type, scope_id, metric, value, unit, metadata
+  id, owner_context_id, provider, owner_type, owner_username, metric, value, unit, metadata
 ) VALUES ($1,NULLIF($2,''),$3,$4,NULLIF($5,''),$6,$7,NULLIF($8,''),$9)`,
-		id, workspaceID, provider, record.ScopeType, scopeID, record.Metric, input.Value, record.Unit, string(metadataJSON),
+		id, scopeOwnerID, provider, record.UserType, ownerID, record.Metric, input.Value, record.Unit, string(metadataJSON),
 	)
 	return record, err
 }

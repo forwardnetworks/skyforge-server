@@ -52,8 +52,27 @@ func giteaDefaultBranch(cfg Config, owner, repo string) string {
 	return branch
 }
 
+func canonicalTemplateSource(source, fallback string) string {
+	s := strings.ToLower(strings.TrimSpace(source))
+	if s == "" {
+		s = strings.ToLower(strings.TrimSpace(fallback))
+	}
+	switch s {
+	case "user", "personal", "scope", "workspace":
+		return "user"
+	case "blueprint":
+		return "blueprints"
+	default:
+		return s
+	}
+}
+
+func publicTemplateSource(source string) string {
+	return canonicalTemplateSource(source, "user")
+}
+
 func defaultNetlabTemplatesDir(source string) string {
-	switch strings.ToLower(strings.TrimSpace(source)) {
+	switch canonicalTemplateSource(source, "user") {
 	case "blueprints", "blueprint", "external":
 		return "netlab"
 	default:
@@ -66,7 +85,7 @@ func normalizeNetlabTemplatesDir(source, dir string) string {
 	if dir == "" {
 		dir = defaultNetlabTemplatesDir(source)
 	}
-	switch strings.ToLower(strings.TrimSpace(source)) {
+	switch canonicalTemplateSource(source, "user") {
 	case "blueprints", "blueprint", "external":
 		dir = strings.TrimPrefix(dir, "blueprints/")
 	}
@@ -74,7 +93,7 @@ func normalizeNetlabTemplatesDir(source, dir string) string {
 }
 
 func defaultContainerlabTemplatesDir(source string) string {
-	switch strings.ToLower(strings.TrimSpace(source)) {
+	switch canonicalTemplateSource(source, "user") {
 	case "blueprints", "blueprint", "external":
 		return "containerlab"
 	default:
@@ -83,7 +102,7 @@ func defaultContainerlabTemplatesDir(source string) string {
 }
 
 func defaultEveNgTemplatesDir(source string) string {
-	switch strings.ToLower(strings.TrimSpace(source)) {
+	switch canonicalTemplateSource(source, "user") {
 	case "blueprints", "blueprint", "external":
 		return "eve-ng"
 	default:
@@ -96,7 +115,7 @@ func normalizeContainerlabTemplatesDir(source, dir string) string {
 	if dir == "" {
 		dir = defaultContainerlabTemplatesDir(source)
 	}
-	switch strings.ToLower(strings.TrimSpace(source)) {
+	switch canonicalTemplateSource(source, "user") {
 	case "blueprints", "blueprint", "external":
 		dir = strings.TrimPrefix(dir, "blueprints/")
 	}
@@ -108,7 +127,7 @@ func normalizeEveNgTemplatesDir(source, dir string) string {
 	if dir == "" {
 		dir = defaultEveNgTemplatesDir(source)
 	}
-	switch strings.ToLower(strings.TrimSpace(source)) {
+	switch canonicalTemplateSource(source, "user") {
 	case "blueprints", "blueprint", "external":
 		dir = strings.TrimPrefix(dir, "blueprints/")
 	}
@@ -152,10 +171,10 @@ func normalizeNetlabTemplateSelectionWithSource(source, templatesDir, templateFi
 }
 
 func normalizeNetlabTemplateSelection(templatesDir, templateFile string) (string, string, string, string) {
-	return normalizeNetlabTemplateSelectionWithSource("workspace", templatesDir, templateFile)
+	return normalizeNetlabTemplateSelectionWithSource("user", templatesDir, templateFile)
 }
 
-func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceContext, server *NetlabServerConfig, templateSource, templateRepo, templatesDir, templateFile, workdir, owner string) (string, error) {
+func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *ownerContext, server *NetlabServerConfig, templateSource, templateRepo, templatesDir, templateFile, workdir, owner string) (string, error) {
 	if server == nil {
 		return "", fmt.Errorf("netlab runner not configured")
 	}
@@ -293,9 +312,9 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 		// Fast path: download the repo archive once and extract only the needed subtree.
 		// This avoids a large number of per-file API calls + SSH round-trips which can add 30-60s.
 		{
-			apiURL := strings.TrimRight(strings.TrimSpace(s.cfg.Workspaces.GiteaAPIURL), "/")
-			user := strings.TrimSpace(s.cfg.Workspaces.GiteaUsername)
-			pass := strings.TrimSpace(s.cfg.Workspaces.GiteaPassword)
+			apiURL := strings.TrimRight(strings.TrimSpace(s.cfg.Scopes.GiteaAPIURL), "/")
+			user := strings.TrimSpace(s.cfg.Scopes.GiteaUsername)
+			pass := strings.TrimSpace(s.cfg.Scopes.GiteaPassword)
 			if apiURL != "" && user != "" && pass != "" && ref.Owner != "" && ref.Repo != "" && ref.Branch != "" {
 				archiveURL := fmt.Sprintf(
 					"%s/repos/%s/%s/archive/%s.tar.gz",
@@ -377,12 +396,12 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 	return topologyPath, nil
 }
 
-func (s *Service) buildNetlabTopologyBundleB64(ctx context.Context, pc *workspaceContext, templateSource, templateRepo, templatesDir, templateFile string) (string, error) {
+func (s *Service) buildNetlabTopologyBundleB64(ctx context.Context, pc *ownerContext, templateSource, templateRepo, templatesDir, templateFile string) (string, error) {
 	if s == nil {
 		return "", fmt.Errorf("service unavailable")
 	}
 	if pc == nil {
-		return "", fmt.Errorf("workspace context unavailable")
+		return "", fmt.Errorf("user context unavailable")
 	}
 	templatesDir, templateFile, rootPath, _ := normalizeNetlabTemplateSelectionWithSource(templateSource, templatesDir, templateFile)
 	if templateFile == "" {
@@ -498,17 +517,17 @@ func (s *Service) buildNetlabTopologyBundleB64(ctx context.Context, pc *workspac
 	return out, nil
 }
 
-func resolveTemplateRepoForProject(cfg Config, pc *workspaceContext, policy GovernancePolicy, source string, customRepo string) (templateRepoRef, error) {
-	owner := pc.workspace.GiteaOwner
-	repo := pc.workspace.GiteaRepo
-	branch := strings.TrimSpace(pc.workspace.DefaultBranch)
+func resolveTemplateRepoForProject(cfg Config, pc *ownerContext, policy GovernancePolicy, source string, customRepo string) (templateRepoRef, error) {
+	owner := pc.context.GiteaOwner
+	repo := pc.context.GiteaRepo
+	branch := strings.TrimSpace(pc.context.DefaultBranch)
 	isAdmin := isAdminUser(cfg, pc.claims.Username)
 
-	switch strings.ToLower(strings.TrimSpace(source)) {
-	case "", "workspace":
+	switch canonicalTemplateSource(source, "user") {
+	case "user":
 		// default
 	case "blueprints", "blueprint":
-		ref := strings.TrimSpace(pc.workspace.Blueprint)
+		ref := strings.TrimSpace(pc.context.Blueprint)
 		if ref == "" {
 			ref = "skyforge/blueprints"
 		}
@@ -549,7 +568,7 @@ func resolveTemplateRepoForProject(cfg Config, pc *workspaceContext, policy Gove
 		if err != nil {
 			return templateRepoRef{}, err
 		}
-		if !isAdmin && customOwner != pc.workspace.GiteaOwner && customOwner != "skyforge" {
+		if !isAdmin && customOwner != pc.context.GiteaOwner && customOwner != "skyforge" {
 			return templateRepoRef{}, fmt.Errorf("custom repo not allowed")
 		}
 		owner, repo = customOwner, customName

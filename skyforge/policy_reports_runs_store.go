@@ -122,11 +122,11 @@ func persistPolicyReportRun(ctx context.Context, db *sql.DB, run *PolicyReportRu
 
 	_, err = tx.ExecContext(ctx, `
 INSERT INTO sf_policy_report_runs(
-  id, workspace_id, forward_network_id, snapshot_id, pack_id, title, status, error,
+  id, owner_username, forward_network_id, snapshot_id, pack_id, title, status, error,
   created_by, started_at, finished_at, request
 )
 VALUES ($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''),$9,$10,$11,$12)
-`, run.ID, run.WorkspaceID, run.ForwardNetworkID, strings.TrimSpace(run.SnapshotID), strings.TrimSpace(run.PackID), strings.TrimSpace(run.Title), strings.TrimSpace(run.Status), strings.TrimSpace(run.Error), run.CreatedBy, run.StartedAt, finishedAt, run.Request)
+`, run.ID, run.OwnerUsername, run.ForwardNetworkID, strings.TrimSpace(run.SnapshotID), strings.TrimSpace(run.PackID), strings.TrimSpace(run.Title), strings.TrimSpace(run.Status), strings.TrimSpace(run.Error), run.CreatedBy, run.StartedAt, finishedAt, run.Request)
 	if err != nil {
 		return err
 	}
@@ -174,12 +174,12 @@ VALUES ($1,$2,$3,$4,NULLIF($5,''),$6)
 
 		_, err := tx.ExecContext(ctx, `
 INSERT INTO sf_policy_report_findings_agg(
-  workspace_id, forward_network_id, check_id, finding_id,
+  owner_username, forward_network_id, check_id, finding_id,
   status, risk_score, asset_key, finding,
   first_seen_at, last_seen_at, resolved_at, last_run_id, updated_at
 )
 VALUES ($1,$2,$3,$4,'ACTIVE',$5,NULLIF($6,''),$7,$8,$8,NULL,$9,now())
-ON CONFLICT (workspace_id, forward_network_id, check_id, finding_id)
+ON CONFLICT (owner_username, forward_network_id, check_id, finding_id)
 DO UPDATE SET
   status='ACTIVE',
   risk_score=EXCLUDED.risk_score,
@@ -189,7 +189,7 @@ DO UPDATE SET
   resolved_at=NULL,
   last_run_id=EXCLUDED.last_run_id,
   updated_at=now()
-`, run.WorkspaceID, run.ForwardNetworkID, cid, fid, f.RiskScore, strings.TrimSpace(f.AssetKey), f.Finding, finishedAt, run.ID)
+`, run.OwnerUsername, run.ForwardNetworkID, cid, fid, f.RiskScore, strings.TrimSpace(f.AssetKey), f.Finding, finishedAt, run.ID)
 		if err != nil {
 			return err
 		}
@@ -231,15 +231,15 @@ func policyReportsResolveAgg(ctx context.Context, tx *sql.Tx, run *PolicyReportR
 			rows, err = tx.QueryContext(ctx, `
 SELECT finding_id
   FROM sf_policy_report_findings_agg
- WHERE workspace_id=$1 AND forward_network_id=$2 AND check_id=$3 AND status='ACTIVE'
+ WHERE owner_username=$1 AND forward_network_id=$2 AND check_id=$3 AND status='ACTIVE'
    AND COALESCE(finding->>'suiteKey','') = $4
-`, run.WorkspaceID, run.ForwardNetworkID, checkID, suiteKey)
+`, run.OwnerUsername, run.ForwardNetworkID, checkID, suiteKey)
 		} else {
 			rows, err = tx.QueryContext(ctx, `
 SELECT finding_id
   FROM sf_policy_report_findings_agg
- WHERE workspace_id=$1 AND forward_network_id=$2 AND check_id=$3 AND status='ACTIVE'
-`, run.WorkspaceID, run.ForwardNetworkID, checkID)
+ WHERE owner_username=$1 AND forward_network_id=$2 AND check_id=$3 AND status='ACTIVE'
+`, run.OwnerUsername, run.ForwardNetworkID, checkID)
 		}
 		if err != nil {
 			return err
@@ -269,9 +269,9 @@ UPDATE sf_policy_report_findings_agg
        resolved_at=$1,
        last_run_id=$2,
        updated_at=now()
- WHERE workspace_id=$3 AND forward_network_id=$4 AND check_id=$5 AND finding_id=$6 AND status='ACTIVE'
+ WHERE owner_username=$3 AND forward_network_id=$4 AND check_id=$5 AND finding_id=$6 AND status='ACTIVE'
    AND COALESCE(finding->>'suiteKey','') = $7
-`, finishedAt, run.ID, run.WorkspaceID, run.ForwardNetworkID, checkID, fid, suiteKey)
+`, finishedAt, run.ID, run.OwnerUsername, run.ForwardNetworkID, checkID, fid, suiteKey)
 				if err != nil {
 					return err
 				}
@@ -284,8 +284,8 @@ UPDATE sf_policy_report_findings_agg
        resolved_at=$1,
        last_run_id=$2,
        updated_at=now()
- WHERE workspace_id=$3 AND forward_network_id=$4 AND check_id=$5 AND finding_id=$6 AND status='ACTIVE'
-`, finishedAt, run.ID, run.WorkspaceID, run.ForwardNetworkID, checkID, fid)
+ WHERE owner_username=$3 AND forward_network_id=$4 AND check_id=$5 AND finding_id=$6 AND status='ACTIVE'
+`, finishedAt, run.ID, run.OwnerUsername, run.ForwardNetworkID, checkID, fid)
 			if err != nil {
 				return err
 			}

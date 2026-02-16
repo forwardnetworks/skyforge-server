@@ -22,13 +22,13 @@ func policyReportsEnsureUser(ctx context.Context, db *sql.DB, username string) {
 	ensureAuditActor(ctx, db, username)
 }
 
-func createPolicyReportRecertCampaign(ctx context.Context, db *sql.DB, workspaceID string, actor string, req *PolicyReportCreateRecertCampaignRequest) (*PolicyReportRecertCampaign, error) {
+func createPolicyReportRecertCampaign(ctx context.Context, db *sql.DB, ownerID string, actor string, req *PolicyReportCreateRecertCampaignRequest) (*PolicyReportRecertCampaign, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	actor = strings.ToLower(strings.TrimSpace(actor))
-	if workspaceID == "" || actor == "" || req == nil {
+	if ownerID == "" || actor == "" || req == nil {
 		return nil, fmt.Errorf("invalid input")
 	}
 
@@ -65,16 +65,16 @@ func createPolicyReportRecertCampaign(ctx context.Context, db *sql.DB, workspace
 
 	_, err := db.ExecContext(ctx, `
 INSERT INTO sf_policy_report_recert_campaigns (
-  id, workspace_id, name, description, forward_network_id, snapshot_id, pack_id, status, due_at, created_by
+  id, owner_username, name, description, forward_network_id, snapshot_id, pack_id, status, due_at, created_by
 ) VALUES ($1,$2,$3,NULLIF($4,''),$5,$6,$7,'OPEN',$8,$9)
-`, id, workspaceID, name, desc, networkID, snapshotID, packID, dueAt, actor)
+`, id, ownerID, name, desc, networkID, snapshotID, packID, dueAt, actor)
 	if err != nil {
 		return nil, err
 	}
 
 	out := &PolicyReportRecertCampaign{
 		ID:             id,
-		WorkspaceID:    workspaceID,
+		OwnerUsername:  ownerID,
 		Name:           name,
 		Description:    desc,
 		ForwardNetwork: networkID,
@@ -89,16 +89,16 @@ INSERT INTO sf_policy_report_recert_campaigns (
 	return out, nil
 }
 
-func listPolicyReportRecertCampaigns(ctx context.Context, db *sql.DB, workspaceID string, req *PolicyReportListRecertCampaignsRequest) ([]PolicyReportRecertCampaignWithCounts, error) {
+func listPolicyReportRecertCampaigns(ctx context.Context, db *sql.DB, ownerID string, req *PolicyReportListRecertCampaignsRequest) ([]PolicyReportRecertCampaignWithCounts, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace id required")
+	ownerID = strings.TrimSpace(ownerID)
+	if ownerID == "" {
+		return nil, fmt.Errorf("owner username required")
 	}
 	status := ""
 	limit := 50
@@ -110,11 +110,11 @@ func listPolicyReportRecertCampaigns(ctx context.Context, db *sql.DB, workspaceI
 	}
 
 	query := `
-SELECT c.id, c.workspace_id, c.name, COALESCE(c.description,''), c.forward_network_id, COALESCE(c.snapshot_id,''),
+SELECT c.id, c.owner_username, c.name, COALESCE(c.description,''), c.forward_network_id, COALESCE(c.snapshot_id,''),
        c.pack_id, c.status, c.due_at, c.created_by, c.created_at, c.updated_at
   FROM sf_policy_report_recert_campaigns c
- WHERE c.workspace_id=$1`
-	args := []any{workspaceID}
+ WHERE c.owner_username=$1`
+	args := []any{ownerID}
 	if status != "" {
 		query += " AND c.status=$2"
 		args = append(args, status)
@@ -137,7 +137,7 @@ SELECT c.id, c.workspace_id, c.name, COALESCE(c.description,''), c.forward_netwo
 		var desc string
 		var snapshot string
 		var due sql.NullTime
-		if err := rows.Scan(&c.ID, &c.WorkspaceID, &c.Name, &desc, &c.ForwardNetwork, &snapshot, &c.PackID, &c.Status, &due, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.OwnerUsername, &c.Name, &desc, &c.ForwardNetwork, &snapshot, &c.PackID, &c.Status, &due, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt); err != nil {
 			return nil, err
 		}
 		c.Description = strings.TrimSpace(desc)
@@ -160,16 +160,16 @@ SELECT COUNT(*)::int,
 	return out, nil
 }
 
-func getPolicyReportRecertCampaign(ctx context.Context, db *sql.DB, workspaceID string, campaignID string) (*PolicyReportRecertCampaignWithCounts, error) {
+func getPolicyReportRecertCampaign(ctx context.Context, db *sql.DB, ownerID string, campaignID string) (*PolicyReportRecertCampaignWithCounts, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	campaignID = strings.TrimSpace(campaignID)
-	if workspaceID == "" || campaignID == "" {
+	if ownerID == "" || campaignID == "" {
 		return nil, fmt.Errorf("invalid input")
 	}
 
@@ -178,11 +178,11 @@ func getPolicyReportRecertCampaign(ctx context.Context, db *sql.DB, workspaceID 
 	var snapshot string
 	var due sql.NullTime
 	err := db.QueryRowContext(ctx, `
-SELECT id, workspace_id, name, COALESCE(description,''), forward_network_id, COALESCE(snapshot_id,''),
+SELECT id, owner_username, name, COALESCE(description,''), forward_network_id, COALESCE(snapshot_id,''),
        pack_id, status, due_at, created_by, created_at, updated_at
   FROM sf_policy_report_recert_campaigns
- WHERE id=$1 AND workspace_id=$2`, campaignID, workspaceID).Scan(
-		&c.ID, &c.WorkspaceID, &c.Name, &desc, &c.ForwardNetwork, &snapshot,
+ WHERE id=$1 AND owner_username=$2`, campaignID, ownerID).Scan(
+		&c.ID, &c.OwnerUsername, &c.Name, &desc, &c.ForwardNetwork, &snapshot,
 		&c.PackID, &c.Status, &due, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt,
 	)
 	if err != nil {
@@ -206,17 +206,17 @@ SELECT COUNT(*)::int,
 	return &PolicyReportRecertCampaignWithCounts{Campaign: c, Counts: counts}, nil
 }
 
-func replacePolicyReportRecertAssignments(ctx context.Context, db *sql.DB, workspaceID string, campaignID string, assignee string, findings []PolicyReportRecertAssignment) (int, error) {
+func replacePolicyReportRecertAssignments(ctx context.Context, db *sql.DB, ownerID string, campaignID string, assignee string, findings []PolicyReportRecertAssignment) (int, error) {
 	if db == nil {
 		return 0, fmt.Errorf("db is not configured")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	campaignID = strings.TrimSpace(campaignID)
 	assignee = strings.ToLower(strings.TrimSpace(assignee))
-	if workspaceID == "" || campaignID == "" {
+	if ownerID == "" || campaignID == "" {
 		return 0, fmt.Errorf("invalid input")
 	}
 	if assignee != "" {
@@ -247,9 +247,9 @@ func replacePolicyReportRecertAssignments(ctx context.Context, db *sql.DB, works
 		}
 		_, err := tx.ExecContext(ctx, `
 INSERT INTO sf_policy_report_recert_assignments (
-  id, campaign_id, workspace_id, finding_id, check_id, assignee_username, status, finding
+  id, campaign_id, owner_username, finding_id, check_id, assignee_username, status, finding
 ) VALUES ($1,$2,$3,$4,$5,NULLIF($6,''),'PENDING',$7)
-`, id, campaignID, workspaceID, findingID, checkID, assignee, finding)
+`, id, campaignID, ownerID, findingID, checkID, assignee, finding)
 		if err != nil {
 			return 0, err
 		}
@@ -262,16 +262,16 @@ INSERT INTO sf_policy_report_recert_assignments (
 	return created, nil
 }
 
-func listPolicyReportRecertAssignments(ctx context.Context, db *sql.DB, workspaceID string, req *PolicyReportListRecertAssignmentsRequest) ([]PolicyReportRecertAssignment, error) {
+func listPolicyReportRecertAssignments(ctx context.Context, db *sql.DB, ownerID string, req *PolicyReportListRecertAssignmentsRequest) ([]PolicyReportRecertAssignment, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace id required")
+	ownerID = strings.TrimSpace(ownerID)
+	if ownerID == "" {
+		return nil, fmt.Errorf("owner username required")
 	}
 	campaignID := ""
 	status := ""
@@ -287,11 +287,11 @@ func listPolicyReportRecertAssignments(ctx context.Context, db *sql.DB, workspac
 	}
 
 	query := `
-SELECT id, campaign_id, workspace_id, finding_id, check_id, COALESCE(assignee_username,''), status,
+SELECT id, campaign_id, owner_username, finding_id, check_id, COALESCE(assignee_username,''), status,
        COALESCE(justification,''), attested_at, finding, created_at, updated_at
   FROM sf_policy_report_recert_assignments
- WHERE workspace_id=$1`
-	args := []any{workspaceID}
+ WHERE owner_username=$1`
+	args := []any{ownerID}
 	i := 2
 	if campaignID != "" {
 		query += fmt.Sprintf(" AND campaign_id=$%d", i)
@@ -326,7 +326,7 @@ SELECT id, campaign_id, workspace_id, finding_id, check_id, COALESCE(assignee_us
 		var assignee string
 		var just string
 		var att sql.NullTime
-		if err := rows.Scan(&a.ID, &a.CampaignID, &a.WorkspaceID, &a.FindingID, &a.CheckID, &assignee, &a.Status, &just, &att, &a.Finding, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.CampaignID, &a.OwnerUsername, &a.FindingID, &a.CheckID, &assignee, &a.Status, &just, &att, &a.Finding, &a.CreatedAt, &a.UpdatedAt); err != nil {
 			return nil, err
 		}
 		a.Assignee = strings.TrimSpace(assignee)
@@ -361,18 +361,18 @@ SELECT id, campaign_id, workspace_id, finding_id, check_id, COALESCE(assignee_us
 	return out, nil
 }
 
-func updatePolicyReportAssignmentStatus(ctx context.Context, db *sql.DB, workspaceID string, assignmentID string, newStatus string, justification string) error {
+func updatePolicyReportAssignmentStatus(ctx context.Context, db *sql.DB, ownerID string, assignmentID string, newStatus string, justification string) error {
 	if db == nil {
 		return fmt.Errorf("db is not configured")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	assignmentID = strings.TrimSpace(assignmentID)
 	newStatus = strings.ToUpper(strings.TrimSpace(newStatus))
 	justification = strings.TrimSpace(justification)
-	if workspaceID == "" || assignmentID == "" {
+	if ownerID == "" || assignmentID == "" {
 		return fmt.Errorf("invalid input")
 	}
 	if newStatus != "ATTESTED" && newStatus != "WAIVED" {
@@ -385,21 +385,21 @@ UPDATE sf_policy_report_recert_assignments
        justification=NULLIF($2,''),
        attested_at=now(),
        updated_at=now()
- WHERE id=$3 AND workspace_id=$4
-`, newStatus, justification, assignmentID, workspaceID)
+ WHERE id=$3 AND owner_username=$4
+`, newStatus, justification, assignmentID, ownerID)
 	return err
 }
 
-func createPolicyReportException(ctx context.Context, db *sql.DB, workspaceID string, actor string, req *PolicyReportCreateExceptionRequest) (*PolicyReportException, error) {
+func createPolicyReportException(ctx context.Context, db *sql.DB, ownerID string, actor string, req *PolicyReportCreateExceptionRequest) (*PolicyReportException, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	actor = strings.ToLower(strings.TrimSpace(actor))
-	if workspaceID == "" || actor == "" || req == nil {
+	if ownerID == "" || actor == "" || req == nil {
 		return nil, fmt.Errorf("invalid input")
 	}
 	networkID := strings.TrimSpace(req.ForwardNetwork)
@@ -426,15 +426,15 @@ func createPolicyReportException(ctx context.Context, db *sql.DB, workspaceID st
 	policyReportsEnsureUser(ctx, db, actor)
 	_, err := db.ExecContext(ctx, `
 INSERT INTO sf_policy_report_exceptions (
-  id, workspace_id, forward_network_id, finding_id, check_id, status, justification, ticket_url, expires_at, created_by
+  id, owner_username, forward_network_id, finding_id, check_id, status, justification, ticket_url, expires_at, created_by
 ) VALUES ($1,$2,$3,$4,$5,'PROPOSED',$6,NULLIF($7,''),$8,$9)
-`, id, workspaceID, networkID, findingID, checkID, just, strings.TrimSpace(req.TicketURL), expiresAt, actor)
+`, id, ownerID, networkID, findingID, checkID, just, strings.TrimSpace(req.TicketURL), expiresAt, actor)
 	if err != nil {
 		return nil, err
 	}
 	var out PolicyReportException
 	out.ID = id
-	out.WorkspaceID = workspaceID
+	out.OwnerUsername = ownerID
 	out.ForwardNetwork = networkID
 	out.FindingID = findingID
 	out.CheckID = checkID
@@ -447,16 +447,16 @@ INSERT INTO sf_policy_report_exceptions (
 	return &out, nil
 }
 
-func listPolicyReportExceptions(ctx context.Context, db *sql.DB, workspaceID string, req *PolicyReportListExceptionsRequest) ([]PolicyReportException, error) {
+func listPolicyReportExceptions(ctx context.Context, db *sql.DB, ownerID string, req *PolicyReportListExceptionsRequest) ([]PolicyReportException, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace id required")
+	ownerID = strings.TrimSpace(ownerID)
+	if ownerID == "" {
+		return nil, fmt.Errorf("owner username required")
 	}
 	networkID := ""
 	status := ""
@@ -470,11 +470,11 @@ func listPolicyReportExceptions(ctx context.Context, db *sql.DB, workspaceID str
 	}
 
 	query := `
-SELECT id, workspace_id, forward_network_id, finding_id, check_id, status, justification, COALESCE(ticket_url,''), expires_at,
+SELECT id, owner_username, forward_network_id, finding_id, check_id, status, justification, COALESCE(ticket_url,''), expires_at,
        created_by, COALESCE(approved_by,''), created_at, updated_at
   FROM sf_policy_report_exceptions
- WHERE workspace_id=$1`
-	args := []any{workspaceID}
+ WHERE owner_username=$1`
+	args := []any{ownerID}
 	if networkID != "" {
 		query += " AND forward_network_id=$2"
 		args = append(args, networkID)
@@ -502,7 +502,7 @@ SELECT id, workspace_id, forward_network_id, finding_id, check_id, status, justi
 		var ticket string
 		var approved string
 		var expires sql.NullTime
-		if err := rows.Scan(&e.ID, &e.WorkspaceID, &network, &e.FindingID, &e.CheckID, &e.Status, &e.Justification, &ticket, &expires, &e.CreatedBy, &approved, &e.CreatedAt, &e.UpdatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.OwnerUsername, &network, &e.FindingID, &e.CheckID, &e.Status, &e.Justification, &ticket, &expires, &e.CreatedBy, &approved, &e.CreatedAt, &e.UpdatedAt); err != nil {
 			return nil, err
 		}
 		e.ForwardNetwork = strings.TrimSpace(network)
@@ -517,18 +517,18 @@ SELECT id, workspace_id, forward_network_id, finding_id, check_id, status, justi
 	return out, nil
 }
 
-func updatePolicyReportExceptionStatus(ctx context.Context, db *sql.DB, workspaceID string, exceptionID string, actor string, newStatus string) error {
+func updatePolicyReportExceptionStatus(ctx context.Context, db *sql.DB, ownerID string, exceptionID string, actor string, newStatus string) error {
 	if db == nil {
 		return fmt.Errorf("db is not configured")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	exceptionID = strings.TrimSpace(exceptionID)
 	actor = strings.ToLower(strings.TrimSpace(actor))
 	newStatus = strings.ToUpper(strings.TrimSpace(newStatus))
-	if workspaceID == "" || exceptionID == "" || actor == "" {
+	if ownerID == "" || exceptionID == "" || actor == "" {
 		return fmt.Errorf("invalid input")
 	}
 	if newStatus != "APPROVED" && newStatus != "REJECTED" {
@@ -540,25 +540,25 @@ UPDATE sf_policy_report_exceptions
    SET status=$1,
        approved_by=CASE WHEN $1='APPROVED' THEN $2 ELSE approved_by END,
        updated_at=now()
- WHERE id=$3 AND workspace_id=$4
-`, newStatus, actor, exceptionID, workspaceID)
+ WHERE id=$3 AND owner_username=$4
+`, newStatus, actor, exceptionID, ownerID)
 	return err
 }
 
-func policyReportAudit(ctx context.Context, db *sql.DB, workspaceID string, actor string, action string, details map[string]any) {
+func policyReportAudit(ctx context.Context, db *sql.DB, ownerID string, actor string, action string, details map[string]any) {
 	if db == nil {
 		return
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	actor = strings.ToLower(strings.TrimSpace(actor))
 	action = strings.TrimSpace(action)
-	if workspaceID == "" || actor == "" || action == "" {
+	if ownerID == "" || actor == "" || action == "" {
 		return
 	}
 	policyReportsEnsureUser(ctx, db, actor)
 	b, _ := json.Marshal(details)
 	_, _ = db.ExecContext(ctx, `
-INSERT INTO sf_policy_report_audit_log (workspace_id, actor_username, action, details)
+INSERT INTO sf_policy_report_audit_log (owner_username, actor_username, action, details)
 VALUES ($1,$2,$3,$4)
-`, workspaceID, actor, action, string(b))
+`, ownerID, actor, action, string(b))
 }

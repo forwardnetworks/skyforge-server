@@ -4,7 +4,7 @@ import "time"
 
 type PolicyReportPreset struct {
 	ID               string                        `json:"id"`
-	WorkspaceID      string                        `json:"workspaceId"`
+	OwnerUsername    string                        `json:"ownerUsername"`
 	ForwardNetworkID string                        `json:"forwardNetworkId"`
 	Name             string                        `json:"name"`
 	Description      string                        `json:"description,omitempty"`
@@ -22,7 +22,6 @@ type PolicyReportPreset struct {
 	LastRunID        string                        `json:"lastRunId,omitempty"`
 	LastRunAt        *time.Time                    `json:"lastRunAt,omitempty"`
 	LastError        string                        `json:"lastError,omitempty"`
-	OwnerUsername    string                        `json:"ownerUsername"`
 	CreatedAt        time.Time                     `json:"createdAt"`
 	UpdatedAt        time.Time                     `json:"updatedAt"`
 }

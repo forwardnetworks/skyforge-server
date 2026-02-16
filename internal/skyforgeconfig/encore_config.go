@@ -93,7 +93,7 @@ type CoderDefaultsConfig struct {
 	PortalRedirectPath string
 }
 
-type WorkspacesDefaultsConfig struct {
+type UsersDefaultsConfig struct {
 	DataDir          string
 	GiteaAPIURL      string
 	GiteaUsername    string
@@ -193,7 +193,7 @@ type EncoreConfig struct {
 	DNS              DNSDefaultsConfig
 	MCP              MCPDefaultsConfig
 	Containerlab     ContainerlabDefaultsConfig
-	Workspaces       WorkspacesDefaultsConfig
+	Scopes           UsersDefaultsConfig
 	ObjectStorage    ObjectStorageDefaultsConfig
 	Terraform        TerraformDefaultsConfig
 	Forward          ForwardDefaultsConfig
@@ -218,7 +218,7 @@ type WorkerConfig struct {
 	TaskWorkerPollMaxConcurrency int
 
 	Netlab           NetlabDefaultsConfig
-	Workspaces       WorkspacesDefaultsConfig
+	Scopes           UsersDefaultsConfig
 	ObjectStorage    ObjectStorageDefaultsConfig
 	Terraform        TerraformDefaultsConfig
 	Forward          ForwardDefaultsConfig

@@ -10,12 +10,12 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-type WorkspaceDeploymentNodeLogsParams struct {
+type UserDeploymentNodeLogsParams struct {
 	Tail      int    `query:"tail" encore:"optional"`
 	Container string `query:"container" encore:"optional"`
 }
 
-type WorkspaceDeploymentNodeLogsResponse struct {
+type UserDeploymentNodeLogsResponse struct {
 	Namespace string `json:"namespace,omitempty"`
 	PodName   string `json:"podName,omitempty"`
 	Container string `json:"container,omitempty"`
@@ -23,21 +23,19 @@ type WorkspaceDeploymentNodeLogsResponse struct {
 	Logs      string `json:"logs,omitempty"`
 }
 
-// GetWorkspaceDeploymentNodeLogs returns recent log lines for a clabernetes node pod.
+// GetUserDeploymentNodeLogs returns recent log lines for a clabernetes node pod.
 //
 // This powers the "View logs" action in the topology UI (similar to the c9s VSCode extension).
-//
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/nodes/:node/logs
-func (s *Service) GetWorkspaceDeploymentNodeLogs(
+func (s *Service) GetUserDeploymentNodeLogs(
 	ctx context.Context,
 	id, deploymentID, node string,
-	params *WorkspaceDeploymentNodeLogsParams,
-) (*WorkspaceDeploymentNodeLogsResponse, error) {
+	params *UserDeploymentNodeLogsParams,
+) (*UserDeploymentNodeLogsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +62,7 @@ func (s *Service) GetWorkspaceDeploymentNodeLogs(
 		container = strings.TrimSpace(params.Container)
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+	dep, err := s.getUserDeployment(ctx, pc.context.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +77,7 @@ func (s *Service) GetWorkspaceDeploymentNodeLogs(
 	k8sNamespace = strings.TrimSpace(k8sNamespace)
 	topologyName = strings.TrimSpace(topologyName)
 	if k8sNamespace == "" {
-		k8sNamespace = clabernetesWorkspaceNamespace(pc.workspace.Slug)
+		k8sNamespace = clabernetesOwnerNamespace(pc.context.Slug)
 	}
 	if topologyName == "" {
 		labName, _ := cfgAny["labName"].(string)
@@ -141,7 +139,7 @@ func (s *Service) GetWorkspaceDeploymentNodeLogs(
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load node logs").Err()
 	}
 
-	return &WorkspaceDeploymentNodeLogsResponse{
+	return &UserDeploymentNodeLogsResponse{
 		Namespace: k8sNamespace,
 		PodName:   podName,
 		Container: container,

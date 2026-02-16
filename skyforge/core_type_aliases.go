@@ -15,5 +15,5 @@ type (
 	UIConfig           = skyforgecore.UIConfig
 	NetlabConfig       = skyforgecore.NetlabConfig
 	NetlabServerConfig = skyforgecore.NetlabServerConfig
-	WorkspacesConfig   = skyforgecore.WorkspacesConfig
+	UsersConfig        = skyforgecore.UsersConfig
 )

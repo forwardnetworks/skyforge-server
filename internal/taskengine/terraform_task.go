@@ -33,8 +33,8 @@ type terraformTaskSpec struct {
 
 type terraformRunSpec struct {
 	TaskID         int
-	WorkspaceCtx   *workspaceContext
-	WorkspaceSlug  string
+	OwnerCtx       *ownerContext
+	OwnerSlug      string
 	Username       string
 	Cloud          string
 	Action         string
@@ -53,7 +53,7 @@ func (e *Engine) dispatchTerraformTask(ctx context.Context, task *taskstore.Task
 	if err := decodeTaskSpec(task, &specIn); err != nil {
 		return err
 	}
-	ws, err := e.loadWorkspaceByKey(ctx, task.WorkspaceID)
+	ws, err := e.loadOwnerProfileByKey(ctx, task.OwnerID)
 	if err != nil {
 		return err
 	}
@@ -61,8 +61,8 @@ func (e *Engine) dispatchTerraformTask(ctx context.Context, task *taskstore.Task
 	if username == "" {
 		username = ws.primaryOwner()
 	}
-	pc := &workspaceContext{
-		workspace: *ws,
+	pc := &ownerContext{
+		owner: *ws,
 		claims: SessionClaims{
 			Username: username,
 		},
@@ -85,8 +85,8 @@ func (e *Engine) dispatchTerraformTask(ctx context.Context, task *taskstore.Task
 
 	runSpec := terraformRunSpec{
 		TaskID:         task.ID,
-		WorkspaceCtx:   pc,
-		WorkspaceSlug:  strings.TrimSpace(pc.workspace.Slug),
+		OwnerCtx:       pc,
+		OwnerSlug:      strings.TrimSpace(pc.owner.Slug),
 		Username:       username,
 		Cloud:          cloud,
 		Action:         action,
@@ -118,10 +118,10 @@ func (e *Engine) runTerraformTask(ctx context.Context, spec terraformRunSpec, lo
 	if spec.Template == "" {
 		return fmt.Errorf("template is required")
 	}
-	if spec.WorkspaceCtx == nil {
-		return fmt.Errorf("workspace context unavailable")
+	if spec.OwnerCtx == nil {
+		return fmt.Errorf("owner context unavailable")
 	}
-	ref, err := e.resolveTemplateRepoForWorkspace(spec.WorkspaceCtx, spec.TemplateSource, spec.TemplateRepo)
+	ref, err := e.resolveTemplateRepoForOwner(spec.OwnerCtx, spec.TemplateSource, spec.TemplateRepo)
 	if err != nil {
 		return err
 	}
@@ -188,10 +188,10 @@ func (e *Engine) syncTerraformState(ctx context.Context, spec terraformRunSpec, 
 	if log == nil {
 		log = noopLogger{}
 	}
-	if spec.WorkspaceCtx == nil {
+	if spec.OwnerCtx == nil {
 		return
 	}
-	stateKey := strings.TrimSpace(spec.WorkspaceCtx.workspace.TerraformStateKey)
+	stateKey := strings.TrimSpace(spec.OwnerCtx.owner.TerraformStateKey)
 	if stateKey == "" {
 		log.Infof("Terraform state key not configured; skipping state upload.")
 		return

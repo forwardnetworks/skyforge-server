@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
-    <title>Skyforge Docs · Workspaces</title>
+    <title>Skyforge Docs · Personal Scope</title>
     <style>
       :root {
         color-scheme: dark light;
@@ -104,8 +104,8 @@
   </head>
   <body>
     <header>
-      <h1>Workspaces</h1>
-      <p>How Skyforge provisions repos + templates + workspaces.</p>
+      <h1>Personal Scope</h1>
+      <p>How Skyforge handles per-user repos, templates, and artifacts.</p>
       <div class="nav">
         <a class="pill" href="/docs/">Docs home</a>
         <a class="pill" href="/">Skyforge home</a>
@@ -114,73 +114,42 @@
     </header>
     <main>
       <section class="card">
-        <h2>What a Workspace is</h2>
+        <h2>What this means</h2>
         <ul>
-          <li>A Skyforge Workspace provisions a Git repo and native run configuration.</li>
-          <li>Artifacts are stored in Skyforge object storage under a shared bucket with per-workspace prefixes.</li>
-          <li>Workspace clones are mirrored into OpenVSCode Server so users can edit and push changes.</li>
+          <li>Every user works in a personal scope.</li>
+          <li>Artifacts are stored under per-user prefixes in object storage.</li>
+          <li>OpenVSCode Server mirrors your repository for edits and pushes.</li>
         </ul>
       </section>
 
       <section class="card">
-        <h2>Create a workspace</h2>
+        <h2>Create and run</h2>
         <ol>
-          <li>Log in on <a href="/">Skyforge home</a> (SSO).</li>
-          <li>Skyforge automatically provisions a default workspace on first login.</li>
-          <li>Use the <a href="/dashboard/deployments">Dashboard</a> to select your workspace and create deployments.</li>
+          <li>Log in on <a href="/">Skyforge home</a>.</li>
+          <li>Open <a href="/dashboard/deployments">Deployments</a>.</li>
+          <li>Select a template, validate, and start a run.</li>
         </ol>
       </section>
 
       <section class="card">
-        <h2>Default templates</h2>
+        <h2>OpenVSCode paths</h2>
         <ul>
-          <li><strong>Tofu</strong>: Init, Plan, Apply (Apply requires owner/admin + confirmation).</li>
-          <li><strong>Ansible</strong>: Run <code>playbook.yml</code> (a placeholder file is created in the repo).</li>
+          <li>Legacy shared clone path (installation-specific).</li>
+          <li>User clone path: <code>/var/lib/skyforge/users/&lt;username&gt;/&lt;slug&gt;</code></li>
         </ul>
       </section>
 
       <section class="card">
-        <h2>Artifacts</h2>
+        <h2>Pushing changes to Git</h2>
         <ul>
-          <li>Use the workspace row buttons to Upload/Download/Browse artifacts.</li>
-          <li>Uploads go through Skyforge Server (simple and works behind a single DNS name).</li>
-        </ul>
-      </section>
-
-      <section class="card">
-        <h2>RBAC model</h2>
-        <ul>
-          <li><strong>Owners</strong>: can edit membership and run templates (and are synced to Git as repo admins).</li>
-          <li><strong>Editors</strong>: can run templates and are synced to Git with write access.</li>
-          <li><strong>Viewers</strong>: read-only in Skyforge and are synced to Git with read access.</li>
-          <li>Optionally, map directory groups into <strong>Owner groups</strong>/<strong>Editor groups</strong>/<strong>Viewer groups</strong> for automatic access.</li>
-        </ul>
-      </section>
-
-      <section class="card">
-        <h2>OpenVSCode Server workspaces</h2>
-        <ul>
-          <li>Shared clones (all workspaces): <code>/var/lib/skyforge/workspaces/&lt;slug&gt;</code> (legacy path)</li>
-          <li>Your clones (workspaces you can access): <code>/var/lib/skyforge/users/&lt;username&gt;/&lt;slug&gt;</code></li>
-        </ul>
-      </section>
-
-      <section class="card">
-        <h2>Pushing changes back to Git</h2>
-        <ul>
-          <li>Log in to Git (<a href="/git/">/git/</a>) with SSO and create a Personal Access Token.</li>
-          <li>In OpenVSCode Server, configure your Git identity and authenticate with your token.</li>
+          <li>Log in to Git (<a href="/git/">/git/</a>) and create a personal access token.</li>
+          <li>Configure your Git identity in OpenVSCode Server.</li>
         </ul>
         <pre><code>git config --global user.name "Your Name"
 git config --global user.email "you@company.com"
-
-# Option 1 (recommended): use a credential helper
 git config --global credential.helper store
 git pull
-git push
-
-# Option 2: set an authenticated remote (avoid sharing terminals/screens)
-git remote -v</code></pre>
+git push</code></pre>
       </section>
     </main>
   </body>

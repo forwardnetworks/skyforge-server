@@ -16,8 +16,9 @@ import (
 
 type dashboardSnapshot struct {
 	RefreshedAt  string                 `json:"refreshedAt"`
-	Workspaces   []SkyforgeWorkspace    `json:"workspaces"`
-	Deployments  []WorkspaceDeployment  `json:"deployments"`
+	Contexts     []SkyforgeUserContext  `json:"contexts"`
+	Scopes       []SkyforgeUserContext  `json:"-"` // legacy internal field
+	Deployments  []UserDeployment       `json:"deployments"`
 	Runs         []JSONMap              `json:"runs"`
 	TemplatesAt  string                 `json:"templatesIndexUpdatedAt,omitempty"`
 	AwsSsoStatus *dashboardAwsSsoStatus `json:"awsSsoStatus,omitempty"`
@@ -51,32 +52,32 @@ func buildDashboardAwsSsoStatus(cfg Config, store awsSSOTokenStore, username str
 	return status
 }
 
-func listDeploymentsForDashboard(ctx context.Context, db *sql.DB, workspaceID string) ([]WorkspaceDeployment, error) {
+func listDeploymentsForDashboard(ctx context.Context, db *sql.DB, ownerID string) ([]UserDeployment, error) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
 	rows, err := db.QueryContext(ctx, `SELECT id, name, type, config, created_by, created_at, updated_at,
-  last_task_workspace_id, last_task_id, last_status, last_started_at, last_finished_at
+  last_task_owner_id, last_task_id, last_status, last_started_at, last_finished_at
 FROM sf_deployments
-WHERE workspace_id=$1
-ORDER BY updated_at DESC`, workspaceID)
+WHERE owner_username=$1
+ORDER BY updated_at DESC`, ownerID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	out := make([]WorkspaceDeployment, 0, 16)
+	out := make([]UserDeployment, 0, 16)
 	for rows.Next() {
 		var (
-			rec                 WorkspaceDeployment
-			raw                 json.RawMessage
-			lastTaskWorkspaceID sql.NullInt64
-			lastTaskID          sql.NullInt64
-			lastStatus          sql.NullString
-			lastStarted         sql.NullTime
-			lastFinished        sql.NullTime
-			createdAt           time.Time
-			updatedAt           time.Time
+			rec             UserDeployment
+			raw             json.RawMessage
+			lastTaskOwnerID sql.NullInt64
+			lastTaskID      sql.NullInt64
+			lastStatus      sql.NullString
+			lastStarted     sql.NullTime
+			lastFinished    sql.NullTime
+			createdAt       time.Time
+			updatedAt       time.Time
 		)
 		if err := rows.Scan(
 			&rec.ID,
@@ -86,7 +87,7 @@ ORDER BY updated_at DESC`, workspaceID)
 			&rec.CreatedBy,
 			&createdAt,
 			&updatedAt,
-			&lastTaskWorkspaceID,
+			&lastTaskOwnerID,
 			&lastTaskID,
 			&lastStatus,
 			&lastStarted,
@@ -94,12 +95,12 @@ ORDER BY updated_at DESC`, workspaceID)
 		); err != nil {
 			return nil, err
 		}
-		rec.WorkspaceID = workspaceID
+		rec.OwnerUsername = ownerID
 		rec.CreatedAt = createdAt.UTC().Format(time.RFC3339)
 		rec.UpdatedAt = updatedAt.UTC().Format(time.RFC3339)
 		{
 			qctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
-			summary, err := getDeploymentQueueSummary(qctx, db, workspaceID, rec.ID)
+			summary, err := getDeploymentQueueSummary(qctx, db, ownerID, rec.ID)
 			cancel()
 			if err == nil && summary != nil {
 				if summary.ActiveTaskID > 0 {
@@ -119,9 +120,9 @@ ORDER BY updated_at DESC`, workspaceID)
 		} else {
 			rec.Config = JSONMap{}
 		}
-		if lastTaskWorkspaceID.Valid {
-			v := int(lastTaskWorkspaceID.Int64)
-			rec.LastTaskWorkspaceID = &v
+		if lastTaskOwnerID.Valid {
+			v := int(lastTaskOwnerID.Int64)
+			rec.LastTaskOwnerID = &v
 		}
 		if lastTaskID.Valid {
 			v := int(lastTaskID.Int64)
@@ -162,51 +163,51 @@ func loadDashboardSnapshot(ctx context.Context, svc *Service, claims *SessionCla
 		IsAdmin:     isAdminForClaims(svc.cfg, claims),
 	}
 
-	if _, err := svc.ensureDefaultWorkspace(ctx, user); err != nil {
-		log.Printf("default workspace ensure: %v", err)
+	if _, err := svc.ensureDefaultOwnerContext(ctx, user); err != nil {
+		log.Printf("default scope ensure: %v", err)
 	}
-	workspaces, err := svc.workspaceStore.load()
+	scopes, err := svc.scopeStore.load()
 	if err != nil {
 		return nil, err
 	}
 
-	// Best-effort sync group membership like GetWorkspaces does.
+	// Best-effort sync group membership like GetUsers does.
 	changed := false
-	changedWorkspaces := make([]SkyforgeWorkspace, 0)
-	for i := range workspaces {
-		if role, ok := syncGroupMembershipForUser(&workspaces[i], claims); ok {
+	changedScopes := make([]SkyforgeUserContext, 0)
+	for i := range scopes {
+		if role, ok := syncGroupMembershipForUser(&scopes[i], claims); ok {
 			changed = true
-			changedWorkspaces = append(changedWorkspaces, workspaces[i])
-			log.Printf("workspace group sync: %s -> %s (%s)", claims.Username, workspaces[i].Slug, role)
+			changedScopes = append(changedScopes, scopes[i])
+			log.Printf("context group sync: %s -> %s (%s)", claims.Username, scopes[i].Slug, role)
 		}
 	}
 	if changed {
 		updatedAll := true
-		for _, w := range changedWorkspaces {
-			if err := svc.workspaceStore.upsert(w); err != nil {
+		for _, w := range changedScopes {
+			if err := svc.scopeStore.upsert(w); err != nil {
 				updatedAll = false
-				log.Printf("workspace upsert after group sync (%s): %v", w.ID, err)
+				log.Printf("context upsert after group sync (%s): %v", w.ID, err)
 			}
 		}
 		if updatedAll {
-			for _, w := range changedWorkspaces {
-				syncGiteaCollaboratorsForWorkspace(svc.cfg, w)
+			for _, w := range changedScopes {
+				syncGiteaCollaboratorsForScope(svc.cfg, w)
 			}
 		}
 	}
 
-	filtered := make([]SkyforgeWorkspace, 0, len(workspaces))
-	for _, w := range workspaces {
-		if workspaceAccessLevelForClaims(svc.cfg, w, claims) != "none" {
+	filtered := make([]SkyforgeUserContext, 0, len(scopes))
+	for _, w := range scopes {
+		if ownerAccessLevelForClaims(svc.cfg, w, claims) != "none" {
 			filtered = append(filtered, w)
 		}
 	}
-	workspaces = filtered
-	sort.Slice(workspaces, func(i, j int) bool { return workspaces[i].Name < workspaces[j].Name })
+	scopes = filtered
+	sort.Slice(scopes, func(i, j int) bool { return scopes[i].Name < scopes[j].Name })
 
-	deployments := make([]WorkspaceDeployment, 0, 32)
+	deployments := make([]UserDeployment, 0, 32)
 	runs := make([]JSONMap, 0, 64)
-	for _, w := range workspaces {
+	for _, w := range scopes {
 		{
 			rows, err := listDeploymentsForDashboard(ctx, svc.db, w.ID)
 			if err == nil {
@@ -221,13 +222,13 @@ func loadDashboardSnapshot(ctx context.Context, svc *Service, claims *SessionCla
 				runItems := make([]map[string]any, 0, len(tasks))
 				for _, task := range tasks {
 					// Hide internal bootstrap tasks from the dashboard. These run as part
-					// of first-login/workspace creation and are not actionable for users.
+					// of first-login/context creation and are not actionable for users.
 					switch strings.TrimSpace(task.TaskType) {
-					case skyforgecore.TaskTypeUserBootstrap, skyforgecore.TaskTypeWorkspaceBootstrap:
+					case skyforgecore.TaskTypeUserBootstrap, skyforgecore.TaskTypeContextBootstrap:
 						continue
 					}
 					run := taskToRunInfo(task)
-					run["workspaceId"] = w.ID
+					run["ownerUsername"] = w.ID
 					runItems = append(runItems, run)
 				}
 				items, err := toJSONMapSlice(runItems)
@@ -238,7 +239,7 @@ func loadDashboardSnapshot(ctx context.Context, svc *Service, claims *SessionCla
 		}
 	}
 	sort.Slice(deployments, func(i, j int) bool {
-		return (deployments[i].WorkspaceID + ":" + deployments[i].ID) < (deployments[j].WorkspaceID + ":" + deployments[j].ID)
+		return (deployments[i].OwnerUsername + ":" + deployments[i].ID) < (deployments[j].OwnerUsername + ":" + deployments[j].ID)
 	})
 	sort.Slice(runs, func(i, j int) bool {
 		return intFromAny(runs[i]["id"]) > intFromAny(runs[j]["id"])
@@ -257,7 +258,8 @@ func loadDashboardSnapshot(ctx context.Context, svc *Service, claims *SessionCla
 
 	return &dashboardSnapshot{
 		RefreshedAt:  time.Now().UTC().Format(time.RFC3339),
-		Workspaces:   workspaces,
+		Contexts:     scopes,
+		Scopes:       scopes,
 		Deployments:  deployments,
 		Runs:         runs,
 		TemplatesAt:  templatesAt,
@@ -324,7 +326,7 @@ func (s *Service) DashboardEvents(w http.ResponseWriter, req *http.Request) {
 					return
 				}
 				switch n.Channel {
-				case pgNotifyDashboardChannel, pgNotifyTasksChannel, pgNotifyDeploymentEventsChan, pgNotifyWorkspacesChannel:
+				case pgNotifyDashboardChannel, pgNotifyTasksChannel, pgNotifyDeploymentEventsChan, pgNotifyUsersChannel:
 					select {
 					case reloadSignals <- struct{}{}:
 					default:

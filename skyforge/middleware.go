@@ -44,10 +44,10 @@ func (s *Service) AdminMiddleware(req middleware.Request, next middleware.Next) 
 	return next(req)
 }
 
-// WorkspaceListMiddleware enforces authentication for workspace list endpoints.
+// UserListMiddleware enforces authentication for scope list endpoints.
 //
-//encore:middleware target=tag:list-workspaces
-func (s *Service) WorkspaceListMiddleware(req middleware.Request, next middleware.Next) middleware.Response {
+// Deprecated middleware target removed with list-scopes route removal.
+func (s *Service) UserListMiddleware(req middleware.Request, next middleware.Next) middleware.Response {
 	if auth.Data() == nil {
 		return middleware.Response{
 			Err: &errs.Error{

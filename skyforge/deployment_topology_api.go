@@ -37,25 +37,23 @@ type TopologyEdge struct {
 	Label    string `json:"label,omitempty"`
 }
 
-// GetWorkspaceDeploymentTopology returns a lightweight, provider-derived topology view.
+// GetUserDeploymentTopology returns a lightweight, provider-derived topology view.
 //
 // For containerlab, the topology is sourced from the containerlab API after deploy so we
 // can reflect the resolved management IPs.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/topology
-func (s *Service) GetWorkspaceDeploymentTopology(ctx context.Context, id, deploymentID string) (*DeploymentTopologyResponse, error) {
+func (s *Service) GetUserDeploymentTopology(ctx context.Context, id, deploymentID string) (*DeploymentTopologyResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+	dep, err := s.getUserDeployment(ctx, pc.context.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -74,17 +72,17 @@ func (s *Service) GetWorkspaceDeploymentTopology(ctx context.Context, id, deploy
 	}
 }
 
-func (s *Service) getDeploymentTopologyFromLatestTaskArtifact(ctx context.Context, pc *workspaceContext, dep *WorkspaceDeployment, taskType string) (*DeploymentTopologyResponse, error) {
+func (s *Service) getDeploymentTopologyFromLatestTaskArtifact(ctx context.Context, pc *ownerContext, dep *UserDeployment, taskType string) (*DeploymentTopologyResponse, error) {
 	taskType = strings.TrimSpace(taskType)
 	if taskType == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("task type is required").Err()
 	}
-	if task, err := getLatestDeploymentTask(ctx, s.db, pc.workspace.ID, dep.ID, taskType); err == nil && task != nil {
+	if task, err := getLatestDeploymentTask(ctx, s.db, pc.context.ID, dep.ID, taskType); err == nil && task != nil {
 		key := strings.TrimSpace(getJSONMapString(task.Metadata, "topologyKey"))
 		if key != "" {
 			ctxRead, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
-			if raw, err := readWorkspaceArtifact(ctxRead, s.cfg, pc.workspace.ID, key, 2<<20); err == nil && len(raw) > 0 {
+			if raw, err := readUserArtifact(ctxRead, s.cfg, pc.context.ID, key, 2<<20); err == nil && len(raw) > 0 {
 				if graph, err := parseTopologyGraph(raw); err == nil && graph != nil {
 					graph.ArtifactKey = key
 					return graph, nil
@@ -95,7 +93,7 @@ func (s *Service) getDeploymentTopologyFromLatestTaskArtifact(ctx context.Contex
 	return nil, errs.B().Code(errs.Unavailable).Msg("topology is not available yet for this deployment").Err()
 }
 
-func (s *Service) getContainerlabDeploymentTopology(ctx context.Context, pc *workspaceContext, dep *WorkspaceDeployment) (*DeploymentTopologyResponse, error) {
+func (s *Service) getContainerlabDeploymentTopology(ctx context.Context, pc *ownerContext, dep *UserDeployment) (*DeploymentTopologyResponse, error) {
 	cfgAny, _ := fromJSONMap(dep.Config)
 	netlabServer, _ := cfgAny["netlabServer"].(string)
 	netlabServer = strings.TrimSpace(netlabServer)
@@ -113,16 +111,16 @@ func (s *Service) getContainerlabDeploymentTopology(ctx context.Context, pc *wor
 	labName, _ := cfgAny["labName"].(string)
 	labName = strings.TrimSpace(labName)
 	if labName == "" {
-		labName = containerlabLabName(pc.workspace.Slug, dep.Name)
+		labName = containerlabLabName(pc.context.Slug, dep.Name)
 	}
 
 	// Prefer the last computed topology artifact (stored by the worker post-deploy).
-	if task, err := getLatestDeploymentTask(ctx, s.db, pc.workspace.ID, dep.ID, "containerlab-run"); err == nil && task != nil {
+	if task, err := getLatestDeploymentTask(ctx, s.db, pc.context.ID, dep.ID, "containerlab-run"); err == nil && task != nil {
 		key := strings.TrimSpace(getJSONMapString(task.Metadata, "topologyKey"))
 		if key != "" {
 			ctxRead, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
-			if raw, err := readWorkspaceArtifact(ctxRead, s.cfg, pc.workspace.ID, key, 2<<20); err == nil && len(raw) > 0 {
+			if raw, err := readUserArtifact(ctxRead, s.cfg, pc.context.ID, key, 2<<20); err == nil && len(raw) > 0 {
 				if graph, err := parseTopologyGraph(raw); err == nil && graph != nil {
 					graph.ArtifactKey = key
 					return graph, nil

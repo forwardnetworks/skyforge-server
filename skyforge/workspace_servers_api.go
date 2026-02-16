@@ -10,44 +10,34 @@ import (
 	"encore.dev/beta/errs"
 )
 
-type WorkspaceServerRef struct {
-	Value string `json:"value"`
-	Label string `json:"label"`
-	Scope string `json:"scope"` // global|workspace
+type UserServerRef struct {
+	Value   string `json:"value"`
+	Label   string `json:"label"`
+	Context string `json:"context,omitempty"` // global|user
+	Legacy  string `json:"-"`                 // legacy internal field
 }
 
-type WorkspaceNetlabServerConfig struct {
-	ID          string `json:"id,omitempty"`
-	Name        string `json:"name"`
-	APIURL      string `json:"apiUrl"`
-	APIInsecure bool   `json:"apiInsecure"`
-	APIUser     string `json:"apiUser,omitempty"`
-	APIPassword string `json:"apiPassword,omitempty"`
-	APIToken    string `json:"apiToken,omitempty"`
-	HasPassword bool   `json:"hasPassword,omitempty"`
+type UserOwnerNetlabServersResponse struct {
+	OwnerUsername string                   `json:"ownerUsername"`
+	Servers       []UserNetlabServerConfig `json:"servers"`
 }
 
-type WorkspaceNetlabServersResponse struct {
-	WorkspaceID string                        `json:"workspaceId"`
-	Servers     []WorkspaceNetlabServerConfig `json:"servers"`
-}
-
-type WorkspaceServerHealthResponse struct {
+type UserOwnerServerHealthResponse struct {
 	Status string `json:"status"`
 	Time   string `json:"time"`
 	Error  string `json:"error,omitempty"`
 }
 
-func requireWorkspaceOwner(ctx context.Context, s *Service, workspaceID string) (*workspaceContext, error) {
+func requireOwnerEditor(ctx context.Context, s *Service, ownerID string) (*ownerContext, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, workspaceID)
+	pc, err := s.ownerContextForUser(user, ownerID)
 	if err != nil {
 		return nil, err
 	}
-	access := workspaceAccessLevelForClaims(s.cfg, pc.workspace, pc.claims)
+	access := ownerAccessLevelForClaims(s.cfg, pc.context, pc.claims)
 	if access != "owner" && access != "admin" {
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
@@ -69,28 +59,29 @@ func validateURL(raw string) (string, error) {
 	return strings.TrimRight(raw, "/"), nil
 }
 
-// ListWorkspaceNetlabServers returns the configured Netlab API endpoints for this workspace.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/netlab/servers
-func (s *Service) ListWorkspaceNetlabServers(ctx context.Context, id string) (*WorkspaceNetlabServersResponse, error) {
+// Backward-compatible aliases; prefer User* names.
+type UserServerHealthResponse = UserOwnerServerHealthResponse
+
+// ListOwnerNetlabServers returns the configured Netlab API endpoints for this user context.
+func (s *Service) ListOwnerNetlabServers(ctx context.Context, id string) (*UserOwnerNetlabServersResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
-	if workspaceAccessLevelForClaims(s.cfg, pc.workspace, pc.claims) == "none" {
+	if ownerAccessLevelForClaims(s.cfg, pc.context, pc.claims) == "none" {
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
 
-	out := []WorkspaceNetlabServerConfig{}
+	out := []UserNetlabServerConfig{}
 	if s.db != nil {
-		rows, err := listWorkspaceNetlabServers(ctx, s.db, s.box, id)
+		rows, err := listOwnerNetlabServers(ctx, s.db, s.box, id)
 		if err == nil {
 			for _, rec := range rows {
-				out = append(out, WorkspaceNetlabServerConfig{
+				out = append(out, UserNetlabServerConfig{
 					ID:          rec.ID,
 					Name:        rec.Name,
 					APIURL:      rec.APIURL,
@@ -101,17 +92,15 @@ func (s *Service) ListWorkspaceNetlabServers(ctx context.Context, id string) (*W
 			}
 		}
 	}
-	return &WorkspaceNetlabServersResponse{WorkspaceID: id, Servers: out}, nil
+	return &UserOwnerNetlabServersResponse{OwnerUsername: id, Servers: out}, nil
 }
 
-// UpsertWorkspaceNetlabServer creates or updates a workspace-scoped Netlab API endpoint.
-//
-//encore:api auth method=PUT path=/api/workspaces/:id/netlab/servers
-func (s *Service) UpsertWorkspaceNetlabServer(ctx context.Context, id string, payload *WorkspaceNetlabServerConfig) (*WorkspaceNetlabServerConfig, error) {
+// UpsertOwnerNetlabServer creates or updates a user-context Netlab API endpoint.
+func (s *Service) UpsertOwnerNetlabServer(ctx context.Context, id string, payload *UserNetlabServerConfig) (*UserNetlabServerConfig, error) {
 	if payload == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("payload required").Err()
 	}
-	_, err := requireWorkspaceOwner(ctx, s, id)
+	_, err := requireOwnerEditor(ctx, s, id)
 	if err != nil {
 		return nil, err
 	}
@@ -132,21 +121,21 @@ func (s *Service) UpsertWorkspaceNetlabServer(ctx context.Context, id string, pa
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("name is required").Err()
 		}
 	}
-	rec := workspaceNetlabServer{
-		ID:          strings.TrimSpace(payload.ID),
-		WorkspaceID: id,
-		Name:        name,
-		APIURL:      apiURL,
-		APIInsecure: payload.APIInsecure,
-		APIUser:     strings.TrimSpace(payload.APIUser),
-		APIPassword: strings.TrimSpace(payload.APIPassword),
-		APIToken:    strings.TrimSpace(payload.APIToken),
+	rec := scopeNetlabServer{
+		ID:            strings.TrimSpace(payload.ID),
+		OwnerUsername: id,
+		Name:          name,
+		APIURL:        apiURL,
+		APIInsecure:   payload.APIInsecure,
+		APIUser:       strings.TrimSpace(payload.APIUser),
+		APIPassword:   strings.TrimSpace(payload.APIPassword),
+		APIToken:      strings.TrimSpace(payload.APIToken),
 	}
-	out, err := upsertWorkspaceNetlabServer(ctx, s.db, s.box, rec)
+	out, err := upsertOwnerNetlabServer(ctx, s.db, s.box, rec)
 	if err != nil {
 		return nil, errs.B().Code(errs.Internal).Msg("failed to save netlab server").Err()
 	}
-	return &WorkspaceNetlabServerConfig{
+	return &UserNetlabServerConfig{
 		ID:          out.ID,
 		Name:        out.Name,
 		APIURL:      out.APIURL,
@@ -156,58 +145,43 @@ func (s *Service) UpsertWorkspaceNetlabServer(ctx context.Context, id string, pa
 	}, nil
 }
 
-// DeleteWorkspaceNetlabServer deletes a workspace-scoped Netlab server.
-//
-//encore:api auth method=DELETE path=/api/workspaces/:id/netlab/servers/:serverID
-func (s *Service) DeleteWorkspaceNetlabServer(ctx context.Context, id, serverID string) error {
-	_, err := requireWorkspaceOwner(ctx, s, id)
+// DeleteOwnerNetlabServer deletes a user-context Netlab server.
+func (s *Service) DeleteOwnerNetlabServer(ctx context.Context, id, serverID string) error {
+	_, err := requireOwnerEditor(ctx, s, id)
 	if err != nil {
 		return err
 	}
 	if s.db == nil {
 		return errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	return deleteWorkspaceNetlabServer(ctx, s.db, id, serverID)
+	return deleteOwnerNetlabServer(ctx, s.db, id, serverID)
 }
 
-type WorkspaceEveServerConfig struct {
-	ID            string `json:"id,omitempty"`
-	Name          string `json:"name"`
-	APIURL        string `json:"apiUrl"`
-	WebURL        string `json:"webUrl,omitempty"`
-	SkipTLSVerify bool   `json:"skipTlsVerify"`
-	APIUser       string `json:"apiUser,omitempty"`
-	APIPassword   string `json:"apiPassword,omitempty"`
-	HasPassword   bool   `json:"hasPassword,omitempty"`
+type UserOwnerEveServersResponse struct {
+	OwnerUsername string                `json:"ownerUsername"`
+	Servers       []UserEveServerConfig `json:"servers"`
 }
 
-type WorkspaceEveServersResponse struct {
-	WorkspaceID string                     `json:"workspaceId"`
-	Servers     []WorkspaceEveServerConfig `json:"servers"`
-}
-
-// ListWorkspaceEveServers returns the configured EVE-NG API endpoints for this workspace.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/eve/servers
-func (s *Service) ListWorkspaceEveServers(ctx context.Context, id string) (*WorkspaceEveServersResponse, error) {
+// ListOwnerEveServers returns the configured EVE-NG API endpoints for this user context.
+func (s *Service) ListOwnerEveServers(ctx context.Context, id string) (*UserOwnerEveServersResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
-	if workspaceAccessLevelForClaims(s.cfg, pc.workspace, pc.claims) == "none" {
+	if ownerAccessLevelForClaims(s.cfg, pc.context, pc.claims) == "none" {
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
 
-	out := []WorkspaceEveServerConfig{}
+	out := []UserEveServerConfig{}
 	if s.db != nil {
-		rows, err := listWorkspaceEveServers(ctx, s.db, s.box, id)
+		rows, err := listOwnerEveServers(ctx, s.db, s.box, id)
 		if err == nil {
 			for _, rec := range rows {
-				out = append(out, WorkspaceEveServerConfig{
+				out = append(out, UserEveServerConfig{
 					ID:            rec.ID,
 					Name:          rec.Name,
 					APIURL:        rec.APIURL,
@@ -220,17 +194,15 @@ func (s *Service) ListWorkspaceEveServers(ctx context.Context, id string) (*Work
 		}
 	}
 
-	return &WorkspaceEveServersResponse{WorkspaceID: id, Servers: out}, nil
+	return &UserOwnerEveServersResponse{OwnerUsername: id, Servers: out}, nil
 }
 
-// UpsertWorkspaceEveServer creates or updates a workspace-scoped EVE-NG server.
-//
-//encore:api auth method=PUT path=/api/workspaces/:id/eve/servers
-func (s *Service) UpsertWorkspaceEveServer(ctx context.Context, id string, payload *WorkspaceEveServerConfig) (*WorkspaceEveServerConfig, error) {
+// UpsertOwnerEveServer creates or updates a user-context EVE-NG server.
+func (s *Service) UpsertOwnerEveServer(ctx context.Context, id string, payload *UserEveServerConfig) (*UserEveServerConfig, error) {
 	if payload == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("payload required").Err()
 	}
-	_, err := requireWorkspaceOwner(ctx, s, id)
+	_, err := requireOwnerEditor(ctx, s, id)
 	if err != nil {
 		return nil, err
 	}
@@ -260,9 +232,9 @@ func (s *Service) UpsertWorkspaceEveServer(ctx context.Context, id string, paylo
 		}
 	}
 
-	rec := workspaceEveServer{
+	rec := scopeEveServer{
 		ID:            strings.TrimSpace(payload.ID),
-		WorkspaceID:   id,
+		OwnerUsername: id,
 		Name:          name,
 		APIURL:        apiURL,
 		WebURL:        webURL,
@@ -270,11 +242,11 @@ func (s *Service) UpsertWorkspaceEveServer(ctx context.Context, id string, paylo
 		APIUser:       strings.TrimSpace(payload.APIUser),
 		APIPassword:   strings.TrimSpace(payload.APIPassword),
 	}
-	out, err := upsertWorkspaceEveServer(ctx, s.db, s.box, rec)
+	out, err := upsertOwnerEveServer(ctx, s.db, s.box, rec)
 	if err != nil {
 		return nil, errs.B().Code(errs.Internal).Msg("failed to save eve server").Err()
 	}
-	return &WorkspaceEveServerConfig{
+	return &UserEveServerConfig{
 		ID:            out.ID,
 		Name:          out.Name,
 		APIURL:        out.APIURL,
@@ -285,43 +257,39 @@ func (s *Service) UpsertWorkspaceEveServer(ctx context.Context, id string, paylo
 	}, nil
 }
 
-// DeleteWorkspaceEveServer deletes a workspace-scoped EVE-NG server.
-//
-//encore:api auth method=DELETE path=/api/workspaces/:id/eve/servers/:serverID
-func (s *Service) DeleteWorkspaceEveServer(ctx context.Context, id, serverID string) error {
-	_, err := requireWorkspaceOwner(ctx, s, id)
+// DeleteOwnerEveServer deletes a user-context EVE-NG server.
+func (s *Service) DeleteOwnerEveServer(ctx context.Context, id, serverID string) error {
+	_, err := requireOwnerEditor(ctx, s, id)
 	if err != nil {
 		return err
 	}
 	if s.db == nil {
 		return errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	return deleteWorkspaceEveServer(ctx, s.db, id, serverID)
+	return deleteOwnerEveServer(ctx, s.db, id, serverID)
 }
 
-// GetWorkspaceNetlabServerHealth checks the health of a workspace-scoped Netlab API server.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/netlab/servers/:serverID/health
-func (s *Service) GetWorkspaceNetlabServerHealth(ctx context.Context, id, serverID string) (*WorkspaceServerHealthResponse, error) {
+// GetUserNetlabServerHealth checks the health of a user-context Netlab API server.
+func (s *Service) GetUserNetlabServerHealth(ctx context.Context, id, serverID string) (*UserOwnerServerHealthResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
-	if workspaceAccessLevelForClaims(s.cfg, pc.workspace, pc.claims) == "none" {
+	if ownerAccessLevelForClaims(s.cfg, pc.context, pc.claims) == "none" {
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
-	if err := s.checkWorkspaceNetlabHealth(ctx, id, workspaceServerRef(serverID)); err != nil {
-		return &WorkspaceServerHealthResponse{
+	if err := s.checkUserNetlabHealth(ctx, id, scopeServerRef(serverID)); err != nil {
+		return &UserOwnerServerHealthResponse{
 			Status: "error",
 			Time:   time.Now().UTC().Format(time.RFC3339),
 			Error:  sanitizeError(err),
 		}, nil
 	}
-	return &WorkspaceServerHealthResponse{
+	return &UserOwnerServerHealthResponse{
 		Status: "ok",
 		Time:   time.Now().UTC().Format(time.RFC3339),
 	}, nil

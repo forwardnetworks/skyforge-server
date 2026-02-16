@@ -11,47 +11,45 @@ import (
 	"encore.dev/beta/errs"
 )
 
-type WorkspaceTerraformTemplatesResponse struct {
-	WorkspaceID string   `json:"workspaceId"`
-	Repo        string   `json:"repo"`
-	Branch      string   `json:"branch"`
-	Dir         string   `json:"dir"`
-	Templates   []string `json:"templates"`
+type UserTerraformTemplatesResponse struct {
+	OwnerUsername string   `json:"ownerUsername"`
+	Repo          string   `json:"repo"`
+	Branch        string   `json:"branch"`
+	Dir           string   `json:"dir"`
+	Templates     []string `json:"templates"`
 }
 
-type WorkspaceTerraformTemplatesRequest struct {
+type UserTerraformTemplatesRequest struct {
 	Dir    string `query:"dir" encore:"optional"`
-	Source string `query:"source" encore:"optional"` // "workspace" (default), "blueprints", or "custom"
+	Source string `query:"source" encore:"optional"` // "user" (default), "blueprints", "external", or "custom"
 	Repo   string `query:"repo" encore:"optional"`   // owner/repo or URL (custom only)
 }
 
-// GetWorkspaceTerraformTemplates lists Terraform template directories for a workspace.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/terraform/templates
-func (s *Service) GetWorkspaceTerraformTemplates(ctx context.Context, id string, req *WorkspaceTerraformTemplatesRequest) (*WorkspaceTerraformTemplatesResponse, error) {
+// GetUserTerraformTemplates lists Terraform template directories for a user context.
+func (s *Service) GetUserTerraformTemplates(ctx context.Context, id string, req *UserTerraformTemplatesRequest) (*UserTerraformTemplatesResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
-	source := "workspace"
+	source := canonicalTemplateSource("", "user")
 	if req != nil {
-		if v := strings.ToLower(strings.TrimSpace(req.Source)); v != "" {
-			source = v
+		if v := strings.TrimSpace(req.Source); v != "" {
+			source = canonicalTemplateSource(v, "user")
 		}
 	}
 
-	owner := pc.workspace.GiteaOwner
-	repo := pc.workspace.GiteaRepo
-	branch := strings.TrimSpace(pc.workspace.DefaultBranch)
+	owner := pc.context.GiteaOwner
+	repo := pc.context.GiteaRepo
+	branch := strings.TrimSpace(pc.context.DefaultBranch)
 	policy, _ := loadGovernancePolicy(ctx, s.db)
 
 	switch source {
 	case "blueprints", "blueprint":
-		ref := strings.TrimSpace(pc.workspace.Blueprint)
+		ref := strings.TrimSpace(pc.context.Blueprint)
 		if ref == "" {
 			ref = "skyforge/blueprints"
 		}
@@ -91,7 +89,7 @@ func (s *Service) GetWorkspaceTerraformTemplates(ctx context.Context, id string,
 			return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 		}
 		owner, repo, branch = ref.Owner, ref.Repo, ref.Branch
-	case "workspace":
+	case "user":
 		// default already set
 	default:
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown template source").Err()
@@ -107,7 +105,7 @@ func (s *Service) GetWorkspaceTerraformTemplates(ctx context.Context, id string,
 	switch source {
 	case "blueprints", "blueprint", "external", "custom":
 		// The shared blueprints repo has `terraform/` at the repo root.
-		// A workspace repo syncs that same content under `blueprints/terraform/`.
+		// A user repo syncs that same content under `blueprints/terraform/`.
 		dir := "terraform"
 		if req != nil {
 			if next := strings.Trim(strings.TrimSpace(req.Dir), "/"); next != "" {
@@ -135,12 +133,12 @@ func (s *Service) GetWorkspaceTerraformTemplates(ctx context.Context, id string,
 		}
 		sort.Strings(templates)
 		_ = ctx
-		return &WorkspaceTerraformTemplatesResponse{
-			WorkspaceID: pc.workspace.ID,
-			Repo:        fmt.Sprintf("%s/%s", owner, repo),
-			Branch:      branch,
-			Dir:         dir,
-			Templates:   templates,
+		return &UserTerraformTemplatesResponse{
+			OwnerUsername: pc.context.ID,
+			Repo:          fmt.Sprintf("%s/%s", owner, repo),
+			Branch:        branch,
+			Dir:           dir,
+			Templates:     templates,
 		}, nil
 	default:
 		dir := "blueprints/terraform"
@@ -170,12 +168,12 @@ func (s *Service) GetWorkspaceTerraformTemplates(ctx context.Context, id string,
 		}
 		sort.Strings(templates)
 		_ = ctx
-		return &WorkspaceTerraformTemplatesResponse{
-			WorkspaceID: pc.workspace.ID,
-			Repo:        fmt.Sprintf("%s/%s", owner, repo),
-			Branch:      branch,
-			Dir:         dir,
-			Templates:   templates,
+		return &UserTerraformTemplatesResponse{
+			OwnerUsername: pc.context.ID,
+			Repo:          fmt.Sprintf("%s/%s", owner, repo),
+			Branch:        branch,
+			Dir:           dir,
+			Templates:     templates,
 		}, nil
 	}
 	// unreachable

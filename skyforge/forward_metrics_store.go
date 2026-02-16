@@ -11,7 +11,6 @@ import (
 
 type forwardMetricsSnapshotRow struct {
 	ID                            int64
-	WorkspaceID                   string
 	OwnerUsername                 string
 	NetworkRef                    string
 	ForwardNetworkID              string
@@ -38,7 +37,7 @@ func insertForwardMetricsSnapshot(ctx context.Context, db *sql.DB, row forwardMe
 	}
 	_, err := db.ExecContext(ctx, `
 INSERT INTO sf_forward_metrics_snapshots (
-  workspace_id,
+  owner_username,
   owner_username,
   network_ref,
   forward_network_id,
@@ -72,8 +71,8 @@ INSERT INTO sf_forward_metrics_snapshots (
   $15,
   COALESCE($16::jsonb, '{}'::jsonb)
 )
-`,
-		strings.TrimSpace(row.WorkspaceID),
+	`,
+		"",
 		strings.ToLower(strings.TrimSpace(row.OwnerUsername)),
 		strings.TrimSpace(row.NetworkRef),
 		strings.TrimSpace(row.ForwardNetworkID),
@@ -93,11 +92,11 @@ INSERT INTO sf_forward_metrics_snapshots (
 	return err
 }
 
-func listForwardMetricsSnapshots(ctx context.Context, db *sql.DB, workspaceID, username, networkRef, forwardNetworkID string, limit int) ([]forwardMetricsSnapshotRow, error) {
+func listForwardMetricsSnapshots(ctx context.Context, db *sql.DB, ownerID, username, networkRef, forwardNetworkID string, limit int) ([]forwardMetricsSnapshotRow, error) {
 	if db == nil {
 		return nil, sql.ErrConnDone
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	username = strings.ToLower(strings.TrimSpace(username))
 	networkRef = strings.TrimSpace(networkRef)
 	forwardNetworkID = strings.TrimSpace(forwardNetworkID)
@@ -110,7 +109,7 @@ func listForwardMetricsSnapshots(ctx context.Context, db *sql.DB, workspaceID, u
 
 	rows, err := db.QueryContext(ctx, `
 SELECT id,
-       COALESCE(workspace_id,''),
+       COALESCE(owner_username,''),
        COALESCE(owner_username,''),
        COALESCE(network_ref::text,''),
        COALESCE(forward_network_id,''),
@@ -128,10 +127,10 @@ SELECT id,
        COALESCE(raw_metrics::text,'{}')
   FROM sf_forward_metrics_snapshots
  WHERE ( ($1 <> '' AND network_ref::text = $1) OR ($2 <> '' AND forward_network_id = $2) )
-   AND (workspace_id = $3 OR owner_username = $4)
+   AND (owner_username = $3 OR owner_username = $4)
  ORDER BY collected_at DESC
  LIMIT $5
-`, networkRef, forwardNetworkID, workspaceID, username, limit)
+`, networkRef, forwardNetworkID, ownerID, username, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +141,7 @@ SELECT id,
 		var r forwardMetricsSnapshotRow
 		if err := rows.Scan(
 			&r.ID,
-			&r.WorkspaceID,
+			&r.OwnerUsername,
 			&r.OwnerUsername,
 			&r.NetworkRef,
 			&r.ForwardNetworkID,
@@ -169,8 +168,8 @@ SELECT id,
 	return out, nil
 }
 
-func latestForwardMetricsSnapshot(ctx context.Context, db *sql.DB, workspaceID, username, networkRef, forwardNetworkID string) (*forwardMetricsSnapshotRow, error) {
-	rows, err := listForwardMetricsSnapshots(ctx, db, workspaceID, username, networkRef, forwardNetworkID, 1)
+func latestForwardMetricsSnapshot(ctx context.Context, db *sql.DB, ownerID, username, networkRef, forwardNetworkID string) (*forwardMetricsSnapshotRow, error) {
+	rows, err := listForwardMetricsSnapshots(ctx, db, ownerID, username, networkRef, forwardNetworkID, 1)
 	if err != nil {
 		return nil, err
 	}

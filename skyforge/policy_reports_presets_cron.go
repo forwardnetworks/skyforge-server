@@ -33,7 +33,7 @@ func CronRunPolicyReportPresets(ctx context.Context) error {
 	}
 
 	rows, err := db.QueryContext(ctxReq, `
-SELECT id::text, workspace_id, forward_network_id, kind, pack_id, COALESCE(title_template,''), snapshot_id,
+SELECT id::text, owner_username, forward_network_id, kind, pack_id, COALESCE(title_template,''), snapshot_id,
        checks, query_options, max_per_check, max_total, interval_minutes, owner_username
   FROM sf_policy_report_presets
  WHERE enabled=true
@@ -51,7 +51,7 @@ SELECT id::text, workspace_id, forward_network_id, kind, pack_id, COALESCE(title
 
 	type duePreset struct {
 		id               string
-		workspaceID      string
+		ownerID          string
 		forwardNetworkID string
 		kind             string
 		packID           string
@@ -68,19 +68,19 @@ SELECT id::text, workspace_id, forward_network_id, kind, pack_id, COALESCE(title
 	var due []duePreset
 	for rows.Next() {
 		var p duePreset
-		if err := rows.Scan(&p.id, &p.workspaceID, &p.forwardNetworkID, &p.kind, &p.packID, &p.titleTemplate, &p.snapshotID,
+		if err := rows.Scan(&p.id, &p.ownerID, &p.forwardNetworkID, &p.kind, &p.packID, &p.titleTemplate, &p.snapshotID,
 			&p.checksJSON, &p.queryOptionsJSON, &p.maxPerCheck, &p.maxTotal, &p.intervalMinutes, &p.ownerUsername); err != nil {
 			continue
 		}
 		p.id = strings.TrimSpace(p.id)
-		p.workspaceID = strings.TrimSpace(p.workspaceID)
+		p.ownerID = strings.TrimSpace(p.ownerID)
 		p.forwardNetworkID = strings.TrimSpace(p.forwardNetworkID)
 		p.kind = strings.ToUpper(strings.TrimSpace(p.kind))
 		p.packID = strings.TrimSpace(p.packID)
 		p.titleTemplate = strings.TrimSpace(p.titleTemplate)
 		p.snapshotID = strings.TrimSpace(p.snapshotID)
 		p.ownerUsername = strings.ToLower(strings.TrimSpace(p.ownerUsername))
-		if p.id == "" || p.workspaceID == "" || p.forwardNetworkID == "" || p.ownerUsername == "" {
+		if p.id == "" || p.ownerID == "" || p.forwardNetworkID == "" || p.ownerUsername == "" {
 			continue
 		}
 		due = append(due, p)
@@ -127,7 +127,7 @@ func renderPresetTitle(template string, forwardNetworkID, packID string, started
 
 func runPolicyReportPresetInternal(ctx context.Context, db *sql.DB, sessionSecret string, p struct {
 	id               string
-	workspaceID      string
+	ownerID          string
 	forwardNetworkID string
 	kind             string
 	packID           string
@@ -142,9 +142,9 @@ func runPolicyReportPresetInternal(ctx context.Context, db *sql.DB, sessionSecre
 }) error {
 	startedAt := time.Now().UTC()
 
-	client, err := policyReportsForwardClientFor(ctx, db, sessionSecret, p.workspaceID, p.ownerUsername, p.forwardNetworkID)
+	client, err := policyReportsForwardClientFor(ctx, db, sessionSecret, p.ownerID, p.ownerUsername, p.forwardNetworkID)
 	if err != nil {
-		_ = bumpPresetSchedule(ctx, db, p.workspaceID, p.id, "", startedAt, p.intervalMinutes, err.Error())
+		_ = bumpPresetSchedule(ctx, db, p.ownerID, p.id, "", startedAt, p.intervalMinutes, err.Error())
 		return err
 	}
 
@@ -156,7 +156,7 @@ func runPolicyReportPresetInternal(ctx context.Context, db *sql.DB, sessionSecre
 		var specs []PolicyReportPresetCheckSpec
 		_ = json.Unmarshal(p.checksJSON, &specs)
 		if len(specs) == 0 {
-			_ = bumpPresetSchedule(ctx, db, p.workspaceID, p.id, "", startedAt, p.intervalMinutes, "preset checks empty")
+			_ = bumpPresetSchedule(ctx, db, p.ownerID, p.id, "", startedAt, p.intervalMinutes, "preset checks empty")
 			return fmt.Errorf("preset checks empty")
 		}
 
@@ -168,7 +168,7 @@ func runPolicyReportPresetInternal(ctx context.Context, db *sql.DB, sessionSecre
 			}
 		}
 		if spec == nil {
-			_ = bumpPresetSchedule(ctx, db, p.workspaceID, p.id, "", startedAt, p.intervalMinutes, "missing paths-enforcement-bypass check")
+			_ = bumpPresetSchedule(ctx, db, p.ownerID, p.id, "", startedAt, p.intervalMinutes, "missing paths-enforcement-bypass check")
 			return fmt.Errorf("missing paths-enforcement-bypass check")
 		}
 
@@ -190,11 +190,11 @@ func runPolicyReportPresetInternal(ctx context.Context, db *sql.DB, sessionSecre
 
 		out, checkID, err := policyReportsPathsEnforcementBypassEvalWithClient(ctx, client, &live)
 		if err != nil {
-			_ = bumpPresetSchedule(ctx, db, p.workspaceID, p.id, "", startedAt, p.intervalMinutes, err.Error())
+			_ = bumpPresetSchedule(ctx, db, p.ownerID, p.id, "", startedAt, p.intervalMinutes, err.Error())
 			return err
 		}
 		if strings.TrimSpace(checkID) == "" {
-			_ = bumpPresetSchedule(ctx, db, p.workspaceID, p.id, "", startedAt, p.intervalMinutes, "failed to compute suite check id")
+			_ = bumpPresetSchedule(ctx, db, p.ownerID, p.id, "", startedAt, p.intervalMinutes, "failed to compute suite check id")
 			return fmt.Errorf("failed to compute suite check id")
 		}
 
@@ -214,7 +214,7 @@ func runPolicyReportPresetInternal(ctx context.Context, db *sql.DB, sessionSecre
 
 		run := PolicyReportRun{
 			ID:               runID,
-			WorkspaceID:      p.workspaceID,
+			OwnerUsername:    p.ownerID,
 			ForwardNetworkID: p.forwardNetworkID,
 			SnapshotID:       strings.TrimSpace(p.snapshotID),
 			PackID:           "paths-assurance",
@@ -264,11 +264,11 @@ func runPolicyReportPresetInternal(ctx context.Context, db *sql.DB, sessionSecre
 			checkID: {CanResolve: true, SuiteKey: suiteKey12},
 		}
 		if err := persistPolicyReportRun(ctx, db, &run, checks, findings, resolveChecks); err != nil {
-			_ = bumpPresetSchedule(ctx, db, p.workspaceID, p.id, "", finishedAt, p.intervalMinutes, err.Error())
+			_ = bumpPresetSchedule(ctx, db, p.ownerID, p.id, "", finishedAt, p.intervalMinutes, err.Error())
 			return err
 		}
 
-		_ = bumpPresetSchedule(ctx, db, p.workspaceID, p.id, run.ID, finishedAt, p.intervalMinutes, "")
+		_ = bumpPresetSchedule(ctx, db, p.ownerID, p.id, run.ID, finishedAt, p.intervalMinutes, "")
 		return nil
 	}
 
@@ -277,7 +277,7 @@ func runPolicyReportPresetInternal(ctx context.Context, db *sql.DB, sessionSecre
 	if p.kind == "PACK" {
 		packs, err := loadPolicyReportPacks()
 		if err != nil || packs == nil {
-			_ = bumpPresetSchedule(ctx, db, p.workspaceID, p.id, "", startedAt, p.intervalMinutes, "packs unavailable")
+			_ = bumpPresetSchedule(ctx, db, p.ownerID, p.id, "", startedAt, p.intervalMinutes, "packs unavailable")
 			return fmt.Errorf("packs unavailable")
 		}
 		var pack *PolicyReportPack
@@ -288,7 +288,7 @@ func runPolicyReportPresetInternal(ctx context.Context, db *sql.DB, sessionSecre
 			}
 		}
 		if pack == nil {
-			_ = bumpPresetSchedule(ctx, db, p.workspaceID, p.id, "", startedAt, p.intervalMinutes, "pack not found")
+			_ = bumpPresetSchedule(ctx, db, p.ownerID, p.id, "", startedAt, p.intervalMinutes, "pack not found")
 			return fmt.Errorf("pack not found: %s", p.packID)
 		}
 		for _, chk := range pack.Checks {
@@ -299,7 +299,7 @@ func runPolicyReportPresetInternal(ctx context.Context, db *sql.DB, sessionSecre
 			checkOrder = append(checkOrder, cid)
 			out, err := policyReportsExecuteCheck(ctx, client, p.forwardNetworkID, p.snapshotID, cid, chk.Parameters, queryOptions)
 			if err != nil {
-				_ = bumpPresetSchedule(ctx, db, p.workspaceID, p.id, "", startedAt, p.intervalMinutes, err.Error())
+				_ = bumpPresetSchedule(ctx, db, p.ownerID, p.id, "", startedAt, p.intervalMinutes, err.Error())
 				return err
 			}
 			results[cid] = out
@@ -308,7 +308,7 @@ func runPolicyReportPresetInternal(ctx context.Context, db *sql.DB, sessionSecre
 		var specs []PolicyReportPresetCheckSpec
 		_ = json.Unmarshal(p.checksJSON, &specs)
 		if len(specs) == 0 {
-			_ = bumpPresetSchedule(ctx, db, p.workspaceID, p.id, "", startedAt, p.intervalMinutes, "preset checks empty")
+			_ = bumpPresetSchedule(ctx, db, p.ownerID, p.id, "", startedAt, p.intervalMinutes, "preset checks empty")
 			return fmt.Errorf("preset checks empty")
 		}
 		seen := map[string]bool{}
@@ -324,7 +324,7 @@ func runPolicyReportPresetInternal(ctx context.Context, db *sql.DB, sessionSecre
 			checkOrder = append(checkOrder, cid)
 			out, err := policyReportsExecuteCheck(ctx, client, p.forwardNetworkID, p.snapshotID, cid, spec.Parameters, queryOptions)
 			if err != nil {
-				_ = bumpPresetSchedule(ctx, db, p.workspaceID, p.id, "", startedAt, p.intervalMinutes, err.Error())
+				_ = bumpPresetSchedule(ctx, db, p.ownerID, p.id, "", startedAt, p.intervalMinutes, err.Error())
 				return err
 			}
 			results[cid] = out
@@ -366,7 +366,7 @@ func runPolicyReportPresetInternal(ctx context.Context, db *sql.DB, sessionSecre
 
 	run := PolicyReportRun{
 		ID:               runID,
-		WorkspaceID:      p.workspaceID,
+		OwnerUsername:    p.ownerID,
 		ForwardNetworkID: p.forwardNetworkID,
 		SnapshotID:       strings.TrimSpace(p.snapshotID),
 		PackID: func() string {
@@ -402,22 +402,22 @@ func runPolicyReportPresetInternal(ctx context.Context, db *sql.DB, sessionSecre
 	}
 
 	if err := persistPolicyReportRun(ctx, db, &run, checks, findings, resolveChecks); err != nil {
-		_ = bumpPresetSchedule(ctx, db, p.workspaceID, p.id, "", finishedAt, p.intervalMinutes, err.Error())
+		_ = bumpPresetSchedule(ctx, db, p.ownerID, p.id, "", finishedAt, p.intervalMinutes, err.Error())
 		return err
 	}
 
 	// Update preset run pointers and schedule next run.
-	_ = bumpPresetSchedule(ctx, db, p.workspaceID, p.id, run.ID, finishedAt, p.intervalMinutes, "")
+	_ = bumpPresetSchedule(ctx, db, p.ownerID, p.id, run.ID, finishedAt, p.intervalMinutes, "")
 	return nil
 }
 
-func bumpPresetSchedule(ctx context.Context, db *sql.DB, workspaceID, presetID, runID string, finishedAt time.Time, intervalMinutes int, lastErr string) error {
+func bumpPresetSchedule(ctx context.Context, db *sql.DB, ownerID, presetID, runID string, finishedAt time.Time, intervalMinutes int, lastErr string) error {
 	if db == nil {
 		return nil
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	ownerID = strings.TrimSpace(ownerID)
 	presetID = strings.TrimSpace(presetID)
-	if workspaceID == "" || presetID == "" {
+	if ownerID == "" || presetID == "" {
 		return nil
 	}
 	intervalMinutes = normalizeIntervalMinutes(intervalMinutes)
@@ -431,7 +431,7 @@ UPDATE sf_policy_report_presets
        last_error=NULLIF($3,''),
        next_run_at=$4,
        updated_at=now()
- WHERE workspace_id=$5 AND id=$6
-`, strings.TrimSpace(runID), finishedAt, strings.TrimSpace(lastErr), next, workspaceID, presetID)
+ WHERE owner_username=$5 AND id=$6
+`, strings.TrimSpace(runID), finishedAt, strings.TrimSpace(lastErr), next, ownerID, presetID)
 	return nil
 }

@@ -25,8 +25,8 @@ type UserAIValidateRequest struct {
 }
 
 type UserAIValidateResponse struct {
-	WorkspaceID string  `json:"workspaceId"`
-	Task        JSONMap `json:"task"`
+	OwnerUsername string  `json:"ownerUsername"`
+	Task          JSONMap `json:"task"`
 }
 
 // ValidateUserAITemplate validates a template.
@@ -64,7 +64,7 @@ func (s *Service) ValidateUserAITemplate(ctx context.Context, req *UserAIValidat
 		if err != nil {
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to encode validation result").Err()
 		}
-		return &UserAIValidateResponse{WorkspaceID: "", Task: task}, nil
+		return &UserAIValidateResponse{OwnerUsername: "", Task: task}, nil
 	case TemplateValidationKindNetlab:
 		return nil, errs.B().Code(errs.Unimplemented).Msg("netlab validation is not supported via this endpoint").Err()
 	default:

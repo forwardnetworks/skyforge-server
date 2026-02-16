@@ -15,19 +15,19 @@ const governancePolicySettingKey = "governance_policy"
 //
 // All limits are optional. A value of 0 means "unlimited/disabled".
 type GovernancePolicy struct {
-	// MaxDeploymentsPerUser caps the number of deployment definitions a user can create across all workspaces.
+	// MaxDeploymentsPerUser caps the number of deployment definitions a user can create.
 	MaxDeploymentsPerUser int `json:"maxDeploymentsPerUser"`
 
 	// MaxCollectorsPerUser caps the number of in-cluster Forward collectors a user can create.
 	MaxCollectorsPerUser int `json:"maxCollectorsPerUser"`
 
-	// AllowUserByosNetlabServers controls whether non-admin users may use user-scoped Netlab BYOS servers (user:... refs).
+	// AllowUserByosNetlabServers controls whether non-admin users may use per-user Netlab BYOS servers (user:... refs).
 	AllowUserByosNetlabServers bool `json:"allowUserByosNetlabServers"`
 
-	// AllowUserByosContainerlabServers controls whether non-admin users may use user-scoped Containerlab BYOS servers (user:... refs).
+	// AllowUserByosContainerlabServers controls whether non-admin users may use per-user Containerlab BYOS servers (user:... refs).
 	AllowUserByosContainerlabServers bool `json:"allowUserByosContainerlabServers"`
 
-	// AllowUserExternalTemplateRepos controls whether non-admin users may use template source = external (user-scoped external repos).
+	// AllowUserExternalTemplateRepos controls whether non-admin users may use template source = external (per-user external repos).
 	AllowUserExternalTemplateRepos bool `json:"allowUserExternalTemplateRepos"`
 
 	// AllowCustomTemplateRepos controls whether non-admin users may use template source = custom.

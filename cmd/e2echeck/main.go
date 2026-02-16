@@ -16,17 +16,17 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
+
+const personalOwnerRouteKey = "me"
 
 type loginRequest struct {
 	Username string `json:"username"`
@@ -42,28 +42,10 @@ type adminE2ESessionRequest struct {
 	Groups      []string `json:"groups,omitempty"`
 }
 
-type workspaceCreateRequest struct {
-	Name      string `json:"name"`
-	Blueprint string `json:"blueprint,omitempty"`
-}
-
-type workspaceResponse struct {
+type scopeResponse struct {
 	ID   string `json:"id"`
 	Slug string `json:"slug"`
 	Name string `json:"name"`
-}
-
-type createdWorkspaceRecord struct {
-	BaseURL       string `json:"baseUrl"`
-	WorkspaceID   string `json:"workspaceId"`
-	WorkspaceSlug string `json:"workspaceSlug"`
-	WorkspaceName string `json:"workspaceName"`
-	CreatedAt     string `json:"createdAt"`
-}
-
-type listWorkspacesResponse struct {
-	User       string              `json:"user"`
-	Workspaces []workspaceResponse `json:"workspaces"`
 }
 
 type netlabValidateRequest struct {
@@ -76,9 +58,9 @@ type netlabValidateRequest struct {
 }
 
 type netlabValidateResponse struct {
-	WorkspaceID string         `json:"workspaceId"`
-	User        string         `json:"user"`
-	Task        map[string]any `json:"task"`
+	OwnerID string         `json:"ownerId"`
+	User    string         `json:"user"`
+	Task    map[string]any `json:"task"`
 }
 
 type deploymentCreateRequest struct {
@@ -88,17 +70,17 @@ type deploymentCreateRequest struct {
 }
 
 type deploymentResponse struct {
-	ID          string         `json:"id"`
-	WorkspaceID string         `json:"workspaceId"`
-	Name        string         `json:"name"`
-	Type        string         `json:"type"`
-	Config      map[string]any `json:"config,omitempty"`
+	ID      string         `json:"id"`
+	OwnerID string         `json:"ownerId"`
+	Name    string         `json:"name"`
+	Type    string         `json:"type"`
+	Config  map[string]any `json:"config,omitempty"`
 }
 
 type deploymentActionResponse struct {
-	WorkspaceID string             `json:"workspaceId"`
-	Deployment  deploymentResponse `json:"deployment"`
-	Run         map[string]any     `json:"run,omitempty"`
+	OwnerID    string             `json:"ownerId"`
+	Deployment deploymentResponse `json:"deployment"`
+	Run        map[string]any     `json:"run,omitempty"`
 }
 
 type deploymentForwardConfigRequest struct {
@@ -213,7 +195,7 @@ type netlabDeviceDefaultsCatalog struct {
 	} `json:"sets"`
 }
 
-type workspaceNetlabServerConfig struct {
+type scopeNetlabServerConfig struct {
 	ID          string `json:"id,omitempty"`
 	Name        string `json:"name,omitempty"`
 	APIURL      string `json:"apiUrl"`
@@ -272,77 +254,6 @@ func getenvDuration(key string, fallback time.Duration) time.Duration {
 		return d
 	}
 	return fallback
-}
-
-func appendCreatedWorkspace(statusDir string, rec createdWorkspaceRecord) error {
-	statusDir = strings.TrimSpace(statusDir)
-	if statusDir == "" {
-		return fmt.Errorf("statusDir missing")
-	}
-	path := filepath.Join(statusDir, "e2e-created-workspaces.jsonl")
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	b, err := json.Marshal(rec)
-	if err != nil {
-		return err
-	}
-	_, err = f.Write(append(b, '\n'))
-	return err
-}
-
-func removeCreatedWorkspace(statusDir string, workspaceID string) error {
-	statusDir = strings.TrimSpace(statusDir)
-	workspaceID = strings.TrimSpace(workspaceID)
-	if statusDir == "" || workspaceID == "" {
-		return nil
-	}
-	path := filepath.Join(statusDir, "e2e-created-workspaces.jsonl")
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	lines := strings.Split(string(raw), "\n")
-	out := make([]string, 0, len(lines))
-	for _, ln := range lines {
-		ln = strings.TrimSpace(ln)
-		if ln == "" {
-			continue
-		}
-		var rec createdWorkspaceRecord
-		if json.Unmarshal([]byte(ln), &rec) == nil && strings.TrimSpace(rec.WorkspaceID) == workspaceID {
-			continue
-		}
-		out = append(out, ln)
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(strings.Join(out, "\n")+"\n"), 0644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
-}
-
-func deleteWorkspaceByID(client *http.Client, baseURL, cookie, workspaceID, workspaceSlug string) error {
-	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	workspaceID = strings.TrimSpace(workspaceID)
-	workspaceSlug = strings.TrimSpace(workspaceSlug)
-	if baseURL == "" || workspaceID == "" {
-		return fmt.Errorf("missing baseURL/workspaceID")
-	}
-	deleteURL := fmt.Sprintf("%s/api/workspaces/%s?confirm=%s", baseURL, workspaceID, url.QueryEscape(workspaceSlug))
-	resp, body, err := doJSON(client, http.MethodDelete, deleteURL, nil, map[string]string{"Cookie": cookie})
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("workspace delete failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	return nil
 }
 
 func mustEnv(key string) string {
@@ -501,7 +412,7 @@ func vxlanSmokeCheck(ctx context.Context, namespace, topologyOwner string) (int,
 	}
 
 	// Find pods for this topology. clabernetes labels pods with:
-	//   clabernetes/topologyOwner=<workspaceSlug>-<deploymentName>
+	//   clabernetes/topologyOwner=<scopeSlug>-<deploymentName>
 	selector := "clabernetes/topologyOwner=" + topologyOwner
 	cmd := exec.CommandContext(ctx, "kubectl", "-n", namespace, "get", "pods", "-l", selector, "-o", "json")
 	cmd.Env = kubectlEnv()
@@ -708,7 +619,7 @@ func dumpFailureArtifacts(ctx context.Context, statusDir, namespace, topologyOwn
 	}
 }
 
-func ensureWorkspaceNetlabServer(client *http.Client, baseURL, cookie, workspaceID string) (string, error) {
+func ensureUserNetlabServer(client *http.Client, baseURL, cookie string) (string, error) {
 	apiURL := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_BYOS_NETLAB_API_URL"))
 	if apiURL == "" {
 		return "", fmt.Errorf("SKYFORGE_E2E_BYOS_NETLAB_API_URL is not set")
@@ -718,7 +629,7 @@ func ensureWorkspaceNetlabServer(client *http.Client, baseURL, cookie, workspace
 	apiPassword := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_BYOS_NETLAB_API_PASSWORD"))
 	apiInsecure := getenvBool("SKYFORGE_E2E_BYOS_NETLAB_API_INSECURE", false)
 
-	payload := workspaceNetlabServerConfig{
+	payload := scopeNetlabServerConfig{
 		Name:        "",
 		APIURL:      apiURL,
 		APIInsecure: apiInsecure,
@@ -726,20 +637,20 @@ func ensureWorkspaceNetlabServer(client *http.Client, baseURL, cookie, workspace
 		APIPassword: apiPassword,
 		APIToken:    apiToken,
 	}
-	url := fmt.Sprintf("%s/api/workspaces/%s/netlab/servers", strings.TrimRight(strings.TrimSpace(baseURL), "/"), strings.TrimSpace(workspaceID))
+	url := fmt.Sprintf("%s/api/netlab/servers", strings.TrimRight(strings.TrimSpace(baseURL), "/"))
 	resp, body, err := doJSON(client, http.MethodPut, url, payload, map[string]string{"Cookie": cookie})
 	if err != nil {
 		return "", err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("upsert workspace netlab server failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return "", fmt.Errorf("upsert user netlab server failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
-	var out workspaceNetlabServerConfig
+	var out scopeNetlabServerConfig
 	if err := json.Unmarshal(body, &out); err != nil {
-		return "", fmt.Errorf("upsert workspace netlab server parse failed: %w", err)
+		return "", fmt.Errorf("upsert user netlab server parse failed: %w", err)
 	}
 	if strings.TrimSpace(out.ID) == "" {
-		return "", fmt.Errorf("upsert workspace netlab server returned empty id")
+		return "", fmt.Errorf("upsert user netlab server returned empty id")
 	}
 	return "ws:" + strings.TrimSpace(out.ID), nil
 }
@@ -1631,7 +1542,7 @@ func parseTaskID(task map[string]any) int {
 	return 0
 }
 
-func waitForTaskFinished(client *http.Client, baseURL string, cookie string, workspaceID string, taskID int, timeout time.Duration) (status string, errMsg string, err error) {
+func waitForTaskFinished(client *http.Client, baseURL string, cookie string, ownerID string, taskID int, timeout time.Duration) (status string, errMsg string, err error) {
 	if taskID <= 0 {
 		return "", "", fmt.Errorf("invalid task id")
 	}
@@ -1690,7 +1601,7 @@ func waitForTaskFinished(client *http.Client, baseURL string, cookie string, wor
 	for {
 		select {
 		case <-ctx.Done():
-			if output, err := fetchRunOutput(client, baseURL, cookie, workspaceID, taskID); err == nil && strings.TrimSpace(output) != "" {
+			if output, err := fetchRunOutput(client, baseURL, cookie, ownerID, taskID); err == nil && strings.TrimSpace(output) != "" {
 				fmt.Fprintf(os.Stderr, "--- task %d output ---\n%s\n--- end output ---\n", taskID, output)
 			}
 			return "", "", fmt.Errorf("timeout waiting for task %d", taskID)
@@ -1701,39 +1612,37 @@ func waitForTaskFinished(client *http.Client, baseURL string, cookie string, wor
 		case <-heartbeat.C:
 			fmt.Fprintf(os.Stderr, "WAIT task %d (elapsed %s) lastPoll=%q\n", taskID, time.Since(start).Truncate(time.Second), lastPoll)
 		case <-ticker.C:
-			if strings.TrimSpace(workspaceID) != "" {
-				st, er, state := pollTaskStatus(client, baseURL, cookie, workspaceID, taskID)
-				switch state {
-				case pollTerminal:
-					return st, er, nil
-				case pollMissing:
-					missingPolls++
-					queuedPolls = 0
-					lastPoll = "missing"
-					if missingPolls >= 12 { // ~60s
+			st, er, state := pollTaskStatus(client, baseURL, cookie, ownerID, taskID)
+			switch state {
+			case pollTerminal:
+				return st, er, nil
+			case pollMissing:
+				missingPolls++
+				queuedPolls = 0
+				lastPoll = "missing"
+				if missingPolls >= 12 { // ~60s
+					reconcileURL := strings.TrimRight(strings.TrimSpace(baseURL), "/") + "/api/admin/tasks/reconcile"
+					_, _, _ = doJSON(client, http.MethodPost, reconcileURL, map[string]any{"limit": 200}, map[string]string{"Cookie": cookie})
+					missingPolls = 0
+				}
+			case pollNonTerminal:
+				missingPolls = 0
+				lastPoll = strings.TrimSpace(st)
+				if strings.EqualFold(strings.TrimSpace(st), "queued") {
+					queuedPolls++
+					if queuedPolls >= 12 { // ~60s
 						reconcileURL := strings.TrimRight(strings.TrimSpace(baseURL), "/") + "/api/admin/tasks/reconcile"
 						_, _, _ = doJSON(client, http.MethodPost, reconcileURL, map[string]any{"limit": 200}, map[string]string{"Cookie": cookie})
-						missingPolls = 0
-					}
-				case pollNonTerminal:
-					missingPolls = 0
-					lastPoll = strings.TrimSpace(st)
-					if strings.EqualFold(strings.TrimSpace(st), "queued") {
-						queuedPolls++
-						if queuedPolls >= 12 { // ~60s
-							reconcileURL := strings.TrimRight(strings.TrimSpace(baseURL), "/") + "/api/admin/tasks/reconcile"
-							_, _, _ = doJSON(client, http.MethodPost, reconcileURL, map[string]any{"limit": 200}, map[string]string{"Cookie": cookie})
-							queuedPolls = 0
-						}
-					} else {
 						queuedPolls = 0
 					}
+				} else {
+					queuedPolls = 0
 				}
 			}
 		case line, ok := <-lineCh:
 			if !ok {
 				// Stream ended; fall back to a final poll.
-				st, er, state := pollTaskStatus(client, baseURL, cookie, workspaceID, taskID)
+				st, er, state := pollTaskStatus(client, baseURL, cookie, ownerID, taskID)
 				if state == pollTerminal {
 					return st, er, nil
 				}
@@ -1781,12 +1690,11 @@ const (
 	pollTerminal
 )
 
-func pollTaskStatus(client *http.Client, baseURL string, cookie string, workspaceID string, taskID int) (status string, errMsg string, state pollState) {
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" || taskID <= 0 {
+func pollTaskStatus(client *http.Client, baseURL string, cookie string, _ string, taskID int) (status string, errMsg string, state pollState) {
+	if taskID <= 0 {
 		return "", "", pollMissing
 	}
-	url := fmt.Sprintf("%s/api/runs?workspace_id=%s&limit=25", strings.TrimRight(baseURL, "/"), workspaceID)
+	url := fmt.Sprintf("%s/api/runs?limit=25", strings.TrimRight(baseURL, "/"))
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return "", "", pollMissing
@@ -1835,11 +1743,11 @@ func pollTaskStatus(client *http.Client, baseURL string, cookie string, workspac
 	return "", "", pollMissing
 }
 
-func fetchRunOutput(client *http.Client, baseURL string, cookie string, workspaceID string, taskID int) (string, error) {
+func fetchRunOutput(client *http.Client, baseURL string, cookie string, _ string, taskID int) (string, error) {
 	if taskID <= 0 {
 		return "", fmt.Errorf("invalid task id")
 	}
-	url := fmt.Sprintf("%s/api/runs/%d/output?workspace_id=%s", strings.TrimRight(baseURL, "/"), taskID, strings.TrimSpace(workspaceID))
+	url := fmt.Sprintf("%s/api/runs/%d/output", strings.TrimRight(baseURL, "/"), taskID)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return "", err
@@ -2283,58 +2191,15 @@ func run() int {
 		fmt.Printf("OK login: %s\n", username)
 	}
 
-	wsReuseID := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_WORKSPACE_ID"))
-	var ws workspaceResponse
-	if wsReuseID != "" {
-		resp, body, err := doJSON(client, http.MethodGet, baseURL+"/api/workspaces", nil, map[string]string{"Cookie": cookie})
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "workspace list request failed: %v\n", err)
-			return 1
-		}
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			fmt.Fprintf(os.Stderr, "workspace list failed (%d): %s\n", resp.StatusCode, strings.TrimSpace(string(body)))
-			return 1
-		}
-		var lr listWorkspacesResponse
-		if err := json.Unmarshal(body, &lr); err != nil {
-			fmt.Fprintf(os.Stderr, "workspace list parse failed: %v\n", err)
-			return 1
-		}
-		found := false
-		for _, w := range lr.Workspaces {
-			if strings.TrimSpace(w.ID) == wsReuseID {
-				ws = w
-				found = true
-				break
-			}
-		}
-		if !found || strings.TrimSpace(ws.ID) == "" {
-			fmt.Fprintf(os.Stderr, "workspace %q not found; set SKYFORGE_E2E_WORKSPACE_ID to an existing workspace id\n", wsReuseID)
-			return 1
-		}
-		fmt.Printf("OK workspace reuse: %s (%s)\n", ws.Name, ws.ID)
-	} else {
-		wsName := fmt.Sprintf("e2e-%s", time.Now().UTC().Format("20060102-150405"))
-		createURL := baseURL + "/api/workspaces"
-		resp, body, err = doJSON(client, http.MethodPost, createURL, workspaceCreateRequest{Name: wsName}, map[string]string{"Cookie": cookie})
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "workspace create request failed: %v\n", err)
-			return 1
-		}
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			fmt.Fprintf(os.Stderr, "workspace create failed (%d): %s\n", resp.StatusCode, strings.TrimSpace(string(body)))
-			return 1
-		}
-		if err := json.Unmarshal(body, &ws); err != nil {
-			fmt.Fprintf(os.Stderr, "workspace create parse failed: %v\n", err)
-			return 1
-		}
-		if strings.TrimSpace(ws.ID) == "" {
-			fmt.Fprintf(os.Stderr, "workspace create returned empty id: %s\n", strings.TrimSpace(string(body)))
-			return 1
-		}
-		fmt.Printf("OK workspace create: %s (%s)\n", ws.Name, ws.ID)
+	if raw := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_SCOPE_ID")); raw != "" {
+		fmt.Fprintf(os.Stderr, "WARN SKYFORGE_E2E_SCOPE_ID is ignored in per-user mode (value=%q)\n", raw)
 	}
+	ws := scopeResponse{
+		ID:   personalOwnerRouteKey,
+		Slug: personalOwnerRouteKey,
+		Name: "personal",
+	}
+	fmt.Printf("OK owner context: %s (%s)\n", ws.Name, ws.ID)
 
 	var statusRec *e2eStatusRecorder
 	var runLog *e2eRunLogger
@@ -2384,49 +2249,6 @@ func run() int {
 				fmt.Fprintf(os.Stderr, "warning: failed to write e2e status: %v\n", err)
 			}
 		}()
-	}
-
-	workspaceCleanup := true
-	if v, ok := getenvBoolOK("SKYFORGE_E2E_WORKSPACE_CLEANUP"); ok {
-		workspaceCleanup = v
-	}
-
-	if wsReuseID == "" {
-		_ = appendCreatedWorkspace(statusDir, createdWorkspaceRecord{
-			BaseURL:       strings.TrimRight(baseURL, "/"),
-			WorkspaceID:   ws.ID,
-			WorkspaceSlug: ws.Slug,
-			WorkspaceName: ws.Name,
-			CreatedAt:     time.Now().UTC().Format(time.RFC3339),
-		})
-	}
-
-	if wsReuseID == "" && workspaceCleanup {
-		var deleteOnce sync.Once
-		cleanup := func(reason string) {
-			deleteOnce.Do(func() {
-				if err := deleteWorkspaceByID(client, baseURL, cookie, ws.ID, ws.Slug); err != nil {
-					fmt.Fprintf(os.Stderr, "warning: workspace delete failed (%s): %v\n", reason, err)
-					return
-				}
-				_ = removeCreatedWorkspace(statusDir, ws.ID)
-				fmt.Printf("OK workspace delete: %s\n", ws.ID)
-			})
-		}
-
-		sigCh := make(chan os.Signal, 2)
-		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-		go func() {
-			sig := <-sigCh
-			cleanup(fmt.Sprintf("signal=%s", sig.String()))
-			os.Exit(130)
-		}()
-
-		defer func() {
-			cleanup("defer")
-		}()
-	} else if wsReuseID == "" && !workspaceCleanup {
-		fmt.Printf("SKIP workspace delete: SKYFORGE_E2E_WORKSPACE_CLEANUP=false (workspaceId=%s)\n", ws.ID)
 	}
 
 	var m matrixFile
@@ -2557,7 +2379,7 @@ func run() int {
 					wait = parsed
 				}
 			}
-			url := fmt.Sprintf("%s/api/workspaces/%s/netlab/validate", baseURL, ws.ID)
+			url := fmt.Sprintf("%s/api/netlab/validate", baseURL)
 			resp, body, err := doJSON(client, http.MethodPost, url, reqIn, map[string]string{"Cookie": cookie})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "test %q: request failed: %v\n", name, err)
@@ -2675,11 +2497,8 @@ func run() int {
 				depName = strings.ToLower(strings.ReplaceAll(name, "_", "-"))
 			}
 			depName = strings.Trim(depName, "-")
-			// When reusing a workspace across runs, avoid deployment name collisions by default.
+			// Optional suffix to avoid deployment name collisions across repeated runs.
 			deploySuffix := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_DEPLOY_SUFFIX"))
-			if deploySuffix == "" && strings.TrimSpace(os.Getenv("SKYFORGE_E2E_WORKSPACE_ID")) != "" {
-				deploySuffix = fmt.Sprintf("r%d", time.Now().Unix()%100000)
-			}
 			if deploySuffix != "" {
 				depName = strings.Trim(depName+"-"+deploySuffix, "-")
 			}
@@ -2691,7 +2510,7 @@ func run() int {
 				depName = "e2e"
 			}
 
-			createDepURL := fmt.Sprintf("%s/api/workspaces/%s/deployments", baseURL, ws.ID)
+			createDepURL := fmt.Sprintf("%s/api/deployments", baseURL)
 			resp, body, err := doJSON(client, http.MethodPost, createDepURL, deploymentCreateRequest{
 				Name:   depName,
 				Type:   deployType,
@@ -2734,7 +2553,7 @@ func run() int {
 
 			// Best-effort: enable Forward on this deployment so we also exercise Forward sync plumbing.
 			if getenvBool("SKYFORGE_E2E_FORWARD", false) && strings.TrimSpace(collectorConfigID) != "" {
-				fwdCfgURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/forward", baseURL, ws.ID, dep.ID)
+				fwdCfgURL := fmt.Sprintf("%s/api/deployments/%s/forward", baseURL, dep.ID)
 				resp, body, err = doJSON(client, http.MethodPut, fwdCfgURL, deploymentForwardConfigRequest{
 					Enabled:           true,
 					CollectorConfigID: collectorConfigID,
@@ -2749,7 +2568,7 @@ func run() int {
 				}
 			}
 
-			startURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/start", baseURL, ws.ID, dep.ID)
+			startURL := fmt.Sprintf("%s/api/deployments/%s/start", baseURL, dep.ID)
 			resp, body, err = doJSON(client, http.MethodPost, startURL, map[string]any{}, map[string]string{"Cookie": cookie})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "test %q: start deployment request failed: %v\n", name, err)
@@ -2794,19 +2613,19 @@ func run() int {
 				}
 				if runLog != nil {
 					runLog.append(e2eRunLogEntry{
-						BaseURL:     baseURL,
-						Workspace:   ws.Name,
-						WorkspaceID: ws.ID,
-						Test:        name,
-						Kind:        kind,
-						Device:      device,
-						Template:    templateName,
-						DeployType:  deployType,
-						TaskID:      taskID,
-						Status:      "fail",
-						Error:       errMsg,
-						VXLAN:       "unknown",
-						Notes:       "deployment failed",
+						BaseURL:    baseURL,
+						Owner:      ws.Name,
+						OwnerID:    ws.ID,
+						Test:       name,
+						Kind:       kind,
+						Device:     device,
+						Template:   templateName,
+						DeployType: deployType,
+						TaskID:     taskID,
+						Status:     "fail",
+						Error:      errMsg,
+						VXLAN:      "unknown",
+						Notes:      "deployment failed",
 					})
 				}
 				if output, err := fetchRunOutput(client, baseURL, cookie, ws.ID, taskID); err == nil && strings.TrimSpace(output) != "" {
@@ -2817,7 +2636,7 @@ func run() int {
 			}
 
 			if !testFailed && sshWait > 0 && getenvBool("SKYFORGE_E2E_SSH_PROBE", true) {
-				topURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/topology", baseURL, ws.ID, dep.ID)
+				topURL := fmt.Sprintf("%s/api/deployments/%s/topology", baseURL, dep.ID)
 				resp, body, err = doJSON(client, http.MethodGet, topURL, nil, map[string]string{"Cookie": cookie})
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "test %q: topology request failed: %v\n", name, err)
@@ -2885,20 +2704,20 @@ func run() int {
 									}
 									if runLog != nil {
 										runLog.append(e2eRunLogEntry{
-											BaseURL:     baseURL,
-											Workspace:   ws.Name,
-											WorkspaceID: ws.ID,
-											Test:        name,
-											Kind:        kind,
-											Device:      device,
-											Template:    templateName,
-											DeployType:  deployType,
-											TaskID:      taskID,
-											Status:      "fail",
-											Error:       err.Error(),
-											VXLAN:       vxlanStatus,
-											K8sNodes:    k8sNodes,
-											Notes:       "collector ssh probe failed",
+											BaseURL:    baseURL,
+											Owner:      ws.Name,
+											OwnerID:    ws.ID,
+											Test:       name,
+											Kind:       kind,
+											Device:     device,
+											Template:   templateName,
+											DeployType: deployType,
+											TaskID:     taskID,
+											Status:     "fail",
+											Error:      err.Error(),
+											VXLAN:      vxlanStatus,
+											K8sNodes:   k8sNodes,
+											Notes:      "collector ssh probe failed",
 										})
 									}
 									exitCode = 1
@@ -2943,20 +2762,20 @@ func run() int {
 									}
 									if runLog != nil {
 										runLog.append(e2eRunLogEntry{
-											BaseURL:     baseURL,
-											Workspace:   ws.Name,
-											WorkspaceID: ws.ID,
-											Test:        name,
-											Kind:        kind,
-											Device:      device,
-											Template:    templateName,
-											DeployType:  deployType,
-											TaskID:      taskID,
-											Status:      "fail",
-											Error:       err.Error(),
-											VXLAN:       vxlanStatus,
-											K8sNodes:    k8sNodes,
-											Notes:       "ssh probe job failed",
+											BaseURL:    baseURL,
+											Owner:      ws.Name,
+											OwnerID:    ws.ID,
+											Test:       name,
+											Kind:       kind,
+											Device:     device,
+											Template:   templateName,
+											DeployType: deployType,
+											TaskID:     taskID,
+											Status:     "fail",
+											Error:      err.Error(),
+											VXLAN:      vxlanStatus,
+											K8sNodes:   k8sNodes,
+											Notes:      "ssh probe job failed",
 										})
 									}
 									exitCode = 1
@@ -2997,20 +2816,20 @@ func run() int {
 									}
 									if runLog != nil {
 										runLog.append(e2eRunLogEntry{
-											BaseURL:     baseURL,
-											Workspace:   ws.Name,
-											WorkspaceID: ws.ID,
-											Test:        name,
-											Kind:        kind,
-											Device:      device,
-											Template:    templateName,
-											DeployType:  deployType,
-											TaskID:      taskID,
-											Status:      "fail",
-											Error:       err.Error(),
-											VXLAN:       vxlanStatus,
-											K8sNodes:    k8sNodes,
-											Notes:       "ssh probe api failed",
+											BaseURL:    baseURL,
+											Owner:      ws.Name,
+											OwnerID:    ws.ID,
+											Test:       name,
+											Kind:       kind,
+											Device:     device,
+											Template:   templateName,
+											DeployType: deployType,
+											TaskID:     taskID,
+											Status:     "fail",
+											Error:      err.Error(),
+											VXLAN:      vxlanStatus,
+											K8sNodes:   k8sNodes,
+											Notes:      "ssh probe api failed",
 										})
 									}
 									exitCode = 1
@@ -3047,20 +2866,20 @@ func run() int {
 										dumpFailureArtifacts(context.Background(), statusDir, ns, owner, device, name)
 										if runLog != nil {
 											runLog.append(e2eRunLogEntry{
-												BaseURL:     baseURL,
-												Workspace:   ws.Name,
-												WorkspaceID: ws.ID,
-												Test:        name,
-												Kind:        kind,
-												Device:      device,
-												Template:    templateName,
-												DeployType:  deployType,
-												TaskID:      taskID,
-												Status:      "fail",
-												Error:       err.Error(),
-												VXLAN:       vxlanStatus,
-												K8sNodes:    k8sNodes,
-												Notes:       "vxlan smoke failed",
+												BaseURL:    baseURL,
+												Owner:      ws.Name,
+												OwnerID:    ws.ID,
+												Test:       name,
+												Kind:       kind,
+												Device:     device,
+												Template:   templateName,
+												DeployType: deployType,
+												TaskID:     taskID,
+												Status:     "fail",
+												Error:      err.Error(),
+												VXLAN:      vxlanStatus,
+												K8sNodes:   k8sNodes,
+												Notes:      "vxlan smoke failed",
 											})
 										}
 										exitCode = 1
@@ -3082,19 +2901,19 @@ func run() int {
 							}
 							if !testFailed && sshOK && runLog != nil {
 								runLog.append(e2eRunLogEntry{
-									BaseURL:     baseURL,
-									Workspace:   ws.Name,
-									WorkspaceID: ws.ID,
-									Test:        name,
-									Kind:        kind,
-									Device:      device,
-									Template:    templateName,
-									DeployType:  deployType,
-									TaskID:      taskID,
-									Status:      "pass",
-									VXLAN:       vxlanStatus,
-									K8sNodes:    k8sNodes,
-									Notes:       notes,
+									BaseURL:    baseURL,
+									Owner:      ws.Name,
+									OwnerID:    ws.ID,
+									Test:       name,
+									Kind:       kind,
+									Device:     device,
+									Template:   templateName,
+									DeployType: deployType,
+									TaskID:     taskID,
+									Status:     "pass",
+									VXLAN:      vxlanStatus,
+									K8sNodes:   k8sNodes,
+									Notes:      notes,
 								})
 							}
 						}
@@ -3107,7 +2926,7 @@ func run() int {
 				cleanup = v
 			}
 			if cleanup {
-				destroyURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/destroy", baseURL, ws.ID, dep.ID)
+				destroyURL := fmt.Sprintf("%s/api/deployments/%s/destroy", baseURL, dep.ID)
 				resp, body, err = doJSON(client, http.MethodPost, destroyURL, map[string]any{}, map[string]string{"Cookie": cookie})
 				if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
 					var destroyed deploymentActionResponse
@@ -3132,7 +2951,7 @@ func run() int {
 							destroyReason = "missing destroy task id"
 						}
 						if !destroyDone {
-							deleteURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s", baseURL, ws.ID, dep.ID)
+							deleteURL := fmt.Sprintf("%s/api/deployments/%s", baseURL, dep.ID)
 							delResp, delBody, delErr := doJSON(client, http.MethodDelete, deleteURL, nil, map[string]string{"Cookie": cookie})
 							if delErr == nil && delResp.StatusCode >= 200 && delResp.StatusCode < 300 {
 								fmt.Printf("OK %s: cleanup fallback deleted deployment (reason=%s)\n", name, strings.TrimSpace(destroyReason))
@@ -3171,7 +2990,7 @@ func run() int {
 				}
 			}
 
-			serverRef, err := ensureWorkspaceNetlabServer(client, baseURL, cookie, ws.ID)
+			serverRef, err := ensureUserNetlabServer(client, baseURL, cookie)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "test %q: byos netlab server not configured: %v\n", name, err)
 				return 1
@@ -3190,7 +3009,7 @@ func run() int {
 				cfg["environment"] = map[string]string{}
 			}
 
-			createDepURL := fmt.Sprintf("%s/api/workspaces/%s/deployments", baseURL, ws.ID)
+			createDepURL := fmt.Sprintf("%s/api/deployments", baseURL)
 			resp, body, err := doJSON(client, http.MethodPost, createDepURL, deploymentCreateRequest{
 				Name:   strings.TrimSpace(name),
 				Type:   "netlab",
@@ -3214,7 +3033,7 @@ func run() int {
 				return 1
 			}
 
-			startURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/start", baseURL, ws.ID, dep.ID)
+			startURL := fmt.Sprintf("%s/api/deployments/%s/start", baseURL, dep.ID)
 			resp, body, err = doJSON(client, http.MethodPost, startURL, map[string]any{}, map[string]string{"Cookie": cookie})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "test %q: start deployment request failed: %v\n", name, err)
@@ -3263,7 +3082,7 @@ func run() int {
 					wait = parsed
 				}
 			}
-			serverRef, err := ensureWorkspaceNetlabServer(client, baseURL, cookie, ws.ID)
+			serverRef, err := ensureUserNetlabServer(client, baseURL, cookie)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "test %q: byos netlab server not configured: %v\n", name, err)
 				return 1
@@ -3279,7 +3098,7 @@ func run() int {
 			if cfg["environment"] == nil {
 				cfg["environment"] = map[string]string{}
 			}
-			createDepURL := fmt.Sprintf("%s/api/workspaces/%s/deployments", baseURL, ws.ID)
+			createDepURL := fmt.Sprintf("%s/api/deployments", baseURL)
 			resp, body, err := doJSON(client, http.MethodPost, createDepURL, deploymentCreateRequest{
 				Name:   strings.TrimSpace(name),
 				Type:   "containerlab",
@@ -3302,7 +3121,7 @@ func run() int {
 				fmt.Fprintf(os.Stderr, "test %q: create deployment returned empty id\n", name)
 				return 1
 			}
-			startURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/start", baseURL, ws.ID, dep.ID)
+			startURL := fmt.Sprintf("%s/api/deployments/%s/start", baseURL, dep.ID)
 			resp, body, err = doJSON(client, http.MethodPost, startURL, map[string]any{}, map[string]string{"Cookie": cookie})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "test %q: start deployment request failed: %v\n", name, err)

@@ -39,7 +39,7 @@ func (e *Engine) cancelNetlabTask(ctx context.Context, task *taskstore.TaskRecor
 		return
 	}
 
-	ws, err := e.loadWorkspaceByKey(ctx, task.WorkspaceID)
+	ws, err := e.loadOwnerProfileByKey(ctx, task.OwnerID)
 	if err != nil || ws == nil {
 		return
 	}
@@ -47,8 +47,8 @@ func (e *Engine) cancelNetlabTask(ctx context.Context, task *taskstore.TaskRecor
 	if username == "" {
 		username = ws.primaryOwner()
 	}
-	pc := &workspaceContext{
-		workspace: *ws,
+	pc := &ownerContext{
+		owner: *ws,
 		claims: SessionClaims{
 			Username: username,
 		},
@@ -68,9 +68,9 @@ func (e *Engine) cancelNetlabTask(ctx context.Context, task *taskstore.TaskRecor
 		}
 	}
 	if serverRef == "" {
-		serverRef = strings.TrimSpace(pc.workspace.NetlabServer)
+		serverRef = strings.TrimSpace(pc.owner.NetlabServer)
 	}
-	server, err := e.resolveWorkspaceNetlabServer(ctx, pc.workspace.ID, serverRef)
+	server, err := e.resolveOwnerNetlabServer(ctx, pc.owner.ID, serverRef)
 	if err != nil || server == nil {
 		return
 	}

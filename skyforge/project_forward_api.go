@@ -14,7 +14,7 @@ import (
 	"encore.dev/beta/errs"
 )
 
-type WorkspaceForwardConfigResponse struct {
+type UserForwardConfigResponse struct {
 	Configured  bool   `json:"configured"`
 	BaseURL     string `json:"baseUrl"`
 	Username    string `json:"username,omitempty"`
@@ -25,7 +25,7 @@ type WorkspaceForwardConfigResponse struct {
 	UpdatedAt   string `json:"updatedAt,omitempty"`
 }
 
-type WorkspaceForwardConfigRequest struct {
+type UserForwardConfigRequest struct {
 	BaseURL           string `json:"baseUrl"`
 	Username          string `json:"username"`
 	Password          string `json:"password"`
@@ -35,38 +35,36 @@ type WorkspaceForwardConfigRequest struct {
 	JumpCert          string `json:"jumpCert"`
 }
 
-type WorkspaceForwardCollector struct {
+type UserForwardCollector struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
 	Username string `json:"username"`
 }
 
-type WorkspaceForwardCollectorsResponse struct {
-	Collectors []WorkspaceForwardCollector `json:"collectors"`
+type UserForwardCollectorsResponse struct {
+	Collectors []UserForwardCollector `json:"collectors"`
 }
 
-type WorkspaceForwardCollectorCreateResponse struct {
+type UserForwardCollectorCreateResponse struct {
 	ID               string `json:"id"`
 	Name             string `json:"name"`
 	Username         string `json:"username"`
 	AuthorizationKey string `json:"authorizationKey"`
 }
 
-type ApplyWorkspaceForwardCredentialSetRequest struct {
+type ApplyUserForwardCredentialSetRequest struct {
 	CredentialID string `json:"credentialId"`
 }
 
 const defaultForwardBaseURL = "https://fwd.app"
 
-// GetWorkspaceForwardConfig returns Forward Networks credentials for a workspace.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/integrations/forward
-func (s *Service) GetWorkspaceForwardConfig(ctx context.Context, id string) (*WorkspaceForwardConfigResponse, error) {
+// GetUserForwardConfig returns Forward Networks credentials for a scope.
+func (s *Service) GetUserForwardConfig(ctx context.Context, id string) (*UserForwardConfigResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -79,13 +77,13 @@ func (s *Service) GetWorkspaceForwardConfig(ctx context.Context, id string) (*Wo
 
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	rec, err := getWorkspaceForwardCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), pc.workspace.ID)
+	rec, err := getOwnerForwardCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), pc.context.ID)
 	if err != nil {
 		log.Printf("forward get: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward config").Err()
 	}
 	if rec == nil {
-		return &WorkspaceForwardConfigResponse{
+		return &UserForwardConfigResponse{
 			Configured:  false,
 			BaseURL:     defaultForwardBaseURL,
 			HasPassword: false,
@@ -101,7 +99,7 @@ func (s *Service) GetWorkspaceForwardConfig(ctx context.Context, id string) (*Wo
 	if baseURL == "" {
 		baseURL = defaultForwardBaseURL
 	}
-	return &WorkspaceForwardConfigResponse{
+	return &UserForwardConfigResponse{
 		Configured:  baseURL != "" && rec.Username != "" && rec.Password != "",
 		BaseURL:     baseURL,
 		Username:    rec.Username,
@@ -113,15 +111,13 @@ func (s *Service) GetWorkspaceForwardConfig(ctx context.Context, id string) (*Wo
 	}, nil
 }
 
-// PutWorkspaceForwardConfig stores Forward Networks credentials for a workspace.
-//
-//encore:api auth method=PUT path=/api/workspaces/:id/integrations/forward
-func (s *Service) PutWorkspaceForwardConfig(ctx context.Context, id string, req *WorkspaceForwardConfigRequest) (*WorkspaceForwardConfigResponse, error) {
+// PutUserForwardConfig stores Forward Networks credentials for a scope.
+func (s *Service) PutUserForwardConfig(ctx context.Context, id string, req *UserForwardConfigRequest) (*UserForwardConfigResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +145,7 @@ func (s *Service) PutWorkspaceForwardConfig(ctx context.Context, id string, req 
 	box := newSecretBox(s.cfg.SessionSecret)
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	current, err := getWorkspaceForwardCredentials(ctx, s.db, box, pc.workspace.ID)
+	current, err := getOwnerForwardCredentials(ctx, s.db, box, pc.context.ID)
 	if err != nil {
 		log.Printf("forward get: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward config").Err()
@@ -198,7 +194,7 @@ func (s *Service) PutWorkspaceForwardConfig(ctx context.Context, id string, req 
 		}
 	}
 
-	if err := putWorkspaceForwardCredentials(ctx, s.db, box, pc.workspace.ID, forwardCredentials{
+	if err := putOwnerForwardCredentials(ctx, s.db, box, pc.context.ID, forwardCredentials{
 		BaseURL:        baseURL,
 		Username:       username,
 		Password:       password,
@@ -216,10 +212,10 @@ func (s *Service) PutWorkspaceForwardConfig(ctx context.Context, id string, req 
 		defer cancel()
 		actor, actorIsAdmin, impersonated := auditActor(s.cfg, pc.claims)
 		details := fmt.Sprintf("baseUrl=%s username=%s", baseURL, username)
-		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "workspace.forward.set", pc.workspace.ID, details)
+		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "context.forward.set", pc.context.ID, details)
 	}
 
-	return &WorkspaceForwardConfigResponse{
+	return &UserForwardConfigResponse{
 		Configured:  true,
 		BaseURL:     baseURL,
 		Username:    username,
@@ -231,15 +227,13 @@ func (s *Service) PutWorkspaceForwardConfig(ctx context.Context, id string, req 
 	}, nil
 }
 
-// GetWorkspaceForwardCollectors lists available Forward collectors for the workspace.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/integrations/forward/collectors
-func (s *Service) GetWorkspaceForwardCollectors(ctx context.Context, id string) (*WorkspaceForwardCollectorsResponse, error) {
+// GetUserForwardCollectors lists available Forward collectors for the scope.
+func (s *Service) GetUserForwardCollectors(ctx context.Context, id string) (*UserForwardCollectorsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -247,9 +241,9 @@ func (s *Service) GetWorkspaceForwardCollectors(ctx context.Context, id string) 
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
 
-	forwardCfg, err := s.forwardConfigForWorkspace(ctx, pc.workspace.ID)
+	forwardCfg, err := s.forwardConfigForOwner(ctx, pc.context.ID)
 	if err != nil || forwardCfg == nil {
-		return &WorkspaceForwardCollectorsResponse{Collectors: []WorkspaceForwardCollector{}}, err
+		return &UserForwardCollectorsResponse{Collectors: []UserForwardCollector{}}, err
 	}
 	client, err := newForwardClient(*forwardCfg)
 	if err != nil {
@@ -259,26 +253,24 @@ func (s *Service) GetWorkspaceForwardCollectors(ctx context.Context, id string) 
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward collectors").Err()
 	}
-	out := make([]WorkspaceForwardCollector, 0, len(collectors))
+	out := make([]UserForwardCollector, 0, len(collectors))
 	for _, collector := range collectors {
-		out = append(out, WorkspaceForwardCollector{
+		out = append(out, UserForwardCollector{
 			ID:       strings.TrimSpace(collector.ID),
 			Name:     strings.TrimSpace(collector.Name),
 			Username: strings.TrimSpace(collector.Username),
 		})
 	}
-	return &WorkspaceForwardCollectorsResponse{Collectors: out}, nil
+	return &UserForwardCollectorsResponse{Collectors: out}, nil
 }
 
-// CreateWorkspaceForwardCollector creates a Forward collector for the workspace.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/integrations/forward/collectors
-func (s *Service) CreateWorkspaceForwardCollector(ctx context.Context, id string) (*WorkspaceForwardCollectorCreateResponse, error) {
+// CreateUserForwardCollector creates a Forward collector for the scope.
+func (s *Service) CreateUserForwardCollector(ctx context.Context, id string) (*UserForwardCollectorCreateResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -286,7 +278,7 @@ func (s *Service) CreateWorkspaceForwardCollector(ctx context.Context, id string
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
 
-	forwardCfg, err := s.forwardConfigForWorkspace(ctx, pc.workspace.ID)
+	forwardCfg, err := s.forwardConfigForOwner(ctx, pc.context.ID)
 	if err != nil || forwardCfg == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("Forward credentials required").Err()
 	}
@@ -294,15 +286,15 @@ func (s *Service) CreateWorkspaceForwardCollector(ctx context.Context, id string
 	if err != nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid Forward config").Err()
 	}
-	name := strings.TrimSpace(pc.workspace.Slug)
+	name := strings.TrimSpace(pc.context.Slug)
 	if name == "" {
-		name = strings.TrimSpace(pc.workspace.ID)
+		name = strings.TrimSpace(pc.context.ID)
 	}
 	collector, err := forwardCreateCollector(ctx, client, name)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to create Forward collector").Err()
 	}
-	return &WorkspaceForwardCollectorCreateResponse{
+	return &UserForwardCollectorCreateResponse{
 		ID:               strings.TrimSpace(collector.ID),
 		Name:             strings.TrimSpace(collector.Name),
 		Username:         strings.TrimSpace(collector.Username),
@@ -310,22 +302,18 @@ func (s *Service) CreateWorkspaceForwardCollector(ctx context.Context, id string
 	}, nil
 }
 
-// PostWorkspaceForwardConfig stores Forward Networks credentials for a workspace (POST fallback).
-//
-//encore:api auth method=POST path=/api/workspaces/:id/integrations/forward
-func (s *Service) PostWorkspaceForwardConfig(ctx context.Context, id string, req *WorkspaceForwardConfigRequest) (*WorkspaceForwardConfigResponse, error) {
-	return s.PutWorkspaceForwardConfig(ctx, id, req)
+// PostUserForwardConfig stores Forward Networks credentials for a scope (POST fallback).
+func (s *Service) PostUserForwardConfig(ctx context.Context, id string, req *UserForwardConfigRequest) (*UserForwardConfigResponse, error) {
+	return s.PutUserForwardConfig(ctx, id, req)
 }
 
-// DeleteWorkspaceForwardConfig removes Forward Networks credentials for a workspace.
-//
-//encore:api auth method=DELETE path=/api/workspaces/:id/integrations/forward
-func (s *Service) DeleteWorkspaceForwardConfig(ctx context.Context, id string) (*WorkspaceForwardConfigResponse, error) {
+// DeleteUserForwardConfig removes Forward Networks credentials for a scope.
+func (s *Service) DeleteUserForwardConfig(ctx context.Context, id string) (*UserForwardConfigResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -337,7 +325,7 @@ func (s *Service) DeleteWorkspaceForwardConfig(ctx context.Context, id string) (
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	if err := deleteWorkspaceForwardCredentials(ctx, s.db, pc.workspace.ID); err != nil {
+	if err := deleteOwnerForwardCredentials(ctx, s.db, pc.context.ID); err != nil {
 		log.Printf("forward delete: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to delete Forward config").Err()
 	}
@@ -345,26 +333,24 @@ func (s *Service) DeleteWorkspaceForwardConfig(ctx context.Context, id string) (
 		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 		defer cancel()
 		actor, actorIsAdmin, impersonated := auditActor(s.cfg, pc.claims)
-		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "workspace.forward.clear", pc.workspace.ID, "")
+		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "context.forward.clear", pc.context.ID, "")
 	}
-	return &WorkspaceForwardConfigResponse{
+	return &UserForwardConfigResponse{
 		Configured: false,
 		BaseURL:    defaultForwardBaseURL,
 	}, nil
 }
 
-// ApplyWorkspaceForwardCredentialSet copies a user-owned Forward credential set into the workspace-scoped
-// Forward integration configuration (so the workspace can use it for Forward-backed features).
+// ApplyUserForwardCredentialSet copies a user-owned Forward credential set into the scope-scoped
+// Forward integration configuration (so the scope can use it for Forward-backed features).
 //
-// This uses "copy" semantics: future changes to the user credential set do not affect the workspace.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/integrations/forward/apply-credential-set
-func (s *Service) ApplyWorkspaceForwardCredentialSet(ctx context.Context, id string, req *ApplyWorkspaceForwardCredentialSetRequest) (*WorkspaceForwardConfigResponse, error) {
+// This uses "copy" semantics: future changes to the user credential set do not affect the scope.
+func (s *Service) ApplyUserForwardCredentialSet(ctx context.Context, id string, req *ApplyUserForwardCredentialSetRequest) (*UserForwardConfigResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -414,7 +400,7 @@ SELECT name,
        COALESCE(device_username_enc,''), COALESCE(device_password_enc,''),
        COALESCE(jump_host_enc,''), COALESCE(jump_username_enc,''), COALESCE(jump_private_key_enc,''), COALESCE(jump_cert_enc,'')
   FROM sf_credentials
- WHERE id=$1 AND provider='forward' AND owner_username=$2 AND workspace_id IS NULL
+ WHERE id=$1 AND provider='forward' AND owner_username=$2 AND owner_username IS NULL
 `, credID, user.Username).Scan(
 		&srcName,
 		&srcBase, &srcSkipTLS,
@@ -439,23 +425,23 @@ SELECT name,
 		}
 	}
 
-	// Destination: reuse existing workspace credential id if present.
+	// Destination: reuse existing scope credential id if present.
 	var destID sql.NullString
-	_ = tx.QueryRowContext(ctxReq, `SELECT COALESCE(credential_id,'') FROM sf_workspace_forward_credentials WHERE workspace_id=$1`, pc.workspace.ID).Scan(&destID)
-	workspaceCredID := strings.TrimSpace(destID.String)
-	if workspaceCredID == "" {
-		workspaceCredID = uuid.NewString()
+	_ = tx.QueryRowContext(ctxReq, `SELECT COALESCE(credential_id,'') FROM sf_owner_forward_credentials WHERE owner_username=$1`, pc.context.ID).Scan(&destID)
+	scopeCredID := strings.TrimSpace(destID.String)
+	if scopeCredID == "" {
+		scopeCredID = uuid.NewString()
 	}
 
-	name := "workspace forward"
+	name := "context forward"
 	if strings.TrimSpace(srcName) != "" {
-		name = fmt.Sprintf("workspace forward (from %s)", strings.TrimSpace(srcName))
+		name = fmt.Sprintf("context forward (from %s)", strings.TrimSpace(srcName))
 	}
 
-	// Upsert workspace-scoped credential row by copying ciphertext directly.
+	// Upsert scope-scoped credential row by copying ciphertext directly.
 	_, err = tx.ExecContext(ctxReq, `
 INSERT INTO sf_credentials (
-  id, owner_username, workspace_id, provider, name,
+  id, owner_username, owner_username, provider, name,
   base_url_enc, skip_tls_verify, forward_username_enc, forward_password_enc,
   collector_id_enc, collector_username_enc, authorization_key_enc,
   device_username_enc, device_password_enc,
@@ -485,7 +471,7 @@ ON CONFLICT (id) DO UPDATE SET
   jump_private_key_enc=excluded.jump_private_key_enc,
   jump_cert_enc=excluded.jump_cert_enc,
   updated_at=now()
-`, workspaceCredID, pc.workspace.ID, name,
+`, scopeCredID, pc.context.ID, name,
 		strings.TrimSpace(srcBase.String),
 		(srcSkipTLS.Valid && srcSkipTLS.Bool),
 		strings.TrimSpace(srcUser.String),
@@ -501,25 +487,25 @@ ON CONFLICT (id) DO UPDATE SET
 		strings.TrimSpace(srcJumpCert.String),
 	)
 	if err != nil {
-		log.Printf("workspace forward apply credential set: %v", err)
+		log.Printf("context forward apply credential set: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to apply credential set").Err()
 	}
 
 	_, err = tx.ExecContext(ctxReq, `
-INSERT INTO sf_workspace_forward_credentials (
-  workspace_id, credential_id,
+INSERT INTO sf_owner_forward_credentials (
+  owner_username, credential_id,
   base_url, username, password,
   collector_id, collector_username,
   device_username, device_password,
   jump_host, jump_username, jump_private_key, jump_cert,
   updated_at
 ) VALUES ($1,$2,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,now())
-ON CONFLICT (workspace_id) DO UPDATE SET
+ON CONFLICT (owner_username) DO UPDATE SET
   credential_id=excluded.credential_id,
   updated_at=now()
-`, pc.workspace.ID, workspaceCredID)
+`, pc.context.ID, scopeCredID)
 	if err != nil {
-		log.Printf("workspace forward apply credential set link: %v", err)
+		log.Printf("context forward apply credential set link: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to apply credential set").Err()
 	}
 
@@ -528,5 +514,5 @@ ON CONFLICT (workspace_id) DO UPDATE SET
 	}
 
 	// Return current config (best-effort).
-	return s.GetWorkspaceForwardConfig(ctx, id)
+	return s.GetUserForwardConfig(ctx, id)
 }

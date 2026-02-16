@@ -10,9 +10,9 @@ import (
 	"encore.dev/beta/errs"
 )
 
-func requireWorkspaceEditor(pc *workspaceContext) error {
+func requireUserEditor(pc *ownerContext) error {
 	if pc == nil {
-		return errs.B().Code(errs.Unavailable).Msg("workspace unavailable").Err()
+		return errs.B().Code(errs.Unavailable).Msg("user context unavailable").Err()
 	}
 	switch pc.access {
 	case "admin", "owner", "editor":
@@ -24,9 +24,9 @@ func requireWorkspaceEditor(pc *workspaceContext) error {
 	}
 }
 
-func requireWorkspaceOwnerRole(pc *workspaceContext) error {
+func requireUserOwnerRole(pc *ownerContext) error {
 	if pc == nil {
-		return errs.B().Code(errs.Unavailable).Msg("workspace unavailable").Err()
+		return errs.B().Code(errs.Unavailable).Msg("user context unavailable").Err()
 	}
 	switch pc.access {
 	case "admin", "owner":
@@ -36,19 +36,17 @@ func requireWorkspaceOwnerRole(pc *workspaceContext) error {
 	}
 }
 
-// CreateWorkspacePolicyReportRecertCampaign creates a recertification campaign for a given Forward network/snapshot/pack.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/governance/campaigns
-func (s *Service) CreateWorkspacePolicyReportRecertCampaign(ctx context.Context, id string, req *PolicyReportCreateRecertCampaignRequest) (*PolicyReportRecertCampaignWithCounts, error) {
+// CreateUserPolicyReportRecertCampaign creates a recertification campaign for a given Forward network/snapshot/pack.
+func (s *Service) CreateUserPolicyReportRecertCampaign(ctx context.Context, id string, req *PolicyReportCreateRecertCampaignRequest) (*PolicyReportRecertCampaignWithCounts, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceEditor(pc); err != nil {
+	if err := requireUserEditor(pc); err != nil {
 		return nil, err
 	}
 	if s.db == nil {
@@ -75,37 +73,35 @@ func (s *Service) CreateWorkspacePolicyReportRecertCampaign(ctx context.Context,
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown packId").Err()
 	}
 
-	c, err := createPolicyReportRecertCampaign(ctx, s.db, pc.workspace.ID, pc.claims.Username, req)
+	c, err := createPolicyReportRecertCampaign(ctx, s.db, pc.context.ID, pc.claims.Username, req)
 	if err != nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 	}
-	policyReportAudit(ctx, s.db, pc.workspace.ID, pc.claims.Username, "policy_reports.recert_campaign.create", map[string]any{
-		"campaignId":  c.ID,
-		"packId":      c.PackID,
-		"networkId":   c.ForwardNetwork,
-		"snapshotId":  c.SnapshotID,
-		"name":        c.Name,
-		"workspaceId": pc.workspace.ID,
+	policyReportAudit(ctx, s.db, pc.context.ID, pc.claims.Username, "policy_reports.recert_campaign.create", map[string]any{
+		"campaignId":    c.ID,
+		"packId":        c.PackID,
+		"networkId":     c.ForwardNetwork,
+		"snapshotId":    c.SnapshotID,
+		"name":          c.Name,
+		"ownerUsername": pc.context.ID,
 	})
 	return &PolicyReportRecertCampaignWithCounts{Campaign: *c, Counts: PolicyReportRecertCampaignCounts{}}, nil
 }
 
-// ListWorkspacePolicyReportRecertCampaigns lists recertification campaigns.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/governance/campaigns
-func (s *Service) ListWorkspacePolicyReportRecertCampaigns(ctx context.Context, id string, req *PolicyReportListRecertCampaignsRequest) (*PolicyReportListRecertCampaignsResponse, error) {
+// ListUserPolicyReportRecertCampaigns lists recertification campaigns.
+func (s *Service) ListUserPolicyReportRecertCampaigns(ctx context.Context, id string, req *PolicyReportListRecertCampaignsRequest) (*PolicyReportListRecertCampaignsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("db not configured").Err()
 	}
-	campaigns, err := listPolicyReportRecertCampaigns(ctx, s.db, pc.workspace.ID, req)
+	campaigns, err := listPolicyReportRecertCampaigns(ctx, s.db, pc.context.ID, req)
 	if err != nil {
 		if isMissingDBRelation(err) {
 			return &PolicyReportListRecertCampaignsResponse{Campaigns: []PolicyReportRecertCampaignWithCounts{}}, nil
@@ -115,48 +111,44 @@ func (s *Service) ListWorkspacePolicyReportRecertCampaigns(ctx context.Context, 
 	return &PolicyReportListRecertCampaignsResponse{Campaigns: campaigns}, nil
 }
 
-// GetWorkspacePolicyReportRecertCampaign gets one campaign plus assignment counts.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/governance/campaigns/:campaignId
-func (s *Service) GetWorkspacePolicyReportRecertCampaign(ctx context.Context, id string, campaignId string) (*PolicyReportRecertCampaignWithCounts, error) {
+// GetUserPolicyReportRecertCampaign gets one campaign plus assignment counts.
+func (s *Service) GetUserPolicyReportRecertCampaign(ctx context.Context, id string, campaignId string) (*PolicyReportRecertCampaignWithCounts, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("db not configured").Err()
 	}
-	out, err := getPolicyReportRecertCampaign(ctx, s.db, pc.workspace.ID, campaignId)
+	out, err := getPolicyReportRecertCampaign(ctx, s.db, pc.context.ID, campaignId)
 	if err != nil {
 		return nil, errs.B().Code(errs.NotFound).Msg("campaign not found").Err()
 	}
 	return out, nil
 }
 
-// GenerateWorkspacePolicyReportRecertAssignments runs the campaign pack and stores resulting findings as assignments.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/governance/campaigns/:campaignId/generate
-func (s *Service) GenerateWorkspacePolicyReportRecertAssignments(ctx context.Context, id string, campaignId string, req *PolicyReportGenerateRecertAssignmentsRequest) (*PolicyReportGenerateRecertAssignmentsResponse, error) {
+// GenerateUserPolicyReportRecertAssignments runs the campaign pack and stores resulting findings as assignments.
+func (s *Service) GenerateUserPolicyReportRecertAssignments(ctx context.Context, id string, campaignId string, req *PolicyReportGenerateRecertAssignmentsRequest) (*PolicyReportGenerateRecertAssignmentsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceEditor(pc); err != nil {
+	if err := requireUserEditor(pc); err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("db not configured").Err()
 	}
 
-	c, err := getPolicyReportRecertCampaign(ctx, s.db, pc.workspace.ID, campaignId)
+	c, err := getPolicyReportRecertCampaign(ctx, s.db, pc.context.ID, campaignId)
 	if err != nil || c == nil {
 		return nil, errs.B().Code(errs.NotFound).Msg("campaign not found").Err()
 	}
@@ -198,7 +190,7 @@ func (s *Service) GenerateWorkspacePolicyReportRecertAssignments(ctx context.Con
 		maxTotal = 5000
 	}
 
-	fwdClient, err := s.policyReportsForwardClient(ctx, pc.workspace.ID, pc.claims.Username, strings.TrimSpace(campaign.ForwardNetwork))
+	fwdClient, err := s.policyReportsForwardClient(ctx, pc.context.ID, pc.claims.Username, strings.TrimSpace(campaign.ForwardNetwork))
 	if err != nil {
 		return nil, err
 	}
@@ -274,11 +266,11 @@ func (s *Service) GenerateWorkspacePolicyReportRecertAssignments(ctx context.Con
 		}
 	}
 
-	created, err := replacePolicyReportRecertAssignments(ctx, s.db, pc.workspace.ID, campaign.ID, assignee, assignments)
+	created, err := replacePolicyReportRecertAssignments(ctx, s.db, pc.context.ID, campaign.ID, assignee, assignments)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to store assignments").Err()
 	}
-	policyReportAudit(ctx, s.db, pc.workspace.ID, pc.claims.Username, "policy_reports.recert_campaign.generate", map[string]any{
+	policyReportAudit(ctx, s.db, pc.context.ID, pc.claims.Username, "policy_reports.recert_campaign.generate", map[string]any{
 		"campaignId": campaign.ID,
 		"packId":     campaign.PackID,
 		"created":    created,
@@ -288,22 +280,20 @@ func (s *Service) GenerateWorkspacePolicyReportRecertAssignments(ctx context.Con
 	return &PolicyReportGenerateRecertAssignmentsResponse{CampaignID: campaign.ID, Created: created}, nil
 }
 
-// ListWorkspacePolicyReportRecertAssignments lists assignments.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/governance/assignments
-func (s *Service) ListWorkspacePolicyReportRecertAssignments(ctx context.Context, id string, req *PolicyReportListRecertAssignmentsRequest) (*PolicyReportListRecertAssignmentsResponse, error) {
+// ListUserPolicyReportRecertAssignments lists assignments.
+func (s *Service) ListUserPolicyReportRecertAssignments(ctx context.Context, id string, req *PolicyReportListRecertAssignmentsRequest) (*PolicyReportListRecertAssignmentsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("db not configured").Err()
 	}
-	out, err := listPolicyReportRecertAssignments(ctx, s.db, pc.workspace.ID, req)
+	out, err := listPolicyReportRecertAssignments(ctx, s.db, pc.context.ID, req)
 	if err != nil {
 		if isMissingDBRelation(err) {
 			return &PolicyReportListRecertAssignmentsResponse{Assignments: []PolicyReportRecertAssignment{}}, nil
@@ -313,19 +303,17 @@ func (s *Service) ListWorkspacePolicyReportRecertAssignments(ctx context.Context
 	return &PolicyReportListRecertAssignmentsResponse{Assignments: out}, nil
 }
 
-// AttestWorkspacePolicyReportRecertAssignment marks an assignment as attested.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/governance/assignments/:assignmentId/attest
-func (s *Service) AttestWorkspacePolicyReportRecertAssignment(ctx context.Context, id string, assignmentId string, req *PolicyReportAttestAssignmentRequest) (*PolicyReportDecisionResponse, error) {
+// AttestUserPolicyReportRecertAssignment marks an assignment as attested.
+func (s *Service) AttestUserPolicyReportRecertAssignment(ctx context.Context, id string, assignmentId string, req *PolicyReportAttestAssignmentRequest) (*PolicyReportDecisionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceEditor(pc); err != nil {
+	if err := requireUserEditor(pc); err != nil {
 		return nil, err
 	}
 	if s.db == nil {
@@ -335,28 +323,26 @@ func (s *Service) AttestWorkspacePolicyReportRecertAssignment(ctx context.Contex
 	if req != nil {
 		just = req.Justification
 	}
-	if err := updatePolicyReportAssignmentStatus(ctx, s.db, pc.workspace.ID, assignmentId, "ATTESTED", just); err != nil {
+	if err := updatePolicyReportAssignmentStatus(ctx, s.db, pc.context.ID, assignmentId, "ATTESTED", just); err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to update assignment").Err()
 	}
-	policyReportAudit(ctx, s.db, pc.workspace.ID, pc.claims.Username, "policy_reports.assignment.attest", map[string]any{
+	policyReportAudit(ctx, s.db, pc.context.ID, pc.claims.Username, "policy_reports.assignment.attest", map[string]any{
 		"assignmentId": assignmentId,
 	})
 	return &PolicyReportDecisionResponse{Ok: true}, nil
 }
 
-// WaiveWorkspacePolicyReportRecertAssignment marks an assignment as waived.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/governance/assignments/:assignmentId/waive
-func (s *Service) WaiveWorkspacePolicyReportRecertAssignment(ctx context.Context, id string, assignmentId string, req *PolicyReportAttestAssignmentRequest) (*PolicyReportDecisionResponse, error) {
+// WaiveUserPolicyReportRecertAssignment marks an assignment as waived.
+func (s *Service) WaiveUserPolicyReportRecertAssignment(ctx context.Context, id string, assignmentId string, req *PolicyReportAttestAssignmentRequest) (*PolicyReportDecisionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceEditor(pc); err != nil {
+	if err := requireUserEditor(pc); err != nil {
 		return nil, err
 	}
 	if s.db == nil {
@@ -366,28 +352,26 @@ func (s *Service) WaiveWorkspacePolicyReportRecertAssignment(ctx context.Context
 	if req != nil {
 		just = req.Justification
 	}
-	if err := updatePolicyReportAssignmentStatus(ctx, s.db, pc.workspace.ID, assignmentId, "WAIVED", just); err != nil {
+	if err := updatePolicyReportAssignmentStatus(ctx, s.db, pc.context.ID, assignmentId, "WAIVED", just); err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to update assignment").Err()
 	}
-	policyReportAudit(ctx, s.db, pc.workspace.ID, pc.claims.Username, "policy_reports.assignment.waive", map[string]any{
+	policyReportAudit(ctx, s.db, pc.context.ID, pc.claims.Username, "policy_reports.assignment.waive", map[string]any{
 		"assignmentId": assignmentId,
 	})
 	return &PolicyReportDecisionResponse{Ok: true}, nil
 }
 
-// CreateWorkspacePolicyReportException proposes an exception for a finding.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/governance/exceptions
-func (s *Service) CreateWorkspacePolicyReportException(ctx context.Context, id string, req *PolicyReportCreateExceptionRequest) (*PolicyReportException, error) {
+// CreateUserPolicyReportException proposes an exception for a finding.
+func (s *Service) CreateUserPolicyReportException(ctx context.Context, id string, req *PolicyReportCreateExceptionRequest) (*PolicyReportException, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceEditor(pc); err != nil {
+	if err := requireUserEditor(pc); err != nil {
 		return nil, err
 	}
 	if s.db == nil {
@@ -396,11 +380,11 @@ func (s *Service) CreateWorkspacePolicyReportException(ctx context.Context, id s
 	if req == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("request required").Err()
 	}
-	out, err := createPolicyReportException(ctx, s.db, pc.workspace.ID, pc.claims.Username, req)
+	out, err := createPolicyReportException(ctx, s.db, pc.context.ID, pc.claims.Username, req)
 	if err != nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 	}
-	policyReportAudit(ctx, s.db, pc.workspace.ID, pc.claims.Username, "policy_reports.exception.propose", map[string]any{
+	policyReportAudit(ctx, s.db, pc.context.ID, pc.claims.Username, "policy_reports.exception.propose", map[string]any{
 		"exceptionId": out.ID,
 		"findingId":   out.FindingID,
 		"checkId":     out.CheckID,
@@ -409,22 +393,20 @@ func (s *Service) CreateWorkspacePolicyReportException(ctx context.Context, id s
 	return out, nil
 }
 
-// ListWorkspacePolicyReportExceptions lists exceptions.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/governance/exceptions
-func (s *Service) ListWorkspacePolicyReportExceptions(ctx context.Context, id string, req *PolicyReportListExceptionsRequest) (*PolicyReportListExceptionsResponse, error) {
+// ListUserPolicyReportExceptions lists exceptions.
+func (s *Service) ListUserPolicyReportExceptions(ctx context.Context, id string, req *PolicyReportListExceptionsRequest) (*PolicyReportListExceptionsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("db not configured").Err()
 	}
-	out, err := listPolicyReportExceptions(ctx, s.db, pc.workspace.ID, req)
+	out, err := listPolicyReportExceptions(ctx, s.db, pc.context.ID, req)
 	if err != nil {
 		if isMissingDBRelation(err) {
 			return &PolicyReportListExceptionsResponse{Exceptions: []PolicyReportException{}}, nil
@@ -434,55 +416,51 @@ func (s *Service) ListWorkspacePolicyReportExceptions(ctx context.Context, id st
 	return &PolicyReportListExceptionsResponse{Exceptions: out}, nil
 }
 
-// ApproveWorkspacePolicyReportException approves an exception (owner/admin only).
-//
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/governance/exceptions/:exceptionId/approve
-func (s *Service) ApproveWorkspacePolicyReportException(ctx context.Context, id string, exceptionId string) (*PolicyReportDecisionResponse, error) {
+// ApproveUserPolicyReportException approves an exception (owner/admin only).
+func (s *Service) ApproveUserPolicyReportException(ctx context.Context, id string, exceptionId string) (*PolicyReportDecisionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceOwnerRole(pc); err != nil {
+	if err := requireUserOwnerRole(pc); err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("db not configured").Err()
 	}
-	if err := updatePolicyReportExceptionStatus(ctx, s.db, pc.workspace.ID, exceptionId, pc.claims.Username, "APPROVED"); err != nil {
+	if err := updatePolicyReportExceptionStatus(ctx, s.db, pc.context.ID, exceptionId, pc.claims.Username, "APPROVED"); err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to update exception").Err()
 	}
-	policyReportAudit(ctx, s.db, pc.workspace.ID, pc.claims.Username, "policy_reports.exception.approve", map[string]any{
+	policyReportAudit(ctx, s.db, pc.context.ID, pc.claims.Username, "policy_reports.exception.approve", map[string]any{
 		"exceptionId": exceptionId,
 	})
 	return &PolicyReportDecisionResponse{Ok: true}, nil
 }
 
-// RejectWorkspacePolicyReportException rejects an exception (owner/admin only).
-//
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/governance/exceptions/:exceptionId/reject
-func (s *Service) RejectWorkspacePolicyReportException(ctx context.Context, id string, exceptionId string) (*PolicyReportDecisionResponse, error) {
+// RejectUserPolicyReportException rejects an exception (owner/admin only).
+func (s *Service) RejectUserPolicyReportException(ctx context.Context, id string, exceptionId string) (*PolicyReportDecisionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceOwnerRole(pc); err != nil {
+	if err := requireUserOwnerRole(pc); err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("db not configured").Err()
 	}
-	if err := updatePolicyReportExceptionStatus(ctx, s.db, pc.workspace.ID, exceptionId, pc.claims.Username, "REJECTED"); err != nil {
+	if err := updatePolicyReportExceptionStatus(ctx, s.db, pc.context.ID, exceptionId, pc.claims.Username, "REJECTED"); err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to update exception").Err()
 	}
-	policyReportAudit(ctx, s.db, pc.workspace.ID, pc.claims.Username, "policy_reports.exception.reject", map[string]any{
+	policyReportAudit(ctx, s.db, pc.context.ID, pc.claims.Username, "policy_reports.exception.reject", map[string]any{
 		"exceptionId": exceptionId,
 	})
 	return &PolicyReportDecisionResponse{Ok: true}, nil

@@ -352,7 +352,7 @@ SELECT
   COALESCE(device_username_enc, ''), COALESCE(device_password_enc, ''),
   COALESCE(jump_host_enc, ''), COALESCE(jump_username_enc, ''), COALESCE(jump_private_key_enc, ''), COALESCE(jump_cert_enc, '')
 FROM sf_credentials
-WHERE id=$1 AND provider='forward' AND owner_username=$2 AND workspace_id IS NULL
+WHERE id=$1 AND provider='forward' AND owner_username=$2 AND owner_id IS NULL
 `, credID, username).Scan(
 			&baseURLEnc, &skipTLSVerify,
 			&userEnc, &passEnc,
@@ -440,7 +440,7 @@ WHERE id=$1 AND provider='forward' AND owner_username=$2 AND workspace_id IS NUL
 	}, nil
 }
 
-func (e *Engine) updateDeploymentConfig(ctx context.Context, workspaceID, deploymentID string, cfgAny map[string]any) error {
+func (e *Engine) updateDeploymentConfig(ctx context.Context, ownerID, deploymentID string, cfgAny map[string]any) error {
 	if e == nil || e.db == nil {
 		return fmt.Errorf("database unavailable")
 	}
@@ -454,11 +454,11 @@ func (e *Engine) updateDeploymentConfig(ctx context.Context, workspaceID, deploy
 	_, err = e.db.ExecContext(ctxReq, `UPDATE sf_deployments SET
   config=$1,
   updated_at=now()
-WHERE workspace_id=$2 AND id=$3`, cfgBytes, workspaceID, deploymentID)
+WHERE owner_id=$2 AND id=$3`, cfgBytes, ownerID, deploymentID)
 	return err
 }
 
-func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *workspaceContext, dep *WorkspaceDeployment) (map[string]any, error) {
+func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *ownerContext, dep *UserDeployment) (map[string]any, error) {
 	cfgAny, _ := fromJSONMap(dep.Config)
 	if cfgAny == nil {
 		cfgAny = map[string]any{}
@@ -543,7 +543,7 @@ func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *work
 		var networkRef string
 		err := e.db.QueryRowContext(ctxReq, `
 INSERT INTO sf_policy_report_forward_networks (
-  id, workspace_id, owner_username, forward_network_id, name, description, collector_config_id, created_by
+  id, owner_id, owner_username, forward_network_id, name, description, collector_config_id, created_by
 )
 VALUES ($1,NULL,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),$7)
 ON CONFLICT (owner_username, forward_network_id) WHERE owner_username IS NOT NULL
@@ -637,14 +637,14 @@ RETURNING id::text
 	}
 
 	if changed {
-		if err := e.updateDeploymentConfig(ctx, pc.workspace.ID, dep.ID, cfgAny); err != nil {
+		if err := e.updateDeploymentConfig(ctx, pc.owner.ID, dep.ID, cfgAny); err != nil {
 			return cfgAny, err
 		}
 	}
 	return cfgAny, nil
 }
 
-func (e *Engine) startForwardCollectionForDeployment(ctx context.Context, taskID int, pc *workspaceContext, dep *WorkspaceDeployment) error {
+func (e *Engine) startForwardCollectionForDeployment(ctx context.Context, taskID int, pc *ownerContext, dep *UserDeployment) error {
 	if e == nil || pc == nil || dep == nil {
 		return nil
 	}
@@ -712,7 +712,7 @@ func sanitizeCredentialComponent(raw string) string {
 	return out
 }
 
-func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *workspaceContext, dep *WorkspaceDeployment, logText string) (int, error) {
+func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *ownerContext, dep *UserDeployment, logText string) (int, error) {
 	cfgAny, _ := fromJSONMap(dep.Config)
 	if cfgAny == nil {
 		cfgAny = map[string]any{}
@@ -835,8 +835,8 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 	topologyName := ""
 	nodeNameMapping := map[string]string{}
 	if inCluster && pc != nil {
-		k8sNamespace = clabernetesWorkspaceNamespace(pc.workspace.Slug)
-		topologyName = clabernetesTopologyName(containerlabLabName(pc.workspace.Slug, dep.Name))
+		k8sNamespace = clabernetesOwnerNamespace(pc.owner.Slug)
+		topologyName = clabernetesTopologyName(containerlabLabName(pc.owner.Slug, dep.Name))
 
 		// Build the same deterministic node-name mapping used for containerlab YAML sanitation.
 		// This ensures Forward device names can preserve original case while hosts reference the
@@ -1041,7 +1041,7 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 	if changed {
 		cfgAny[forwardCliCredentialMap] = credentialIDsByDevice
 		cfgAny[forwardCliCredentialFPMap] = credentialFPsByDevice
-		if err := e.updateDeploymentConfig(ctx, pc.workspace.ID, dep.ID, cfgAny); err != nil {
+		if err := e.updateDeploymentConfig(ctx, pc.owner.ID, dep.ID, cfgAny); err != nil {
 			return 0, err
 		}
 	}
@@ -1097,7 +1097,7 @@ type forwardSyncOptions struct {
 	StartCollection bool
 }
 
-func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int, pc *workspaceContext, dep *WorkspaceDeployment, graph *TopologyGraph, opts forwardSyncOptions) (int, error) {
+func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int, pc *ownerContext, dep *UserDeployment, graph *TopologyGraph, opts forwardSyncOptions) (int, error) {
 	if e == nil || pc == nil || dep == nil || graph == nil {
 		return 0, nil
 	}
@@ -1337,7 +1337,7 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 	if changed {
 		cfgAny[forwardCliCredentialMap] = credentialIDsByKind
 		cfgAny[forwardCliCredentialFPMap] = credentialFPsByKind
-		if err := e.updateDeploymentConfig(ctx, pc.workspace.ID, dep.ID, cfgAny); err != nil {
+		if err := e.updateDeploymentConfig(ctx, pc.owner.ID, dep.ID, cfgAny); err != nil {
 			return 0, err
 		}
 	}
@@ -1358,14 +1358,14 @@ func (e *Engine) maybeSyncForwardNetlabAfterRun(ctx context.Context, spec netlab
 	if log == nil {
 		log = noopLogger{}
 	}
-	if spec.WorkspaceCtx == nil {
-		return fmt.Errorf("workspace context unavailable")
+	if spec.OwnerCtx == nil {
+		return fmt.Errorf("owner context unavailable")
 	}
 	if strings.TrimSpace(spec.DeploymentID) == "" {
 		return fmt.Errorf("deployment id unavailable")
 	}
 
-	dep, err := e.loadDeployment(ctx, spec.WorkspaceCtx.workspace.ID, strings.TrimSpace(spec.DeploymentID))
+	dep, err := e.loadDeployment(ctx, spec.OwnerCtx.owner.ID, strings.TrimSpace(spec.DeploymentID))
 	if err != nil {
 		return err
 	}
@@ -1382,7 +1382,7 @@ func (e *Engine) maybeSyncForwardNetlabAfterRun(ctx context.Context, spec netlab
 	}
 	payload := map[string]any{
 		"action":  "status",
-		"workdir": strings.TrimSpace(spec.WorkspaceDir),
+		"workdir": strings.TrimSpace(spec.OwnerDir),
 	}
 	if strings.TrimSpace(spec.TopologyPath) != "" {
 		payload["topologyPath"] = strings.TrimSpace(spec.TopologyPath)
@@ -1431,7 +1431,7 @@ func (e *Engine) maybeSyncForwardNetlabAfterRun(ctx context.Context, spec netlab
 		return fmt.Errorf("netlab status output unavailable")
 	}
 
-	_, err = e.syncForwardNetlabDevices(ctx, spec.TaskID, spec.WorkspaceCtx, dep, statusLog)
+	_, err = e.syncForwardNetlabDevices(ctx, spec.TaskID, spec.OwnerCtx, dep, statusLog)
 	if err != nil {
 		log.Infof("forward netlab sync skipped: %v", err)
 		return err

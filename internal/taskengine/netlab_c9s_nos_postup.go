@@ -585,7 +585,7 @@ func ensureNetlabC9sEOSSSH(ctx context.Context, kcfg *rest.Config, ns, podName, 
 	if ns == "" || podName == "" || nodeName == "" {
 		return nil
 	}
-script := fmt.Sprintf(`set -eu
+	script := fmt.Sprintf(`set -eu
 NODE=%q
 command -v FastCli >/dev/null 2>&1 || { echo "FastCli not found; skipping"; exit 0; }
 command -v timeout >/dev/null 2>&1 || { echo "timeout not found; skipping"; exit 0; }
@@ -673,7 +673,7 @@ func applyNetlabC9sEOSConfigSnippets(ctx context.Context, kcfg *rest.Config, ns,
 	// Apply module snippets in order. Also ensures SSH is enabled (needed for Forward reachability).
 	fileList := strings.Join(cleanFiles, "\n")
 
-script := fmt.Sprintf(`set -eu
+	script := fmt.Sprintf(`set -eu
 NODE=%q
 command -v FastCli >/dev/null 2>&1 || { echo "FastCli not found; skipping"; exit 0; }
 command -v timeout >/dev/null 2>&1 || { echo "timeout not found; skipping"; exit 0; }

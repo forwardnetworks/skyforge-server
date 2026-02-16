@@ -48,18 +48,16 @@ type LinkImpairmentResult struct {
 	Error     string `json:"error,omitempty"`
 }
 
-// SetWorkspaceDeploymentLinkImpairment applies or clears traffic impairment settings for a single link.
+// SetUserDeploymentLinkImpairment applies or clears traffic impairment settings for a single link.
 //
 // The impairment is applied "outside" of the network OS by executing `tc` in the clabernetes launcher
 // container (or another non-NOS container in the same pod netns).
-//
-//encore:api auth method=POST path=/api/workspaces/:id/deployments/:deploymentID/links/impair
-func (s *Service) SetWorkspaceDeploymentLinkImpairment(ctx context.Context, id, deploymentID string, req *LinkImpairmentRequest) (*LinkImpairmentResponse, error) {
+func (s *Service) SetUserDeploymentLinkImpairment(ctx context.Context, id, deploymentID string, req *LinkImpairmentRequest) (*LinkImpairmentResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.ownerContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +85,7 @@ func (s *Service) SetWorkspaceDeploymentLinkImpairment(ctx context.Context, id, 
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("impairment pct fields must be <= 100").Err()
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+	dep, err := s.getUserDeployment(ctx, pc.context.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +106,7 @@ func (s *Service) SetWorkspaceDeploymentLinkImpairment(ctx context.Context, id, 
 	k8sNamespace = strings.TrimSpace(k8sNamespace)
 	topologyName = strings.TrimSpace(topologyName)
 	if k8sNamespace == "" {
-		k8sNamespace = clabernetesWorkspaceNamespace(pc.workspace.Slug)
+		k8sNamespace = clabernetesOwnerNamespace(pc.context.Slug)
 	}
 	if topologyName == "" {
 		labName, _ := cfgAny["labName"].(string)
@@ -182,7 +180,7 @@ func (s *Service) SetWorkspaceDeploymentLinkImpairment(ctx context.Context, id, 
 	results = append(results, apply(edge.Source, edge.SourceIf))
 	results = append(results, apply(edge.Target, edge.TargetIf))
 
-	rlog.Info("link impairment applied", "workspace", pc.workspace.ID, "deployment", dep.ID, "edge", edgeID, "action", action)
+	rlog.Info("link impairment applied", "owner", pc.context.ID, "deployment", dep.ID, "edge", edgeID, "action", action)
 
 	if s.db != nil {
 		ev := map[string]any{
@@ -197,8 +195,8 @@ func (s *Service) SetWorkspaceDeploymentLinkImpairment(ctx context.Context, id, 
 			"rateKbps":   req.RateKbps,
 			"results":    results,
 		}
-		if err := insertDeploymentUIEvent(ctx, s.db, pc.workspace.ID, dep.ID, pc.claims.Username, "link.impair."+action, ev); err == nil {
-			_ = notifyDeploymentEventPG(ctx, s.db, pc.workspace.ID, dep.ID)
+		if err := insertDeploymentUIEvent(ctx, s.db, pc.context.ID, dep.ID, pc.claims.Username, "link.impair."+action, ev); err == nil {
+			_ = notifyDeploymentEventPG(ctx, s.db, pc.context.ID, dep.ID)
 		}
 	}
 
