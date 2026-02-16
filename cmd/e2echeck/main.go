@@ -1607,6 +1607,15 @@ func waitForTaskFinished(client *http.Client, baseURL string, cookie string, own
 			return "", "", fmt.Errorf("timeout waiting for task %d", taskID)
 		case err := <-errCh:
 			if err != nil {
+				// Network/transport hiccups can terminate SSE streams mid-flight.
+				// Fall back to polling before failing hard.
+				if errors.Is(err, io.ErrUnexpectedEOF) || strings.Contains(strings.ToLower(err.Error()), "unexpected eof") {
+					st, er, state := pollTaskStatus(client, baseURL, cookie, ownerID, taskID)
+					if state == pollTerminal {
+						return st, er, nil
+					}
+					continue
+				}
 				return "", "", err
 			}
 		case <-heartbeat.C:
@@ -2637,285 +2646,306 @@ func run() int {
 
 			if !testFailed && sshWait > 0 && getenvBool("SKYFORGE_E2E_SSH_PROBE", true) {
 				topURL := fmt.Sprintf("%s/api/deployments/%s/topology", baseURL, dep.ID)
-				resp, body, err = doJSON(client, http.MethodGet, topURL, nil, map[string]string{"Cookie": cookie})
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "test %q: topology request failed: %v\n", name, err)
-					exitCode = 1
-					testFailed = true
-				} else if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-					fmt.Fprintf(os.Stderr, "test %q: topology failed (%d): %s\n", name, resp.StatusCode, strings.TrimSpace(string(body)))
-					exitCode = 1
-					testFailed = true
-				} else {
-					var topo deploymentTopologyResponse
-					if err := json.Unmarshal(body, &topo); err != nil {
-						fmt.Fprintf(os.Stderr, "test %q: topology parse failed: %v\n", name, err)
+				var topo deploymentTopologyResponse
+				topologyReady := false
+				topologyWait := 2 * time.Minute
+				if sshWait < topologyWait {
+					topologyWait = sshWait
+				}
+				if topologyWait < 15*time.Second {
+					topologyWait = 15 * time.Second
+				}
+				topologyDeadline := time.Now().Add(topologyWait)
+				for {
+					resp, body, err = doJSON(client, http.MethodGet, topURL, nil, map[string]string{"Cookie": cookie})
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "test %q: topology request failed: %v\n", name, err)
 						exitCode = 1
 						testFailed = true
-					} else {
-						hosts := []string{}
-						for _, n := range topo.Nodes {
-							if ip := strings.TrimSpace(n.MgmtIP); ip != "" {
-								hosts = append(hosts, ip)
-							}
-						}
-						if len(hosts) == 0 {
-							fmt.Fprintf(os.Stderr, "test %q: no mgmt IPs in topology\n", name)
+						break
+					}
+					if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+						if err := json.Unmarshal(body, &topo); err != nil {
+							fmt.Fprintf(os.Stderr, "test %q: topology parse failed: %v\n", name, err)
 							exitCode = 1
 							testFailed = true
 						} else {
-							sshOK := false
-							notes := ""
-							vxlanStatus := "skip"
-							k8sNodes := 0
+							topologyReady = true
+						}
+						break
+					}
+					if (resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusNotFound) && time.Now().Before(topologyDeadline) {
+						time.Sleep(5 * time.Second)
+						continue
+					}
+					fmt.Fprintf(os.Stderr, "test %q: topology failed (%d): %s\n", name, resp.StatusCode, strings.TrimSpace(string(body)))
+					exitCode = 1
+					testFailed = true
+					break
+				}
+				if topologyReady {
+					hosts := []string{}
+					for _, n := range topo.Nodes {
+						if ip := strings.TrimSpace(n.MgmtIP); ip != "" {
+							hosts = append(hosts, ip)
+						}
+					}
+					if len(hosts) == 0 {
+						fmt.Fprintf(os.Stderr, "test %q: no mgmt IPs in topology\n", name)
+						exitCode = 1
+						testFailed = true
+					} else {
+						sshOK := false
+						notes := ""
+						vxlanStatus := "skip"
+						k8sNodes := 0
 
-							switch sshProbeMode() {
-							case "collector_exec":
-								if err := waitForCollectorSSH(context.Background(), collectorNS, collectorPod, hosts, sshWait); err != nil {
-									fmt.Fprintf(os.Stderr, "test %q: collector ssh banner failed: %v\n", name, err)
-									// Still run VXLAN smoke on SSH failure so we can distinguish overlay
-									// issues from device SSH readiness issues.
-									if device != "" && vxlanSmokeEnabledForDevice(device) {
-										if vxlanSmokeLocalEnabled() {
-											ns := "ws-" + strings.TrimSpace(ws.Slug)
-											owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
-											nodes, vxErr := vxlanSmokeCheck(context.Background(), ns, owner)
-											k8sNodes = nodes
-											if vxErr != nil {
-												vxlanStatus = "fail"
-											} else {
-												vxlanStatus = "pass"
-											}
-										} else {
-											// In server mode, the deploy step would have failed if VXLAN wiring regressed.
-											vxlanStatus = "pass"
-										}
-									}
-									if statusRec != nil && device != "" {
-										statusRec.update(device, "fail", templateName, deployType, taskID, err.Error(), "collector ssh probe failed", vxlanStatus, k8sNodes)
-										_ = statusRec.flush()
-									}
-									{
+						switch sshProbeMode() {
+						case "collector_exec":
+							if err := waitForCollectorSSH(context.Background(), collectorNS, collectorPod, hosts, sshWait); err != nil {
+								fmt.Fprintf(os.Stderr, "test %q: collector ssh banner failed: %v\n", name, err)
+								// Still run VXLAN smoke on SSH failure so we can distinguish overlay
+								// issues from device SSH readiness issues.
+								if device != "" && vxlanSmokeEnabledForDevice(device) {
+									if vxlanSmokeLocalEnabled() {
 										ns := "ws-" + strings.TrimSpace(ws.Slug)
 										owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
-										if vxlanSmokeLocalEnabled() {
-											dumpFailureArtifacts(context.Background(), statusDir, ns, owner, device, name)
-										}
-									}
-									if runLog != nil {
-										runLog.append(e2eRunLogEntry{
-											BaseURL:    baseURL,
-											Owner:      ws.Name,
-											OwnerID:    ws.ID,
-											Test:       name,
-											Kind:       kind,
-											Device:     device,
-											Template:   templateName,
-											DeployType: deployType,
-											TaskID:     taskID,
-											Status:     "fail",
-											Error:      err.Error(),
-											VXLAN:      vxlanStatus,
-											K8sNodes:   k8sNodes,
-											Notes:      "collector ssh probe failed",
-										})
-									}
-									exitCode = 1
-									testFailed = true
-								} else {
-									fmt.Printf("OK %s: collector ssh ok (hosts=%d)\n", name, len(hosts))
-									sshOK = true
-									notes = "deploy+collector-ssh ok"
-								}
-							case "job":
-								probeNS := strings.TrimSpace(collectorNS)
-								if probeNS == "" {
-									probeNS = "skyforge"
-								}
-								if err := waitForSSHProbeJob(context.Background(), probeNS, hosts, sshWait); err != nil {
-									fmt.Fprintf(os.Stderr, "test %q: ssh probe job failed: %v\n", name, err)
-									if device != "" && vxlanSmokeEnabledForDevice(device) {
-										if vxlanSmokeLocalEnabled() {
-											ns := "ws-" + strings.TrimSpace(ws.Slug)
-											owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
-											nodes, vxErr := vxlanSmokeCheck(context.Background(), ns, owner)
-											k8sNodes = nodes
-											if vxErr != nil {
-												vxlanStatus = "fail"
-											} else {
-												vxlanStatus = "pass"
-											}
+										nodes, vxErr := vxlanSmokeCheck(context.Background(), ns, owner)
+										k8sNodes = nodes
+										if vxErr != nil {
+											vxlanStatus = "fail"
 										} else {
 											vxlanStatus = "pass"
 										}
+									} else {
+										// In server mode, the deploy step would have failed if VXLAN wiring regressed.
+										vxlanStatus = "pass"
 									}
-									if statusRec != nil && device != "" {
-										statusRec.update(device, "fail", templateName, deployType, taskID, err.Error(), "ssh probe job failed", vxlanStatus, k8sNodes)
-										_ = statusRec.flush()
-									}
-									{
-										ns := "ws-" + strings.TrimSpace(ws.Slug)
-										owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
-										if vxlanSmokeLocalEnabled() {
-											dumpFailureArtifacts(context.Background(), statusDir, ns, owner, device, name)
-										}
-									}
-									if runLog != nil {
-										runLog.append(e2eRunLogEntry{
-											BaseURL:    baseURL,
-											Owner:      ws.Name,
-											OwnerID:    ws.ID,
-											Test:       name,
-											Kind:       kind,
-											Device:     device,
-											Template:   templateName,
-											DeployType: deployType,
-											TaskID:     taskID,
-											Status:     "fail",
-											Error:      err.Error(),
-											VXLAN:      vxlanStatus,
-											K8sNodes:   k8sNodes,
-											Notes:      "ssh probe job failed",
-										})
-									}
-									exitCode = 1
-									testFailed = true
-								} else {
-									fmt.Printf("OK %s: ssh probe ok (namespace=%s hosts=%d)\n", name, probeNS, len(hosts))
-									sshOK = true
-									notes = "deploy+ssh probe job ok"
 								}
-							default:
-								if err := waitForSSHProbeAPIForDevice(context.Background(), client, baseURL, cookie, device, hosts, sshWait); err != nil {
-									fmt.Fprintf(os.Stderr, "test %q: ssh probe api failed: %v\n", name, err)
-									if device != "" && vxlanSmokeEnabledForDevice(device) {
-										if vxlanSmokeLocalEnabled() {
-											ns := "ws-" + strings.TrimSpace(ws.Slug)
-											owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
-											nodes, vxErr := vxlanSmokeCheck(context.Background(), ns, owner)
-											k8sNodes = nodes
-											if vxErr != nil {
-												vxlanStatus = "fail"
-											} else {
-												vxlanStatus = "pass"
-											}
-										} else {
-											vxlanStatus = "pass"
-										}
-									}
-									if statusRec != nil && device != "" {
-										statusRec.update(device, "fail", templateName, deployType, taskID, err.Error(), "ssh probe failed", vxlanStatus, k8sNodes)
-										_ = statusRec.flush()
-									}
-									{
-										ns := "ws-" + strings.TrimSpace(ws.Slug)
-										owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
-										if vxlanSmokeLocalEnabled() {
-											dumpFailureArtifacts(context.Background(), statusDir, ns, owner, device, name)
-										}
-									}
-									if runLog != nil {
-										runLog.append(e2eRunLogEntry{
-											BaseURL:    baseURL,
-											Owner:      ws.Name,
-											OwnerID:    ws.ID,
-											Test:       name,
-											Kind:       kind,
-											Device:     device,
-											Template:   templateName,
-											DeployType: deployType,
-											TaskID:     taskID,
-											Status:     "fail",
-											Error:      err.Error(),
-											VXLAN:      vxlanStatus,
-											K8sNodes:   k8sNodes,
-											Notes:      "ssh probe api failed",
-										})
-									}
-									exitCode = 1
-									testFailed = true
-								} else {
-									fmt.Printf("OK %s: ssh probe ok (api hosts=%d)\n", name, len(hosts))
-									sshOK = true
-									notes = "deploy+ssh ok"
+								if statusRec != nil && device != "" {
+									statusRec.update(device, "fail", templateName, deployType, taskID, err.Error(), "collector ssh probe failed", vxlanStatus, k8sNodes)
+									_ = statusRec.flush()
 								}
-							}
-
-							// Optional: smoke check that clabernetes cross-node overlay is wired up.
-							if !testFailed && sshOK && device != "" && vxlanSmokeEnabledForDevice(device) {
-								if !vxlanSmokeLocalEnabled() {
-									// In server mode, clabernetes deploy performs the overlay smoke check and
-									// fails the task if VXLAN wiring regresses.
-									vxlanStatus = "pass"
-									fmt.Printf("OK %s: vxlan smoke ok (verified by server)\n", name)
-									notes = fmt.Sprintf("%s; vxlan ok", notes)
-								} else {
+								{
 									ns := "ws-" + strings.TrimSpace(ws.Slug)
 									owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
-									nodes, err := vxlanSmokeCheck(context.Background(), ns, owner)
-									k8sNodes = nodes
-									if err != nil {
-										vxlanStatus = "fail"
-										fmt.Fprintf(os.Stderr, "test %q: vxlan smoke failed: %v\n", name, err)
-										if statusRec != nil {
-											// VXLAN is a separate signal from "did the device deploy and accept SSH".
-											// Don't overwrite the device's overall reachability status on a VXLAN failure.
-											statusRec.update(device, "pass", templateName, deployType, taskID, "", "vxlan smoke failed", vxlanStatus, k8sNodes)
-											_ = statusRec.flush()
-										}
+									if vxlanSmokeLocalEnabled() {
 										dumpFailureArtifacts(context.Background(), statusDir, ns, owner, device, name)
-										if runLog != nil {
-											runLog.append(e2eRunLogEntry{
-												BaseURL:    baseURL,
-												Owner:      ws.Name,
-												OwnerID:    ws.ID,
-												Test:       name,
-												Kind:       kind,
-												Device:     device,
-												Template:   templateName,
-												DeployType: deployType,
-												TaskID:     taskID,
-												Status:     "fail",
-												Error:      err.Error(),
-												VXLAN:      vxlanStatus,
-												K8sNodes:   k8sNodes,
-												Notes:      "vxlan smoke failed",
-											})
-										}
-										exitCode = 1
-										testFailed = true
-									} else {
-										vxlanStatus = "pass"
-										fmt.Printf("OK %s: vxlan smoke ok (owner=%s)\n", name, owner)
-										notes = fmt.Sprintf("%s; vxlan ok (nodes=%d)", notes, k8sNodes)
 									}
 								}
-							} else if !testFailed && sshOK && vxlanSmokeEnabledForDevice(device) {
-								// vxlan enabled but no device? should not happen, but keep status consistent.
-								vxlanStatus = "unknown"
+								if runLog != nil {
+									runLog.append(e2eRunLogEntry{
+										BaseURL:    baseURL,
+										Owner:      ws.Name,
+										OwnerID:    ws.ID,
+										Test:       name,
+										Kind:       kind,
+										Device:     device,
+										Template:   templateName,
+										DeployType: deployType,
+										TaskID:     taskID,
+										Status:     "fail",
+										Error:      err.Error(),
+										VXLAN:      vxlanStatus,
+										K8sNodes:   k8sNodes,
+										Notes:      "collector ssh probe failed",
+									})
+								}
+								exitCode = 1
+								testFailed = true
+							} else {
+								fmt.Printf("OK %s: collector ssh ok (hosts=%d)\n", name, len(hosts))
+								sshOK = true
+								notes = "deploy+collector-ssh ok"
 							}
+						case "job":
+							probeNS := strings.TrimSpace(collectorNS)
+							if probeNS == "" {
+								probeNS = "skyforge"
+							}
+							if err := waitForSSHProbeJob(context.Background(), probeNS, hosts, sshWait); err != nil {
+								fmt.Fprintf(os.Stderr, "test %q: ssh probe job failed: %v\n", name, err)
+								if device != "" && vxlanSmokeEnabledForDevice(device) {
+									if vxlanSmokeLocalEnabled() {
+										ns := "ws-" + strings.TrimSpace(ws.Slug)
+										owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
+										nodes, vxErr := vxlanSmokeCheck(context.Background(), ns, owner)
+										k8sNodes = nodes
+										if vxErr != nil {
+											vxlanStatus = "fail"
+										} else {
+											vxlanStatus = "pass"
+										}
+									} else {
+										vxlanStatus = "pass"
+									}
+								}
+								if statusRec != nil && device != "" {
+									statusRec.update(device, "fail", templateName, deployType, taskID, err.Error(), "ssh probe job failed", vxlanStatus, k8sNodes)
+									_ = statusRec.flush()
+								}
+								{
+									ns := "ws-" + strings.TrimSpace(ws.Slug)
+									owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
+									if vxlanSmokeLocalEnabled() {
+										dumpFailureArtifacts(context.Background(), statusDir, ns, owner, device, name)
+									}
+								}
+								if runLog != nil {
+									runLog.append(e2eRunLogEntry{
+										BaseURL:    baseURL,
+										Owner:      ws.Name,
+										OwnerID:    ws.ID,
+										Test:       name,
+										Kind:       kind,
+										Device:     device,
+										Template:   templateName,
+										DeployType: deployType,
+										TaskID:     taskID,
+										Status:     "fail",
+										Error:      err.Error(),
+										VXLAN:      vxlanStatus,
+										K8sNodes:   k8sNodes,
+										Notes:      "ssh probe job failed",
+									})
+								}
+								exitCode = 1
+								testFailed = true
+							} else {
+								fmt.Printf("OK %s: ssh probe ok (namespace=%s hosts=%d)\n", name, probeNS, len(hosts))
+								sshOK = true
+								notes = "deploy+ssh probe job ok"
+							}
+						default:
+							if err := waitForSSHProbeAPIForDevice(context.Background(), client, baseURL, cookie, device, hosts, sshWait); err != nil {
+								fmt.Fprintf(os.Stderr, "test %q: ssh probe api failed: %v\n", name, err)
+								if device != "" && vxlanSmokeEnabledForDevice(device) {
+									if vxlanSmokeLocalEnabled() {
+										ns := "ws-" + strings.TrimSpace(ws.Slug)
+										owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
+										nodes, vxErr := vxlanSmokeCheck(context.Background(), ns, owner)
+										k8sNodes = nodes
+										if vxErr != nil {
+											vxlanStatus = "fail"
+										} else {
+											vxlanStatus = "pass"
+										}
+									} else {
+										vxlanStatus = "pass"
+									}
+								}
+								if statusRec != nil && device != "" {
+									statusRec.update(device, "fail", templateName, deployType, taskID, err.Error(), "ssh probe failed", vxlanStatus, k8sNodes)
+									_ = statusRec.flush()
+								}
+								{
+									ns := "ws-" + strings.TrimSpace(ws.Slug)
+									owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
+									if vxlanSmokeLocalEnabled() {
+										dumpFailureArtifacts(context.Background(), statusDir, ns, owner, device, name)
+									}
+								}
+								if runLog != nil {
+									runLog.append(e2eRunLogEntry{
+										BaseURL:    baseURL,
+										Owner:      ws.Name,
+										OwnerID:    ws.ID,
+										Test:       name,
+										Kind:       kind,
+										Device:     device,
+										Template:   templateName,
+										DeployType: deployType,
+										TaskID:     taskID,
+										Status:     "fail",
+										Error:      err.Error(),
+										VXLAN:      vxlanStatus,
+										K8sNodes:   k8sNodes,
+										Notes:      "ssh probe api failed",
+									})
+								}
+								exitCode = 1
+								testFailed = true
+							} else {
+								fmt.Printf("OK %s: ssh probe ok (api hosts=%d)\n", name, len(hosts))
+								sshOK = true
+								notes = "deploy+ssh ok"
+							}
+						}
 
-							if !testFailed && sshOK && statusRec != nil && device != "" {
-								statusRec.update(device, "pass", templateName, deployType, taskID, "", notes, vxlanStatus, k8sNodes)
-								_ = statusRec.flush()
+						// Optional: smoke check that clabernetes cross-node overlay is wired up.
+						if !testFailed && sshOK && device != "" && vxlanSmokeEnabledForDevice(device) {
+							if !vxlanSmokeLocalEnabled() {
+								// In server mode, clabernetes deploy performs the overlay smoke check and
+								// fails the task if VXLAN wiring regresses.
+								vxlanStatus = "pass"
+								fmt.Printf("OK %s: vxlan smoke ok (verified by server)\n", name)
+								notes = fmt.Sprintf("%s; vxlan ok", notes)
+							} else {
+								ns := "ws-" + strings.TrimSpace(ws.Slug)
+								owner := strings.TrimSpace(ws.Slug) + "-" + strings.TrimSpace(depName)
+								nodes, err := vxlanSmokeCheck(context.Background(), ns, owner)
+								k8sNodes = nodes
+								if err != nil {
+									vxlanStatus = "fail"
+									fmt.Fprintf(os.Stderr, "test %q: vxlan smoke failed: %v\n", name, err)
+									if statusRec != nil {
+										// VXLAN is a separate signal from "did the device deploy and accept SSH".
+										// Don't overwrite the device's overall reachability status on a VXLAN failure.
+										statusRec.update(device, "pass", templateName, deployType, taskID, "", "vxlan smoke failed", vxlanStatus, k8sNodes)
+										_ = statusRec.flush()
+									}
+									dumpFailureArtifacts(context.Background(), statusDir, ns, owner, device, name)
+									if runLog != nil {
+										runLog.append(e2eRunLogEntry{
+											BaseURL:    baseURL,
+											Owner:      ws.Name,
+											OwnerID:    ws.ID,
+											Test:       name,
+											Kind:       kind,
+											Device:     device,
+											Template:   templateName,
+											DeployType: deployType,
+											TaskID:     taskID,
+											Status:     "fail",
+											Error:      err.Error(),
+											VXLAN:      vxlanStatus,
+											K8sNodes:   k8sNodes,
+											Notes:      "vxlan smoke failed",
+										})
+									}
+									exitCode = 1
+									testFailed = true
+								} else {
+									vxlanStatus = "pass"
+									fmt.Printf("OK %s: vxlan smoke ok (owner=%s)\n", name, owner)
+									notes = fmt.Sprintf("%s; vxlan ok (nodes=%d)", notes, k8sNodes)
+								}
 							}
-							if !testFailed && sshOK && runLog != nil {
-								runLog.append(e2eRunLogEntry{
-									BaseURL:    baseURL,
-									Owner:      ws.Name,
-									OwnerID:    ws.ID,
-									Test:       name,
-									Kind:       kind,
-									Device:     device,
-									Template:   templateName,
-									DeployType: deployType,
-									TaskID:     taskID,
-									Status:     "pass",
-									VXLAN:      vxlanStatus,
-									K8sNodes:   k8sNodes,
-									Notes:      notes,
-								})
-							}
+						} else if !testFailed && sshOK && vxlanSmokeEnabledForDevice(device) {
+							// vxlan enabled but no device? should not happen, but keep status consistent.
+							vxlanStatus = "unknown"
+						}
+
+						if !testFailed && sshOK && statusRec != nil && device != "" {
+							statusRec.update(device, "pass", templateName, deployType, taskID, "", notes, vxlanStatus, k8sNodes)
+							_ = statusRec.flush()
+						}
+						if !testFailed && sshOK && runLog != nil {
+							runLog.append(e2eRunLogEntry{
+								BaseURL:    baseURL,
+								Owner:      ws.Name,
+								OwnerID:    ws.ID,
+								Test:       name,
+								Kind:       kind,
+								Device:     device,
+								Template:   templateName,
+								DeployType: deployType,
+								TaskID:     taskID,
+								Status:     "pass",
+								VXLAN:      vxlanStatus,
+								K8sNodes:   k8sNodes,
+								Notes:      notes,
+							})
 						}
 					}
 				}

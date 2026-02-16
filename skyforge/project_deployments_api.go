@@ -572,8 +572,8 @@ func (s *Service) CreateUserDeployment(ctx context.Context, id string, req *User
 	defer cancel()
 	initialStatus := "created"
 	_, err = s.db.ExecContext(ctx, `INSERT INTO sf_deployments (
-  id, owner_username, name, type, config, created_by, last_status
-) VALUES ($1,$2,$3,$4,$5,$6,$7)`, deploymentID, pc.context.ID, name, typ, cfgBytes, pc.claims.Username, initialStatus)
+  id, owner_id, owner_username, name, type, config, created_by, last_status
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, deploymentID, pc.context.ID, pc.context.ID, name, typ, cfgBytes, pc.claims.Username, initialStatus)
 	if err != nil {
 		log.Printf("deployments insert: %v", err)
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {

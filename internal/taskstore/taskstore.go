@@ -169,6 +169,7 @@ func createTaskWithActiveCheck(ctx context.Context, db *sql.DB, ownerID string, 
 	}
 	row := db.QueryRowContext(ctx, `INSERT INTO sf_tasks (
   owner_id,
+  owner_username,
   deployment_id,
   task_type,
   priority,
@@ -176,8 +177,8 @@ func createTaskWithActiveCheck(ctx context.Context, db *sql.DB, ownerID string, 
   message,
   metadata,
   created_by
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-RETURNING id, created_at`, ownerID, dep, taskType, priority, "queued", msg, metaBytes, createdBy)
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+RETURNING id, created_at`, ownerID, ownerID, dep, taskType, priority, "queued", msg, metaBytes, createdBy)
 	rec := &TaskRecord{OwnerID: ownerID, DeploymentID: dep, TaskType: taskType, Priority: priority, Status: "queued", Message: msg, Metadata: metadata, CreatedBy: createdBy}
 	if err := row.Scan(&rec.ID, &rec.CreatedAt); err != nil {
 		return nil, err

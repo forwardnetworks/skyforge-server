@@ -455,7 +455,7 @@ func writeAuditEvent(ctx context.Context, db *sql.DB, actor string, actorIsAdmin
 		details = details[:4000]
 	}
 	_, _ = db.ExecContext(ctx, `INSERT INTO sf_audit_log (
-  actor_username, actor_is_admin, impersonated_username, action, owner_id, details
+  actor_username, actor_is_admin, impersonated_username, action, owner_username, details
 ) VALUES ($1,$2,NULLIF($3,''),$4,NULLIF($5,''),NULLIF($6,''))`,
 		actor, actorIsAdmin, impersonated, action, scopeID, details,
 	)
@@ -615,7 +615,7 @@ FROM sf_owner_contexts ORDER BY created_at DESC`)
 		return nil, err
 	}
 
-	memberRows, err := db.QueryContext(ctx, `SELECT owner_id, username, role FROM sf_owner_members ORDER BY owner_id, username`)
+	memberRows, err := db.QueryContext(ctx, `SELECT owner_username, username, role FROM sf_owner_members ORDER BY owner_username, username`)
 	if err != nil {
 		return nil, err
 	}
@@ -660,7 +660,7 @@ func getUserAWSStaticCredentials(ctx context.Context, db *sql.DB, box *secretbox
 	}
 	var akid, sak, st sql.NullString
 	err := db.QueryRowContext(ctx, `SELECT access_key_id, secret_access_key, session_token
-FROM sf_owner_aws_static_credentials WHERE owner_id=$1`, scopeID).Scan(&akid, &sak, &st)
+FROM sf_owner_aws_static_credentials WHERE owner_username=$1`, scopeID).Scan(&akid, &sak, &st)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -724,7 +724,7 @@ func getUserAzureCredentials(ctx context.Context, db *sql.DB, box *secretbox.Box
 	}
 	var tenantID, clientID, clientSecret, subscriptionID sql.NullString
 	err := db.QueryRowContext(ctx, `SELECT tenant_id, client_id, client_secret, subscription_id
-FROM sf_owner_azure_credentials WHERE owner_id=$1`, scopeID).Scan(&tenantID, &clientID, &clientSecret, &subscriptionID)
+FROM sf_owner_azure_credentials WHERE owner_username=$1`, scopeID).Scan(&tenantID, &clientID, &clientSecret, &subscriptionID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -756,7 +756,7 @@ func getUserGCPCredentials(ctx context.Context, db *sql.DB, box *secretbox.Box, 
 		return nil, fmt.Errorf("scope id is required")
 	}
 	var jsonBlob sql.NullString
-	err := db.QueryRowContext(ctx, `SELECT service_account_json FROM sf_owner_gcp_credentials WHERE owner_id=$1`, scopeID).Scan(&jsonBlob)
+	err := db.QueryRowContext(ctx, `SELECT service_account_json FROM sf_owner_gcp_credentials WHERE owner_username=$1`, scopeID).Scan(&jsonBlob)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil

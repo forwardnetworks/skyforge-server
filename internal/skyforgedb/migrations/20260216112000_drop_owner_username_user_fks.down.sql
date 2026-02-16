@@ -1,0 +1,5 @@
+-- No-op rollback.
+--
+-- This migration drops legacy owner_username->sf_users foreign keys discovered at
+-- runtime. Reconstructing exact prior constraints is not deterministic across mixed
+-- historical schemas, so rollback is intentionally empty.
