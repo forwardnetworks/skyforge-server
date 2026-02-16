@@ -192,7 +192,7 @@ func (e *Engine) runNetlabValidateTask(ctx context.Context, spec netlabValidateR
 		},
 		"spec": map[string]any{
 			"backoffLimit":            0,
-			"ttlSecondsAfterFinished": 3600,
+			"ttlSecondsAfterFinished": netlabJobTTLSeconds(spec.Environment),
 			"template": map[string]any{
 				"metadata": map[string]any{
 					"labels": map[string]any{

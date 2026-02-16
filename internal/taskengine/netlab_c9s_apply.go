@@ -95,7 +95,7 @@ func (e *Engine) runNetlabC9sApplierJob(
 		},
 		"spec": map[string]any{
 			"backoffLimit":            0,
-			"ttlSecondsAfterFinished": 3600,
+			"ttlSecondsAfterFinished": netlabJobTTLSeconds(environment),
 			"template": map[string]any{
 				"metadata": map[string]any{
 					"labels": map[string]any{

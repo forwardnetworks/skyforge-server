@@ -774,7 +774,7 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 		},
 		"spec": map[string]any{
 			"backoffLimit":            0,
-			"ttlSecondsAfterFinished": 3600,
+			"ttlSecondsAfterFinished": netlabJobTTLSeconds(spec.Environment),
 			"template": map[string]any{
 				"metadata": map[string]any{
 					"labels": map[string]any{
