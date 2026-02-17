@@ -677,7 +677,7 @@ func insertCapacityRollup(ctx context.Context, db *sql.DB, row capacityRollupIns
 		return err
 	}
 
-	// Network-scoped rollup row (deployment_id IS NULL).
+	// Network-level rollup row (deployment_id IS NULL).
 	_, err = db.ExecContext(ctxReq, `INSERT INTO sf_capacity_rollups (
   owner_id, deployment_id, forward_network_id,
   object_type, object_id, metric, window_label,

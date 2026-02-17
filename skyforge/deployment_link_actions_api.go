@@ -212,7 +212,7 @@ type DeploymentLinkCaptureResponse struct {
 	Stderr      string `json:"stderr,omitempty"`
 }
 
-// CaptureUserDeploymentLinkPcap captures a short pcap on a topology link and uploads it as a scope artifact.
+// CaptureUserDeploymentLinkPcap captures a short pcap on a topology link and uploads it as a owner artifact.
 func (s *Service) CaptureUserDeploymentLinkPcap(ctx context.Context, id, deploymentID string, req *DeploymentLinkCaptureRequest) (*DeploymentLinkCaptureResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {

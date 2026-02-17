@@ -23,7 +23,7 @@ WITH legacy AS (
 ),
 cred_ins AS (
   INSERT INTO sf_credentials (
-    id, owner_username, workspace_id, provider, name,
+    id, owner_username, owner_id, provider, name,
     base_url_enc, skip_tls_verify, forward_username_enc, forward_password_enc,
     collector_id_enc, collector_username_enc, authorization_key_enc,
     created_at, updated_at

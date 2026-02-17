@@ -318,7 +318,7 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 		// - api/deployments/<deploymentID>/terminal/ws
 		for i := 0; i+1 < len(parts); i++ {
 			switch parts[i] {
-			case "users", "contexts", "scopes":
+			case "users", "contexts":
 				if ownerKey == "" {
 					ownerKey = strings.TrimSpace(parts[i+1])
 				}

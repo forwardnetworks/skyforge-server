@@ -2,7 +2,7 @@
 
 CREATE TABLE IF NOT EXISTS sf_policy_report_presets (
   id uuid PRIMARY KEY,
-  workspace_id text NOT NULL REFERENCES sf_workspaces(id) ON DELETE CASCADE,
+  owner_id text NOT NULL REFERENCES sf_owner_contexts(id) ON DELETE CASCADE,
   forward_network_id text NOT NULL,
   name text NOT NULL,
   description text,
@@ -26,14 +26,14 @@ CREATE TABLE IF NOT EXISTS sf_policy_report_presets (
 );
 
 CREATE INDEX IF NOT EXISTS sf_pr_presets_ws_idx
-  ON sf_policy_report_presets(workspace_id, created_at DESC);
+  ON sf_policy_report_presets(owner_id, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS sf_pr_presets_ws_net_idx
-  ON sf_policy_report_presets(workspace_id, forward_network_id, updated_at DESC);
+  ON sf_policy_report_presets(owner_id, forward_network_id, updated_at DESC);
 
 CREATE INDEX IF NOT EXISTS sf_pr_presets_due_idx
   ON sf_policy_report_presets(enabled, next_run_at);
 
 CREATE UNIQUE INDEX IF NOT EXISTS sf_pr_presets_ws_net_name_uq
-  ON sf_policy_report_presets(workspace_id, forward_network_id, lower(name));
+  ON sf_policy_report_presets(owner_id, forward_network_id, lower(name));
 

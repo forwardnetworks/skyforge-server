@@ -35,9 +35,9 @@ func loadGovernanceSummary(ctx context.Context, db *sql.DB) (*GovernanceSummary,
 		activeCount = 0
 	}
 
-	var scopeCount int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT owner_username) FROM sf_resources WHERE owner_username IS NOT NULL`).Scan(&scopeCount); err != nil {
-		scopeCount = 0
+	var ownerCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT owner_username) FROM sf_resources WHERE owner_username IS NOT NULL`).Scan(&ownerCount); err != nil {
+		ownerCount = 0
 	}
 
 	var totalCost float64
@@ -60,7 +60,7 @@ SELECT provider,
 			return &GovernanceSummary{
 				ResourceCount:     resourceCount,
 				ActiveResources:   activeCount,
-				UsersTracked:      scopeCount,
+				UsersTracked:      ownerCount,
 				CostLast30Days:    totalCost,
 				CostCurrency:      "USD",
 				LastCostPeriodEnd: "",
@@ -92,7 +92,7 @@ SELECT provider,
 	return &GovernanceSummary{
 		ResourceCount:     resourceCount,
 		ActiveResources:   activeCount,
-		UsersTracked:      scopeCount,
+		UsersTracked:      ownerCount,
 		CostLast30Days:    totalCost,
 		CostCurrency:      currency,
 		LastCostPeriodEnd: period,
@@ -230,14 +230,14 @@ SELECT c.id, c.owner_username, p.name, c.resource_id, c.provider, c.period_start
 		var record GovernanceCostSnapshot
 		var resourceID sql.NullString
 		var ownerID sql.NullString
-		var scopeName sql.NullString
+		var ownerName sql.NullString
 		var metadata []byte
 		var periodStart time.Time
 		var periodEnd time.Time
 		if err := rows.Scan(
 			&record.ID,
 			&ownerID,
-			&scopeName,
+			&ownerName,
 			&resourceID,
 			&record.Provider,
 			&periodStart,
@@ -253,8 +253,8 @@ SELECT c.id, c.owner_username, p.name, c.resource_id, c.provider, c.period_start
 		if ownerID.Valid {
 			record.OwnerUsername = ownerID.String
 		}
-		if scopeName.Valid {
-			record.UserName = scopeName.String
+		if ownerName.Valid {
+			record.UserName = ownerName.String
 		}
 		if resourceID.Valid {
 			record.ResourceID = resourceID.String
@@ -314,15 +314,15 @@ SELECT u.id, u.owner_context_id, p.name, u.provider, u.owner_type, u.owner_usern
 	var usage []GovernanceUsageSnapshot
 	for rows.Next() {
 		var record GovernanceUsageSnapshot
-		var scopeOwnerID sql.NullString
-		var scopeName sql.NullString
+		var ownerContextID sql.NullString
+		var ownerName sql.NullString
 		var ownerID sql.NullString
 		var unit sql.NullString
 		var metadata []byte
 		if err := rows.Scan(
 			&record.ID,
-			&scopeOwnerID,
-			&scopeName,
+			&ownerContextID,
+			&ownerName,
 			&record.Provider,
 			&record.UserType,
 			&ownerID,
@@ -334,14 +334,14 @@ SELECT u.id, u.owner_context_id, p.name, u.provider, u.owner_type, u.owner_usern
 		); err != nil {
 			return nil, err
 		}
-		if scopeOwnerID.Valid {
-			record.UserOwnerID = scopeOwnerID.String
+		if ownerContextID.Valid {
+			record.UserOwnerID = ownerContextID.String
 		}
 		if ownerID.Valid {
 			record.OwnerUsername = ownerID.String
 		}
-		if scopeName.Valid {
-			record.UserName = scopeName.String
+		if ownerName.Valid {
+			record.UserName = ownerName.String
 		}
 		if unit.Valid {
 			record.Unit = unit.String
@@ -543,10 +543,10 @@ func insertGovernanceUsage(ctx context.Context, db *sql.DB, input GovernanceUsag
 		return GovernanceUsageSnapshot{}, fmt.Errorf("missing usage fields")
 	}
 	metadataJSON, _ := json.Marshal(input.Metadata)
-	scopeOwnerID := strings.TrimSpace(input.OwnerContextID)
+	ownerContextID := strings.TrimSpace(input.OwnerContextID)
 	ownerID := strings.TrimSpace(input.OwnerUsername)
-	if scopeOwnerID == "" {
-		scopeOwnerID = ownerID
+	if ownerContextID == "" {
+		ownerContextID = ownerID
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -555,7 +555,7 @@ func insertGovernanceUsage(ctx context.Context, db *sql.DB, input GovernanceUsag
 	id := uuid.New().String()
 	var record GovernanceUsageSnapshot
 	record.ID = id
-	record.UserOwnerID = scopeOwnerID
+	record.UserOwnerID = ownerContextID
 	record.Provider = provider
 	record.UserType = strings.TrimSpace(input.UserType)
 	record.OwnerUsername = ownerID
@@ -569,7 +569,7 @@ func insertGovernanceUsage(ctx context.Context, db *sql.DB, input GovernanceUsag
 INSERT INTO sf_usage_snapshots (
   id, owner_context_id, provider, owner_type, owner_username, metric, value, unit, metadata
 ) VALUES ($1,NULLIF($2,''),$3,$4,NULLIF($5,''),$6,$7,NULLIF($8,''),$9)`,
-		id, scopeOwnerID, provider, record.UserType, ownerID, record.Metric, input.Value, record.Unit, string(metadataJSON),
+		id, ownerContextID, provider, record.UserType, ownerID, record.Metric, input.Value, record.Unit, string(metadataJSON),
 	)
 	return record, err
 }

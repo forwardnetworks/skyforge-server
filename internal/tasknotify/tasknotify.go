@@ -15,7 +15,7 @@ const (
 	WebhooksChannel      = "skyforge_webhook_updates"
 	SyslogChannel        = "skyforge_syslog_updates"
 	SnmpChannel          = "skyforge_snmp_updates"
-	UsersChannel         = "skyforge_scopes_updates"
+	UsersChannel         = "skyforge_users_updates"
 	DeploymentEventsChan = "skyforge_deployment_events"
 )
 
@@ -97,15 +97,15 @@ func NotifyUsersUpdate(ctx context.Context, db *sql.DB, payload string) error {
 	return err
 }
 
-func NotifyDeploymentEvent(ctx context.Context, db *sql.DB, scopeID, deploymentID string) error {
-	scopeID = strings.TrimSpace(scopeID)
+func NotifyDeploymentEvent(ctx context.Context, db *sql.DB, ownerID, deploymentID string) error {
+	ownerID = strings.TrimSpace(ownerID)
 	deploymentID = strings.TrimSpace(deploymentID)
-	if db == nil || scopeID == "" || deploymentID == "" {
+	if db == nil || ownerID == "" || deploymentID == "" {
 		return nil
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
-	payload := scopeID + ":" + deploymentID
+	payload := ownerID + ":" + deploymentID
 	_, err := db.ExecContext(ctxReq, "SELECT pg_notify($1, $2)", DeploymentEventsChan, payload)
 	return err
 }

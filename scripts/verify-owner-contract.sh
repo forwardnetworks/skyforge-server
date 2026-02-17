@@ -17,7 +17,7 @@ tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
 
 rg -n -g '*.go' \
-  'json:"scopeId"|json:"workspaceId"|/api/scopes|/api/workspaces|\["scopeId"\]|\["workspaceId"\]' \
+  '/api/projects(/|\\b)' \
   "${SEARCH_PATHS[@]}" >"$tmp" || true
 
 # Legacy-removal comments are allowed as historical notes.
@@ -27,7 +27,7 @@ if [[ -s "$tmp" ]]; then
 fi
 
 if [[ -s "$tmp" ]]; then
-  echo "[owner-contract] found legacy workspace/scope API markers:"
+  echo "[owner-contract] found legacy ownership API markers:"
   cat "$tmp"
   exit 1
 fi

@@ -1440,10 +1440,8 @@ func (s *Service) GetUserDeploymentInfo(ctx context.Context, id, deploymentID st
 			"action":      "status",
 			"user":        strings.TrimSpace(pc.claims.Username),
 			"userContext": strings.TrimSpace(pc.context.Slug),
-			"scope":       strings.TrimSpace(pc.context.Slug), // legacy alias
 			"deployment":  strings.TrimSpace(dep.Name),
 			"userRoot":    userRoot,
-			"scopeRoot":   userRoot, // legacy alias
 			"plugin":      "multilab",
 			"multilabId":  strconv.Itoa(multilabNumericID),
 			"instance":    strconv.Itoa(multilabNumericID),
@@ -1715,10 +1713,8 @@ func (s *Service) NetlabConnect(ctx context.Context, id, deploymentID string, re
 	payload := map[string]any{
 		"user":        strings.TrimSpace(pc.claims.Username),
 		"userContext": strings.TrimSpace(pc.context.Slug),
-		"scope":       strings.TrimSpace(pc.context.Slug), // legacy alias
 		"deployment":  strings.TrimSpace(dep.Name),
 		"userRoot":    userRoot,
-		"scopeRoot":   userRoot, // legacy alias
 		"plugin":      "multilab",
 		"multilabId":  strconv.Itoa(multilabNumericID),
 		"instance":    strconv.Itoa(multilabNumericID),
@@ -1816,10 +1812,8 @@ func (s *Service) GetUserDeploymentNetlabGraph(ctx context.Context, id, deployme
 	payload := map[string]any{
 		"user":        strings.TrimSpace(pc.claims.Username),
 		"userContext": strings.TrimSpace(pc.context.Slug),
-		"scope":       strings.TrimSpace(pc.context.Slug), // legacy alias
 		"deployment":  strings.TrimSpace(dep.Name),
 		"userRoot":    userRoot,
-		"scopeRoot":   userRoot, // legacy alias
 		"plugin":      "multilab",
 		"multilabId":  strconv.Itoa(multilabNumericID),
 		"instance":    strconv.Itoa(multilabNumericID),

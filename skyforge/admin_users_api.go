@@ -18,7 +18,7 @@ type PurgeUserRequest struct {
 
 type PurgeUserResponse struct {
 	Status        string   `json:"status"`
-	DeletedScopes int      `json:"deletedScopes"`
+	DeletedOwners int      `json:"deletedOwners"`
 	Warnings      []string `json:"warnings,omitempty"`
 }
 
@@ -49,23 +49,23 @@ func (s *Service) PurgeUser(ctx context.Context, req *PurgeUserRequest) (*PurgeU
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	deletedScopes, warnings, err := purgeUserSQL(ctx, s.db, username)
+	deletedOwners, warnings, err := purgeUserSQL(ctx, s.db, username)
 	if err != nil {
 		return nil, errs.B().Code(errs.Internal).Msg("purge failed").Err()
 	}
 
 	// Best-effort cleanup of file-backed state.
-	if scopes, err := s.scopeStore.load(); err == nil {
-		for _, ws := range scopes {
+	if contexts, err := s.ownerContextStore.load(); err == nil {
+		for _, ws := range contexts {
 			if strings.EqualFold(ws.CreatedBy, username) {
-				if err := s.scopeStore.delete(ws.ID); err != nil {
-					warnings = append(warnings, fmt.Sprintf("failed to delete scope %s: %v", ws.ID, err))
+				if err := s.ownerContextStore.delete(ws.ID); err != nil {
+					warnings = append(warnings, fmt.Sprintf("failed to delete owner context %s: %v", ws.ID, err))
 				}
 				continue
 			}
 		}
 	} else {
-		warnings = append(warnings, fmt.Sprintf("failed to load scopes store: %v", err))
+		warnings = append(warnings, fmt.Sprintf("failed to load owner contexts store: %v", err))
 	}
 	if err := s.userStore.remove(username); err != nil {
 		warnings = append(warnings, fmt.Sprintf("failed to update users store: %v", err))
@@ -84,7 +84,7 @@ func (s *Service) PurgeUser(ctx context.Context, req *PurgeUserRequest) (*PurgeU
 
 	return &PurgeUserResponse{
 		Status:        "ok",
-		DeletedScopes: deletedScopes,
+		DeletedOwners: deletedOwners,
 		Warnings:      warnings,
 	}, nil
 }
@@ -99,9 +99,9 @@ func purgeUserSQL(ctx context.Context, db *sql.DB, username string) (int, []stri
 		return 0, nil, err
 	}
 
-	// Identify scopes created by this user so we can delete all scope-scoped rows
-	// before deleting the scope itself (no cascade).
-	scopeIDs := make([]string, 0, 4)
+	// Identify owner contexts created by this user so we can delete all
+	// owner-level rows before deleting the owner context itself (no cascade).
+	ownerIDs := make([]string, 0, 4)
 	rows, err := tx.QueryContext(ctx, `SELECT id FROM sf_owner_contexts WHERE created_by = $1`, username)
 	if err != nil {
 		return rollback(err)
@@ -112,11 +112,11 @@ func purgeUserSQL(ctx context.Context, db *sql.DB, username string) (int, []stri
 			_ = rows.Close()
 			return rollback(err)
 		}
-		scopeIDs = append(scopeIDs, id)
+		ownerIDs = append(ownerIDs, id)
 	}
 	_ = rows.Close()
 
-	// Delete user-scoped rows first (no cascade on sf_users).
+	// Delete user-level rows first (no cascade on sf_users).
 	stmts := []struct {
 		label string
 		query string
@@ -124,7 +124,7 @@ func purgeUserSQL(ctx context.Context, db *sql.DB, username string) (int, []stri
 	}{
 		{"notifications", `DELETE FROM sf_notifications WHERE username = $1`, []any{username}},
 		{"audit_actor", `DELETE FROM sf_audit_log WHERE actor_username = $1 OR impersonated_username = $1`, []any{username}},
-		{"scope_members", `DELETE FROM sf_owner_members WHERE username = $1`, []any{username}},
+		{"owner_members", `DELETE FROM sf_owner_members WHERE username = $1`, []any{username}},
 		{"user_variable_groups", `DELETE FROM sf_user_variable_groups WHERE username = $1`, []any{username}},
 		{"user_servicenow_configs", `DELETE FROM sf_user_servicenow_configs WHERE username = $1`, []any{username}},
 		{"aws_sso_tokens", `DELETE FROM sf_aws_sso_tokens WHERE username = $1`, []any{username}},
@@ -147,29 +147,29 @@ func purgeUserSQL(ctx context.Context, db *sql.DB, username string) (int, []stri
 		}
 	}
 
-	deletedScopes := 0
-	if len(scopeIDs) > 0 {
-		scopeScopedDeletes := []struct {
+	deletedOwners := 0
+	if len(ownerIDs) > 0 {
+		ownerScopedDeletes := []struct {
 			label string
 			query string
 		}{
-			{"scope_cost_snapshots", `DELETE FROM sf_cost_snapshots WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
-			{"scope_usage_snapshots", `DELETE FROM sf_usage_snapshots WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
-			{"scope_resource_events", `DELETE FROM sf_resource_events WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
-			{"scope_resources", `DELETE FROM sf_resources WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
-			{"scope_tasks", `DELETE FROM sf_tasks WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
-			{"scope_deployments", `DELETE FROM sf_deployments WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
-			{"scope_pki_certs", `DELETE FROM sf_pki_certs WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
-			{"scope_forward_credentials", `DELETE FROM sf_owner_forward_credentials WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
-			{"scope_aws_static_credentials", `DELETE FROM sf_owner_aws_static_credentials WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
-			{"scope_azure_credentials", `DELETE FROM sf_owner_azure_credentials WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
-			{"scope_gcp_credentials", `DELETE FROM sf_owner_gcp_credentials WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
-			{"scope_groups", `DELETE FROM sf_owner_groups WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
-			{"scope_variable_groups", `DELETE FROM sf_owner_variable_groups WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
-			{"scope_members_all", `DELETE FROM sf_owner_members WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
-			{"scope_audit_log", `DELETE FROM sf_audit_log WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
+			{"owner_cost_snapshots", `DELETE FROM sf_cost_snapshots WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
+			{"owner_usage_snapshots", `DELETE FROM sf_usage_snapshots WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
+			{"owner_resource_events", `DELETE FROM sf_resource_events WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
+			{"owner_resources", `DELETE FROM sf_resources WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
+			{"owner_tasks", `DELETE FROM sf_tasks WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
+			{"owner_deployments", `DELETE FROM sf_deployments WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
+			{"owner_pki_certs", `DELETE FROM sf_pki_certs WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
+			{"owner_forward_credentials", `DELETE FROM sf_owner_forward_credentials WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
+			{"owner_aws_static_credentials", `DELETE FROM sf_owner_aws_static_credentials WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
+			{"owner_azure_credentials", `DELETE FROM sf_owner_azure_credentials WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
+			{"owner_gcp_credentials", `DELETE FROM sf_owner_gcp_credentials WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
+			{"owner_groups", `DELETE FROM sf_owner_groups WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
+			{"owner_variable_groups", `DELETE FROM sf_owner_variable_groups WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
+			{"owner_members_all", `DELETE FROM sf_owner_members WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
+			{"owner_audit_log", `DELETE FROM sf_audit_log WHERE owner_username IN (SELECT id FROM sf_owner_contexts WHERE created_by = $1)`},
 		}
-		for _, stmt := range scopeScopedDeletes {
+		for _, stmt := range ownerScopedDeletes {
 			if _, err := tx.ExecContext(ctx, stmt.query, username); err != nil {
 				return rollback(fmt.Errorf("%s: %w", stmt.label, err))
 			}
@@ -180,7 +180,7 @@ func purgeUserSQL(ctx context.Context, db *sql.DB, username string) (int, []stri
 			return rollback(err)
 		}
 		if n, _ := res.RowsAffected(); n > 0 {
-			deletedScopes = int(n)
+			deletedOwners = int(n)
 		}
 	}
 
@@ -191,5 +191,5 @@ func purgeUserSQL(ctx context.Context, db *sql.DB, username string) (int, []stri
 	if err := tx.Commit(); err != nil {
 		return rollback(err)
 	}
-	return deletedScopes, nil, nil
+	return deletedOwners, nil, nil
 }

@@ -30,7 +30,7 @@ type ForwardNetworkCapacityPortfolioResponse struct {
 	Items         []ForwardNetworkCapacityPortfolioItem `json:"items"`
 }
 
-// GetUserForwardNetworkCapacityPortfolio returns a cross-network capacity summary for a scope.
+// GetUserForwardNetworkCapacityPortfolio returns a cross-network capacity summary for an owner context.
 //
 // Intended as a "portfolio view" across all saved Forward networks (not a NOC alerting page).
 func (s *Service) GetUserForwardNetworkCapacityPortfolio(ctx context.Context, id string) (*ForwardNetworkCapacityPortfolioResponse, error) {
@@ -46,11 +46,11 @@ func (s *Service) GetUserForwardNetworkCapacityPortfolio(ctx context.Context, id
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	// For a scope portfolio view, include both:
-	// - scope-scoped saved networks (shared with scope collaborators)
-	// - user-scoped saved networks (owned by the current user)
+	// For a owner portfolio view, include both:
+	// - owner-level saved networks (shared with owner collaborators)
+	// - user-level saved networks (owned by the current user)
 	//
-	// Dedup by Forward network id (scope-scoped wins).
+	// Dedup by Forward network id (owner-level wins).
 	wsNets, err := listPolicyReportForwardNetworks(ctx, s.db, pc.context.ID)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load networks").Err()

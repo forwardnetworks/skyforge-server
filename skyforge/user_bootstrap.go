@@ -108,7 +108,7 @@ func clearCachedLDAPPassword(db *sql.DB, username string) {
 
 func (s *Service) bootstrapUserLabs(username string) {
 	// Legacy: the old implementation wrote to a shared filesystem (per-user "home" + cloned repos).
-	// Skyforge runs multi-replica now and should remain stateless; Coder scopes should
+	// Skyforge runs multi-replica now and should remain stateless; Coder user contexts should
 	// manage per-user home directories independently. Keep this as a no-op for compatibility.
 	_ = username
 }

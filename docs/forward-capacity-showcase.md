@@ -50,7 +50,7 @@ Portal UI:
 
 - Capacity dashboard for Forward networks (interfaces/devices/growth/plan/routing/changes/health/raw)
 - “Paths” tab: batch paste flows and get bottleneck interface + headroom + outcomes, with click-through to interface trend dialog
-  - Optional saved batches stored locally in the browser (user+network scoped)
+  - Optional saved batches stored locally in the browser (user+network cached)
   - Coverage diagnostics + sample unmatched interfaces (helps explain missing stats)
   - Optional payload preview/copy: shows the Forward `/paths-bulk` request shape used (guardrails applied)
   - Per-flow “open in Forward” link via Forward `queryUrl`

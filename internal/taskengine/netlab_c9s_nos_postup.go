@@ -464,7 +464,7 @@ if ! ip -o -4 addr show dev "$dev" 2>/dev/null | grep -q "$IP/"; then
   ip addr add "$IP/32" dev "$dev"
 fi
 
-# Cilium uses /32 addressing and a link-scoped route to the gateway.
+# Cilium uses /32 addressing and a link-local route to the gateway.
 ip route replace "$GW" dev "$dev" scope link
 ip route replace default via "$GW" dev "$dev" onlink
 `, podIP, gateway)

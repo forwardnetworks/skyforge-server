@@ -23,7 +23,7 @@ const (
 	pgNotifyWebhooksChannel      = "skyforge_webhook_updates"
 	pgNotifySyslogChannel        = "skyforge_syslog_updates"
 	pgNotifySnmpChannel          = "skyforge_snmp_updates"
-	pgNotifyUsersChannel         = "skyforge_scopes_updates"
+	pgNotifyUsersChannel         = "skyforge_users_updates"
 	pgNotifyDeploymentEventsChan = "skyforge_deployment_events"
 )
 

@@ -527,7 +527,7 @@ func syncBlueprintCatalogIntoUserRepo(sourceCfg, targetCfg Config, targetOwner, 
 	}
 
 	// Copy the catalog into a subdirectory in the user's repo so it doesn't pollute the root.
-	// The deployment UX expects `blueprints/<type>` (scope repo), while the catalog repo is
+	// The deployment UX expects `blueprints/<type>` (owner repo), while the catalog repo is
 	// `<type>` at the repo root.
 	destRoot := "blueprints"
 	expected := []string{"containerlab", "netlab", "terraform"}
@@ -606,7 +606,7 @@ func ensureGiteaRepo(cfg Config, owner, repo string, repoPrivate bool) error {
 }
 
 func ensureGiteaRepoFromBlueprint(cfg Config, owner, repo, blueprint string, repoPrivate bool) error {
-	// For Skyforge MVP we avoid copying blueprint content into each scope repo.
+	// For Skyforge MVP we avoid copying blueprint content into each owner repo.
 	// Projects can reference the shared blueprint catalog directly for deployments.
 	// A manual "sync" can be added later if/when users want a forked copy.
 	return ensureGiteaRepo(cfg, owner, repo, repoPrivate)

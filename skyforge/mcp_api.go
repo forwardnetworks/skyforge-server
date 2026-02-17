@@ -290,7 +290,7 @@ func (s *Service) mcpToolsCall(ctx context.Context, user *AuthUser, ownerID, for
 		}
 		return out, nil
 	default:
-		// Forward tools only exist on the forward-scoped endpoint.
+		// Forward tools only exist on the forward endpoint.
 		if strings.TrimSpace(forwardNetworkID) == "" {
 			return "", errs.B().Code(errs.NotFound).Msg("tool not found").Err()
 		}

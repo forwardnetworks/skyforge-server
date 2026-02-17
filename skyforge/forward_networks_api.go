@@ -12,7 +12,7 @@ import (
 // originally added for Policy Reports. Capacity tooling also uses these
 // user-managed networks.
 
-// ---- User-scoped Forward Networks ----
+// ---- User-owned Forward Networks ----
 
 // CreateUserForwardNetwork stores a Forward network id for the current user.
 //

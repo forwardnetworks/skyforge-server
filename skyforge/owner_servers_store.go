@@ -11,9 +11,9 @@ import (
 	"github.com/google/uuid"
 )
 
-const scopeServerRefPrefix = "ws:"
+const ownerServerRefPrefix = "owner:"
 
-type scopeNetlabServer struct {
+type ownerNetlabServer struct {
 	ID            string
 	OwnerUsername string
 	Name          string
@@ -26,7 +26,7 @@ type scopeNetlabServer struct {
 	UpdatedAt     time.Time
 }
 
-type scopeEveServer struct {
+type ownerEveServer struct {
 	ID            string
 	OwnerUsername string
 	Name          string
@@ -42,12 +42,12 @@ type scopeEveServer struct {
 	UpdatedAt     time.Time
 }
 
-func scopeServerRef(id string) string {
+func ownerServerRef(id string) string {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return ""
 	}
-	return scopeServerRefPrefix + id
+	return ownerServerRefPrefix + id
 }
 
 func parseOwnerServerRef(value string) (string, bool) {
@@ -55,7 +55,7 @@ func parseOwnerServerRef(value string) (string, bool) {
 	if value == "" {
 		return "", false
 	}
-	if after, ok := strings.CutPrefix(value, scopeServerRefPrefix); ok {
+	if after, ok := strings.CutPrefix(value, ownerServerRefPrefix); ok {
 		id := after
 		id = strings.TrimSpace(id)
 		if id == "" {
@@ -66,7 +66,7 @@ func parseOwnerServerRef(value string) (string, bool) {
 	return "", false
 }
 
-func listOwnerNetlabServers(ctx context.Context, db *sql.DB, box *secretBox, ownerID string) ([]scopeNetlabServer, error) {
+func listOwnerNetlabServers(ctx context.Context, db *sql.DB, box *secretBox, ownerID string) ([]ownerNetlabServer, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
@@ -80,7 +80,7 @@ FROM sf_project_netlab_servers WHERE project_id=$1 ORDER BY name ASC`, ownerID)
 		return nil, err
 	}
 	defer rows.Close()
-	out := []scopeNetlabServer{}
+	out := []ownerNetlabServer{}
 	for rows.Next() {
 		var id, projectID, name, apiURL string
 		var insecure bool
@@ -102,7 +102,7 @@ FROM sf_project_netlab_servers WHERE project_id=$1 ORDER BY name ASC`, ownerID)
 				token = strings.TrimSpace(decrypted)
 			}
 		}
-		out = append(out, scopeNetlabServer{
+		out = append(out, ownerNetlabServer{
 			ID:            id,
 			OwnerUsername: projectID,
 			Name:          strings.TrimSpace(name),
@@ -118,7 +118,7 @@ FROM sf_project_netlab_servers WHERE project_id=$1 ORDER BY name ASC`, ownerID)
 	return out, nil
 }
 
-func getOwnerNetlabServerByID(ctx context.Context, db *sql.DB, box *secretBox, ownerID, id string) (*scopeNetlabServer, error) {
+func getOwnerNetlabServerByID(ctx context.Context, db *sql.DB, box *secretBox, ownerID, id string) (*ownerNetlabServer, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
@@ -127,7 +127,7 @@ func getOwnerNetlabServerByID(ctx context.Context, db *sql.DB, box *secretBox, o
 	if ownerID == "" || id == "" {
 		return nil, nil
 	}
-	var rec scopeNetlabServer
+	var rec ownerNetlabServer
 	var apiUser, apiPasswordEnc string
 	var tokenEnc string
 	err := db.QueryRowContext(ctx, `SELECT id, project_id, name, api_url, api_insecure, COALESCE(api_user,''), COALESCE(api_password,''), COALESCE(api_token,''), created_at, updated_at
@@ -160,7 +160,7 @@ FROM sf_project_netlab_servers WHERE project_id=$1 AND id=$2`, ownerID, id).Scan
 	return &rec, nil
 }
 
-func upsertOwnerNetlabServer(ctx context.Context, db *sql.DB, box *secretBox, rec scopeNetlabServer) (*scopeNetlabServer, error) {
+func upsertOwnerNetlabServer(ctx context.Context, db *sql.DB, box *secretBox, rec ownerNetlabServer) (*ownerNetlabServer, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
@@ -239,7 +239,7 @@ func deleteOwnerNetlabServer(ctx context.Context, db *sql.DB, ownerID, id string
 	return err
 }
 
-func listOwnerEveServers(ctx context.Context, db *sql.DB, box *secretBox, ownerID string) ([]scopeEveServer, error) {
+func listOwnerEveServers(ctx context.Context, db *sql.DB, box *secretBox, ownerID string) ([]ownerEveServer, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
@@ -254,9 +254,9 @@ FROM sf_project_eve_servers WHERE project_id=$1 ORDER BY name ASC`, ownerID)
 		return nil, err
 	}
 	defer rows.Close()
-	out := []scopeEveServer{}
+	out := []ownerEveServer{}
 	for rows.Next() {
-		var rec scopeEveServer
+		var rec ownerEveServer
 		var webURL string
 		var apiUser, apiPasswordEnc, sshHost, sshUser, sshKeyEnc string
 		if err := rows.Scan(
@@ -301,7 +301,7 @@ FROM sf_project_eve_servers WHERE project_id=$1 ORDER BY name ASC`, ownerID)
 	return out, nil
 }
 
-func getOwnerEveServerByID(ctx context.Context, db *sql.DB, box *secretBox, ownerID, id string) (*scopeEveServer, error) {
+func getOwnerEveServerByID(ctx context.Context, db *sql.DB, box *secretBox, ownerID, id string) (*ownerEveServer, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
@@ -310,7 +310,7 @@ func getOwnerEveServerByID(ctx context.Context, db *sql.DB, box *secretBox, owne
 	if ownerID == "" || id == "" {
 		return nil, nil
 	}
-	var rec scopeEveServer
+	var rec ownerEveServer
 	var webURL, apiUser, apiPasswordEnc, sshHost, sshUser, sshKeyEnc string
 	err := db.QueryRowContext(ctx, `SELECT id, project_id, name, api_url, COALESCE(web_url,''), skip_tls_verify,
   COALESCE(api_user,''), COALESCE(api_password,''), COALESCE(ssh_host,''), COALESCE(ssh_user,''), COALESCE(ssh_key,''), created_at, updated_at
@@ -347,7 +347,7 @@ FROM sf_project_eve_servers WHERE project_id=$1 AND id=$2`, ownerID, id).Scan(
 	return &rec, nil
 }
 
-func upsertOwnerEveServer(ctx context.Context, db *sql.DB, box *secretBox, rec scopeEveServer) (*scopeEveServer, error) {
+func upsertOwnerEveServer(ctx context.Context, db *sql.DB, box *secretBox, rec ownerEveServer) (*ownerEveServer, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}

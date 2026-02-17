@@ -301,7 +301,7 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		cloudCredentialChecks = time.Duration(enc.CloudCheckIntervalMinutes) * time.Minute
 	}
 
-	scopesCfg := skyforgecore.UsersConfig{
+	usersCfg := skyforgecore.UsersConfig{
 		DataDir:                strings.TrimSpace(enc.Scopes.DataDir),
 		GiteaAPIURL:            strings.TrimRight(strings.TrimSpace(enc.Scopes.GiteaAPIURL), "/"),
 		GiteaUsername:          strings.TrimSpace(enc.Scopes.GiteaUsername),
@@ -313,48 +313,48 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		ObjectStorageAccessKey: strings.TrimSpace(sec.ObjectStorageAccessKey),
 		ObjectStorageSecretKey: strings.TrimSpace(sec.ObjectStorageSecretKey),
 	}
-	if strings.TrimSpace(scopesCfg.DataDir) == "" {
+	if strings.TrimSpace(usersCfg.DataDir) == "" {
 		if v := strings.TrimSpace(os.Getenv("SKYFORGE_USER_DATA_DIR")); v != "" {
-			scopesCfg.DataDir = v
+			usersCfg.DataDir = v
 		} else if v := strings.TrimSpace(os.Getenv("SKYFORGE_SCOPES_DATA_DIR")); v != "" {
-			scopesCfg.DataDir = v
+			usersCfg.DataDir = v
 		}
 	}
-	if strings.TrimSpace(scopesCfg.DataDir) == "" {
-		scopesCfg.DataDir = "/var/lib/skyforge"
+	if strings.TrimSpace(usersCfg.DataDir) == "" {
+		usersCfg.DataDir = "/var/lib/skyforge"
 	}
 	// Back-compat + robustness: allow the older SKYFORGE_* env vars (injected by Helm configmaps)
 	// to fill gaps if ENCORE_CFG is missing or partially configured.
-	if strings.TrimSpace(scopesCfg.GiteaAPIURL) == "" {
+	if strings.TrimSpace(usersCfg.GiteaAPIURL) == "" {
 		if v := strings.TrimRight(strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_API_URL")), "/"); v != "" {
-			scopesCfg.GiteaAPIURL = v
+			usersCfg.GiteaAPIURL = v
 		} else if giteaBaseURL != "" {
-			scopesCfg.GiteaAPIURL = giteaBaseURL + "/api/v1"
+			usersCfg.GiteaAPIURL = giteaBaseURL + "/api/v1"
 		}
 	}
-	if strings.TrimSpace(scopesCfg.GiteaUsername) == "" {
+	if strings.TrimSpace(usersCfg.GiteaUsername) == "" {
 		if v := strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_USERNAME")); v != "" {
-			scopesCfg.GiteaUsername = v
+			usersCfg.GiteaUsername = v
 		} else {
-			scopesCfg.GiteaUsername = "skyforge"
+			usersCfg.GiteaUsername = "skyforge"
 		}
 	}
-	if strings.TrimSpace(scopesCfg.GiteaPassword) == "" {
+	if strings.TrimSpace(usersCfg.GiteaPassword) == "" {
 		if v := strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_PASSWORD")); v != "" {
-			scopesCfg.GiteaPassword = v
+			usersCfg.GiteaPassword = v
 		}
 	}
-	if strings.TrimSpace(scopesCfg.DeleteMode) == "" {
+	if strings.TrimSpace(usersCfg.DeleteMode) == "" {
 		if v := strings.TrimSpace(os.Getenv("SKYFORGE_USER_DELETE_MODE")); v != "" {
-			scopesCfg.DeleteMode = v
+			usersCfg.DeleteMode = v
 		} else if v := strings.TrimSpace(os.Getenv("SKYFORGE_SCOPE_DELETE_MODE")); v != "" {
-			scopesCfg.DeleteMode = v
+			usersCfg.DeleteMode = v
 		} else {
-			scopesCfg.DeleteMode = "live"
+			usersCfg.DeleteMode = "live"
 		}
 	}
-	if strings.TrimSpace(scopesCfg.ObjectStorageEndpoint) == "" {
-		scopesCfg.ObjectStorageEndpoint = "minio:9000"
+	if strings.TrimSpace(usersCfg.ObjectStorageEndpoint) == "" {
+		usersCfg.ObjectStorageEndpoint = "minio:9000"
 	}
 
 	terraformBinaryPath := strings.TrimSpace(enc.Terraform.BinaryPath)
@@ -429,7 +429,7 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		LDAP:                      ldapCfg,
 		LDAPLookupBindDN:          ldapLookupBindDN,
 		LDAPLookupBindPassword:    ldapLookupBindPassword,
-		Scopes:                    scopesCfg,
+		Scopes:                    usersCfg,
 		TerraformBinaryPath:       terraformBinaryPath,
 		TerraformVersion:          terraformVersion,
 		TerraformURL:              terraformURL,
@@ -491,7 +491,7 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		StateRoot:  strings.TrimSpace(enc.Netlab.StateRoot),
 	}
 
-	scopesCfg := skyforgecore.UsersConfig{
+	usersCfg := skyforgecore.UsersConfig{
 		DataDir:                strings.TrimSpace(enc.Scopes.DataDir),
 		GiteaAPIURL:            strings.TrimRight(strings.TrimSpace(enc.Scopes.GiteaAPIURL), "/"),
 		GiteaUsername:          strings.TrimSpace(enc.Scopes.GiteaUsername),
@@ -503,35 +503,35 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		ObjectStorageAccessKey: strings.TrimSpace(sec.ObjectStorageAccessKey),
 		ObjectStorageSecretKey: strings.TrimSpace(sec.ObjectStorageSecretKey),
 	}
-	if strings.TrimSpace(scopesCfg.DataDir) == "" {
-		scopesCfg.DataDir = "/var/lib/skyforge"
+	if strings.TrimSpace(usersCfg.DataDir) == "" {
+		usersCfg.DataDir = "/var/lib/skyforge"
 	}
 	// Back-compat + robustness: allow the SKYFORGE_* env vars (injected by Helm configmaps)
 	// to fill gaps if ENCORE_CFG is missing or partially configured.
-	if strings.TrimSpace(scopesCfg.GiteaAPIURL) == "" {
+	if strings.TrimSpace(usersCfg.GiteaAPIURL) == "" {
 		if v := strings.TrimRight(strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_API_URL")), "/"); v != "" {
-			scopesCfg.GiteaAPIURL = v
+			usersCfg.GiteaAPIURL = v
 		} else if base := strings.TrimRight(strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_URL")), "/"); base != "" {
-			scopesCfg.GiteaAPIURL = base + "/api/v1"
+			usersCfg.GiteaAPIURL = base + "/api/v1"
 		}
 	}
-	if strings.TrimSpace(scopesCfg.GiteaUsername) == "" {
+	if strings.TrimSpace(usersCfg.GiteaUsername) == "" {
 		if v := strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_USERNAME")); v != "" {
-			scopesCfg.GiteaUsername = v
+			usersCfg.GiteaUsername = v
 		} else {
-			scopesCfg.GiteaUsername = "skyforge"
+			usersCfg.GiteaUsername = "skyforge"
 		}
 	}
-	if strings.TrimSpace(scopesCfg.GiteaPassword) == "" {
+	if strings.TrimSpace(usersCfg.GiteaPassword) == "" {
 		if v := strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_PASSWORD")); v != "" {
-			scopesCfg.GiteaPassword = v
+			usersCfg.GiteaPassword = v
 		}
 	}
-	if strings.TrimSpace(scopesCfg.DeleteMode) == "" {
-		scopesCfg.DeleteMode = "live"
+	if strings.TrimSpace(usersCfg.DeleteMode) == "" {
+		usersCfg.DeleteMode = "live"
 	}
-	if strings.TrimSpace(scopesCfg.ObjectStorageEndpoint) == "" {
-		scopesCfg.ObjectStorageEndpoint = "minio:9000"
+	if strings.TrimSpace(usersCfg.ObjectStorageEndpoint) == "" {
+		usersCfg.ObjectStorageEndpoint = "minio:9000"
 	}
 
 	terraformBinaryPath := strings.TrimSpace(enc.Terraform.BinaryPath)
@@ -635,7 +635,7 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		TaskWorkerEnabled:                        enc.TaskWorkerEnabled,
 		SessionSecret:                            sec.SessionSecret,
 		Netlab:                                   netlabCfg,
-		Scopes:                                   scopesCfg,
+		Scopes:                                   usersCfg,
 		TerraformBinaryPath:                      terraformBinaryPath,
 		TerraformVersion:                         terraformVersion,
 		TerraformURL:                             terraformURL,

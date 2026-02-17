@@ -11,7 +11,7 @@ func (s *Service) notifyTaskEvent(ctx context.Context, task *TaskRecord, status 
 	if s == nil || s.db == nil || task == nil || !task.DeploymentID.Valid {
 		return nil
 	}
-	// Only notify on deployment-scoped tasks for now (matches UI expectations).
+	// Only notify on deployment-level tasks for now (matches UI expectations).
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
@@ -53,14 +53,14 @@ func (s *Service) notifyTaskEvent(ctx context.Context, task *TaskRecord, status 
 		return nil
 	}
 
-	_, _, scope, err := s.loadOwnerContextByKey(task.OwnerID)
+	_, _, userContext, err := s.loadOwnerContextByKey(task.OwnerID)
 	if err != nil {
 		// Fall back to notifying just the actor.
 		_, err := createNotification(ctx, s.db, task.CreatedBy, title, message, typ, category, referenceID, priority)
 		return err
 	}
 
-	recipients := ownerNotificationRecipients(scope)
+	recipients := ownerNotificationRecipients(userContext)
 	if len(recipients) == 0 {
 		recipients = []string{task.CreatedBy}
 	}

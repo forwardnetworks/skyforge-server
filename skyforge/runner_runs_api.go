@@ -37,14 +37,14 @@ func (s *Service) GetNetlabRuns(ctx context.Context, params *RunnerRunsParams) (
 	if err != nil {
 		return nil, err
 	}
-	scope, err := s.resolveUserForUser(ctx, user, "me")
+	userContext, err := s.resolveUserForUser(ctx, user, "me")
 	if err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	tasks, err := listTasks(ctx, s.db, scope.ID, limit)
+	tasks, err := listTasks(ctx, s.db, userContext.ID, limit)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to query runs").Err()
 	}
@@ -64,7 +64,7 @@ func (s *Service) GetNetlabRuns(ctx context.Context, params *RunnerRunsParams) (
 		}
 		labs, artifacts := parseSkyforgeMarkers(logRows)
 		runInfo := taskToRunInfo(task)
-		runInfo["ownerUsername"] = scope.ID
+		runInfo["ownerUsername"] = userContext.ID
 		taskJSON, err := toJSONMap(runInfo)
 		if err != nil {
 			return nil, errs.B().Code(errs.Internal).Msg("failed to encode task").Err()

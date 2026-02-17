@@ -12,8 +12,8 @@ import (
 )
 
 // AcquireOrderedTaskLock acquires an advisory lock for a queued task and enforces
-// per-deployment/per-scope ordering by waiting until the task is the oldest
-// queued task for its scope.
+// per-deployment/per-owner ordering by waiting until the task is the oldest
+// queued task for its owner context.
 //
 // The caller must call the returned unlock function.
 func AcquireOrderedTaskLock(ctx context.Context, db *sql.DB, task *taskstore.TaskRecord) (unlock func(), err error) {
@@ -89,7 +89,7 @@ func AcquireOrderedTaskLock(ctx context.Context, db *sql.DB, task *taskstore.Tas
 	for {
 		lock, ok, err := pglocks.TryAdvisoryLock(ctx, db, lockKey)
 		if err != nil {
-			rlog.Error("scope lock error", "err", err)
+			rlog.Error("owner lock error", "err", err)
 			if err := sleep(); err != nil {
 				return func() {}, err
 			}
@@ -105,7 +105,7 @@ func AcquireOrderedTaskLock(ctx context.Context, db *sql.DB, task *taskstore.Tas
 		oldestQueuedID, err := taskstore.GetOldestQueuedOwnerTaskID(ctx, db, ownerID)
 		if err != nil {
 			_ = lock.Unlock(context.Background())
-			rlog.Error("scope queue check error", "err", err)
+			rlog.Error("owner queue check error", "err", err)
 			if err := sleep(); err != nil {
 				return func() {}, err
 			}

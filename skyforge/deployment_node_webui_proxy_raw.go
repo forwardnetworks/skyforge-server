@@ -97,7 +97,7 @@ func (s *Service) deploymentNodeWebUIProxy(w http.ResponseWriter, req *http.Requ
 		// - api/deployments/<deploymentID>/nodes/<node>/webui/<rest?>
 		for i := 0; i+1 < len(parts); i++ {
 			switch parts[i] {
-			case "users", "contexts", "scopes":
+			case "users", "contexts":
 				if ownerKey == "" {
 					ownerKey = strings.TrimSpace(parts[i+1])
 				}

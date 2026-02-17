@@ -79,7 +79,7 @@ func withAdvisoryLock(ctx context.Context, db *sql.DB, key int64, fn func(contex
 	return fn(ctx)
 }
 
-type scopeRecord struct {
+type userRecord struct {
 	ID              string
 	Slug            string
 	Name            string
@@ -100,7 +100,7 @@ type scopeRecord struct {
 }
 
 func runUserContextSync(ctx context.Context, cfg skyforgecore.Config, db *sql.DB) error {
-	scopes, err := loadUsersForMaintenance(ctx, db)
+	users, err := loadUsersForMaintenance(ctx, db)
 	if err != nil {
 		return err
 	}
@@ -112,7 +112,7 @@ func runUserContextSync(ctx context.Context, cfg skyforgecore.Config, db *sql.DB
 		DefaultEmail: strings.TrimSpace(cfg.Scopes.GiteaUsername) + "@example.invalid",
 	})
 
-	for _, ws := range scopes {
+	for _, ws := range users {
 		updated := false
 
 		desiredOwner := strings.TrimSpace(ws.GiteaOwner)
@@ -184,13 +184,13 @@ func runCloudCredentialChecks(ctx context.Context, cfg skyforgecore.Config, db *
 		}
 	}
 
-	scopes, err := loadUsersForMaintenance(ctx, db)
+	users, err := loadUsersForMaintenance(ctx, db)
 	if err != nil {
 		return nil
 	}
 	box := secretbox.New(cfg.SessionSecret)
-	for _, ws := range scopes {
-		recipients := scopeNotificationRecipients(ws)
+	for _, ws := range users {
+		recipients := userNotificationRecipients(ws)
 		if len(recipients) == 0 {
 			continue
 		}
@@ -296,7 +296,7 @@ func runCloudCredentialChecks(ctx context.Context, cfg skyforgecore.Config, db *
 	return nil
 }
 
-func updateUserMaintenanceFields(ctx context.Context, db *sql.DB, ws scopeRecord) error {
+func updateUserMaintenanceFields(ctx context.Context, db *sql.DB, ws userRecord) error {
 	if db == nil {
 		return nil
 	}
@@ -318,7 +318,7 @@ WHERE id=$1`,
 	return err
 }
 
-func scopeNotificationRecipients(ws scopeRecord) []string {
+func userNotificationRecipients(ws userRecord) []string {
 	recipients := map[string]struct{}{}
 	add := func(u string) {
 		u = strings.ToLower(strings.TrimSpace(u))
@@ -357,7 +357,7 @@ func isValidUsername(username string) bool {
 	return true
 }
 
-func syncGiteaCollaborators(client *gitea.Client, cfg skyforgecore.Config, ws scopeRecord) {
+func syncGiteaCollaborators(client *gitea.Client, cfg skyforgecore.Config, ws userRecord) {
 	if client == nil {
 		return
 	}
@@ -435,14 +435,14 @@ func ensureAuditActor(ctx context.Context, db *sql.DB, username string) {
 	_, _ = db.ExecContext(ctx, `INSERT INTO sf_users (username, created_at) VALUES ($1, now()) ON CONFLICT (username) DO NOTHING`, username)
 }
 
-func writeAuditEvent(ctx context.Context, db *sql.DB, actor string, actorIsAdmin bool, impersonated string, action string, scopeID string, details string) {
+func writeAuditEvent(ctx context.Context, db *sql.DB, actor string, actorIsAdmin bool, impersonated string, action string, ownerID string, details string) {
 	if db == nil {
 		return
 	}
 	actor = strings.ToLower(strings.TrimSpace(actor))
 	impersonated = strings.ToLower(strings.TrimSpace(impersonated))
 	action = strings.TrimSpace(action)
-	scopeID = strings.TrimSpace(scopeID)
+	ownerID = strings.TrimSpace(ownerID)
 	details = strings.TrimSpace(details)
 	if actor == "" || action == "" {
 		return
@@ -457,7 +457,7 @@ func writeAuditEvent(ctx context.Context, db *sql.DB, actor string, actorIsAdmin
 	_, _ = db.ExecContext(ctx, `INSERT INTO sf_audit_log (
   actor_username, actor_is_admin, impersonated_username, action, owner_username, details
 ) VALUES ($1,$2,NULLIF($3,''),$4,NULLIF($5,''),NULLIF($6,''))`,
-		actor, actorIsAdmin, impersonated, action, scopeID, details,
+		actor, actorIsAdmin, impersonated, action, ownerID, details,
 	)
 }
 
@@ -580,7 +580,7 @@ func loadAwsSSOTokens(ctx context.Context, db *sql.DB) (map[string]awsSSOTokenRe
 	return out, rows.Err()
 }
 
-func loadUsersForMaintenance(ctx context.Context, db *sql.DB) ([]scopeRecord, error) {
+func loadUsersForMaintenance(ctx context.Context, db *sql.DB) ([]userRecord, error) {
 	if db == nil {
 		return nil, nil
 	}
@@ -591,10 +591,10 @@ FROM sf_owner_contexts ORDER BY created_at DESC`)
 	}
 	defer rows.Close()
 
-	out := []scopeRecord{}
-	wsByID := map[string]*scopeRecord{}
+	out := []userRecord{}
+	wsByID := map[string]*userRecord{}
 	for rows.Next() {
-		var rec scopeRecord
+		var rec userRecord
 		var defaultBranch sql.NullString
 		var artifactsBucket sql.NullString
 		var giteaOwner, giteaRepo sql.NullString
@@ -650,17 +650,17 @@ type awsStaticCredentials struct {
 	SessionToken    string
 }
 
-func getUserAWSStaticCredentials(ctx context.Context, db *sql.DB, box *secretbox.Box, scopeID string) (*awsStaticCredentials, error) {
+func getUserAWSStaticCredentials(ctx context.Context, db *sql.DB, box *secretbox.Box, ownerID string) (*awsStaticCredentials, error) {
 	if db == nil || box == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	scopeID = strings.TrimSpace(scopeID)
-	if scopeID == "" {
-		return nil, fmt.Errorf("scope id is required")
+	ownerID = strings.TrimSpace(ownerID)
+	if ownerID == "" {
+		return nil, fmt.Errorf("owner id is required")
 	}
 	var akid, sak, st sql.NullString
 	err := db.QueryRowContext(ctx, `SELECT access_key_id, secret_access_key, session_token
-FROM sf_owner_aws_static_credentials WHERE owner_username=$1`, scopeID).Scan(&akid, &sak, &st)
+FROM sf_owner_aws_static_credentials WHERE owner_username=$1`, ownerID).Scan(&akid, &sak, &st)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -714,17 +714,17 @@ type azureServicePrincipal struct {
 	SubscriptionID string
 }
 
-func getUserAzureCredentials(ctx context.Context, db *sql.DB, box *secretbox.Box, scopeID string) (*azureServicePrincipal, error) {
+func getUserAzureCredentials(ctx context.Context, db *sql.DB, box *secretbox.Box, ownerID string) (*azureServicePrincipal, error) {
 	if db == nil || box == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	scopeID = strings.TrimSpace(scopeID)
-	if scopeID == "" {
-		return nil, fmt.Errorf("scope id is required")
+	ownerID = strings.TrimSpace(ownerID)
+	if ownerID == "" {
+		return nil, fmt.Errorf("owner id is required")
 	}
 	var tenantID, clientID, clientSecret, subscriptionID sql.NullString
 	err := db.QueryRowContext(ctx, `SELECT tenant_id, client_id, client_secret, subscription_id
-FROM sf_owner_azure_credentials WHERE owner_username=$1`, scopeID).Scan(&tenantID, &clientID, &clientSecret, &subscriptionID)
+FROM sf_owner_azure_credentials WHERE owner_username=$1`, ownerID).Scan(&tenantID, &clientID, &clientSecret, &subscriptionID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -747,16 +747,16 @@ type gcpServiceAccount struct {
 	ServiceAccountJSON string
 }
 
-func getUserGCPCredentials(ctx context.Context, db *sql.DB, box *secretbox.Box, scopeID string) (*gcpServiceAccount, error) {
+func getUserGCPCredentials(ctx context.Context, db *sql.DB, box *secretbox.Box, ownerID string) (*gcpServiceAccount, error) {
 	if db == nil || box == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	scopeID = strings.TrimSpace(scopeID)
-	if scopeID == "" {
-		return nil, fmt.Errorf("scope id is required")
+	ownerID = strings.TrimSpace(ownerID)
+	if ownerID == "" {
+		return nil, fmt.Errorf("owner id is required")
 	}
 	var jsonBlob sql.NullString
-	err := db.QueryRowContext(ctx, `SELECT service_account_json FROM sf_owner_gcp_credentials WHERE owner_username=$1`, scopeID).Scan(&jsonBlob)
+	err := db.QueryRowContext(ctx, `SELECT service_account_json FROM sf_owner_gcp_credentials WHERE owner_username=$1`, ownerID).Scan(&jsonBlob)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil

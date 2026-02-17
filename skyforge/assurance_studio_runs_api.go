@@ -201,7 +201,7 @@ func (s *Service) CreateUserForwardNetworkAssuranceStudioRun(ctx context.Context
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid scenarioId").Err()
 		}
 
-		// Ensure scenario belongs to this scope+network.
+		// Ensure scenario belongs to this owner+network.
 		ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
 

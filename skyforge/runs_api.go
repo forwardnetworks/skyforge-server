@@ -37,14 +37,14 @@ func (s *Service) GetRuns(ctx context.Context, params *RunsListParams) (*RunsLis
 		}
 	}
 
-	scope, err := s.resolveUserForUser(ctx, user, personalOwnerRouteKey)
+	userContext, err := s.resolveUserForUser(ctx, user, personalOwnerRouteKey)
 	if err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	tasks, err := listTasks(ctx, s.db, scope.ID, limit)
+	tasks, err := listTasks(ctx, s.db, userContext.ID, limit)
 	if err != nil {
 		runErrors.Add(1)
 		log.Printf("listTasks: %v", err)
@@ -100,14 +100,14 @@ func (s *Service) CreateRun(ctx context.Context, req *RunRequest) (*RunsCreateRe
 	if req == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid payload").Err()
 	}
-	scopeKey := personalOwnerRouteKey
+	ownerKey := personalOwnerRouteKey
 	if req.OwnerUsername != nil {
-		scopeKey = strings.TrimSpace(*req.OwnerUsername)
-		if scopeKey == "" {
-			scopeKey = personalOwnerRouteKey
+		ownerKey = strings.TrimSpace(*req.OwnerUsername)
+		if ownerKey == "" {
+			ownerKey = personalOwnerRouteKey
 		}
 	}
-	if _, err := s.resolveUserForUser(ctx, user, scopeKey); err != nil {
+	if _, err := s.resolveUserForUser(ctx, user, ownerKey); err != nil {
 		return nil, err
 	}
 	return nil, errs.B().Code(errs.Unimplemented).Msg("direct run creation is not supported in native mode").Err()
@@ -137,7 +137,7 @@ func (s *Service) CancelRun(ctx context.Context, id int, params *RunsOutputParam
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	// Load task first to determine scope/deployment ownership.
+	// Load task first to determine owner/deployment ownership.
 	task, err := getTask(ctx, s.db, id)
 	if err != nil {
 		return nil, errs.B().Code(errs.NotFound).Msg("task not found").Err()
@@ -146,7 +146,7 @@ func (s *Service) CancelRun(ctx context.Context, id int, params *RunsOutputParam
 		return nil, errs.B().Code(errs.NotFound).Msg("task not found").Err()
 	}
 
-	// Enforce task ownership within current user's accessible scope.
+	// Enforce task ownership within current user's accessible owner context.
 	pc, err := s.ownerContextForUser(user, task.OwnerID)
 	if err != nil {
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()

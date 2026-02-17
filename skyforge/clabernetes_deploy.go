@@ -12,12 +12,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func clabernetesOwnerNamespace(scopeSlug string) string {
-	scopeSlug = strings.TrimSpace(scopeSlug)
-	if scopeSlug == "" {
+func clabernetesOwnerNamespace(ownerSlug string) string {
+	ownerSlug = strings.TrimSpace(ownerSlug)
+	if ownerSlug == "" {
 		return "ws"
 	}
-	return sanitizeKubeNameFallback("ws-"+scopeSlug, "ws")
+	return sanitizeKubeNameFallback("ws-"+ownerSlug, "ws")
 }
 
 func clabernetesTopologyName(labName string) string {

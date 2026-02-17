@@ -29,7 +29,7 @@ type netlabStatsPayload struct {
 //
 //encore:api public method=GET path=/api/netlab/stats
 func (s *Service) GetNetlabStats(ctx context.Context, _ *NetlabStatsParams) (*NetlabStatsResponse, error) {
-	// Deprecated: Skyforge is moving to a pure BYO-server model (scope-scoped servers only).
-	// Prefer scope health endpoints and any per-scope dashboards.
+	// Deprecated: Skyforge is moving to a pure BYO-server model (owner-level servers only).
+	// Prefer owner health endpoints and any per-user dashboards.
 	return &NetlabStatsResponse{Servers: []NetlabStatsServer{}}, nil
 }

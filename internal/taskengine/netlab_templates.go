@@ -151,7 +151,7 @@ func (e *Engine) resolveTemplateRepoForOwner(pc *ownerContext, source string, cu
 	branch := strings.TrimSpace(pc.owner.DefaultBranch)
 
 	switch strings.ToLower(strings.TrimSpace(source)) {
-	case "", "scope":
+	case "", "owner":
 		// default
 	case "blueprints", "blueprint":
 		ref := strings.TrimSpace(pc.owner.Blueprint)

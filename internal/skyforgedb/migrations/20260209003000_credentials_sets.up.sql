@@ -3,7 +3,7 @@
 CREATE TABLE IF NOT EXISTS sf_credentials (
   id text PRIMARY KEY,
   owner_username text REFERENCES sf_users(username) ON DELETE CASCADE,
-  workspace_id text REFERENCES sf_workspaces(id) ON DELETE CASCADE,
+  owner_id text REFERENCES sf_owner_contexts(id) ON DELETE CASCADE,
   provider text NOT NULL,
   name text NOT NULL,
 
@@ -28,16 +28,16 @@ CREATE TABLE IF NOT EXISTS sf_credentials (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
 
-  CONSTRAINT sf_credentials_scope_chk CHECK (
-    (owner_username IS NOT NULL AND workspace_id IS NULL) OR
-    (owner_username IS NULL AND workspace_id IS NOT NULL)
+  CONSTRAINT sf_credentials_owner_chk CHECK (
+    (owner_username IS NOT NULL AND owner_id IS NULL) OR
+    (owner_username IS NULL AND owner_id IS NOT NULL)
   )
 );
 
 CREATE INDEX IF NOT EXISTS sf_credentials_owner_provider_updated_idx
   ON sf_credentials(owner_username, provider, updated_at DESC);
-CREATE INDEX IF NOT EXISTS sf_credentials_workspace_provider_updated_idx
-  ON sf_credentials(workspace_id, provider, updated_at DESC);
+CREATE INDEX IF NOT EXISTS sf_credentials_owner_provider_updated_idx
+  ON sf_credentials(owner_id, provider, updated_at DESC);
 
 ALTER TABLE sf_user_forward_collectors
   ADD COLUMN IF NOT EXISTS credential_id text REFERENCES sf_credentials(id) ON DELETE RESTRICT;
@@ -45,7 +45,7 @@ ALTER TABLE sf_user_forward_collectors
 ALTER TABLE sf_policy_report_forward_network_credentials
   ADD COLUMN IF NOT EXISTS credential_id text REFERENCES sf_credentials(id) ON DELETE RESTRICT;
 
-ALTER TABLE sf_workspace_forward_credentials
+ALTER TABLE sf_owner_forward_credentials
   ADD COLUMN IF NOT EXISTS credential_id text REFERENCES sf_credentials(id) ON DELETE RESTRICT;
 
 -- Allow referencing sf_credentials without duplicating secrets in legacy columns.
@@ -59,7 +59,7 @@ ALTER TABLE sf_policy_report_forward_network_credentials
   ALTER COLUMN forward_username_enc DROP NOT NULL,
   ALTER COLUMN forward_password_enc DROP NOT NULL;
 
-ALTER TABLE sf_workspace_forward_credentials
+ALTER TABLE sf_owner_forward_credentials
   ALTER COLUMN base_url DROP NOT NULL,
   ALTER COLUMN username DROP NOT NULL,
   ALTER COLUMN password DROP NOT NULL;
@@ -67,7 +67,7 @@ ALTER TABLE sf_workspace_forward_credentials
 -- Backfill: create credential sets for existing rows and link via credential_id.
 -- We generate deterministic UUID-ish ids using md5 so the migration is idempotent without extensions.
 
--- sf_user_forward_collectors -> sf_credentials (user-scoped)
+-- sf_user_forward_collectors -> sf_credentials (user-ownerd)
 WITH src AS (
   SELECT
     ufc.id AS collector_config_id,
@@ -118,13 +118,13 @@ WHERE ufc.id = src.collector_config_id
   AND ufc.username = src.owner_username
   AND ufc.credential_id IS NULL;
 
--- sf_policy_report_forward_network_credentials -> sf_credentials (user-scoped)
+-- sf_policy_report_forward_network_credentials -> sf_credentials (user-ownerd)
 WITH src AS (
   SELECT
-    pr.workspace_id,
+    pr.owner_id,
     pr.username AS owner_username,
     pr.forward_network_id,
-    md5('forward:policy-reports:' || pr.workspace_id || ':' || pr.username || ':' || pr.forward_network_id) AS h,
+    md5('forward:policy-reports:' || pr.owner_id || ':' || pr.username || ':' || pr.forward_network_id) AS h,
     ('policy-reports ' || pr.forward_network_id) AS name,
     pr.base_url_enc AS base_url_enc,
     COALESCE(pr.skip_tls_verify, false) AS skip_tls_verify,
@@ -159,17 +159,17 @@ ins AS (
 UPDATE sf_policy_report_forward_network_credentials pr
 SET credential_id = substr(src.h,1,8)||'-'||substr(src.h,9,4)||'-'||substr(src.h,13,4)||'-'||substr(src.h,17,4)||'-'||substr(src.h,21,12)
 FROM src
-WHERE pr.workspace_id = src.workspace_id
+WHERE pr.owner_id = src.owner_id
   AND pr.username = src.owner_username
   AND pr.forward_network_id = src.forward_network_id
   AND pr.credential_id IS NULL;
 
--- sf_workspace_forward_credentials -> sf_credentials (workspace-scoped)
+-- sf_owner_forward_credentials -> sf_credentials (owner-ownerd)
 WITH src AS (
   SELECT
-    wfc.workspace_id,
-    md5('forward:workspace:' || wfc.workspace_id) AS h,
-    'workspace forward' AS name,
+    wfc.owner_id,
+    md5('forward:owner:' || wfc.owner_id) AS h,
+    'owner forward' AS name,
     wfc.base_url AS base_url_enc,
     wfc.username AS forward_username_enc,
     wfc.password AS forward_password_enc,
@@ -182,12 +182,12 @@ WITH src AS (
     wfc.jump_private_key AS jump_private_key_enc,
     wfc.jump_cert AS jump_cert_enc,
     wfc.updated_at AS updated_at
-  FROM sf_workspace_forward_credentials wfc
+  FROM sf_owner_forward_credentials wfc
   WHERE wfc.credential_id IS NULL
 ),
 ins AS (
   INSERT INTO sf_credentials (
-    id, workspace_id, provider, name,
+    id, owner_id, provider, name,
     base_url_enc, forward_username_enc, forward_password_enc,
     collector_id_enc, collector_username_enc,
     device_username_enc, device_password_enc,
@@ -196,7 +196,7 @@ ins AS (
   )
   SELECT
     substr(h,1,8)||'-'||substr(h,9,4)||'-'||substr(h,13,4)||'-'||substr(h,17,4)||'-'||substr(h,21,12) AS id,
-    workspace_id,
+    owner_id,
     'forward' AS provider,
     name,
     base_url_enc,
@@ -216,8 +216,8 @@ ins AS (
   ON CONFLICT (id) DO NOTHING
   RETURNING id
 )
-UPDATE sf_workspace_forward_credentials wfc
+UPDATE sf_owner_forward_credentials wfc
 SET credential_id = substr(src.h,1,8)||'-'||substr(src.h,9,4)||'-'||substr(src.h,13,4)||'-'||substr(src.h,17,4)||'-'||substr(src.h,21,12)
 FROM src
-WHERE wfc.workspace_id = src.workspace_id
+WHERE wfc.owner_id = src.owner_id
   AND wfc.credential_id IS NULL;

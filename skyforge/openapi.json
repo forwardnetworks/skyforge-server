@@ -4979,239 +4979,6 @@
         ],
         "type": "object"
       },
-      "skyforge.ScopeDeployment": {
-        "properties": {
-          "activeTaskId": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "activeTaskStatus": {
-            "type": "string"
-          },
-          "config": {
-            "$ref": "#/components/schemas/skyforge.JSONMap"
-          },
-          "createdAt": {
-            "type": "string"
-          },
-          "createdBy": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "lastFinishedAt": {
-            "type": "string"
-          },
-          "lastStartedAt": {
-            "type": "string"
-          },
-          "lastStatus": {
-            "type": "string"
-          },
-          "lastTaskId": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "lastTaskOwnerId": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "name": {
-            "type": "string"
-          },
-          "ownerUsername": {
-            "type": "string"
-          },
-          "queueDepth": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "type": {
-            "type": "string"
-          },
-          "updatedAt": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "ownerUsername",
-          "name",
-          "type",
-          "config",
-          "createdBy",
-          "createdAt",
-          "updatedAt",
-          "lastTaskOwnerId",
-          "lastTaskId",
-          "lastStatus",
-          "lastStartedAt",
-          "lastFinishedAt",
-          "activeTaskId",
-          "activeTaskStatus",
-          "queueDepth"
-        ],
-        "type": "object"
-      },
-      "skyforge.ScopeEveServerConfig": {
-        "properties": {
-          "apiPassword": {
-            "type": "string"
-          },
-          "apiUrl": {
-            "type": "string"
-          },
-          "apiUser": {
-            "type": "string"
-          },
-          "hasPassword": {
-            "type": "boolean"
-          },
-          "id": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "skipTlsVerify": {
-            "type": "boolean"
-          },
-          "webUrl": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "apiUrl",
-          "webUrl",
-          "skipTlsVerify",
-          "apiUser",
-          "apiPassword",
-          "hasPassword"
-        ],
-        "type": "object"
-      },
-      "skyforge.ScopeForwardCollector": {
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "username": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "username"
-        ],
-        "type": "object"
-      },
-      "skyforge.ScopeNetlabServerConfig": {
-        "properties": {
-          "apiInsecure": {
-            "type": "boolean"
-          },
-          "apiPassword": {
-            "type": "string"
-          },
-          "apiToken": {
-            "type": "string"
-          },
-          "apiUrl": {
-            "type": "string"
-          },
-          "apiUser": {
-            "type": "string"
-          },
-          "hasPassword": {
-            "type": "boolean"
-          },
-          "id": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "apiUrl",
-          "apiInsecure",
-          "apiUser",
-          "apiPassword",
-          "apiToken",
-          "hasPassword"
-        ],
-        "type": "object"
-      },
-      "skyforge.ScopePodContainer": {
-        "properties": {
-          "image": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "ready": {
-            "type": "boolean"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "restartCount": {
-            "format": "int32",
-            "maximum": 2147483647,
-            "minimum": -2147483648,
-            "type": "integer"
-          },
-          "state": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "image",
-          "ready",
-          "restartCount",
-          "state",
-          "reason",
-          "message"
-        ],
-        "type": "object"
-      },
-      "skyforge.ScopeVariableGroup": {
-        "properties": {
-          "id": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "name": {
-            "type": "string"
-          },
-          "variables": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "type": "object"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "variables"
-        ],
-        "type": "object"
-      },
       "skyforge.SkyforgeUserContext": {
         "description": "NOTE: This type must live in the service package (not a type alias to an internal package) to satisfy Encore's API schema rules.\n",
         "properties": {
@@ -5895,6 +5662,81 @@
         ],
         "type": "object"
       },
+      "skyforge.UserDeployment": {
+        "properties": {
+          "activeTaskId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "activeTaskStatus": {
+            "type": "string"
+          },
+          "config": {
+            "$ref": "#/components/schemas/skyforge.JSONMap"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastFinishedAt": {
+            "type": "string"
+          },
+          "lastStartedAt": {
+            "type": "string"
+          },
+          "lastStatus": {
+            "type": "string"
+          },
+          "lastTaskId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "lastTaskOwnerId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ownerUsername": {
+            "type": "string"
+          },
+          "queueDepth": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "type": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ownerUsername",
+          "name",
+          "type",
+          "config",
+          "createdBy",
+          "createdAt",
+          "updatedAt",
+          "lastTaskOwnerId",
+          "lastTaskId",
+          "lastStatus",
+          "lastStartedAt",
+          "lastFinishedAt",
+          "activeTaskId",
+          "activeTaskStatus",
+          "queueDepth"
+        ],
+        "type": "object"
+      },
       "skyforge.UserEnvVar": {
         "properties": {
           "key": {
@@ -5962,6 +5804,25 @@
           "sshUser",
           "sshKey",
           "hasSshKey"
+        ],
+        "type": "object"
+      },
+      "skyforge.UserForwardCollector": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "username"
         ],
         "type": "object"
       },
@@ -6056,6 +5917,44 @@
           "apiPassword",
           "apiToken",
           "hasPassword"
+        ],
+        "type": "object"
+      },
+      "skyforge.UserPodContainer": {
+        "properties": {
+          "image": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "restartCount": {
+            "format": "int32",
+            "maximum": 2147483647,
+            "minimum": -2147483648,
+            "type": "integer"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "image",
+          "ready",
+          "restartCount",
+          "state",
+          "reason",
+          "message"
         ],
         "type": "object"
       },
@@ -8209,7 +8108,7 @@
               "application/json": {
                 "schema": {
                   "properties": {
-                    "deletedScopes": {
+                    "deletedOwners": {
                       "format": "int64",
                       "type": "integer"
                     },
@@ -8225,7 +8124,7 @@
                   },
                   "required": [
                     "status",
-                    "deletedScopes",
+                    "deletedOwners",
                     "warnings"
                   ],
                   "type": "object"
@@ -9582,7 +9481,7 @@
                     },
                     "deployments": {
                       "items": {
-                        "$ref": "#/components/schemas/skyforge.ScopeDeployment"
+                        "$ref": "#/components/schemas/skyforge.UserDeployment"
                       },
                       "type": "array"
                     },
@@ -9631,7 +9530,7 @@
                   "properties": {
                     "deployments": {
                       "items": {
-                        "$ref": "#/components/schemas/skyforge.ScopeDeployment"
+                        "$ref": "#/components/schemas/skyforge.UserDeployment"
                       },
                       "type": "array"
                     },
@@ -9823,7 +9722,7 @@
                 "schema": {
                   "properties": {
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.ScopeDeployment"
+                      "$ref": "#/components/schemas/skyforge.UserDeployment"
                     },
                     "note": {
                       "type": "string"
@@ -9905,7 +9804,7 @@
                 "schema": {
                   "properties": {
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.ScopeDeployment"
+                      "$ref": "#/components/schemas/skyforge.UserDeployment"
                     },
                     "note": {
                       "type": "string"
@@ -9965,7 +9864,7 @@
                 "schema": {
                   "properties": {
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.ScopeDeployment"
+                      "$ref": "#/components/schemas/skyforge.UserDeployment"
                     },
                     "note": {
                       "type": "string"
@@ -10053,7 +9952,7 @@
                 "schema": {
                   "properties": {
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.ScopeDeployment"
+                      "$ref": "#/components/schemas/skyforge.UserDeployment"
                     },
                     "note": {
                       "type": "string"
@@ -10128,7 +10027,7 @@
                 "schema": {
                   "properties": {
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.ScopeDeployment"
+                      "$ref": "#/components/schemas/skyforge.UserDeployment"
                     },
                     "ownerUsername": {
                       "type": "string"
@@ -10321,7 +10220,7 @@
                 "schema": {
                   "properties": {
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.ScopeDeployment"
+                      "$ref": "#/components/schemas/skyforge.UserDeployment"
                     },
                     "ownerUsername": {
                       "type": "string"
@@ -11049,7 +10948,7 @@
                 "schema": {
                   "properties": {
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.ScopeDeployment"
+                      "$ref": "#/components/schemas/skyforge.UserDeployment"
                     },
                     "ownerUsername": {
                       "type": "string"
@@ -11250,7 +11149,7 @@
                       "$ref": "#/components/schemas/skyforge.ContainerlabInfo"
                     },
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.ScopeDeployment"
+                      "$ref": "#/components/schemas/skyforge.UserDeployment"
                     },
                     "forwardNetworkId": {
                       "type": "string"
@@ -11917,7 +11816,7 @@
                   "properties": {
                     "containers": {
                       "items": {
-                        "$ref": "#/components/schemas/skyforge.ScopePodContainer"
+                        "$ref": "#/components/schemas/skyforge.UserPodContainer"
                       },
                       "type": "array"
                     },
@@ -12573,7 +12472,7 @@
                 "schema": {
                   "properties": {
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.ScopeDeployment"
+                      "$ref": "#/components/schemas/skyforge.UserDeployment"
                     },
                     "ownerUsername": {
                       "type": "string"
@@ -12623,7 +12522,7 @@
                 "schema": {
                   "properties": {
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.ScopeDeployment"
+                      "$ref": "#/components/schemas/skyforge.UserDeployment"
                     },
                     "ownerUsername": {
                       "type": "string"
@@ -13074,7 +12973,7 @@
                 "schema": {
                   "properties": {
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.ScopeDeployment"
+                      "$ref": "#/components/schemas/skyforge.UserDeployment"
                     },
                     "ownerUsername": {
                       "type": "string"
@@ -13314,18 +13213,14 @@
               "application/json": {
                 "schema": {
                   "properties": {
-                    "ownerUsername": {
-                      "type": "string"
-                    },
                     "servers": {
                       "items": {
-                        "$ref": "#/components/schemas/skyforge.ScopeEveServerConfig"
+                        "$ref": "#/components/schemas/skyforge.UserEveServerConfig"
                       },
                       "type": "array"
                     }
                   },
                   "required": [
-                    "ownerUsername",
                     "servers"
                   ],
                   "type": "object"
@@ -13359,6 +13254,9 @@
                   "hasPassword": {
                     "type": "boolean"
                   },
+                  "hasSshKey": {
+                    "type": "boolean"
+                  },
                   "id": {
                     "type": "string"
                   },
@@ -13367,6 +13265,15 @@
                   },
                   "skipTlsVerify": {
                     "type": "boolean"
+                  },
+                  "sshHost": {
+                    "type": "string"
+                  },
+                  "sshKey": {
+                    "type": "string"
+                  },
+                  "sshUser": {
+                    "type": "string"
                   },
                   "webUrl": {
                     "type": "string"
@@ -13380,7 +13287,11 @@
                   "skipTlsVerify",
                   "apiUser",
                   "apiPassword",
-                  "hasPassword"
+                  "hasPassword",
+                  "sshHost",
+                  "sshUser",
+                  "sshKey",
+                  "hasSshKey"
                 ],
                 "type": "object"
               }
@@ -13405,6 +13316,9 @@
                     "hasPassword": {
                       "type": "boolean"
                     },
+                    "hasSshKey": {
+                      "type": "boolean"
+                    },
                     "id": {
                       "type": "string"
                     },
@@ -13413,6 +13327,15 @@
                     },
                     "skipTlsVerify": {
                       "type": "boolean"
+                    },
+                    "sshHost": {
+                      "type": "string"
+                    },
+                    "sshKey": {
+                      "type": "string"
+                    },
+                    "sshUser": {
+                      "type": "string"
                     },
                     "webUrl": {
                       "type": "string"
@@ -13426,7 +13349,11 @@
                     "skipTlsVerify",
                     "apiUser",
                     "apiPassword",
-                    "hasPassword"
+                    "hasPassword",
+                    "sshHost",
+                    "sshUser",
+                    "sshKey",
+                    "hasSshKey"
                   ],
                   "type": "object"
                 }
@@ -18289,7 +18216,7 @@
                   "properties": {
                     "collectors": {
                       "items": {
-                        "$ref": "#/components/schemas/skyforge.ScopeForwardCollector"
+                        "$ref": "#/components/schemas/skyforge.UserForwardCollector"
                       },
                       "type": "array"
                     }
@@ -18608,18 +18535,14 @@
               "application/json": {
                 "schema": {
                   "properties": {
-                    "ownerUsername": {
-                      "type": "string"
-                    },
                     "servers": {
                       "items": {
-                        "$ref": "#/components/schemas/skyforge.ScopeNetlabServerConfig"
+                        "$ref": "#/components/schemas/skyforge.UserNetlabServerConfig"
                       },
                       "type": "array"
                     }
                   },
                   "required": [
-                    "ownerUsername",
                     "servers"
                   ],
                   "type": "object"
@@ -27222,16 +27145,12 @@
                   "properties": {
                     "groups": {
                       "items": {
-                        "$ref": "#/components/schemas/skyforge.ScopeVariableGroup"
+                        "$ref": "#/components/schemas/skyforge.UserVariableGroup"
                       },
                       "type": "array"
-                    },
-                    "ownerUsername": {
-                      "type": "string"
                     }
                   },
                   "required": [
-                    "ownerUsername",
                     "groups"
                   ],
                   "type": "object"
@@ -27335,16 +27254,12 @@
                   "properties": {
                     "groups": {
                       "items": {
-                        "$ref": "#/components/schemas/skyforge.ScopeVariableGroup"
+                        "$ref": "#/components/schemas/skyforge.UserVariableGroup"
                       },
                       "type": "array"
-                    },
-                    "ownerUsername": {
-                      "type": "string"
                     }
                   },
                   "required": [
-                    "ownerUsername",
                     "groups"
                   ],
                   "type": "object"

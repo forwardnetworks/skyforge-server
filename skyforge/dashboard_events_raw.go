@@ -17,7 +17,6 @@ import (
 type dashboardSnapshot struct {
 	RefreshedAt  string                 `json:"refreshedAt"`
 	Contexts     []SkyforgeUserContext  `json:"contexts"`
-	Scopes       []SkyforgeUserContext  `json:"-"` // legacy internal field
 	Deployments  []UserDeployment       `json:"deployments"`
 	Runs         []JSONMap              `json:"runs"`
 	TemplatesAt  string                 `json:"templatesIndexUpdatedAt,omitempty"`
@@ -164,50 +163,50 @@ func loadDashboardSnapshot(ctx context.Context, svc *Service, claims *SessionCla
 	}
 
 	if _, err := svc.ensureDefaultOwnerContext(ctx, user); err != nil {
-		log.Printf("default scope ensure: %v", err)
+		log.Printf("default owner context ensure: %v", err)
 	}
-	scopes, err := svc.scopeStore.load()
+	contexts, err := svc.ownerContextStore.load()
 	if err != nil {
 		return nil, err
 	}
 
 	// Best-effort sync group membership like GetUsers does.
 	changed := false
-	changedScopes := make([]SkyforgeUserContext, 0)
-	for i := range scopes {
-		if role, ok := syncGroupMembershipForUser(&scopes[i], claims); ok {
+	changedContexts := make([]SkyforgeUserContext, 0)
+	for i := range contexts {
+		if role, ok := syncGroupMembershipForUser(&contexts[i], claims); ok {
 			changed = true
-			changedScopes = append(changedScopes, scopes[i])
-			log.Printf("context group sync: %s -> %s (%s)", claims.Username, scopes[i].Slug, role)
+			changedContexts = append(changedContexts, contexts[i])
+			log.Printf("context group sync: %s -> %s (%s)", claims.Username, contexts[i].Slug, role)
 		}
 	}
 	if changed {
 		updatedAll := true
-		for _, w := range changedScopes {
-			if err := svc.scopeStore.upsert(w); err != nil {
+		for _, w := range changedContexts {
+			if err := svc.ownerContextStore.upsert(w); err != nil {
 				updatedAll = false
 				log.Printf("context upsert after group sync (%s): %v", w.ID, err)
 			}
 		}
 		if updatedAll {
-			for _, w := range changedScopes {
-				syncGiteaCollaboratorsForScope(svc.cfg, w)
+			for _, w := range changedContexts {
+				syncGiteaCollaboratorsForOwnerContext(svc.cfg, w)
 			}
 		}
 	}
 
-	filtered := make([]SkyforgeUserContext, 0, len(scopes))
-	for _, w := range scopes {
+	filtered := make([]SkyforgeUserContext, 0, len(contexts))
+	for _, w := range contexts {
 		if ownerAccessLevelForClaims(svc.cfg, w, claims) != "none" {
 			filtered = append(filtered, w)
 		}
 	}
-	scopes = filtered
-	sort.Slice(scopes, func(i, j int) bool { return scopes[i].Name < scopes[j].Name })
+	contexts = filtered
+	sort.Slice(contexts, func(i, j int) bool { return contexts[i].Name < contexts[j].Name })
 
 	deployments := make([]UserDeployment, 0, 32)
 	runs := make([]JSONMap, 0, 64)
-	for _, w := range scopes {
+	for _, w := range contexts {
 		{
 			rows, err := listDeploymentsForDashboard(ctx, svc.db, w.ID)
 			if err == nil {
@@ -258,8 +257,7 @@ func loadDashboardSnapshot(ctx context.Context, svc *Service, claims *SessionCla
 
 	return &dashboardSnapshot{
 		RefreshedAt:  time.Now().UTC().Format(time.RFC3339),
-		Contexts:     scopes,
-		Scopes:       scopes,
+		Contexts:     contexts,
 		Deployments:  deployments,
 		Runs:         runs,
 		TemplatesAt:  templatesAt,

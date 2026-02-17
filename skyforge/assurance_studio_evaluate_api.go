@@ -178,7 +178,7 @@ func (s *Service) assuranceStudioForwardClient(ctx context.Context, ownerID, use
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward credentials").Err()
 		}
 	}
-	// Final: scope-level Forward credentials.
+	// Final: owner-level Forward credentials.
 	if fwdCfg == nil {
 		fwdCfg, err = s.forwardConfigForOwner(ctx, ownerID)
 		if err != nil {

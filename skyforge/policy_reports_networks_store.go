@@ -60,7 +60,7 @@ INSERT INTO sf_policy_report_forward_networks (
 }
 
 // upsertUserPolicyReportForwardNetwork ensures the current user has a saved network record
-// for the given Forward network id (not tied to a scope).
+// for the given Forward network id (not tied to an owner context).
 func upsertUserPolicyReportForwardNetwork(ctx context.Context, db *sql.DB, ownerUsername string, actor string, req *PolicyReportCreateForwardNetworkRequest) (*PolicyReportForwardNetwork, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")

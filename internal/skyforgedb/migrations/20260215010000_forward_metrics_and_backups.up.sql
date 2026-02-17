@@ -4,7 +4,7 @@
 
 CREATE TABLE IF NOT EXISTS sf_forward_metrics_snapshots (
   id bigserial PRIMARY KEY,
-  workspace_id text REFERENCES sf_workspaces(id) ON DELETE CASCADE,
+  owner_id text REFERENCES sf_owner_contexts(id) ON DELETE CASCADE,
   owner_username text REFERENCES sf_users(username) ON UPDATE CASCADE,
   network_ref uuid REFERENCES sf_policy_report_forward_networks(id) ON DELETE CASCADE,
   forward_network_id text NOT NULL,
@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS sf_forward_metrics_snapshots (
 );
 
 CREATE INDEX IF NOT EXISTS sf_forward_metrics_snapshots_ws_network_collected_idx
-  ON sf_forward_metrics_snapshots(workspace_id, forward_network_id, collected_at DESC);
+  ON sf_forward_metrics_snapshots(owner_id, forward_network_id, collected_at DESC);
 
 CREATE INDEX IF NOT EXISTS sf_forward_metrics_snapshots_owner_network_collected_idx
   ON sf_forward_metrics_snapshots(owner_username, forward_network_id, collected_at DESC)

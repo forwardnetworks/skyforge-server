@@ -49,16 +49,16 @@ func (s *Service) loadOwnerContextByKey(ownerKey string) ([]SkyforgeUserContext,
 	if ownerKey == "" {
 		return nil, -1, SkyforgeUserContext{}, errors.New("owner username is required")
 	}
-	scopes, err := s.scopeStore.load()
+	contexts, err := s.ownerContextStore.load()
 	if err != nil {
 		return nil, -1, SkyforgeUserContext{}, err
 	}
-	for i, w := range scopes {
+	for i, w := range contexts {
 		if w.ID == ownerKey || w.Slug == ownerKey {
-			return scopes, i, w, nil
+			return contexts, i, w, nil
 		}
 	}
-	return scopes, -1, SkyforgeUserContext{}, errOwnerNotFound
+	return contexts, -1, SkyforgeUserContext{}, errOwnerNotFound
 }
 
 type ownerContext struct {
@@ -68,8 +68,8 @@ type ownerContext struct {
 	userSettings *UserSettingsResponse
 }
 
-func isPersonalOwnerKey(scopeKey string) bool {
-	key := strings.ToLower(strings.TrimSpace(scopeKey))
+func isPersonalOwnerKey(ownerKey string) bool {
+	key := strings.ToLower(strings.TrimSpace(ownerKey))
 	return key == "me" || key == "self" || key == "personal"
 }
 
@@ -147,7 +147,7 @@ func (s *Service) ownerContextForUser(user *AuthUser, ownerKey string) (*ownerCo
 		return nil, errs.B().Code(errs.NotFound).Msg("personal user context not found").Err()
 	}
 	ownerKey = def.ID
-	_, _, scope, err := s.loadOwnerContextByKey(ownerKey)
+	_, _, userContext, err := s.loadOwnerContextByKey(ownerKey)
 	if err != nil {
 		if errors.Is(err, errOwnerNotFound) {
 			return nil, errs.B().Code(errs.NotFound).Msg("user context not found").Err()
@@ -157,7 +157,7 @@ func (s *Service) ownerContextForUser(user *AuthUser, ownerKey string) (*ownerCo
 		}
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load user contexts").Err()
 	}
-	access := ownerAccessLevelForClaims(s.cfg, scope, claims)
+	access := ownerAccessLevelForClaims(s.cfg, userContext, claims)
 	if access == "none" {
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
@@ -183,7 +183,7 @@ func (s *Service) ownerContextForUser(user *AuthUser, ownerKey string) (*ownerCo
 		}
 	}
 	return &ownerContext{
-		context:      scope,
+		context:      userContext,
 		access:       access,
 		claims:       claims,
 		userSettings: userSettings,

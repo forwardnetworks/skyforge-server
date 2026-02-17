@@ -28,34 +28,34 @@ func loadUsersSnapshot(ctx context.Context, svc *Service, claims *SessionClaims,
 	}
 
 	if _, err := svc.ensureDefaultOwnerContext(ctx, user); err != nil {
-		log.Printf("default scope ensure: %v", err)
+		log.Printf("default owner context ensure: %v", err)
 	}
-	scopes, err := svc.scopeStore.load()
+	contexts, err := svc.ownerContextStore.load()
 	if err != nil {
 		return nil, err
 	}
 
 	// Best-effort sync group membership like GetUsers does.
 	changed := false
-	changedScopes := make([]SkyforgeUserContext, 0)
-	for i := range scopes {
-		if role, ok := syncGroupMembershipForUser(&scopes[i], claims); ok {
+	changedContexts := make([]SkyforgeUserContext, 0)
+	for i := range contexts {
+		if role, ok := syncGroupMembershipForUser(&contexts[i], claims); ok {
 			changed = true
-			changedScopes = append(changedScopes, scopes[i])
-			log.Printf("context group sync: %s -> %s (%s)", claims.Username, scopes[i].Slug, role)
+			changedContexts = append(changedContexts, contexts[i])
+			log.Printf("context group sync: %s -> %s (%s)", claims.Username, contexts[i].Slug, role)
 		}
 	}
 	if changed {
 		updatedAll := true
-		for _, w := range changedScopes {
-			if err := svc.scopeStore.upsert(w); err != nil {
+		for _, w := range changedContexts {
+			if err := svc.ownerContextStore.upsert(w); err != nil {
 				updatedAll = false
-				log.Printf("scopes upsert after group sync (%s): %v", w.ID, err)
+				log.Printf("contexts upsert after group sync (%s): %v", w.ID, err)
 			}
 		}
 		if updatedAll {
-			for _, w := range changedScopes {
-				syncGiteaCollaboratorsForScope(svc.cfg, w)
+			for _, w := range changedContexts {
+				syncGiteaCollaboratorsForOwnerContext(svc.cfg, w)
 			}
 			if svc.db != nil {
 				_ = notifyUsersUpdatePG(ctx, svc.db, "*")
@@ -65,20 +65,20 @@ func loadUsersSnapshot(ctx context.Context, svc *Service, claims *SessionClaims,
 	}
 
 	if !all {
-		filtered := make([]SkyforgeUserContext, 0, len(scopes))
-		for _, w := range scopes {
+		filtered := make([]SkyforgeUserContext, 0, len(contexts))
+		for _, w := range contexts {
 			if ownerAccessLevelForClaims(svc.cfg, w, claims) != "none" {
 				filtered = append(filtered, w)
 			}
 		}
-		scopes = filtered
+		contexts = filtered
 	}
-	sort.Slice(scopes, func(i, j int) bool { return scopes[i].Name < scopes[j].Name })
+	sort.Slice(contexts, func(i, j int) bool { return contexts[i].Name < contexts[j].Name })
 
-	return scopes, nil
+	return contexts, nil
 }
 
-func (s *Service) scopesEvents(w http.ResponseWriter, req *http.Request) {
+func (s *Service) usersEvents(w http.ResponseWriter, req *http.Request) {
 	if s == nil || s.db == nil || s.sessionManager == nil {
 		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
 		return
@@ -148,14 +148,14 @@ func (s *Service) scopesEvents(w http.ResponseWriter, req *http.Request) {
 
 	for {
 		if reload {
-			scopes, err := loadUsersSnapshot(ctx, s, claims, all)
+			contexts, err := loadUsersSnapshot(ctx, s, claims, all)
 			if err != nil {
 				stream.comment("retry")
 				stream.flush()
 			} else {
 				payloadBytes, _ := json.Marshal(map[string]any{
 					"user":        claims.Username,
-					"contexts":    scopes,
+					"contexts":    contexts,
 					"refreshedAt": time.Now().UTC().Format(time.RFC3339),
 				})
 				payload := strings.TrimSpace(string(payloadBytes))
@@ -181,12 +181,10 @@ func (s *Service) scopesEvents(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-// UsersEvents streams the personal scope list as Server-Sent Events (SSE).
+// UsersEvents streams the personal context list as Server-Sent Events (SSE).
 //
 // Query params:
 // - all=true (admin only; default false)
-//
-// Deprecated public route removed: /api/scopes-events
 func (s *Service) UsersEvents(w http.ResponseWriter, req *http.Request) {
-	s.scopesEvents(w, req)
+	s.usersEvents(w, req)
 }

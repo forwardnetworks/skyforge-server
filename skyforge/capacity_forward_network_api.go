@@ -576,7 +576,7 @@ func (s *Service) PostUserForwardNetworkCapacityUnhealthyInterfaces(ctx context.
 	return &CapacityPerfProxyResponse{Body: body}, nil
 }
 
-// ---- storage helpers (forward network scope) ----
+// ---- storage helpers (forward network owner context) ----
 
 func loadLatestCapacityRollupsForForwardNetwork(ctx context.Context, db *sql.DB, ownerID, forwardNetworkID string) (time.Time, []CapacityRollupRow, error) {
 	if db == nil {

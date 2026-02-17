@@ -362,7 +362,7 @@ func (s *Service) CreateUserForwardCollectorConfig(ctx context.Context, req *Cre
 	}
 
 	box := newSecretBox(s.cfg.SessionSecret)
-	// Keep request-scoped work bounded, but do NOT let a short timeout abort the
+	// Keep request-local work bounded, but do NOT let a short timeout abort the
 	// in-cluster collector deploy (PVC provision/pod pulls can legitimately take
 	// a few minutes).
 	ctxReq, cancelReq := context.WithTimeout(ctx, 90*time.Second)

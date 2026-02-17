@@ -33,25 +33,25 @@ END$$;
 
 DO $$
 BEGIN
-  IF to_regclass('public.sf_owner_members') IS NOT NULL AND to_regclass('public.sf_workspace_members') IS NULL THEN
-    EXECUTE 'ALTER TABLE public.sf_owner_members RENAME TO sf_workspace_members';
+  IF to_regclass('public.sf_owner_members') IS NOT NULL AND to_regclass('public.sf_owner_members') IS NULL THEN
+    EXECUTE 'ALTER TABLE public.sf_owner_members RENAME TO sf_owner_members';
   END IF;
-  IF to_regclass('public.sf_owner_groups') IS NOT NULL AND to_regclass('public.sf_workspace_groups') IS NULL THEN
-    EXECUTE 'ALTER TABLE public.sf_owner_groups RENAME TO sf_workspace_groups';
+  IF to_regclass('public.sf_owner_groups') IS NOT NULL AND to_regclass('public.sf_owner_groups') IS NULL THEN
+    EXECUTE 'ALTER TABLE public.sf_owner_groups RENAME TO sf_owner_groups';
   END IF;
-  IF to_regclass('public.sf_owner_forward_credentials') IS NOT NULL AND to_regclass('public.sf_workspace_forward_credentials') IS NULL THEN
-    EXECUTE 'ALTER TABLE public.sf_owner_forward_credentials RENAME TO sf_workspace_forward_credentials';
+  IF to_regclass('public.sf_owner_forward_credentials') IS NOT NULL AND to_regclass('public.sf_owner_forward_credentials') IS NULL THEN
+    EXECUTE 'ALTER TABLE public.sf_owner_forward_credentials RENAME TO sf_owner_forward_credentials';
   END IF;
-  IF to_regclass('public.sf_owner_aws_static_credentials') IS NOT NULL AND to_regclass('public.sf_workspace_aws_static_credentials') IS NULL THEN
-    EXECUTE 'ALTER TABLE public.sf_owner_aws_static_credentials RENAME TO sf_workspace_aws_static_credentials';
+  IF to_regclass('public.sf_owner_aws_static_credentials') IS NOT NULL AND to_regclass('public.sf_owner_aws_static_credentials') IS NULL THEN
+    EXECUTE 'ALTER TABLE public.sf_owner_aws_static_credentials RENAME TO sf_owner_aws_static_credentials';
   END IF;
-  IF to_regclass('public.sf_owner_azure_credentials') IS NOT NULL AND to_regclass('public.sf_workspace_azure_credentials') IS NULL THEN
-    EXECUTE 'ALTER TABLE public.sf_owner_azure_credentials RENAME TO sf_workspace_azure_credentials';
+  IF to_regclass('public.sf_owner_azure_credentials') IS NOT NULL AND to_regclass('public.sf_owner_azure_credentials') IS NULL THEN
+    EXECUTE 'ALTER TABLE public.sf_owner_azure_credentials RENAME TO sf_owner_azure_credentials';
   END IF;
-  IF to_regclass('public.sf_owner_gcp_credentials') IS NOT NULL AND to_regclass('public.sf_workspace_gcp_credentials') IS NULL THEN
-    EXECUTE 'ALTER TABLE public.sf_owner_gcp_credentials RENAME TO sf_workspace_gcp_credentials';
+  IF to_regclass('public.sf_owner_gcp_credentials') IS NOT NULL AND to_regclass('public.sf_owner_gcp_credentials') IS NULL THEN
+    EXECUTE 'ALTER TABLE public.sf_owner_gcp_credentials RENAME TO sf_owner_gcp_credentials';
   END IF;
-  IF to_regclass('public.sf_owner_variable_groups') IS NOT NULL AND to_regclass('public.sf_workspace_variable_groups') IS NULL THEN
-    EXECUTE 'ALTER TABLE public.sf_owner_variable_groups RENAME TO sf_workspace_variable_groups';
+  IF to_regclass('public.sf_owner_variable_groups') IS NOT NULL AND to_regclass('public.sf_owner_variable_groups') IS NULL THEN
+    EXECUTE 'ALTER TABLE public.sf_owner_variable_groups RENAME TO sf_owner_variable_groups';
   END IF;
 END$$;

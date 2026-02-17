@@ -34,7 +34,7 @@ type ContextDeleteItem struct {
 
 // DeleteOwnerContext deletes a user context and its backing resources.
 //
-// Deprecated public route removed: /api/scopes/:id.
+// Deprecated public route removed.
 func (s *Service) DeleteOwnerContext(ctx context.Context, id string, params *ContextDeleteParams) (*ContextDeleteResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {

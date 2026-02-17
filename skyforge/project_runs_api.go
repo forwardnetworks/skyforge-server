@@ -951,11 +951,11 @@ func (s *Service) RunUserEveNg(ctx context.Context, id string, req *UserEveNgRun
 	}, nil
 }
 
-func populateAWSAuthEnv(ctx context.Context, cfg Config, db *sql.DB, store awsSSOTokenStore, scope SkyforgeUserContext, username string, env map[string]any) error {
-	switch strings.ToLower(strings.TrimSpace(scope.AWSAuthMethod)) {
+func populateAWSAuthEnv(ctx context.Context, cfg Config, db *sql.DB, store awsSSOTokenStore, userCtx SkyforgeUserContext, username string, env map[string]any) error {
+	switch strings.ToLower(strings.TrimSpace(userCtx.AWSAuthMethod)) {
 	case "sso":
-		accountID := strings.TrimSpace(scope.AWSAccountID)
-		roleName := strings.TrimSpace(scope.AWSRoleName)
+		accountID := strings.TrimSpace(userCtx.AWSAccountID)
+		roleName := strings.TrimSpace(userCtx.AWSRoleName)
 		if accountID == "" || roleName == "" {
 			return errs.B().Code(errs.InvalidArgument).Msg("user context is missing awsAccountId/awsRoleName").Err()
 		}
@@ -985,7 +985,7 @@ func populateAWSAuthEnv(ctx context.Context, cfg Config, db *sql.DB, store awsSS
 		}
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
-		rec, err := getOwnerAWSStaticCredentials(ctx, db, newSecretBox(cfg.SessionSecret), scope.ID)
+		rec, err := getOwnerAWSStaticCredentials(ctx, db, newSecretBox(cfg.SessionSecret), userCtx.ID)
 		if err != nil {
 			log.Printf("aws static get: %v", err)
 			return errs.B().Code(errs.Unavailable).Msg("aws static credentials unavailable").Err()
@@ -1004,8 +1004,8 @@ func populateAWSAuthEnv(ctx context.Context, cfg Config, db *sql.DB, store awsSS
 	return nil
 }
 
-func shouldUseAWS(scope SkyforgeUserContext) bool {
-	authMethod := strings.ToLower(strings.TrimSpace(scope.AWSAuthMethod))
+func shouldUseAWS(userCtx SkyforgeUserContext) bool {
+	authMethod := strings.ToLower(strings.TrimSpace(userCtx.AWSAuthMethod))
 	if authMethod == "" {
 		authMethod = "sso"
 	}
@@ -1013,19 +1013,19 @@ func shouldUseAWS(scope SkyforgeUserContext) bool {
 	case "static":
 		return true
 	case "sso":
-		return strings.TrimSpace(scope.AWSAccountID) != "" && strings.TrimSpace(scope.AWSRoleName) != ""
+		return strings.TrimSpace(userCtx.AWSAccountID) != "" && strings.TrimSpace(userCtx.AWSRoleName) != ""
 	default:
 		return false
 	}
 }
 
-func populateAzureAuthEnv(ctx context.Context, cfg Config, db *sql.DB, scope SkyforgeUserContext, env map[string]any) error {
+func populateAzureAuthEnv(ctx context.Context, cfg Config, db *sql.DB, userCtx SkyforgeUserContext, env map[string]any) error {
 	if db == nil {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	rec, err := getOwnerAzureCredentials(ctx, db, newSecretBox(cfg.SessionSecret), scope.ID)
+	rec, err := getOwnerAzureCredentials(ctx, db, newSecretBox(cfg.SessionSecret), userCtx.ID)
 	if err != nil {
 		log.Printf("azure creds get: %v", err)
 		return errs.B().Code(errs.Unavailable).Msg("azure credentials unavailable").Err()
@@ -1042,13 +1042,13 @@ func populateAzureAuthEnv(ctx context.Context, cfg Config, db *sql.DB, scope Sky
 	return nil
 }
 
-func populateGCPAuthEnv(ctx context.Context, cfg Config, db *sql.DB, scope SkyforgeUserContext, env map[string]any) error {
+func populateGCPAuthEnv(ctx context.Context, cfg Config, db *sql.DB, userCtx SkyforgeUserContext, env map[string]any) error {
 	if db == nil {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	rec, err := getOwnerGCPCredentials(ctx, db, newSecretBox(cfg.SessionSecret), scope.ID)
+	rec, err := getOwnerGCPCredentials(ctx, db, newSecretBox(cfg.SessionSecret), userCtx.ID)
 	if err != nil {
 		log.Printf("gcp creds get: %v", err)
 		return errs.B().Code(errs.Unavailable).Msg("gcp credentials unavailable").Err()

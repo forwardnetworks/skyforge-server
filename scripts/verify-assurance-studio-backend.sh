@@ -26,7 +26,7 @@ else
 fi
 
 # Guard against accidentally reintroducing separate backend calls for the Assurance Studio page.
-if rg -n "postAssuranceTrafficEvaluate|postForwardNetworkCapacityPathBottlenecks|runWorkspacePolicyReportPathsEnforcementBypass" "$route_file" >/dev/null; then
+if rg -n "postAssuranceTrafficEvaluate|postForwardNetworkCapacityPathBottlenecks|runPolicyReportPathsEnforcementBypass" "$route_file" >/dev/null; then
   echo "ERROR: found legacy Assurance Studio calls in $route_file"
   exit 1
 fi

@@ -241,7 +241,7 @@ func (i *serviceNowInstaller) ensureNavigatorApp(ctx context.Context) error {
 }
 
 func (i *serviceNowInstaller) resolveDemoTableNames(ctx context.Context) (serviceNowDemoTableNames, error) {
-	// Prefer "u_*" names (Global scope default) to keep manual setup dead simple; fall back to the older "x_*" names.
+	// Prefer "u_*" names (global default) to keep manual setup dead simple; fall back to the older "x_*" names.
 	candidates := []serviceNowDemoTableNames{
 		{Ticket: "u_forward_connectivity_ticket", Hop: "u_forward_connectivity_hop"},
 		{Ticket: "x_fwd_demo_connectivity_ticket", Hop: "x_fwd_demo_connectivity_hop"},

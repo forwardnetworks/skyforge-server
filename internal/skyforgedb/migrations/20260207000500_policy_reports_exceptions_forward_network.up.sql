@@ -7,8 +7,8 @@ ALTER TABLE sf_policy_report_exceptions
 DROP INDEX IF EXISTS sf_pr_exceptions_ws_finding_check_uniq;
 
 CREATE UNIQUE INDEX IF NOT EXISTS sf_pr_exceptions_ws_network_finding_check_uniq
-  ON sf_policy_report_exceptions(workspace_id, forward_network_id, finding_id, check_id);
+  ON sf_policy_report_exceptions(owner_id, forward_network_id, finding_id, check_id);
 
 CREATE INDEX IF NOT EXISTS sf_pr_exceptions_ws_network_status_updated_idx
-  ON sf_policy_report_exceptions(workspace_id, forward_network_id, status, updated_at DESC);
+  ON sf_policy_report_exceptions(owner_id, forward_network_id, status, updated_at DESC);
 

@@ -50,12 +50,12 @@ func (s *Service) TaskLifecycleEvents(w http.ResponseWriter, req *http.Request) 
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	_, _, scope, err := s.loadOwnerContextByKey(task.OwnerID)
+	_, _, userContext, err := s.loadOwnerContextByKey(task.OwnerID)
 	if err != nil {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	if ownerAccessLevelForClaims(s.cfg, scope, claims) == "none" {
+	if ownerAccessLevelForClaims(s.cfg, userContext, claims) == "none" {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}

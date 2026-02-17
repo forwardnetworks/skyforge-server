@@ -10,9 +10,9 @@ import (
 	"encore.dev/beta/errs"
 )
 
-// SyncOwnerContext syncs resources for a single scope.
+// SyncOwnerContext syncs resources for a single owner context.
 //
-// Deprecated public route removed: /api/scopes/:id/sync
+// Deprecated public route removed: /sync
 func (s *Service) SyncOwnerContext(ctx context.Context, id string) (*userSyncReport, error) {
 	_ = ctx
 	_ = id
@@ -29,9 +29,9 @@ type UserMembersRequest struct {
 	ViewerGroups []string `json:"viewerGroups"`
 }
 
-// UpdateOwnerMembers updates scope membership.
+// UpdateOwnerMembers updates owner membership.
 //
-// Deprecated public route removed: /api/scopes/:id/members
+// Deprecated public route removed: /members
 func (s *Service) UpdateOwnerMembers(ctx context.Context, id string, req *UserMembersRequest) (*SkyforgeUserContext, error) {
 	_ = ctx
 	_ = id
@@ -49,7 +49,7 @@ type UserNetlabConfigRequest struct {
 	NetlabServer string `json:"netlabServer"`
 }
 
-// GetOwnerNetlab returns the scope's netlab server selection.
+// GetOwnerNetlab returns the owner netlab server selection.
 func (s *Service) GetOwnerNetlab(ctx context.Context, id string) (*UserNetlabConfigResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -70,7 +70,7 @@ func (s *Service) GetOwnerNetlab(ctx context.Context, id string) (*UserNetlabCon
 	}, nil
 }
 
-// UpdateOwnerNetlab updates the scope's netlab server selection.
+// UpdateOwnerNetlab updates the owner netlab server selection.
 func (s *Service) UpdateOwnerNetlab(ctx context.Context, id string, req *UserNetlabConfigRequest) (*SkyforgeUserContext, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -101,7 +101,7 @@ func (s *Service) UpdateOwnerNetlab(ctx context.Context, id string, req *UserNet
 		}
 	}
 	pc.context.NetlabServer = next
-	if err := s.scopeStore.upsert(pc.context); err != nil {
+	if err := s.ownerContextStore.upsert(pc.context); err != nil {
 		log.Printf("context upsert: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist netlab server").Err()
 	}
@@ -147,7 +147,7 @@ type UserAWSSSOUpdateResponse struct {
 	Region    string `json:"region,omitempty"`
 }
 
-// PutOwnerAWSSSOConfig stores the AWS SSO account/role for the scope.
+// PutOwnerAWSSSOConfig stores the AWS SSO account/role for the owner context.
 func (s *Service) PutOwnerAWSSSOConfig(ctx context.Context, id string, req *UserAWSSSOUpdateRequest) (*UserAWSSSOUpdateResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -178,7 +178,7 @@ func (s *Service) PutOwnerAWSSSOConfig(ctx context.Context, id string, req *User
 	pc.context.AWSAccountID = accountID
 	pc.context.AWSRoleName = roleName
 	pc.context.AWSAuthMethod = "sso"
-	if err := s.scopeStore.upsert(pc.context); err != nil {
+	if err := s.ownerContextStore.upsert(pc.context); err != nil {
 		log.Printf("context upsert: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist aws sso config").Err()
 	}

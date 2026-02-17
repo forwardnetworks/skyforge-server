@@ -110,7 +110,7 @@ type ElasticConfig struct {
 	// IndexingMode controls how Skyforge names indices.
 	//
 	// Allowed values:
-	// - "instance": legacy instance-scoped indices (<IndexPrefix>-<category>-YYYY.MM.DD)
+	// - "instance": legacy instance-level indices (<IndexPrefix>-<category>-YYYY.MM.DD)
 	// - "per_user": per-user indices (<IndexPrefix>-u-<username>-<category>-YYYY.MM.DD)
 	//
 	// Empty is treated as "instance" for backwards compatibility.

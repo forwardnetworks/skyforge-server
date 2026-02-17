@@ -117,7 +117,7 @@ func ensureBlueprintCatalogRepo(cfg skyforgecore.Config, blueprint string) error
 	if err := ensureGiteaRepo(cfg, owner, repo, false); err != nil {
 		return err
 	}
-	readme := "# Skyforge Blueprint Catalog\n\nThis repository contains validated deployment blueprints synced into user scopes.\n"
+	readme := "# Skyforge Blueprint Catalog\n\nThis repository contains validated deployment blueprints synced into users.\n"
 	_ = ensureGiteaFile(cfg, owner, repo, "README.md", readme, "docs: add blueprint catalog README", "main", nil)
 
 	smoke := strings.TrimSpace(`name: skyforge-c9s-smoke

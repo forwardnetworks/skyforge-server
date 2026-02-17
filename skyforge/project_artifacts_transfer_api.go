@@ -39,7 +39,7 @@ type UserArtifactDownloadResponse struct {
 	FileData string `json:"fileData"`
 }
 
-// UploadUserArtifact uploads or presigns an artifact to the scope's bucket.
+// UploadUserArtifact uploads or presigns an artifact to the owner bucket.
 func (s *Service) UploadUserArtifact(ctx context.Context, id string, req *UserArtifactUploadRequest) (*UserArtifactUploadResponse, error) {
 	return s.handleUserArtifactUpload(ctx, id, req)
 }

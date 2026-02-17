@@ -20,7 +20,7 @@ type policyReportsViolationFinding struct {
 type policyReportsResolveSpec struct {
 	CanResolve bool
 
-	// Optional: scope resolution for a check to only findings whose JSON includes this suiteKey.
+	// Optional: owner-context resolution for a check to only findings whose JSON includes this suiteKey.
 	// This is used by checks like Paths Assurance where multiple suites share a checkId, but
 	// resolution must not cross suite boundaries.
 	SuiteKey string

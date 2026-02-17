@@ -285,7 +285,7 @@ func (s *Service) GetUserDeploymentLinkStatsEvents(w http.ResponseWriter, req *h
 		// - api/deployments/<deploymentID>/links/stats/events
 		for i := 0; i+1 < len(parts); i++ {
 			switch parts[i] {
-			case "users", "contexts", "scopes":
+			case "users", "contexts":
 				if ownerKey == "" {
 					ownerKey = strings.TrimSpace(parts[i+1])
 				}

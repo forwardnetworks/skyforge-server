@@ -1,8 +1,8 @@
--- User-scoped ownership and resource sharing primitives.
+-- User-owned ownership and resource sharing primitives.
 --
 -- This migration is additive:
 -- - Introduces generic share records so collaboration is possible without relying
---   on workspace membership as the primary boundary.
+--   on owner membership as the primary boundary.
 -- - Adds owner_username columns to core runtime tables used by task/deployment APIs.
 
 CREATE TABLE IF NOT EXISTS sf_resource_shares (
@@ -32,7 +32,7 @@ ALTER TABLE sf_deployments
 ALTER TABLE sf_tasks
   ADD COLUMN IF NOT EXISTS owner_username text REFERENCES sf_users(username) ON UPDATE CASCADE ON DELETE SET NULL;
 
--- Backfill deployment owners from created_by first, then workspace created_by fallback.
+-- Backfill deployment owners from created_by first, then owner created_by fallback.
 UPDATE sf_deployments
    SET owner_username = lower(nullif(created_by, ''))
  WHERE owner_username IS NULL
@@ -40,9 +40,9 @@ UPDATE sf_deployments
 
 UPDATE sf_deployments d
    SET owner_username = lower(w.created_by)
-  FROM sf_workspaces w
+  FROM sf_owner_contexts w
  WHERE d.owner_username IS NULL
-   AND d.workspace_id = w.id
+   AND d.owner_id = w.id
    AND nullif(w.created_by, '') IS NOT NULL;
 
 -- Backfill task owners from deployment owner, then created_by fallback.

@@ -3,7 +3,7 @@
 
 CREATE TABLE IF NOT EXISTS sf_assurance_studio_runs (
   id uuid PRIMARY KEY,
-  workspace_id text NOT NULL REFERENCES sf_workspaces(id) ON DELETE CASCADE,
+  owner_id text NOT NULL REFERENCES sf_owner_contexts(id) ON DELETE CASCADE,
   network_ref uuid NOT NULL REFERENCES sf_policy_report_forward_networks(id) ON DELETE CASCADE,
   forward_network_id text NOT NULL,
   scenario_id uuid REFERENCES sf_assurance_studio_scenarios(id) ON DELETE SET NULL,
@@ -20,8 +20,8 @@ CREATE TABLE IF NOT EXISTS sf_assurance_studio_runs (
 );
 
 CREATE INDEX IF NOT EXISTS sf_assurance_runs_ws_net_started_idx
-  ON sf_assurance_studio_runs(workspace_id, network_ref, started_at DESC);
+  ON sf_assurance_studio_runs(owner_id, network_ref, started_at DESC);
 
 CREATE INDEX IF NOT EXISTS sf_assurance_runs_ws_fwd_started_idx
-  ON sf_assurance_studio_runs(workspace_id, forward_network_id, started_at DESC);
+  ON sf_assurance_studio_runs(owner_id, forward_network_id, started_at DESC);
 

@@ -4,7 +4,7 @@
 
 CREATE TABLE IF NOT EXISTS sf_policy_report_runs (
   id uuid PRIMARY KEY,
-  workspace_id text NOT NULL REFERENCES sf_workspaces(id) ON DELETE CASCADE,
+  owner_id text NOT NULL REFERENCES sf_owner_contexts(id) ON DELETE CASCADE,
   forward_network_id text NOT NULL,
   snapshot_id text NOT NULL DEFAULT '',
   pack_id text NOT NULL,
@@ -20,16 +20,16 @@ CREATE TABLE IF NOT EXISTS sf_policy_report_runs (
 );
 
 CREATE INDEX IF NOT EXISTS sf_pr_runs_ws_started_idx
-  ON sf_policy_report_runs(workspace_id, started_at DESC);
+  ON sf_policy_report_runs(owner_id, started_at DESC);
 
 CREATE INDEX IF NOT EXISTS sf_pr_runs_ws_net_started_idx
-  ON sf_policy_report_runs(workspace_id, forward_network_id, started_at DESC);
+  ON sf_policy_report_runs(owner_id, forward_network_id, started_at DESC);
 
 CREATE INDEX IF NOT EXISTS sf_pr_runs_ws_pack_started_idx
-  ON sf_policy_report_runs(workspace_id, pack_id, started_at DESC);
+  ON sf_policy_report_runs(owner_id, pack_id, started_at DESC);
 
 CREATE INDEX IF NOT EXISTS sf_pr_runs_ws_status_started_idx
-  ON sf_policy_report_runs(workspace_id, status, started_at DESC);
+  ON sf_policy_report_runs(owner_id, status, started_at DESC);
 
 CREATE TABLE IF NOT EXISTS sf_policy_report_run_checks (
   run_id uuid NOT NULL REFERENCES sf_policy_report_runs(id) ON DELETE CASCADE,
@@ -60,7 +60,7 @@ CREATE INDEX IF NOT EXISTS sf_pr_run_findings_run_risk_idx
 
 -- Aggregate / current posture view for findings (per Forward network).
 CREATE TABLE IF NOT EXISTS sf_policy_report_findings_agg (
-  workspace_id text NOT NULL REFERENCES sf_workspaces(id) ON DELETE CASCADE,
+  owner_id text NOT NULL REFERENCES sf_owner_contexts(id) ON DELETE CASCADE,
   forward_network_id text NOT NULL,
   check_id text NOT NULL,
   finding_id text NOT NULL,
@@ -73,19 +73,19 @@ CREATE TABLE IF NOT EXISTS sf_policy_report_findings_agg (
   resolved_at timestamptz,
   last_run_id uuid,
   updated_at timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (workspace_id, forward_network_id, check_id, finding_id)
+  PRIMARY KEY (owner_id, forward_network_id, check_id, finding_id)
 );
 
 CREATE INDEX IF NOT EXISTS sf_pr_findings_agg_ws_net_status_idx
-  ON sf_policy_report_findings_agg(workspace_id, forward_network_id, status, last_seen_at DESC);
+  ON sf_policy_report_findings_agg(owner_id, forward_network_id, status, last_seen_at DESC);
 
 CREATE INDEX IF NOT EXISTS sf_pr_findings_agg_ws_status_risk_idx
-  ON sf_policy_report_findings_agg(workspace_id, status, risk_score DESC);
+  ON sf_policy_report_findings_agg(owner_id, status, risk_score DESC);
 
 -- "Zones" are user-defined CIDR sets used as inputs to segmentation checks.
 CREATE TABLE IF NOT EXISTS sf_policy_report_zones (
   id uuid PRIMARY KEY,
-  workspace_id text NOT NULL REFERENCES sf_workspaces(id) ON DELETE CASCADE,
+  owner_id text NOT NULL REFERENCES sf_owner_contexts(id) ON DELETE CASCADE,
   forward_network_id text NOT NULL,
   name text NOT NULL,
   description text,
@@ -96,8 +96,8 @@ CREATE TABLE IF NOT EXISTS sf_policy_report_zones (
 );
 
 CREATE INDEX IF NOT EXISTS sf_pr_zones_ws_net_idx
-  ON sf_policy_report_zones(workspace_id, forward_network_id, created_at DESC);
+  ON sf_policy_report_zones(owner_id, forward_network_id, created_at DESC);
 
 CREATE UNIQUE INDEX IF NOT EXISTS sf_pr_zones_ws_net_name_uq
-  ON sf_policy_report_zones(workspace_id, forward_network_id, lower(name));
+  ON sf_policy_report_zones(owner_id, forward_network_id, lower(name));
 

@@ -12,7 +12,7 @@ import (
 
 type forwardCredResolveOpts struct {
 	// ExplicitCredentialID optionally forces use of a specific saved Forward credential set.
-	// For MCP, this is supplied via X-Forward-Credential-Id on the Forward-scoped endpoint.
+	// For MCP, this is supplied via X-Forward-Credential-Id on the Forward endpoint.
 	ExplicitCredentialID string
 
 	// CollectorConfigID optionally pins which user collector config to use (deployment-specific).

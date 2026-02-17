@@ -1,5 +1,5 @@
 -- Legacy compatibility: current runtime stores owner context IDs in owner_username
--- columns for user-scoped data. Historical FK constraints to sf_users(username)
+-- columns for user-ownerd data. Historical FK constraints to sf_users(username)
 -- reject valid writes (for example sf_deployments inserts).
 --
 -- Drop owner_username -> sf_users FKs so mixed-state databases keep working.

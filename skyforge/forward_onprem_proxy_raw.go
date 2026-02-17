@@ -26,7 +26,7 @@ import (
 
 // Forward on-prem autosleep/wake support.
 //
-// This is intentionally scoped for demo environments where Forward runs in the same
+// This is intentionally limited for demo environments where Forward runs in the same
 // Kubernetes cluster as Skyforge and is exposed behind Skyforge SSO under /fwd.
 //
 // Envoy (forward-app-proxy) routes /fwd/* to this proxy endpoint when autosleep is

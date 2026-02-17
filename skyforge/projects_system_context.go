@@ -12,16 +12,16 @@ import (
 // Background task execution uses this because it doesn't have an incoming request
 // with an Encore auth context. The task row itself is only created via authenticated
 // endpoints, so the authorization boundary remains the API layer.
-func (s *Service) systemUserContext(ctx context.Context, scopeKey string, username string) (*ownerContext, error) {
+func (s *Service) systemUserContext(ctx context.Context, ownerKey string, username string) (*ownerContext, error) {
 	_ = ctx
 	if s == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("service unavailable").Err()
 	}
-	scopeKey = strings.TrimSpace(scopeKey)
-	if scopeKey == "" {
+	ownerKey = strings.TrimSpace(ownerKey)
+	if ownerKey == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("owner username is required").Err()
 	}
-	_, _, contextRec, err := s.loadOwnerContextByKey(scopeKey)
+	_, _, contextRec, err := s.loadOwnerContextByKey(ownerKey)
 	if err != nil {
 		if errors.Is(err, errOwnerNotFound) {
 			return nil, errs.B().Code(errs.NotFound).Msg("user context not found").Err()

@@ -58,7 +58,7 @@ func canonicalTemplateSource(source, fallback string) string {
 		s = strings.ToLower(strings.TrimSpace(fallback))
 	}
 	switch s {
-	case "user", "personal", "scope", "workspace":
+	case "user", "personal":
 		return "user"
 	case "blueprint":
 		return "blueprints"

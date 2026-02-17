@@ -9,5 +9,5 @@ CREATE UNIQUE INDEX IF NOT EXISTS sf_pr_rc_assignments_campaign_finding_check_un
 
 -- Avoid a pile-up of identical exceptions per finding.
 CREATE UNIQUE INDEX IF NOT EXISTS sf_pr_exceptions_ws_finding_check_uniq
-  ON sf_policy_report_exceptions(workspace_id, finding_id, check_id);
+  ON sf_policy_report_exceptions(owner_id, finding_id, check_id);
 

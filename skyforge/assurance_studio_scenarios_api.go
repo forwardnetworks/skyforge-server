@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// ---- Assurance Studio: Saved Scenarios (scope + forward-network scoped) ----
+// ---- Assurance Studio: Saved Scenarios (owner + forward-network keyed) ----
 
 type AssuranceStudioScenarioSpec struct {
 	SnapshotID    string                   `json:"snapshotId,omitempty"`

@@ -15,5 +15,5 @@ By participating, you agree to the Code of Conduct in `CODE_OF_CONDUCT.md`.
 Do not commit secrets (`*.env`, kubeconfigs, `*-secrets.yaml`, credentials).
 
 ## PRs
-- Keep PRs small and scoped.
+- Keep PRs small and focused.
 - Update docs when behavior changes.

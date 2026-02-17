@@ -25,7 +25,7 @@ Some computations require outputs that Forward currently provides via REST endpo
 - path computation and candidate enumeration: `POST /api/networks/:id/paths-bulk`
 - perf time-series: `POST /api/networks/:id/interface-metrics-history`
 
-Skyforge also has local signals/storage that remain Go/DB-scoped:
+Skyforge also has local signals/storage that remain Go/DB-backed:
 
 - capacity rollups and joins (Skyforge tables)
 - SNMP trap ingestion/counting (Skyforge live signals)

@@ -44,9 +44,9 @@ func (s *Service) AdminMiddleware(req middleware.Request, next middleware.Next) 
 	return next(req)
 }
 
-// UserListMiddleware enforces authentication for scope list endpoints.
+// UserListMiddleware enforces authentication for owner-context list endpoints.
 //
-// Deprecated middleware target removed with list-scopes route removal.
+// Deprecated middleware target removed with list-users route removal.
 func (s *Service) UserListMiddleware(req middleware.Request, next middleware.Next) middleware.Response {
 	if auth.Data() == nil {
 		return middleware.Response{

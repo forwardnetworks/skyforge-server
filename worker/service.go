@@ -123,7 +123,7 @@ func runQueuedTaskFallbackLoop() {
 	//
 	// The loop is intentionally conservative:
 	// - only considers tasks that have been queued for at least minAge
-	// - at most one queued task per (scope, deployment) key
+	// - at most one queued task per (owner, deployment) key
 	// - low concurrency so we don't stampede the DB / task locks
 	if role := strings.ToLower(strings.TrimSpace(os.Getenv("SKYFORGE_ROLE"))); role != "" && role != "worker" {
 		return

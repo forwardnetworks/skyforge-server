@@ -24,13 +24,11 @@ type netlabC9sTaskSpec struct {
 	Deployment      string            `json:"deployment,omitempty"`
 	DeploymentID    string            `json:"deploymentId,omitempty"`
 	OwnerRoot       string            `json:"ownerRoot,omitempty"`
-	LegacyUserRoot  string            `json:"scopeRoot,omitempty"`
 	TemplateSource  string            `json:"templateSource,omitempty"`
 	TemplateRepo    string            `json:"templateRepo,omitempty"`
 	TemplatesDir    string            `json:"templatesDir,omitempty"`
 	Template        string            `json:"template,omitempty"`
 	OwnerDir        string            `json:"ownerDir,omitempty"`
-	LegacyUserDir   string            `json:"scopeDir,omitempty"`
 	MultilabNumeric int               `json:"multilabNumeric,omitempty"`
 	TopologyPath    string            `json:"topologyPath,omitempty"`
 	ClabTarball     string            `json:"clabTarball,omitempty"`
@@ -143,12 +141,6 @@ func (e *Engine) dispatchNetlabC9sTask(ctx context.Context, task *taskstore.Task
 		K8sNamespace:    strings.TrimSpace(specIn.K8sNamespace),
 		LabName:         strings.TrimSpace(specIn.LabName),
 		TopologyName:    strings.TrimSpace(specIn.TopologyName),
-	}
-	if runSpec.OwnerRoot == "" {
-		runSpec.OwnerRoot = strings.TrimSpace(specIn.LegacyUserRoot)
-	}
-	if runSpec.OwnerDir == "" {
-		runSpec.OwnerDir = strings.TrimSpace(specIn.LegacyUserDir)
 	}
 	action := strings.ToLower(strings.TrimSpace(runSpec.Action))
 	if action == "" {

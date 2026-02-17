@@ -182,7 +182,7 @@ func (e *Engine) refreshCapacityInventoryCache(ctx context.Context, db *sql.DB, 
 				log.Errorf("capacity nqe cache upsert failed (query=%s): %v", qid, err)
 			}
 		}
-		// Best-effort: also insert a snapshot-scoped row so we can diff across snapshots later.
+		// Best-effort: also insert a snapshot-level row so we can diff across snapshots later.
 		if sid := strings.TrimSpace(resp.SnapshotID); sid != "" {
 			if err := insertCapacityNQECacheSnapshot(ctx, db, ownerID, deploymentID, networkID, qid, sid, cachePayload); err != nil {
 				if log != nil {
@@ -297,7 +297,7 @@ DO UPDATE SET
 		return err
 	}
 
-	// Network-scoped cache entry (deployment_id IS NULL).
+	// Network-level cache entry (deployment_id IS NULL).
 	_, err = db.ExecContext(ctxReq, `INSERT INTO sf_capacity_nqe_cache (
   owner_id, deployment_id, forward_network_id, query_id, snapshot_id, payload
 ) VALUES ($1,NULL,$2,$3,$4,$5)

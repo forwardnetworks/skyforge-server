@@ -13,19 +13,16 @@ import (
 )
 
 type netlabTaskSpec struct {
-	Action       string `json:"action,omitempty"`
-	Server       string `json:"server,omitempty"`
-	Deployment   string `json:"deployment,omitempty"`
-	DeploymentID string `json:"deploymentId,omitempty"`
-	OwnerRoot    string `json:"ownerRoot,omitempty"`
-	OwnerDir     string `json:"ownerDir,omitempty"`
-	// Legacy compatibility for in-flight tasks written before owner-root rename.
-	LegacyUserRoot string            `json:"scopeRoot,omitempty"`
-	LegacyUserDir  string            `json:"scopeDir,omitempty"`
-	Cleanup        bool              `json:"cleanup,omitempty"`
-	TopologyPath   string            `json:"topologyPath,omitempty"`
-	TopologyURL    string            `json:"topologyUrl,omitempty"`
-	Environment    map[string]string `json:"environment,omitempty"`
+	Action       string            `json:"action,omitempty"`
+	Server       string            `json:"server,omitempty"`
+	Deployment   string            `json:"deployment,omitempty"`
+	DeploymentID string            `json:"deploymentId,omitempty"`
+	OwnerRoot    string            `json:"ownerRoot,omitempty"`
+	OwnerDir     string            `json:"ownerDir,omitempty"`
+	Cleanup      bool              `json:"cleanup,omitempty"`
+	TopologyPath string            `json:"topologyPath,omitempty"`
+	TopologyURL  string            `json:"topologyUrl,omitempty"`
+	Environment  map[string]string `json:"environment,omitempty"`
 }
 
 type netlabRunSpec struct {
@@ -93,13 +90,6 @@ func (e *Engine) dispatchNetlabTask(ctx context.Context, task *taskstore.TaskRec
 		TopologyPath: strings.TrimSpace(specIn.TopologyPath),
 		TopologyURL:  strings.TrimSpace(specIn.TopologyURL),
 	}
-	if runSpec.OwnerRoot == "" {
-		runSpec.OwnerRoot = strings.TrimSpace(specIn.LegacyUserRoot)
-	}
-	if runSpec.OwnerDir == "" {
-		runSpec.OwnerDir = strings.TrimSpace(specIn.LegacyUserDir)
-	}
-
 	action := strings.ToLower(strings.TrimSpace(runSpec.Action))
 	if action == "" {
 		action = "run"

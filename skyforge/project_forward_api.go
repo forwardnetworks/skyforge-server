@@ -58,7 +58,7 @@ type ApplyUserForwardCredentialSetRequest struct {
 
 const defaultForwardBaseURL = "https://fwd.app"
 
-// GetUserForwardConfig returns Forward Networks credentials for a scope.
+// GetUserForwardConfig returns Forward Networks credentials for an owner context.
 func (s *Service) GetUserForwardConfig(ctx context.Context, id string) (*UserForwardConfigResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -111,7 +111,7 @@ func (s *Service) GetUserForwardConfig(ctx context.Context, id string) (*UserFor
 	}, nil
 }
 
-// PutUserForwardConfig stores Forward Networks credentials for a scope.
+// PutUserForwardConfig stores Forward Networks credentials for an owner context.
 func (s *Service) PutUserForwardConfig(ctx context.Context, id string, req *UserForwardConfigRequest) (*UserForwardConfigResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -227,7 +227,7 @@ func (s *Service) PutUserForwardConfig(ctx context.Context, id string, req *User
 	}, nil
 }
 
-// GetUserForwardCollectors lists available Forward collectors for the scope.
+// GetUserForwardCollectors lists available Forward collectors for the owner context.
 func (s *Service) GetUserForwardCollectors(ctx context.Context, id string) (*UserForwardCollectorsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -264,7 +264,7 @@ func (s *Service) GetUserForwardCollectors(ctx context.Context, id string) (*Use
 	return &UserForwardCollectorsResponse{Collectors: out}, nil
 }
 
-// CreateUserForwardCollector creates a Forward collector for the scope.
+// CreateUserForwardCollector creates a Forward collector for the owner context.
 func (s *Service) CreateUserForwardCollector(ctx context.Context, id string) (*UserForwardCollectorCreateResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -302,12 +302,12 @@ func (s *Service) CreateUserForwardCollector(ctx context.Context, id string) (*U
 	}, nil
 }
 
-// PostUserForwardConfig stores Forward Networks credentials for a scope (POST fallback).
+// PostUserForwardConfig stores Forward Networks credentials for an owner context (POST fallback).
 func (s *Service) PostUserForwardConfig(ctx context.Context, id string, req *UserForwardConfigRequest) (*UserForwardConfigResponse, error) {
 	return s.PutUserForwardConfig(ctx, id, req)
 }
 
-// DeleteUserForwardConfig removes Forward Networks credentials for a scope.
+// DeleteUserForwardConfig removes Forward Networks credentials for an owner context.
 func (s *Service) DeleteUserForwardConfig(ctx context.Context, id string) (*UserForwardConfigResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -341,10 +341,10 @@ func (s *Service) DeleteUserForwardConfig(ctx context.Context, id string) (*User
 	}, nil
 }
 
-// ApplyUserForwardCredentialSet copies a user-owned Forward credential set into the scope-scoped
-// Forward integration configuration (so the scope can use it for Forward-backed features).
+// ApplyUserForwardCredentialSet copies a user-owned Forward credential set into the owner-level
+// Forward integration configuration (so the owner context can use it for Forward-backed features).
 //
-// This uses "copy" semantics: future changes to the user credential set do not affect the scope.
+// This uses "copy" semantics: future changes to the user credential set do not affect the owner context.
 func (s *Service) ApplyUserForwardCredentialSet(ctx context.Context, id string, req *ApplyUserForwardCredentialSetRequest) (*UserForwardConfigResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -375,7 +375,7 @@ func (s *Service) ApplyUserForwardCredentialSet(ctx context.Context, id string, 
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Load source ciphertext row (user-scoped).
+	// Load source ciphertext row (user-level).
 	var (
 		srcName          string
 		srcBase          sql.NullString
@@ -425,12 +425,12 @@ SELECT name,
 		}
 	}
 
-	// Destination: reuse existing scope credential id if present.
+	// Destination: reuse existing owner credential id if present.
 	var destID sql.NullString
 	_ = tx.QueryRowContext(ctxReq, `SELECT COALESCE(credential_id,'') FROM sf_owner_forward_credentials WHERE owner_username=$1`, pc.context.ID).Scan(&destID)
-	scopeCredID := strings.TrimSpace(destID.String)
-	if scopeCredID == "" {
-		scopeCredID = uuid.NewString()
+	ownerCredID := strings.TrimSpace(destID.String)
+	if ownerCredID == "" {
+		ownerCredID = uuid.NewString()
 	}
 
 	name := "context forward"
@@ -438,7 +438,7 @@ SELECT name,
 		name = fmt.Sprintf("context forward (from %s)", strings.TrimSpace(srcName))
 	}
 
-	// Upsert scope-scoped credential row by copying ciphertext directly.
+	// Upsert owner-level credential row by copying ciphertext directly.
 	_, err = tx.ExecContext(ctxReq, `
 INSERT INTO sf_credentials (
   id, owner_username, owner_username, provider, name,
@@ -471,7 +471,7 @@ ON CONFLICT (id) DO UPDATE SET
   jump_private_key_enc=excluded.jump_private_key_enc,
   jump_cert_enc=excluded.jump_cert_enc,
   updated_at=now()
-`, scopeCredID, pc.context.ID, name,
+`, ownerCredID, pc.context.ID, name,
 		strings.TrimSpace(srcBase.String),
 		(srcSkipTLS.Valid && srcSkipTLS.Bool),
 		strings.TrimSpace(srcUser.String),
@@ -503,7 +503,7 @@ INSERT INTO sf_owner_forward_credentials (
 ON CONFLICT (owner_username) DO UPDATE SET
   credential_id=excluded.credential_id,
   updated_at=now()
-`, pc.context.ID, scopeCredID)
+`, pc.context.ID, ownerCredID)
 	if err != nil {
 		log.Printf("context forward apply credential set link: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to apply credential set").Err()

@@ -42,7 +42,7 @@ type adminE2ESessionRequest struct {
 	Groups      []string `json:"groups,omitempty"`
 }
 
-type scopeResponse struct {
+type ownerResponse struct {
 	ID   string `json:"id"`
 	Slug string `json:"slug"`
 	Name string `json:"name"`
@@ -195,7 +195,7 @@ type netlabDeviceDefaultsCatalog struct {
 	} `json:"sets"`
 }
 
-type scopeNetlabServerConfig struct {
+type ownerNetlabServerConfig struct {
 	ID          string `json:"id,omitempty"`
 	Name        string `json:"name,omitempty"`
 	APIURL      string `json:"apiUrl"`
@@ -412,7 +412,7 @@ func vxlanSmokeCheck(ctx context.Context, namespace, topologyOwner string) (int,
 	}
 
 	// Find pods for this topology. clabernetes labels pods with:
-	//   clabernetes/topologyOwner=<scopeSlug>-<deploymentName>
+	//   clabernetes/topologyOwner=<ownerSlug>-<deploymentName>
 	selector := "clabernetes/topologyOwner=" + topologyOwner
 	cmd := exec.CommandContext(ctx, "kubectl", "-n", namespace, "get", "pods", "-l", selector, "-o", "json")
 	cmd.Env = kubectlEnv()
@@ -629,7 +629,7 @@ func ensureUserNetlabServer(client *http.Client, baseURL, cookie string) (string
 	apiPassword := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_BYOS_NETLAB_API_PASSWORD"))
 	apiInsecure := getenvBool("SKYFORGE_E2E_BYOS_NETLAB_API_INSECURE", false)
 
-	payload := scopeNetlabServerConfig{
+	payload := ownerNetlabServerConfig{
 		Name:        "",
 		APIURL:      apiURL,
 		APIInsecure: apiInsecure,
@@ -645,7 +645,7 @@ func ensureUserNetlabServer(client *http.Client, baseURL, cookie string) (string
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", fmt.Errorf("upsert user netlab server failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
-	var out scopeNetlabServerConfig
+	var out ownerNetlabServerConfig
 	if err := json.Unmarshal(body, &out); err != nil {
 		return "", fmt.Errorf("upsert user netlab server parse failed: %w", err)
 	}
@@ -775,7 +775,7 @@ func generateMatrixFromCatalog(catalogPath string) (matrixFile, error) {
 	}
 	// Always include eos even if the catalog ever changes (Skyforge default).
 	devices["eos"] = struct{}{}
-	// Explicitly out-of-scope by default (can be overridden via SKYFORGE_E2E_EXCLUDE_DEVICES).
+	// Explicitly excluded by default (can be overridden via SKYFORGE_E2E_EXCLUDE_DEVICES).
 	exclude := splitCSVEnv("SKYFORGE_E2E_EXCLUDE_DEVICES")
 	if exclude == nil {
 		exclude = defaultE2EExcludeDevices()
@@ -2203,7 +2203,7 @@ func run() int {
 	if raw := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_SCOPE_ID")); raw != "" {
 		fmt.Fprintf(os.Stderr, "WARN SKYFORGE_E2E_SCOPE_ID is ignored in per-user mode (value=%q)\n", raw)
 	}
-	ws := scopeResponse{
+	ws := ownerResponse{
 		ID:   personalOwnerRouteKey,
 		Slug: personalOwnerRouteKey,
 		Name: "personal",

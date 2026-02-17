@@ -653,7 +653,7 @@ func (e *Engine) storeClabernetesTopologyArtifact(ctx context.Context, spec clab
 		return fmt.Errorf("invalid task context")
 	}
 	if strings.TrimSpace(spec.OwnerID) == "" {
-		// Best-effort enhancement: storing topology graphs requires a scope scope.
+		// Best-effort enhancement: storing topology graphs requires an owner context.
 		// Skip silently rather than failing the overall run.
 		return nil
 	}

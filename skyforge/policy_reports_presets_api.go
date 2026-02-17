@@ -54,7 +54,7 @@ func (s *Service) CreateUserPolicyReportPreset(ctx context.Context, id string, r
 	return out, nil
 }
 
-// ListUserPolicyReportPresets lists presets for a scope (optionally filtered).
+// ListUserPolicyReportPresets lists presets for an owner context (optionally filtered).
 func (s *Service) ListUserPolicyReportPresets(ctx context.Context, id string, req *PolicyReportListPresetsRequest) (*PolicyReportListPresetsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {

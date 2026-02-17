@@ -121,7 +121,7 @@ func (s *Service) UpsertOwnerNetlabServer(ctx context.Context, id string, payloa
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("name is required").Err()
 		}
 	}
-	rec := scopeNetlabServer{
+	rec := ownerNetlabServer{
 		ID:            strings.TrimSpace(payload.ID),
 		OwnerUsername: id,
 		Name:          name,
@@ -232,7 +232,7 @@ func (s *Service) UpsertOwnerEveServer(ctx context.Context, id string, payload *
 		}
 	}
 
-	rec := scopeEveServer{
+	rec := ownerEveServer{
 		ID:            strings.TrimSpace(payload.ID),
 		OwnerUsername: id,
 		Name:          name,
@@ -282,7 +282,7 @@ func (s *Service) GetUserNetlabServerHealth(ctx context.Context, id, serverID st
 	if ownerAccessLevelForClaims(s.cfg, pc.context, pc.claims) == "none" {
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
-	if err := s.checkUserNetlabHealth(ctx, id, scopeServerRef(serverID)); err != nil {
+	if err := s.checkUserNetlabHealth(ctx, id, ownerServerRef(serverID)); err != nil {
 		return &UserOwnerServerHealthResponse{
 			Status: "error",
 			Time:   time.Now().UTC().Format(time.RFC3339),

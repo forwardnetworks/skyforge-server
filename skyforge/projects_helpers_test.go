@@ -29,7 +29,7 @@ func TestTrackOwnerRouteUsage(t *testing.T) {
 			wantNormalized: "self",
 		},
 		{
-			name:           "scope id legacy",
+			name:           "legacy owner id",
 			in:             "ws-123",
 			wantLegacy:     true,
 			wantNormalized: "ws-123",

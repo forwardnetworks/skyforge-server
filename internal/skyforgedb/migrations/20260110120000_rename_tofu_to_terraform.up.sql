@@ -20,21 +20,21 @@ BEGIN
     END;
   END IF;
 
-  IF to_regclass('sf_workspaces') IS NOT NULL THEN
+  IF to_regclass('sf_owner_contexts') IS NOT NULL THEN
     BEGIN
-      ALTER TABLE sf_workspaces RENAME COLUMN tofu_init_template_id TO terraform_init_template_id;
+      ALTER TABLE sf_owner_contexts RENAME COLUMN tofu_init_template_id TO terraform_init_template_id;
     EXCEPTION WHEN undefined_column THEN
       NULL;
     END;
 
     BEGIN
-      ALTER TABLE sf_workspaces RENAME COLUMN tofu_plan_template_id TO terraform_plan_template_id;
+      ALTER TABLE sf_owner_contexts RENAME COLUMN tofu_plan_template_id TO terraform_plan_template_id;
     EXCEPTION WHEN undefined_column THEN
       NULL;
     END;
 
     BEGIN
-      ALTER TABLE sf_workspaces RENAME COLUMN tofu_apply_template_id TO terraform_apply_template_id;
+      ALTER TABLE sf_owner_contexts RENAME COLUMN tofu_apply_template_id TO terraform_apply_template_id;
     EXCEPTION WHEN undefined_column THEN
       NULL;
     END;

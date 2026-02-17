@@ -25,7 +25,7 @@ func (s *Service) resolveUserNetlabServerConfig(ctx context.Context, ownerID str
 	}
 	serverID, ok := parseUserServerRef(serverRef)
 	if !ok {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("netlab server reference is invalid (expected user:... or legacy ws:...)").Err()
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("netlab server reference is invalid (expected user:...)").Err()
 	}
 	rec, err := getUserNetlabServerByID(ctx, s.db, s.box, ownerID, serverID)
 	if err != nil {
@@ -92,7 +92,7 @@ func (s *Service) resolveNetlabServerConfig(ctx context.Context, pc *ownerContex
 	if _, ok := parseUserServerRef(serverRef); ok {
 		return s.resolveUserNetlabServerConfig(ctx, pc.context.ID, serverRef)
 	}
-	return nil, errs.B().Code(errs.InvalidArgument).Msg("netlab server must be a user reference (user:...) or legacy ws reference (ws:...)").Err()
+	return nil, errs.B().Code(errs.InvalidArgument).Msg("netlab server must be a user reference (user:...)").Err()
 }
 
 func (s *Service) resolveContainerlabServerConfig(ctx context.Context, pc *ownerContext, serverRef string) (*NetlabServerConfig, error) {
@@ -142,7 +142,7 @@ func (s *Service) resolveContainerlabServerConfig(ctx context.Context, pc *owner
 	if _, ok := parseUserServerRef(serverRef); ok {
 		return s.resolveUserNetlabServerConfig(ctx, pc.context.ID, serverRef)
 	}
-	return nil, errs.B().Code(errs.InvalidArgument).Msg("containerlab server must be a user reference (user:...) or legacy ws reference (ws:...)").Err()
+	return nil, errs.B().Code(errs.InvalidArgument).Msg("containerlab server must be a user reference (user:...)").Err()
 }
 
 func (s *Service) resolveEveServerConfig(ctx context.Context, pc *ownerContext, serverRef string) (*EveServerConfig, error) {
@@ -203,7 +203,7 @@ func (s *Service) resolveEveServerConfig(ctx context.Context, pc *ownerContext, 
 		}, nil
 	}
 
-	return nil, errs.B().Code(errs.InvalidArgument).Msg("eve-ng server must be a user reference (user:...) or legacy ws reference (ws:...)").Err()
+	return nil, errs.B().Code(errs.InvalidArgument).Msg("eve-ng server must be a user reference (user:...)").Err()
 }
 
 func (s *Service) checkUserNetlabHealth(ctx context.Context, ownerID string, serverRef string) error {

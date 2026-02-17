@@ -24,7 +24,6 @@ type UsersListParams struct {
 type UsersListResponse struct {
 	User     string                `json:"user"`
 	Contexts []SkyforgeUserContext `json:"contexts"`
-	Scopes   []SkyforgeUserContext `json:"-"` // legacy internal field
 }
 
 const defaultBlueprintCatalog = "skyforge/blueprints"
@@ -34,7 +33,7 @@ func defaultContextSlug(username string) string {
 	if normalized == "" {
 		normalized = "user"
 	}
-	return slugify(fmt.Sprintf("scope-%s", normalized))
+	return slugify(fmt.Sprintf("user-%s", normalized))
 }
 
 func defaultContextName(username string) string {
@@ -58,7 +57,7 @@ func (s *Service) ensureDefaultOwnerContext(ctx context.Context, user *AuthUser)
 	if user == nil {
 		return nil, nil
 	}
-	contexts, err := s.scopeStore.load()
+	contexts, err := s.ownerContextStore.load()
 	if err != nil {
 		return nil, err
 	}
@@ -129,14 +128,14 @@ func (s *Service) maybeQueueUserBootstrap(ctx context.Context, ownerID string, u
 func (s *Service) resolveUserForUser(ctx context.Context, user *AuthUser, ownerKey string) (*SkyforgeUserContext, error) {
 	ownerKey = strings.TrimSpace(ownerKey)
 	if ownerKey == "" || isPersonalOwnerKey(ownerKey) {
-		scope, err := s.ensureDefaultOwnerContext(ctx, user)
+		userContext, err := s.ensureDefaultOwnerContext(ctx, user)
 		if err != nil {
 			return nil, err
 		}
-		if scope == nil {
+		if userContext == nil {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("owner_username is required").Err()
 		}
-		return scope, nil
+		return userContext, nil
 	}
 	wc, err := s.ownerContextForUser(user, ownerKey)
 	if err != nil {
@@ -147,7 +146,7 @@ func (s *Service) resolveUserForUser(ctx context.Context, user *AuthUser, ownerK
 
 // GetUsers returns user contexts visible to the authenticated user.
 //
-// Deprecated public route removed: /api/scopes
+// Returns contexts visible to the authenticated user.
 func (s *Service) GetUsers(ctx context.Context, params *UsersListParams) (*UsersListResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -159,7 +158,7 @@ func (s *Service) GetUsers(ctx context.Context, params *UsersListParams) (*Users
 	if _, err := s.ensureDefaultOwnerContext(ctx, user); err != nil {
 		log.Printf("default context ensure: %v", err)
 	}
-	contexts, err := s.scopeStore.load()
+	contexts, err := s.ownerContextStore.load()
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load user contexts").Err()
 	}
@@ -178,14 +177,14 @@ func (s *Service) GetUsers(ctx context.Context, params *UsersListParams) (*Users
 		if changed {
 			updatedAll := true
 			for _, w := range changedScopes {
-				if err := s.scopeStore.upsert(w); err != nil {
+				if err := s.ownerContextStore.upsert(w); err != nil {
 					updatedAll = false
 					log.Printf("context upsert after group sync (%s): %v", w.ID, err)
 				}
 			}
 			if updatedAll {
 				for _, w := range changedScopes {
-					syncGiteaCollaboratorsForScope(s.cfg, w)
+					syncGiteaCollaboratorsForOwnerContext(s.cfg, w)
 				}
 			}
 		}
@@ -221,11 +220,9 @@ func (s *Service) GetUsers(ctx context.Context, params *UsersListParams) (*Users
 		}
 	}
 
-	_ = ctx
 	return &UsersListResponse{
 		User:     user.Username,
 		Contexts: contexts,
-		Scopes:   contexts,
 	}, nil
 }
 
@@ -252,7 +249,7 @@ type BlueprintSyncResponse struct {
 
 // CreateOwnerContext provisions a new Skyforge user context.
 //
-// Deprecated public route removed: /api/scopes
+// Internal-only helper used to ensure personal context exists.
 func (s *Service) CreateOwnerContext(ctx context.Context, req *UserCreateRequest) (*SkyforgeUserContext, error) {
 	if allow, _ := ctx.Value(contextCreateInternalKey).(bool); !allow {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("shared context management has been removed; personal user context is automatic").Err()
@@ -299,7 +296,7 @@ func (s *Service) CreateOwnerContext(ctx context.Context, req *UserCreateRequest
 	terraformStateKey := fmt.Sprintf("tf-%s/primary.tfstate", slug)
 	artifactsBucket := storage.StorageBucketName
 
-	contexts, err := s.scopeStore.load()
+	contexts, err := s.ownerContextStore.load()
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load user contexts").Err()
 	}
@@ -323,7 +320,7 @@ func (s *Service) CreateOwnerContext(ctx context.Context, req *UserCreateRequest
 	if profile.Email == "" && strings.TrimSpace(s.cfg.CorpEmailDomain) != "" {
 		profile.Email = fmt.Sprintf("%s@%s", profile.Username, strings.TrimSpace(s.cfg.CorpEmailDomain))
 	}
-	// Provisioning the Gitea user is a best-effort side-effect. Scope creation
+	// Provisioning the Gitea user is a best-effort side-effect. Context creation
 	// should succeed even if the downstream integration is temporarily unavailable.
 	if err := ensureGiteaUserFromProfile(s.cfg, profile); err != nil {
 		log.Printf("ensureGiteaUserFromProfile: %v", err)
@@ -339,7 +336,7 @@ func (s *Service) CreateOwnerContext(ctx context.Context, req *UserCreateRequest
 			log.Printf("ensureBlueprintCatalogRepo: %v", err)
 		}
 	}
-	// Scope creation should not be blocked on provisioning downstream tooling.
+	// Context creation should not be blocked on provisioning downstream tooling.
 	// Gitea provisioning/sync is best-effort and can be retried via periodic user/context sync.
 	{
 		repoPrivate := !req.IsPublic
@@ -405,7 +402,7 @@ func (s *Service) CreateOwnerContext(ctx context.Context, req *UserCreateRequest
 	if created.AWSAuthMethod == "" {
 		created.AWSAuthMethod = "sso"
 	}
-	if err := s.scopeStore.upsert(created); err != nil {
+	if err := s.ownerContextStore.upsert(created); err != nil {
 		log.Printf("context upsert: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist user context").Err()
 	}
@@ -445,7 +442,7 @@ func (s *Service) CreateOwnerContext(ctx context.Context, req *UserCreateRequest
 			fmt.Sprintf("slug=%s repo=%s/%s", created.Slug, created.GiteaOwner, created.GiteaRepo),
 		)
 	}
-	syncGiteaCollaboratorsForScope(giteaCfg, created)
+	syncGiteaCollaboratorsForOwnerContext(giteaCfg, created)
 
 	// Offload repo seeding + blueprint sync to the task queue for durability/retries.
 	// Context creation should succeed even if downstream provisioning is temporarily unavailable.
@@ -470,7 +467,7 @@ func (s *Service) CreateOwnerContext(ctx context.Context, req *UserCreateRequest
 
 // SyncUserBlueprint syncs a user context's blueprint catalog into the repo.
 //
-// Deprecated public route removed: /api/scopes/:ownerID/blueprint/sync
+// Legacy sync route removed.
 func (s *Service) SyncUserBlueprint(ctx context.Context, ownerID string) (*BlueprintSyncResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {

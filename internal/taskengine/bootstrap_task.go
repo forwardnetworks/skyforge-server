@@ -97,7 +97,7 @@ func (e *Engine) dispatchUserBootstrapTask(ctx context.Context, task *taskstore.
 	owner := strings.TrimSpace(ws.GiteaOwner)
 	repo := strings.TrimSpace(ws.GiteaRepo)
 	if owner == "" || repo == "" {
-		return fmt.Errorf("gitea owner/repo not configured for scope")
+		return fmt.Errorf("gitea owner/repo not configured for owner context")
 	}
 
 	branch := strings.TrimSpace(ws.DefaultBranch)

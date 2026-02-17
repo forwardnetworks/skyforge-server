@@ -19,7 +19,7 @@ Keep Encore services small and domain-oriented, and move vendor glue into non-se
 
 Recommended future split (can be gradual; no need to do all at once):
 
-- `encore.app/skyforge` (core domain orchestration; auth/session, workspace membership)
+- `encore.app/skyforge` (core domain orchestration; auth/session, per-user ownership)
 - `encore.app/runs` (native task orchestration: list/start/output)
 - `encore.app/labs` (provider-backed labs queries/actions: EVE/Netlab)
 - `encore.app/artifacts` (artifact upload/download/transfer, backed by `storage`)
@@ -58,8 +58,8 @@ This keeps `labs_api.go` thin and makes adding a new provider (or swapping Netla
 
 Move “do a bunch of integration calls and update state” work behind a job boundary:
 
-- `encore.app/jobs/workspacesync`
-  - `RunOnce(ctx)` and `RunForWorkspace(ctx, workspaceKey)` style entrypoints.
+- `encore.app/jobs/usercontexts`
+  - `RunOnce(ctx)` and `RunForOwner(ctx, ownerKey)` style entrypoints.
   - Called by:
     - admin/manual endpoints
     - an Encore cron job (preferred over ad-hoc goroutines) once schedule policy is stable

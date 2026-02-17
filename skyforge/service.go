@@ -210,9 +210,9 @@ func normalizeNetlabServer(s NetlabServerConfig, fallback NetlabConfig) NetlabSe
 	return s
 }
 
-type scopesStore interface {
+type ownerContextsStore interface {
 	load() ([]SkyforgeUserContext, error)
-	upsert(scope SkyforgeUserContext) error
+	upsert(ctx SkyforgeUserContext) error
 	delete(ownerID string) error
 }
 
@@ -934,7 +934,7 @@ func deleteOwnerForwardCredentials(ctx context.Context, db *sql.DB, ownerID stri
 	if _, err := tx.ExecContext(ctxReq, `DELETE FROM sf_owner_forward_credentials WHERE owner_username=$1`, ownerID); err != nil {
 		return err
 	}
-	// Best-effort cleanup of the scope-scoped credential set.
+	// Best-effort cleanup of the owner-level credential set.
 	if strings.TrimSpace(credID.String) != "" {
 		if _, err := tx.ExecContext(ctxReq, `DELETE FROM sf_credentials WHERE id=$1 AND owner_username=$2 AND provider='forward' AND owner_username IS NULL`, strings.TrimSpace(credID.String), ownerID); err != nil {
 			// Ignore (may be referenced elsewhere or table missing).
@@ -1130,8 +1130,8 @@ func (s *pgOwnerContextsStore) load() ([]SkyforgeUserContext, error) {
 	}
 	defer rows.Close()
 
-	scopes := []SkyforgeUserContext{}
-	scopeByID := map[string]*SkyforgeUserContext{}
+	contexts := []SkyforgeUserContext{}
+	contextByID := map[string]*SkyforgeUserContext{}
 	for rows.Next() {
 		var (
 			id, slug, name, createdBy                                                                      string
@@ -1195,8 +1195,8 @@ func (s *pgOwnerContextsStore) load() ([]SkyforgeUserContext, error) {
 			GiteaOwner:                     giteaOwner,
 			GiteaRepo:                      giteaRepo,
 		}
-		scopes = append(scopes, p)
-		scopeByID[id] = &scopes[len(scopes)-1]
+		contexts = append(contexts, p)
+		contextByID[id] = &contexts[len(contexts)-1]
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1212,7 +1212,7 @@ func (s *pgOwnerContextsStore) load() ([]SkyforgeUserContext, error) {
 		if err := memberRows.Scan(&ownerID, &username, &role); err != nil {
 			return nil, err
 		}
-		p := scopeByID[ownerID]
+		p := contextByID[ownerID]
 		if p == nil {
 			continue
 		}
@@ -1239,7 +1239,7 @@ func (s *pgOwnerContextsStore) load() ([]SkyforgeUserContext, error) {
 		if err := groupRows.Scan(&ownerID, &groupName, &role); err != nil {
 			return nil, err
 		}
-		p := scopeByID[ownerID]
+		p := contextByID[ownerID]
 		if p == nil {
 			continue
 		}
@@ -1255,17 +1255,17 @@ func (s *pgOwnerContextsStore) load() ([]SkyforgeUserContext, error) {
 	if err := groupRows.Err(); err != nil {
 		return nil, err
 	}
-	return scopes, nil
+	return contexts, nil
 }
 
-func (s *pgOwnerContextsStore) upsert(scope SkyforgeUserContext) error {
+func (s *pgOwnerContextsStore) upsert(contextRec SkyforgeUserContext) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	id := strings.TrimSpace(scope.ID)
+	id := strings.TrimSpace(contextRec.ID)
 	if id == "" {
 		return fmt.Errorf("owner username is required")
 	}
@@ -1282,24 +1282,24 @@ func (s *pgOwnerContextsStore) upsert(scope SkyforgeUserContext) error {
 		return err
 	}
 
-	if err := ensureUser(scope.CreatedBy); err != nil {
+	if err := ensureUser(contextRec.CreatedBy); err != nil {
 		return err
 	}
-	for _, u := range append(append([]string{}, scope.Owners...), append(scope.Editors, scope.Viewers...)...) {
+	for _, u := range append(append([]string{}, contextRec.Owners...), append(contextRec.Editors, contextRec.Viewers...)...) {
 		if err := ensureUser(u); err != nil {
 			return err
 		}
 	}
 
-	slug := strings.TrimSpace(scope.Slug)
+	slug := strings.TrimSpace(contextRec.Slug)
 	if slug == "" {
-		slug = slugify(scope.Name)
+		slug = slugify(contextRec.Name)
 	}
-	createdBy := strings.ToLower(strings.TrimSpace(scope.CreatedBy))
+	createdBy := strings.ToLower(strings.TrimSpace(contextRec.CreatedBy))
 	if createdBy == "" {
 		return fmt.Errorf("context createdBy is required")
 	}
-	externalTemplateReposJSON, err := json.Marshal(scope.ExternalTemplateRepos)
+	externalTemplateReposJSON, err := json.Marshal(contextRec.ExternalTemplateRepos)
 	if err != nil {
 		return err
 	}
@@ -1340,14 +1340,14 @@ func (s *pgOwnerContextsStore) upsert(scope SkyforgeUserContext) error {
 		  gitea_owner=excluded.gitea_owner,
 		  gitea_repo=excluded.gitea_repo,
 		  updated_at=now()`,
-		id, slug, strings.TrimSpace(scope.Name), nullIfEmpty(strings.TrimSpace(scope.Description)), scope.CreatedAt.UTC(), createdBy,
-		scope.AllowExternalTemplateRepos, scope.AllowCustomEveServers, scope.AllowCustomNetlabServers, scope.AllowCustomContainerlabServers, string(externalTemplateReposJSON),
-		nullIfEmpty(strings.TrimSpace(scope.Blueprint)), nullIfEmpty(strings.TrimSpace(scope.DefaultBranch)),
-		nullIfEmpty(strings.TrimSpace(scope.TerraformStateKey)), scope.TerraformInitTemplateID, scope.TerraformPlanTemplateID, scope.TerraformApplyTemplateID, scope.AnsibleRunTemplateID, scope.NetlabRunTemplateID, scope.EveNgRunTemplateID, scope.ContainerlabRunTemplateID,
-		nullIfEmpty(strings.TrimSpace(scope.AWSAccountID)), nullIfEmpty(strings.TrimSpace(scope.AWSRoleName)), nullIfEmpty(strings.TrimSpace(scope.AWSRegion)),
-		nullIfEmpty(strings.TrimSpace(scope.AWSAuthMethod)), nullIfEmpty(strings.TrimSpace(scope.ArtifactsBucket)), scope.IsPublic,
-		nullIfEmpty(strings.TrimSpace(scope.EveServer)), nullIfEmpty(strings.TrimSpace(scope.NetlabServer)),
-		strings.TrimSpace(scope.GiteaOwner), strings.TrimSpace(scope.GiteaRepo),
+		id, slug, strings.TrimSpace(contextRec.Name), nullIfEmpty(strings.TrimSpace(contextRec.Description)), contextRec.CreatedAt.UTC(), createdBy,
+		contextRec.AllowExternalTemplateRepos, contextRec.AllowCustomEveServers, contextRec.AllowCustomNetlabServers, contextRec.AllowCustomContainerlabServers, string(externalTemplateReposJSON),
+		nullIfEmpty(strings.TrimSpace(contextRec.Blueprint)), nullIfEmpty(strings.TrimSpace(contextRec.DefaultBranch)),
+		nullIfEmpty(strings.TrimSpace(contextRec.TerraformStateKey)), contextRec.TerraformInitTemplateID, contextRec.TerraformPlanTemplateID, contextRec.TerraformApplyTemplateID, contextRec.AnsibleRunTemplateID, contextRec.NetlabRunTemplateID, contextRec.EveNgRunTemplateID, contextRec.ContainerlabRunTemplateID,
+		nullIfEmpty(strings.TrimSpace(contextRec.AWSAccountID)), nullIfEmpty(strings.TrimSpace(contextRec.AWSRoleName)), nullIfEmpty(strings.TrimSpace(contextRec.AWSRegion)),
+		nullIfEmpty(strings.TrimSpace(contextRec.AWSAuthMethod)), nullIfEmpty(strings.TrimSpace(contextRec.ArtifactsBucket)), contextRec.IsPublic,
+		nullIfEmpty(strings.TrimSpace(contextRec.EveServer)), nullIfEmpty(strings.TrimSpace(contextRec.NetlabServer)),
+		strings.TrimSpace(contextRec.GiteaOwner), strings.TrimSpace(contextRec.GiteaRepo),
 	); err != nil {
 		return err
 	}
@@ -1359,12 +1359,12 @@ func (s *pgOwnerContextsStore) upsert(scope SkyforgeUserContext) error {
 		return err
 	}
 
-	owners := normalizeUsernameList(scope.Owners)
-	ownerGroups := normalizeGroupList(scope.OwnerGroups)
-	editors := normalizeUsernameList(scope.Editors)
-	editorGroups := normalizeGroupList(scope.EditorGroups)
-	viewers := normalizeUsernameList(scope.Viewers)
-	viewerGroups := normalizeGroupList(scope.ViewerGroups)
+	owners := normalizeUsernameList(contextRec.Owners)
+	ownerGroups := normalizeGroupList(contextRec.OwnerGroups)
+	editors := normalizeUsernameList(contextRec.Editors)
+	editorGroups := normalizeGroupList(contextRec.EditorGroups)
+	viewers := normalizeUsernameList(contextRec.Viewers)
+	viewerGroups := normalizeGroupList(contextRec.ViewerGroups)
 	if len(owners) == 0 && createdBy != "" {
 		owners = []string{createdBy}
 	}
@@ -1441,7 +1441,7 @@ func (s *pgOwnerContextsStore) delete(ownerID string) error {
 	return tx.Commit()
 }
 
-func (s *pgOwnerContextsStore) replaceAll(scopes []SkyforgeUserContext) error {
+func (s *pgOwnerContextsStore) replaceAll(contexts []SkyforgeUserContext) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -1461,7 +1461,7 @@ func (s *pgOwnerContextsStore) replaceAll(scopes []SkyforgeUserContext) error {
 		return err
 	}
 
-	for _, p := range scopes {
+	for _, p := range contexts {
 		if err := ensureUser(p.CreatedBy); err != nil {
 			return err
 		}
@@ -1472,13 +1472,13 @@ func (s *pgOwnerContextsStore) replaceAll(scopes []SkyforgeUserContext) error {
 		}
 	}
 
-	scopeIDs := make([]string, 0, len(scopes))
-	for _, p := range scopes {
+	contextIDs := make([]string, 0, len(contexts))
+	for _, p := range contexts {
 		id := strings.TrimSpace(p.ID)
 		if id == "" {
 			return fmt.Errorf("owner username is required")
 		}
-		scopeIDs = append(scopeIDs, id)
+		contextIDs = append(contextIDs, id)
 		slug := strings.TrimSpace(p.Slug)
 		if slug == "" {
 			slug = slugify(p.Name)
@@ -1608,7 +1608,7 @@ ON CONFLICT (owner_username, group_name) DO UPDATE SET role=excluded.role`, id, 
 		}
 	}
 
-	if len(scopeIDs) == 0 {
+	if len(contextIDs) == 0 {
 		if _, err := tx.Exec(`DELETE FROM sf_owner_members`); err != nil {
 			return err
 		}
@@ -1619,7 +1619,7 @@ ON CONFLICT (owner_username, group_name) DO UPDATE SET role=excluded.role`, id, 
 			return err
 		}
 	} else {
-		if _, err := tx.Exec(`DELETE FROM sf_owner_contexts WHERE NOT (id = ANY($1))`, scopeIDs); err != nil {
+		if _, err := tx.Exec(`DELETE FROM sf_owner_contexts WHERE NOT (id = ANY($1))`, contextIDs); err != nil {
 			return err
 		}
 	}
@@ -1865,22 +1865,22 @@ func syncGroupMembershipForUser(p *SkyforgeUserContext, claims *SessionClaims) (
 	return "", false
 }
 
-func findUserByKey(scopes []SkyforgeUserContext, key string) *SkyforgeUserContext {
+func findUserByKey(contexts []SkyforgeUserContext, key string) *SkyforgeUserContext {
 	key = strings.TrimSpace(key)
 	if key == "" {
 		return nil
 	}
-	for i := range scopes {
-		if scopes[i].ID == key || strings.EqualFold(scopes[i].Slug, key) {
-			return &scopes[i]
+	for i := range contexts {
+		if contexts[i].ID == key || strings.EqualFold(contexts[i].Slug, key) {
+			return &contexts[i]
 		}
 	}
 	return nil
 }
 
-func syncGiteaCollaboratorsForScope(cfg Config, scope SkyforgeUserContext) {
-	owner := strings.TrimSpace(scope.GiteaOwner)
-	repo := strings.TrimSpace(scope.GiteaRepo)
+func syncGiteaCollaboratorsForOwnerContext(cfg Config, contextRec SkyforgeUserContext) {
+	owner := strings.TrimSpace(contextRec.GiteaOwner)
+	repo := strings.TrimSpace(contextRec.GiteaRepo)
 	if owner == "" || repo == "" {
 		return
 	}
@@ -1914,14 +1914,14 @@ func syncGiteaCollaboratorsForScope(cfg Config, scope SkyforgeUserContext) {
 		desired[user] = perm
 	}
 
-	add(scope.CreatedBy, "admin")
-	for _, u := range scope.Owners {
+	add(contextRec.CreatedBy, "admin")
+	for _, u := range contextRec.Owners {
 		add(u, "admin")
 	}
-	for _, u := range scope.Editors {
+	for _, u := range contextRec.Editors {
 		add(u, "write")
 	}
-	for _, u := range scope.Viewers {
+	for _, u := range contextRec.Viewers {
 		add(u, "read")
 	}
 
@@ -2234,10 +2234,10 @@ type userSyncReport struct {
 	Errors        []string `json:"errors,omitempty"`
 }
 
-func userTerraformEnv(cfg Config, scope SkyforgeUserContext) map[string]string {
+func userTerraformEnv(cfg Config, contextRec SkyforgeUserContext) map[string]string {
 	region := "us-east-1"
-	if strings.TrimSpace(scope.AWSRegion) != "" {
-		region = strings.TrimSpace(scope.AWSRegion)
+	if strings.TrimSpace(contextRec.AWSRegion) != "" {
+		region = strings.TrimSpace(contextRec.AWSRegion)
 	}
 	env := map[string]string{
 		"TF_IN_AUTOMATION":          "true",
@@ -2254,10 +2254,10 @@ func userTerraformEnv(cfg Config, scope SkyforgeUserContext) map[string]string {
 	return env
 }
 
-func syncUserResources(ctx context.Context, cfg Config, scope *SkyforgeUserContext) userSyncReport {
+func syncUserResources(ctx context.Context, cfg Config, contextRec *SkyforgeUserContext) userSyncReport {
 	report := userSyncReport{
-		OwnerUsername: scope.ID,
-		Slug:          scope.Slug,
+		OwnerUsername: contextRec.ID,
+		Slug:          contextRec.Slug,
 	}
 	addStep := func(msg string) {
 		report.Steps = append(report.Steps, msg)
@@ -2270,59 +2270,59 @@ func syncUserResources(ctx context.Context, cfg Config, scope *SkyforgeUserConte
 		}
 	}
 
-	if strings.TrimSpace(scope.GiteaOwner) == "" {
-		scope.GiteaOwner = strings.TrimSpace(cfg.Scopes.GiteaUsername)
+	if strings.TrimSpace(contextRec.GiteaOwner) == "" {
+		contextRec.GiteaOwner = strings.TrimSpace(cfg.Scopes.GiteaUsername)
 		report.Updated = true
 		addStep("set gitea owner")
 	}
-	if strings.TrimSpace(scope.GiteaRepo) == "" {
-		scope.GiteaRepo = strings.TrimSpace(scope.Slug)
+	if strings.TrimSpace(contextRec.GiteaRepo) == "" {
+		contextRec.GiteaRepo = strings.TrimSpace(contextRec.Slug)
 		report.Updated = true
 		addStep("set gitea repo")
 	}
-	if strings.TrimSpace(scope.ArtifactsBucket) != storage.StorageBucketName {
-		scope.ArtifactsBucket = storage.StorageBucketName
+	if strings.TrimSpace(contextRec.ArtifactsBucket) != storage.StorageBucketName {
+		contextRec.ArtifactsBucket = storage.StorageBucketName
 		report.Updated = true
 		addStep("set artifacts bucket")
 	}
 
-	if strings.TrimSpace(scope.GiteaOwner) != "" && strings.TrimSpace(scope.GiteaRepo) != "" {
-		repoPrivate := !scope.IsPublic
-		if err := ensureGiteaRepoFromBlueprint(cfg, scope.GiteaOwner, scope.GiteaRepo, scope.Blueprint, repoPrivate); err != nil {
+	if strings.TrimSpace(contextRec.GiteaOwner) != "" && strings.TrimSpace(contextRec.GiteaRepo) != "" {
+		repoPrivate := !contextRec.IsPublic
+		if err := ensureGiteaRepoFromBlueprint(cfg, contextRec.GiteaOwner, contextRec.GiteaRepo, contextRec.Blueprint, repoPrivate); err != nil {
 			addErr("gitea repo ensure", err)
 		} else {
 			addStep("gitea repo ok")
-			if branch, err := getGiteaRepoDefaultBranch(cfg, scope.GiteaOwner, scope.GiteaRepo); err != nil {
+			if branch, err := getGiteaRepoDefaultBranch(cfg, contextRec.GiteaOwner, contextRec.GiteaRepo); err != nil {
 				addErr("gitea default branch", err)
-			} else if strings.TrimSpace(branch) != "" && branch != scope.DefaultBranch {
-				scope.DefaultBranch = branch
+			} else if strings.TrimSpace(branch) != "" && branch != contextRec.DefaultBranch {
+				contextRec.DefaultBranch = branch
 				report.Updated = true
 				addStep("updated default branch")
 			}
 		}
 	}
 
-	if strings.TrimSpace(scope.GiteaOwner) != "" && strings.TrimSpace(scope.GiteaRepo) != "" {
-		syncGiteaCollaboratorsForScope(cfg, *scope)
+	if strings.TrimSpace(contextRec.GiteaOwner) != "" && strings.TrimSpace(contextRec.GiteaRepo) != "" {
+		syncGiteaCollaboratorsForOwnerContext(cfg, *contextRec)
 		addStep("gitea collaborators synced")
 	}
 
 	return report
 }
 
-func syncUsers(ctx context.Context, cfg Config, store scopesStore, db *sql.DB) ([]userSyncReport, error) {
-	scopes, err := store.load()
+func syncUsers(ctx context.Context, cfg Config, store ownerContextsStore, db *sql.DB) ([]userSyncReport, error) {
+	contexts, err := store.load()
 	if err != nil {
 		return nil, err
 	}
-	reports := make([]userSyncReport, 0, len(scopes))
+	reports := make([]userSyncReport, 0, len(contexts))
 	changedScopes := make([]SkyforgeUserContext, 0, 4)
-	for i := range scopes {
-		scopeCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-		report := syncUserResources(scopeCtx, cfg, &scopes[i])
+	for i := range contexts {
+		runCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		report := syncUserResources(runCtx, cfg, &contexts[i])
 		cancel()
 		if report.Updated {
-			changedScopes = append(changedScopes, scopes[i])
+			changedScopes = append(changedScopes, contexts[i])
 		}
 		reports = append(reports, report)
 	}
@@ -2383,10 +2383,10 @@ func initService() (*Service, error) {
 		rlog.Error("oidc init failed; continuing without oidc until it recovers", "err", oidcErr)
 	}
 	var (
-		scopeStore scopesStore
-		awsStore   awsSSOTokenStore
-		userStore  usersStore
-		db         *sql.DB
+		ownerContextStore ownerContextsStore
+		awsStore          awsSSOTokenStore
+		userStore         usersStore
+		db                *sql.DB
 	)
 
 	db, err := openSkyforgeDB(context.Background())
@@ -2404,21 +2404,21 @@ func initService() (*Service, error) {
 	pgUsers := newPGUsersStore(db)
 	pgAWS := newPGAWSStore(db, box)
 
-	scopeStore = pgScopes
+	ownerContextStore = pgScopes
 	awsStore = pgAWS
 	userStore = pgUsers
 
 	// Background loops are scheduled externally (e.g. Kubernetes CronJobs) and enqueued for worker execution.
 
 	svc := &Service{
-		cfg:            cfg,
-		auth:           auth,
-		sessionManager: sessionManager,
-		scopeStore:     scopeStore,
-		awsStore:       awsStore,
-		userStore:      userStore,
-		box:            box,
-		db:             db,
+		cfg:               cfg,
+		auth:              auth,
+		sessionManager:    sessionManager,
+		ownerContextStore: ownerContextStore,
+		awsStore:          awsStore,
+		userStore:         userStore,
+		box:               box,
+		db:                db,
 	}
 	if oidcClient != nil {
 		svc.oidc.Store(oidcClient)
@@ -2475,15 +2475,15 @@ type SessionManager struct {
 
 //encore:service
 type Service struct {
-	cfg            Config
-	auth           *LDAPAuthenticator
-	oidc           atomic.Pointer[OIDCClient]
-	sessionManager *SessionManager
-	scopeStore     scopesStore
-	awsStore       awsSSOTokenStore
-	userStore      usersStore
-	box            *secretBox
-	db             *sql.DB
+	cfg               Config
+	auth              *LDAPAuthenticator
+	oidc              atomic.Pointer[OIDCClient]
+	sessionManager    *SessionManager
+	ownerContextStore ownerContextsStore
+	awsStore          awsSSOTokenStore
+	userStore         usersStore
+	box               *secretBox
+	db                *sql.DB
 
 	elasticOnce    sync.Once
 	elasticClient  *elasticint.Client
@@ -3258,7 +3258,7 @@ func shouldNotifyCloudCredential(ctx context.Context, db *sql.DB, key string, ok
 	return prev && !ok
 }
 
-func ownerNotificationRecipients(scope SkyforgeUserContext) []string {
+func ownerNotificationRecipients(contextRec SkyforgeUserContext) []string {
 	recipients := map[string]struct{}{}
 	add := func(value string) {
 		value = strings.ToLower(strings.TrimSpace(value))
@@ -3267,8 +3267,8 @@ func ownerNotificationRecipients(scope SkyforgeUserContext) []string {
 		}
 		recipients[value] = struct{}{}
 	}
-	add(scope.CreatedBy)
-	for _, owner := range scope.Owners {
+	add(contextRec.CreatedBy)
+	for _, owner := range contextRec.Owners {
 		add(owner)
 	}
 	out := make([]string, 0, len(recipients))

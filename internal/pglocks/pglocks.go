@@ -9,14 +9,14 @@ import (
 	"sync"
 )
 
-func DeploymentAdvisoryLockKey(scopeID, deploymentID string) int64 {
-	sum := sha256.Sum256(fmt.Appendf(nil, "%s:%s", scopeID, deploymentID))
+func DeploymentAdvisoryLockKey(ownerID, deploymentID string) int64 {
+	sum := sha256.Sum256(fmt.Appendf(nil, "%s:%s", ownerID, deploymentID))
 	u := binary.LittleEndian.Uint64(sum[:8])
 	return int64(u)
 }
 
-func UserAdvisoryLockKey(scopeID string) int64 {
-	sum := sha256.Sum256(fmt.Appendf(nil, "%s:__scope__", scopeID))
+func UserAdvisoryLockKey(ownerID string) int64 {
+	sum := sha256.Sum256(fmt.Appendf(nil, "%s:__owner__", ownerID))
 	u := binary.LittleEndian.Uint64(sum[:8])
 	return int64(u)
 }

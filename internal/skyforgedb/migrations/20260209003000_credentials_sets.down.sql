@@ -1,4 +1,4 @@
-ALTER TABLE sf_workspace_forward_credentials
+ALTER TABLE sf_owner_forward_credentials
   DROP COLUMN IF EXISTS credential_id;
 
 ALTER TABLE sf_policy_report_forward_network_credentials

@@ -172,7 +172,7 @@ Elastic: {
 Kubernetes: {
 	// ImagePullSecretName is the name of a docker registry secret that allows
 	// pulling images (e.g. from GHCR). When set, Skyforge can mirror it into
-	// per-scope namespaces used by clabernetes/netlab-c9s.
+	// per-user namespaces used by clabernetes/netlab-c9s.
 	ImagePullSecretName: "ghcr-pull"
 	// ImagePullSecretNamespace is the namespace where ImagePullSecretName exists.
 	ImagePullSecretNamespace: "skyforge"

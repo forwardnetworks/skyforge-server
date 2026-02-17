@@ -92,32 +92,32 @@ func (s *Service) UpdateUserSettings(ctx context.Context, id string, req *UserSe
 	if req == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("payload required").Err()
 	}
-	scopes, err := s.scopeStore.load()
+	contexts, err := s.ownerContextStore.load()
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load user contexts").Err()
 	}
 	updated := false
-	for i := range scopes {
-		if scopes[i].ID != pc.context.ID {
+	for i := range contexts {
+		if contexts[i].ID != pc.context.ID {
 			continue
 		}
 		validated, err := validateExternalTemplateRepos(req.ExternalTemplateRepos)
 		if err != nil {
 			return nil, err
 		}
-		scopes[i].ExternalTemplateRepos = validated
-		scopes[i].AllowExternalTemplateRepos = req.AllowExternalTemplateRepos
-		scopes[i].AllowCustomEveServers = req.AllowCustomEveServers
-		scopes[i].AllowCustomNetlabServers = req.AllowCustomNetlabServers
-		scopes[i].AllowCustomContainerlabServers = req.AllowCustomContainerlabServers
-		pc.context = scopes[i]
+		contexts[i].ExternalTemplateRepos = validated
+		contexts[i].AllowExternalTemplateRepos = req.AllowExternalTemplateRepos
+		contexts[i].AllowCustomEveServers = req.AllowCustomEveServers
+		contexts[i].AllowCustomNetlabServers = req.AllowCustomNetlabServers
+		contexts[i].AllowCustomContainerlabServers = req.AllowCustomContainerlabServers
+		pc.context = contexts[i]
 		updated = true
 		break
 	}
 	if !updated {
 		return nil, errs.B().Code(errs.NotFound).Msg("user context not found").Err()
 	}
-	if err := s.scopeStore.upsert(pc.context); err != nil {
+	if err := s.ownerContextStore.upsert(pc.context); err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to save user settings").Err()
 	}
 	if s.db != nil {

@@ -52,13 +52,13 @@ func (s *Service) RunEvents(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	// RBAC: only allow if the user can access the scope.
-	_, _, scope, err := s.loadOwnerContextByKey(task.OwnerID)
+	// RBAC: only allow if the user can access the owner context.
+	_, _, userContext, err := s.loadOwnerContextByKey(task.OwnerID)
 	if err != nil {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	if ownerAccessLevelForClaims(s.cfg, scope, claims) == "none" {
+	if ownerAccessLevelForClaims(s.cfg, userContext, claims) == "none" {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}

@@ -22,11 +22,11 @@ func (s *Service) mergeDeploymentEnvironment(ctx context.Context, ownerID, usern
 		return map[string]string{}, nil
 	}
 	groupIDs := parseEnvGroupIDs(cfgAny["envGroupIds"])
-	scope := parseEnvGroupScope(cfgAny["envGroupScope"])
+	groupOwnerMode := parseEnvGroupOwnerMode(cfgAny["envGroupScope"])
 	groupEnv := map[string]string{}
 	if len(groupIDs) > 0 {
 		var err error
-		if scope == "user" {
+		if groupOwnerMode == "user" {
 			groupEnv, err = loadUserVariableGroupsByID(ctx, s.db, username, groupIDs)
 		} else {
 			groupEnv, err = loadOwnerVariableGroupsByID(ctx, s.db, ownerID, groupIDs)
@@ -48,10 +48,10 @@ func (s *Service) mergeDeploymentEnvironment(ctx context.Context, ownerID, usern
 	return env, nil
 }
 
-func parseEnvGroupScope(raw any) string {
+func parseEnvGroupOwnerMode(raw any) string {
 	if v, ok := raw.(string); ok {
 		switch strings.ToLower(strings.TrimSpace(v)) {
-		case "user", "personal", "scope", "workspace":
+		case "user", "personal":
 			return "user"
 		}
 	}
