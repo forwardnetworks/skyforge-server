@@ -7,7 +7,7 @@ import (
 
 type PolicyReportRun struct {
 	ID               string          `json:"id"`
-	WorkspaceID      string          `json:"workspaceId"`
+	UserContextID    string          `json:"userContextId"`
 	ForwardNetworkID string          `json:"forwardNetworkId"`
 	SnapshotID       string          `json:"snapshotId,omitempty"`
 	PackID           string          `json:"packId"`
@@ -36,7 +36,7 @@ type PolicyReportRunFinding struct {
 }
 
 type PolicyReportFindingAgg struct {
-	WorkspaceID      string          `json:"workspaceId"`
+	UserContextID    string          `json:"userContextId"`
 	ForwardNetworkID string          `json:"forwardNetworkId"`
 	CheckID          string          `json:"checkId"`
 	FindingID        string          `json:"findingId"`

@@ -15,7 +15,7 @@ const governancePolicySettingKey = "governance_policy"
 //
 // All limits are optional. A value of 0 means "unlimited/disabled".
 type GovernancePolicy struct {
-	// MaxDeploymentsPerUser caps the number of deployment definitions a user can create across all workspaces.
+	// MaxDeploymentsPerUser caps the number of deployment definitions a user can create across all userContexts.
 	MaxDeploymentsPerUser int `json:"maxDeploymentsPerUser"`
 
 	// MaxCollectorsPerUser caps the number of in-cluster Forward collectors a user can create.

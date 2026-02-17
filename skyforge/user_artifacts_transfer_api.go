@@ -12,45 +12,45 @@ import (
 	"encore.app/storage"
 )
 
-type WorkspaceArtifactUploadRequest struct {
+type UserArtifactUploadRequest struct {
 	Key           string `json:"key"`
 	ContentBase64 string `json:"contentBase64"`
 }
 
-type WorkspaceArtifactUploadResponse struct {
-	Status        string `json:"status"`
-	Bucket        string `json:"bucket"`
-	Key           string `json:"key"`
-	WorkspaceID   string `json:"workspaceId"`
-	WorkspaceSlug string `json:"workspaceSlug"`
-	UploadedBy    string `json:"uploadedBy"`
-	UploadedAtUtc string `json:"uploadedAtUtc,omitempty"`
+type UserArtifactUploadResponse struct {
+	Status          string `json:"status"`
+	Bucket          string `json:"bucket"`
+	Key             string `json:"key"`
+	UserContextID   string `json:"userContextId"`
+	UserContextSlug string `json:"userContextSlug"`
+	UploadedBy      string `json:"uploadedBy"`
+	UploadedAtUtc   string `json:"uploadedAtUtc,omitempty"`
 }
 
-type WorkspaceArtifactDownloadParams struct {
+type UserArtifactDownloadParams struct {
 	Key string `query:"key"`
 }
 
-type WorkspaceArtifactDownloadResponse struct {
+type UserArtifactDownloadResponse struct {
 	Status   string `json:"status"`
 	Bucket   string `json:"bucket"`
 	Key      string `json:"key"`
 	FileData string `json:"fileData"`
 }
 
-// UploadWorkspaceArtifact uploads or presigns an artifact to the workspace's bucket.
+// UploadUserArtifact uploads or presigns an artifact to the user-context bucket.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/artifacts/upload
-func (s *Service) UploadWorkspaceArtifact(ctx context.Context, id string, req *WorkspaceArtifactUploadRequest) (*WorkspaceArtifactUploadResponse, error) {
-	return s.handleWorkspaceArtifactUpload(ctx, id, req)
+//encore:api auth method=POST path=/api/user-contexts/:id/artifacts/upload
+func (s *Service) UploadUserArtifact(ctx context.Context, id string, req *UserArtifactUploadRequest) (*UserArtifactUploadResponse, error) {
+	return s.handleUserArtifactUpload(ctx, id, req)
 }
 
-func (s *Service) handleWorkspaceArtifactUpload(ctx context.Context, id string, req *WorkspaceArtifactUploadRequest) (*WorkspaceArtifactUploadResponse, error) {
+func (s *Service) handleUserArtifactUpload(ctx context.Context, id string, req *UserArtifactUploadRequest) (*UserArtifactUploadResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ func (s *Service) handleWorkspaceArtifactUpload(ctx context.Context, id string, 
 	if err != nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid contentBase64").Err()
 	}
-	objectName := artifactObjectName(pc.workspace.ID, key)
+	objectName := artifactObjectName(pc.userContext.ID, key)
 
 	// Prefer MinIO path-style client when available (same reason as listing/downloading).
 	if c, err := objectStoreClientFor(s.cfg); err == nil && c != nil {
@@ -99,35 +99,35 @@ func (s *Service) handleWorkspaceArtifactUpload(ctx context.Context, id string, 
 			actor,
 			actorIsAdmin,
 			impersonated,
-			"workspace.artifact.upload",
-			pc.workspace.ID,
+			"user-context.artifact.upload",
+			pc.userContext.ID,
 			fmt.Sprintf("bucket=%s key=%s size=%d", storage.StorageBucketName, key, len(payload)),
 		)
 	}
-	return &WorkspaceArtifactUploadResponse{
-		Status:        "uploaded",
-		Bucket:        storage.StorageBucketName,
-		Key:           key,
-		WorkspaceID:   pc.workspace.ID,
-		WorkspaceSlug: pc.workspace.Slug,
-		UploadedBy:    pc.claims.Username,
-		UploadedAtUtc: time.Now().UTC().Format(time.RFC3339),
+	return &UserArtifactUploadResponse{
+		Status:          "uploaded",
+		Bucket:          storage.StorageBucketName,
+		Key:             key,
+		UserContextID:   pc.userContext.ID,
+		UserContextSlug: pc.userContext.Slug,
+		UploadedBy:      pc.claims.Username,
+		UploadedAtUtc:   time.Now().UTC().Format(time.RFC3339),
 	}, nil
 }
 
-// DownloadWorkspaceArtifact returns a presigned download redirect for the artifact.
+// DownloadUserArtifact returns a presigned download redirect for the artifact.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/artifacts/download
-func (s *Service) DownloadWorkspaceArtifact(ctx context.Context, id string, params *WorkspaceArtifactDownloadParams) (*WorkspaceArtifactDownloadResponse, error) {
-	return s.handleWorkspaceArtifactDownload(ctx, id, params)
+//encore:api auth method=GET path=/api/user-contexts/:id/artifacts/download
+func (s *Service) DownloadUserArtifact(ctx context.Context, id string, params *UserArtifactDownloadParams) (*UserArtifactDownloadResponse, error) {
+	return s.handleUserArtifactDownload(ctx, id, params)
 }
 
-func (s *Service) handleWorkspaceArtifactDownload(ctx context.Context, id string, params *WorkspaceArtifactDownloadParams) (*WorkspaceArtifactDownloadResponse, error) {
+func (s *Service) handleUserArtifactDownload(ctx context.Context, id string, params *UserArtifactDownloadParams) (*UserArtifactDownloadResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func (s *Service) handleWorkspaceArtifactDownload(ctx context.Context, id string
 	if key == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("key is required").Err()
 	}
-	objectName := artifactObjectName(pc.workspace.ID, key)
+	objectName := artifactObjectName(pc.userContext.ID, key)
 
 	// Prefer MinIO client (path-style) to avoid bucket subdomain DNS issues when
 	// using Encore's objects SDK in-cluster.
@@ -161,7 +161,7 @@ func (s *Service) handleWorkspaceArtifactDownload(ctx context.Context, id string
 		payload = data.Data
 	}
 	artifactDownloads.Add(1)
-	return &WorkspaceArtifactDownloadResponse{
+	return &UserArtifactDownloadResponse{
 		Status:   "ok",
 		Bucket:   storage.StorageBucketName,
 		Key:      key,
@@ -169,11 +169,11 @@ func (s *Service) handleWorkspaceArtifactDownload(ctx context.Context, id string
 	}, nil
 }
 
-func artifactObjectName(workspaceID, key string) string {
-	workspaceID = strings.TrimSpace(workspaceID)
+func artifactObjectName(userContextID, key string) string {
+	userContextID = strings.TrimSpace(userContextID)
 	key = strings.TrimPrefix(strings.TrimSpace(key), "/")
-	if workspaceID == "" {
+	if userContextID == "" {
 		return fmt.Sprintf("artifacts/%s", key)
 	}
-	return fmt.Sprintf("artifacts/%s/%s", workspaceID, key)
+	return fmt.Sprintf("artifacts/%s/%s", userContextID, key)
 }

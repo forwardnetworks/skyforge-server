@@ -159,10 +159,9 @@ func injectNetlabC9sVrnetlabStartupConfig(
 			// Keep this intentionally tiny and avoid interface configuration; netlab will
 			// apply the full intended config post-boot via `netlab initial`.
 			//
-			// Containerlab's IOSv defaults are typically vagrant/vagrant; keep parity with
-			// our catalog defaults to avoid auth mismatches.
-			user := "vagrant"
-			pass := "vagrant"
+			// Use admin/admin bootstrap to match Skyforge credential defaults and avoid auth mismatches.
+			user := "admin"
+			pass := "admin"
 			bootstrap := strings.TrimSpace(fmt.Sprintf(`
 hostname %s
 no ip domain lookup

@@ -654,7 +654,7 @@ func (e *Engine) storeClabernetesTopologyArtifact(ctx context.Context, spec clab
 		return fmt.Errorf("invalid task context")
 	}
 	if strings.TrimSpace(spec.WorkspaceID) == "" {
-		// Best-effort enhancement: storing topology graphs requires a workspace scope.
+		// Best-effort enhancement: storing topology graphs requires a user-context scope.
 		// Skip silently rather than failing the overall run.
 		return nil
 	}
@@ -674,7 +674,7 @@ func (e *Engine) storeClabernetesTopologyArtifact(ctx context.Context, spec clab
 	key := fmt.Sprintf("topology/clabernetes/%s.json", sanitizeArtifactKeySegment(labName))
 	ctxPut, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	putKey, err := putWorkspaceArtifact(ctxPut, e.cfg, spec.WorkspaceID, key, graphBytes, "application/json")
+	putKey, err := putUserContextArtifact(ctxPut, e.cfg, spec.WorkspaceID, key, graphBytes, "application/json")
 	if err != nil {
 		if isObjectStoreNotConfigured(err) {
 			return nil

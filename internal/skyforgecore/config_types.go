@@ -8,44 +8,46 @@ import "time"
 // and the worker service without creating a Go-package dependency on the skyforge
 // service package implementation.
 type Config struct {
-	ListenAddr                string
-	SessionSecret             string
-	SessionTTL                time.Duration
-	SessionCookie             string
-	CookieSecure              string
-	CookieDomain              string
-	InternalToken             string
-	StaticRoot                string
-	MaxGroups                 int
-	AdminUsers                []string
-	AdminUsername             string
-	AdminPassword             string
-	E2EAdminEnabled           bool
-	E2EAdminToken             string
-	UI                        UIConfig
-	PublicURL                 string
-	NotificationsEnabled      bool
-	NotificationsInterval     time.Duration
-	CloudCredentialChecks     time.Duration
-	CorpEmailDomain           string
-	AwsSSOAccountID           string
-	AwsSSORoleName            string
-	AwsSSOStartURL            string
-	AwsSSORegion              string
-	GiteaBaseURL              string
-	NetboxBaseURL             string
-	NetboxInternalBaseURL     string
-	NautobotBaseURL           string
-	NautobotInternalBaseURL   string
-	YaadeBaseURL              string
-	YaadeInternalBaseURL      string
-	ElasticURL                string
-	ElasticIndexPrefix        string
-	Netlab                    NetlabConfig
-	OIDC                      OIDCConfig
-	LDAP                      LDAPConfig
-	LDAPLookupBindDN          string
-	LDAPLookupBindPassword    string
+	ListenAddr              string
+	SessionSecret           string
+	SessionTTL              time.Duration
+	SessionCookie           string
+	CookieSecure            string
+	CookieDomain            string
+	InternalToken           string
+	StaticRoot              string
+	MaxGroups               int
+	AdminUsers              []string
+	AdminUsername           string
+	AdminPassword           string
+	E2EAdminEnabled         bool
+	E2EAdminToken           string
+	UI                      UIConfig
+	PublicURL               string
+	NotificationsEnabled    bool
+	NotificationsInterval   time.Duration
+	CloudCredentialChecks   time.Duration
+	CorpEmailDomain         string
+	AwsSSOAccountID         string
+	AwsSSORoleName          string
+	AwsSSOStartURL          string
+	AwsSSORegion            string
+	GiteaBaseURL            string
+	NetboxBaseURL           string
+	NetboxInternalBaseURL   string
+	NautobotBaseURL         string
+	NautobotInternalBaseURL string
+	YaadeBaseURL            string
+	YaadeInternalBaseURL    string
+	ElasticURL              string
+	ElasticIndexPrefix      string
+	Netlab                  NetlabConfig
+	OIDC                    OIDCConfig
+	LDAP                    LDAPConfig
+	LDAPLookupBindDN        string
+	LDAPLookupBindPassword  string
+	UserContexts            WorkspacesConfig
+	// Workspaces is a deprecated alias for UserContexts.
 	Workspaces                WorkspacesConfig
 	TerraformBinaryPath       string
 	TerraformVersion          string
@@ -213,7 +215,7 @@ type WorkspacesConfig struct {
 	ObjectStorageSecretKey string
 }
 
-// SkyforgeWorkspace is the user-facing workspace object stored in Postgres and
+// SkyforgeWorkspace is the user-facing user-context object stored in Postgres and
 // returned by the API.
 type SkyforgeWorkspace struct {
 	ID                         string                 `json:"id"`

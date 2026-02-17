@@ -15,7 +15,7 @@ import (
 )
 
 type ForwardNetworkCapacitySummaryResponse struct {
-	WorkspaceID      string              `json:"workspaceId"`
+	UserContextID    string              `json:"userContextId"`
 	NetworkRef       string              `json:"networkRef"`
 	ForwardNetworkID string              `json:"forwardNetworkId"`
 	AsOf             string              `json:"asOf,omitempty"`
@@ -24,13 +24,13 @@ type ForwardNetworkCapacitySummaryResponse struct {
 }
 
 type ForwardNetworkCapacityRefreshResponse struct {
-	WorkspaceID string  `json:"workspaceId"`
-	NetworkRef  string  `json:"networkRef"`
-	Run         JSONMap `json:"run"`
+	UserContextID string  `json:"userContextId"`
+	NetworkRef    string  `json:"networkRef"`
+	Run           JSONMap `json:"run"`
 }
 
 type ForwardNetworkCapacityInventoryResponse struct {
-	WorkspaceID      string `json:"workspaceId"`
+	UserContextID    string `json:"userContextId"`
 	NetworkRef       string `json:"networkRef"`
 	ForwardNetworkID string `json:"forwardNetworkId"`
 	AsOf             string `json:"asOf,omitempty"`
@@ -45,7 +45,7 @@ type ForwardNetworkCapacityInventoryResponse struct {
 }
 
 type ForwardNetworkCapacityGrowthResponse struct {
-	WorkspaceID      string              `json:"workspaceId"`
+	UserContextID    string              `json:"userContextId"`
 	NetworkRef       string              `json:"networkRef"`
 	ForwardNetworkID string              `json:"forwardNetworkId"`
 	Metric           string              `json:"metric"`
@@ -63,14 +63,14 @@ type resolveForwardNetworkRow struct {
 	CollectorConfigID string
 }
 
-func resolveWorkspaceForwardNetwork(ctx context.Context, db *sql.DB, workspaceID, username, networkRef string) (*resolveForwardNetworkRow, error) {
+func resolveUserForwardNetwork(ctx context.Context, db *sql.DB, userContextID, username, networkRef string) (*resolveForwardNetworkRow, error) {
 	if db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userContextID = strings.TrimSpace(userContextID)
 	username = strings.ToLower(strings.TrimSpace(username))
 	networkRef = strings.TrimSpace(networkRef)
-	if workspaceID == "" || username == "" || networkRef == "" {
+	if username == "" || networkRef == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid identifiers").Err()
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -78,11 +78,24 @@ func resolveWorkspaceForwardNetwork(ctx context.Context, db *sql.DB, workspaceID
 
 	var id, forwardID, collectorConfigID string
 	err := db.QueryRowContext(ctxReq, `
-SELECT id::text, forward_network_id, COALESCE(collector_config_id,'')
-  FROM sf_policy_report_forward_networks
- WHERE (workspace_id=$1 OR owner_username=$2) AND (id::text=$3 OR forward_network_id=$3)
- ORDER BY (workspace_id=$1) DESC, updated_at DESC
- LIMIT 1`, workspaceID, username, networkRef).Scan(&id, &forwardID, &collectorConfigID)
+WITH me AS (
+  SELECT id FROM sf_users WHERE username=$2 LIMIT 1
+)
+SELECT n.id::text, n.forward_network_id, COALESCE(n.collector_config_id,'')
+  FROM sf_policy_report_forward_networks n
+  LEFT JOIN me ON true
+ WHERE (n.id::text=$3 OR n.forward_network_id=$3)
+   AND (
+     n.owner_username=$2
+     OR (me.id IS NOT NULL AND n.user_id=me.id)
+     OR ($1 <> '' AND n.workspace_id=$1)
+   )
+ ORDER BY
+   (n.owner_username=$2) DESC,
+   (me.id IS NOT NULL AND n.user_id=me.id) DESC,
+   (($1 <> '') AND n.workspace_id=$1) DESC,
+   n.updated_at DESC
+ LIMIT 1`, userContextID, username, networkRef).Scan(&id, &forwardID, &collectorConfigID)
 	if err != nil {
 		if err == sql.ErrNoRows || isMissingDBRelation(err) {
 			return nil, errs.B().Code(errs.NotFound).Msg("forward network not found").Err()
@@ -134,15 +147,13 @@ func (s *Service) capacityForwardClientForUserNetwork(ctx context.Context, usern
 
 // ---- Summary / Refresh ----
 
-// GetWorkspaceForwardNetworkCapacitySummary returns the latest stored capacity rollups for a saved Forward network.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/forward-networks/:networkRef/capacity/summary
-func (s *Service) GetWorkspaceForwardNetworkCapacitySummary(ctx context.Context, id, networkRef string) (*ForwardNetworkCapacitySummaryResponse, error) {
+// GetUserContextForwardNetworkCapacitySummary returns the latest stored capacity rollups for a saved Forward network.
+func (s *Service) GetUserContextForwardNetworkCapacitySummary(ctx context.Context, id, networkRef string) (*ForwardNetworkCapacitySummaryResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -150,12 +161,12 @@ func (s *Service) GetWorkspaceForwardNetworkCapacitySummary(ctx context.Context,
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.userContext.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
 
-	periodEnd, rows, err := loadLatestCapacityRollupsForForwardNetwork(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID)
+	periodEnd, rows, err := loadLatestCapacityRollupsForForwardNetwork(ctx, s.db, pc.claims.Username, pc.userContext.ID, net.ForwardNetworkID)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load capacity rollups").Err()
 	}
@@ -166,7 +177,7 @@ func (s *Service) GetWorkspaceForwardNetworkCapacitySummary(ctx context.Context,
 		stale = time.Since(periodEnd) > 2*time.Hour
 	}
 	return &ForwardNetworkCapacitySummaryResponse{
-		WorkspaceID:      pc.workspace.ID,
+		UserContextID:    pc.userContext.ID,
 		NetworkRef:       net.ID,
 		ForwardNetworkID: net.ForwardNetworkID,
 		AsOf:             asOf,
@@ -175,15 +186,13 @@ func (s *Service) GetWorkspaceForwardNetworkCapacitySummary(ctx context.Context,
 	}, nil
 }
 
-// RefreshWorkspaceForwardNetworkCapacityRollups enqueues a background rollup task for the saved Forward network.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/forward-networks/:networkRef/capacity/rollups/refresh
-func (s *Service) RefreshWorkspaceForwardNetworkCapacityRollups(ctx context.Context, id, networkRef string) (*ForwardNetworkCapacityRefreshResponse, error) {
+// RefreshUserContextForwardNetworkCapacityRollups enqueues a background rollup task for the saved Forward network.
+func (s *Service) RefreshUserContextForwardNetworkCapacityRollups(ctx context.Context, id, networkRef string) (*ForwardNetworkCapacityRefreshResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +203,7 @@ func (s *Service) RefreshWorkspaceForwardNetworkCapacityRollups(ctx context.Cont
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.userContext.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +219,7 @@ func (s *Service) RefreshWorkspaceForwardNetworkCapacityRollups(ctx context.Cont
 	}
 	meta, _ := toJSONMap(metaAny)
 	msg := fmt.Sprintf("Capacity rollup (%s)", pc.claims.Username)
-	task, err := createTaskAllowActive(ctx, s.db, pc.workspace.ID, nil, "capacity-rollup-forward-network", msg, pc.claims.Username, meta)
+	task, err := createTaskAllowActive(ctx, s.db, pc.userContext.ID, nil, "capacity-rollup-forward-network", msg, pc.claims.Username, meta)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to enqueue rollup").Err()
 	}
@@ -223,23 +232,21 @@ func (s *Service) RefreshWorkspaceForwardNetworkCapacityRollups(ctx context.Cont
 		}
 	}
 	return &ForwardNetworkCapacityRefreshResponse{
-		WorkspaceID: pc.workspace.ID,
-		NetworkRef:  net.ID,
-		Run:         runJSON,
+		UserContextID: pc.userContext.ID,
+		NetworkRef:    net.ID,
+		Run:           runJSON,
 	}, nil
 }
 
 // ---- Inventory ----
 
-// GetWorkspaceForwardNetworkCapacityInventory returns the latest cached NQE results for inventory/routing scale.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/forward-networks/:networkRef/capacity/inventory
-func (s *Service) GetWorkspaceForwardNetworkCapacityInventory(ctx context.Context, id, networkRef string) (*ForwardNetworkCapacityInventoryResponse, error) {
+// GetUserContextForwardNetworkCapacityInventory returns the latest cached NQE results for inventory/routing scale.
+func (s *Service) GetUserContextForwardNetworkCapacityInventory(ctx context.Context, id, networkRef string) (*ForwardNetworkCapacityInventoryResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -247,18 +254,18 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityInventory(ctx context.Contex
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.userContext.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
 
-	asOf, snapshotID, devices, ifaces, ifaceVrfs, hwTcam, routes, bgp, err := loadLatestCapacityInventoryForForwardNetwork(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID)
+	asOf, snapshotID, devices, ifaces, ifaceVrfs, hwTcam, routes, bgp, err := loadLatestCapacityInventoryForForwardNetwork(ctx, s.db, pc.claims.Username, pc.userContext.ID, net.ForwardNetworkID)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load capacity inventory").Err()
 	}
 
 	out := &ForwardNetworkCapacityInventoryResponse{
-		WorkspaceID:      pc.workspace.ID,
+		UserContextID:    pc.userContext.ID,
 		NetworkRef:       net.ID,
 		ForwardNetworkID: net.ForwardNetworkID,
 		Devices:          devices,
@@ -277,22 +284,20 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityInventory(ctx context.Contex
 
 // ---- Growth ----
 
-// GetWorkspaceForwardNetworkCapacityGrowth compares the latest rollup bucket to an earlier one and returns deltas.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/forward-networks/:networkRef/capacity/growth
-func (s *Service) GetWorkspaceForwardNetworkCapacityGrowth(ctx context.Context, id, networkRef string, q *DeploymentCapacityGrowthQuery) (*ForwardNetworkCapacityGrowthResponse, error) {
+// GetUserContextForwardNetworkCapacityGrowth compares the latest rollup bucket to an earlier one and returns deltas.
+func (s *Service) GetUserContextForwardNetworkCapacityGrowth(ctx context.Context, id, networkRef string, q *DeploymentCapacityGrowthQuery) (*ForwardNetworkCapacityGrowthResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.userContext.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -314,7 +319,7 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityGrowth(ctx context.Context, 
 		limit = 50
 	}
 
-	asOf, compareAsOf, rows, err := loadCapacityGrowthForForwardNetwork(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID, metric, window, objectType, time.Duration(compareHours)*time.Hour)
+	asOf, compareAsOf, rows, err := loadCapacityGrowthForForwardNetwork(ctx, s.db, pc.claims.Username, pc.userContext.ID, net.ForwardNetworkID, metric, window, objectType, time.Duration(compareHours)*time.Hour)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to compute growth").Err()
 	}
@@ -322,7 +327,7 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityGrowth(ctx context.Context, 
 		rows = rows[:limit]
 	}
 	resp := &ForwardNetworkCapacityGrowthResponse{
-		WorkspaceID:      pc.workspace.ID,
+		UserContextID:    pc.userContext.ID,
 		NetworkRef:       net.ID,
 		ForwardNetworkID: net.ForwardNetworkID,
 		Metric:           metric,
@@ -342,22 +347,20 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityGrowth(ctx context.Context, 
 
 // ---- Forward perf proxy endpoints (read-through) ----
 
-// GetWorkspaceForwardNetworkCapacityInterfaceMetrics proxies Forward's interface-metrics endpoint.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/forward-networks/:networkRef/capacity/perf/interface-metrics
-func (s *Service) GetWorkspaceForwardNetworkCapacityInterfaceMetrics(ctx context.Context, id, networkRef string, q *CapacityInterfaceMetricsQuery) (*CapacityPerfProxyResponse, error) {
+// GetUserContextForwardNetworkCapacityInterfaceMetrics proxies Forward's interface-metrics endpoint.
+func (s *Service) GetUserContextForwardNetworkCapacityInterfaceMetrics(ctx context.Context, id, networkRef string, q *CapacityInterfaceMetricsQuery) (*CapacityPerfProxyResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.userContext.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -400,22 +403,20 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityInterfaceMetrics(ctx context
 	return &CapacityPerfProxyResponse{Body: body}, nil
 }
 
-// PostWorkspaceForwardNetworkCapacityInterfaceMetricsHistory proxies Forward's interface-metrics-history endpoint.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/forward-networks/:networkRef/capacity/perf/interface-metrics-history
-func (s *Service) PostWorkspaceForwardNetworkCapacityInterfaceMetricsHistory(ctx context.Context, id, networkRef string, req *capacityInterfaceMetricsHistoryRequest) (*CapacityPerfProxyResponse, error) {
+// PostUserContextForwardNetworkCapacityInterfaceMetricsHistory proxies Forward's interface-metrics-history endpoint.
+func (s *Service) PostUserContextForwardNetworkCapacityInterfaceMetricsHistory(ctx context.Context, id, networkRef string, req *capacityInterfaceMetricsHistoryRequest) (*CapacityPerfProxyResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.userContext.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -452,22 +453,20 @@ func (s *Service) PostWorkspaceForwardNetworkCapacityInterfaceMetricsHistory(ctx
 	return &CapacityPerfProxyResponse{Body: body}, nil
 }
 
-// PostWorkspaceForwardNetworkCapacityDeviceMetricsHistory proxies Forward's device-metrics-history endpoint.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/forward-networks/:networkRef/capacity/perf/device-metrics-history
-func (s *Service) PostWorkspaceForwardNetworkCapacityDeviceMetricsHistory(ctx context.Context, id, networkRef string, req *capacityDeviceSet) (*CapacityPerfProxyResponse, error) {
+// PostUserContextForwardNetworkCapacityDeviceMetricsHistory proxies Forward's device-metrics-history endpoint.
+func (s *Service) PostUserContextForwardNetworkCapacityDeviceMetricsHistory(ctx context.Context, id, networkRef string, req *capacityDeviceSet) (*CapacityPerfProxyResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.userContext.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -504,22 +503,20 @@ func (s *Service) PostWorkspaceForwardNetworkCapacityDeviceMetricsHistory(ctx co
 	return &CapacityPerfProxyResponse{Body: body}, nil
 }
 
-// GetWorkspaceForwardNetworkCapacityUnhealthyDevices proxies Forward's unhealthy-devices endpoint.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/forward-networks/:networkRef/capacity/perf/unhealthy-devices
-func (s *Service) GetWorkspaceForwardNetworkCapacityUnhealthyDevices(ctx context.Context, id, networkRef string, q *CapacityUnhealthyDevicesQuery) (*CapacityPerfProxyResponse, error) {
+// GetUserContextForwardNetworkCapacityUnhealthyDevices proxies Forward's unhealthy-devices endpoint.
+func (s *Service) GetUserContextForwardNetworkCapacityUnhealthyDevices(ctx context.Context, id, networkRef string, q *CapacityUnhealthyDevicesQuery) (*CapacityPerfProxyResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.userContext.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -547,22 +544,20 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityUnhealthyDevices(ctx context
 	return &CapacityPerfProxyResponse{Body: body}, nil
 }
 
-// PostWorkspaceForwardNetworkCapacityUnhealthyInterfaces proxies Forward's unhealthy-interfaces endpoint.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/forward-networks/:networkRef/capacity/perf/unhealthy-interfaces
-func (s *Service) PostWorkspaceForwardNetworkCapacityUnhealthyInterfaces(ctx context.Context, id, networkRef string, req *CapacityUnhealthyInterfacesRequest) (*CapacityPerfProxyResponse, error) {
+// PostUserContextForwardNetworkCapacityUnhealthyInterfaces proxies Forward's unhealthy-interfaces endpoint.
+func (s *Service) PostUserContextForwardNetworkCapacityUnhealthyInterfaces(ctx context.Context, id, networkRef string, req *CapacityUnhealthyInterfacesRequest) (*CapacityPerfProxyResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.userContext.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -596,32 +591,46 @@ func (s *Service) PostWorkspaceForwardNetworkCapacityUnhealthyInterfaces(ctx con
 
 // ---- storage helpers (forward network scope) ----
 
-func loadLatestCapacityRollupsForForwardNetwork(ctx context.Context, db *sql.DB, workspaceID, forwardNetworkID string) (time.Time, []CapacityRollupRow, error) {
+func loadLatestCapacityRollupsForForwardNetwork(ctx context.Context, db *sql.DB, username, userContextID, forwardNetworkID string) (time.Time, []CapacityRollupRow, error) {
 	if db == nil {
 		return time.Time{}, nil, fmt.Errorf("db unavailable")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	username = strings.ToLower(strings.TrimSpace(username))
+	userContextID = strings.TrimSpace(userContextID)
 	forwardNetworkID = strings.TrimSpace(forwardNetworkID)
-	if workspaceID == "" || forwardNetworkID == "" {
+	if username == "" || forwardNetworkID == "" {
 		return time.Time{}, nil, fmt.Errorf("invalid identifiers")
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	var periodEnd time.Time
-	err := db.QueryRowContext(ctxReq, `SELECT COALESCE(MAX(period_end), 'epoch'::timestamptz)
-FROM sf_capacity_rollups
-WHERE workspace_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL`, workspaceID, forwardNetworkID).Scan(&periodEnd)
+	err := db.QueryRowContext(ctxReq, `WITH me AS (
+  SELECT id FROM sf_users WHERE username=$1 LIMIT 1
+)
+SELECT COALESCE(MAX(r.period_end), 'epoch'::timestamptz)
+FROM sf_capacity_rollups r
+LEFT JOIN me ON true
+WHERE r.forward_network_id=$3
+  AND r.deployment_id IS NULL
+  AND ((me.id IS NOT NULL AND r.user_id=me.id) OR ($2 <> '' AND r.workspace_id=$2))`, username, userContextID, forwardNetworkID).Scan(&periodEnd)
 	if err != nil {
 		return time.Time{}, nil, err
 	}
 	if periodEnd.IsZero() || periodEnd.Equal(time.Unix(0, 0).UTC()) {
 		return time.Time{}, []CapacityRollupRow{}, nil
 	}
-	rows, err := db.QueryContext(ctxReq, `SELECT forward_network_id, object_type, object_id, metric, window_label,
+	rows, err := db.QueryContext(ctxReq, `WITH me AS (
+  SELECT id FROM sf_users WHERE username=$1 LIMIT 1
+)
+SELECT r.forward_network_id, r.object_type, r.object_id, r.metric, r.window_label,
   period_end, samples, avg, p95, p99, max, slope_per_day, forecast_crossing_ts, threshold, details, created_at
-FROM sf_capacity_rollups
-WHERE workspace_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL AND period_end=$3
-ORDER BY metric, window_label, object_type, object_id`, workspaceID, forwardNetworkID, periodEnd)
+FROM sf_capacity_rollups r
+LEFT JOIN me ON true
+WHERE r.forward_network_id=$3
+  AND r.deployment_id IS NULL
+  AND r.period_end=$4
+  AND ((me.id IS NOT NULL AND r.user_id=me.id) OR ($2 <> '' AND r.workspace_id=$2))
+ORDER BY r.metric, r.window_label, r.object_type, r.object_id`, username, userContextID, forwardNetworkID, periodEnd)
 	if err != nil {
 		return time.Time{}, nil, err
 	}
@@ -644,7 +653,7 @@ ORDER BY metric, window_label, object_type, object_id`, workspaceID, forwardNetw
 			continue
 		}
 		row := CapacityRollupRow{
-			WorkspaceID:      workspaceID,
+			UserContextID:    userContextID,
 			ForwardNetworkID: strings.TrimSpace(forwardID),
 			ObjectType:       strings.TrimSpace(objectType),
 			ObjectID:         strings.TrimSpace(objectID),
@@ -692,22 +701,30 @@ ORDER BY metric, window_label, object_type, object_id`, workspaceID, forwardNetw
 	return periodEnd, out, nil
 }
 
-func loadLatestCapacityInventoryForForwardNetwork(ctx context.Context, db *sql.DB, workspaceID, forwardNetworkID string) (asOf time.Time, snapshotID string, devices []CapacityDeviceInventoryRow, ifaces []CapacityInterfaceInventoryRow, ifaceVrfs []CapacityInterfaceVrfRow, hwTcam []CapacityHardwareTcamRow, routes []CapacityRouteScaleRow, bgp []CapacityBgpNeighborRow, err error) {
+func loadLatestCapacityInventoryForForwardNetwork(ctx context.Context, db *sql.DB, username, userContextID, forwardNetworkID string) (asOf time.Time, snapshotID string, devices []CapacityDeviceInventoryRow, ifaces []CapacityInterfaceInventoryRow, ifaceVrfs []CapacityInterfaceVrfRow, hwTcam []CapacityHardwareTcamRow, routes []CapacityRouteScaleRow, bgp []CapacityBgpNeighborRow, err error) {
 	if db == nil {
 		return time.Time{}, "", nil, nil, nil, nil, nil, nil, fmt.Errorf("db unavailable")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	username = strings.ToLower(strings.TrimSpace(username))
+	userContextID = strings.TrimSpace(userContextID)
 	forwardNetworkID = strings.TrimSpace(forwardNetworkID)
-	if workspaceID == "" || forwardNetworkID == "" {
+	if username == "" || forwardNetworkID == "" {
 		return time.Time{}, "", nil, nil, nil, nil, nil, nil, fmt.Errorf("invalid identifiers")
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	rows, err := db.QueryContext(ctxReq, `SELECT DISTINCT ON (query_id) query_id, payload, created_at
-FROM sf_capacity_nqe_cache
-WHERE workspace_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL AND snapshot_id=''
-ORDER BY query_id, created_at DESC`, workspaceID, forwardNetworkID)
+	rows, err := db.QueryContext(ctxReq, `WITH me AS (
+  SELECT id FROM sf_users WHERE username=$1 LIMIT 1
+)
+SELECT DISTINCT ON (c.query_id) c.query_id, c.payload, c.created_at
+FROM sf_capacity_nqe_cache c
+LEFT JOIN me ON true
+WHERE c.forward_network_id=$3
+  AND c.deployment_id IS NULL
+  AND c.snapshot_id=''
+  AND ((me.id IS NOT NULL AND c.user_id=me.id) OR ($2 <> '' AND c.workspace_id=$2))
+ORDER BY c.query_id, c.created_at DESC`, username, userContextID, forwardNetworkID)
 	if err != nil {
 		return time.Time{}, "", nil, nil, nil, nil, nil, nil, err
 	}
@@ -763,25 +780,34 @@ ORDER BY query_id, created_at DESC`, workspaceID, forwardNetworkID)
 	return asOf, snapshotID, devices, ifaces, ifaceVrfs, hwTcam, routes, bgp, nil
 }
 
-func loadCapacityGrowthForForwardNetwork(ctx context.Context, db *sql.DB, workspaceID, forwardNetworkID, metric, window, objectType string, compareDur time.Duration) (asOf time.Time, compareAsOf time.Time, out []CapacityGrowthRow, err error) {
+func loadCapacityGrowthForForwardNetwork(ctx context.Context, db *sql.DB, username, userContextID, forwardNetworkID, metric, window, objectType string, compareDur time.Duration) (asOf time.Time, compareAsOf time.Time, out []CapacityGrowthRow, err error) {
 	if db == nil {
 		return time.Time{}, time.Time{}, nil, fmt.Errorf("db unavailable")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	username = strings.ToLower(strings.TrimSpace(username))
+	userContextID = strings.TrimSpace(userContextID)
 	forwardNetworkID = strings.TrimSpace(forwardNetworkID)
 	metric = strings.TrimSpace(metric)
 	window = strings.TrimSpace(window)
 	objectType = strings.TrimSpace(objectType)
-	if workspaceID == "" || forwardNetworkID == "" || metric == "" || window == "" {
+	if username == "" || forwardNetworkID == "" || metric == "" || window == "" {
 		return time.Time{}, time.Time{}, nil, fmt.Errorf("invalid identifiers")
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	if err := db.QueryRowContext(ctxReq, `SELECT COALESCE(MAX(period_end), 'epoch'::timestamptz)
-FROM sf_capacity_rollups
-WHERE workspace_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL AND metric=$3 AND window_label=$4`,
-		workspaceID, forwardNetworkID, metric, window).Scan(&asOf); err != nil {
+	if err := db.QueryRowContext(ctxReq, `WITH me AS (
+  SELECT id FROM sf_users WHERE username=$1 LIMIT 1
+)
+SELECT COALESCE(MAX(r.period_end), 'epoch'::timestamptz)
+FROM sf_capacity_rollups r
+LEFT JOIN me ON true
+WHERE r.forward_network_id=$3
+  AND r.deployment_id IS NULL
+  AND r.metric=$4
+  AND r.window_label=$5
+  AND ((me.id IS NOT NULL AND r.user_id=me.id) OR ($2 <> '' AND r.workspace_id=$2))`,
+		username, userContextID, forwardNetworkID, metric, window).Scan(&asOf); err != nil {
 		return time.Time{}, time.Time{}, nil, err
 	}
 	if asOf.IsZero() || asOf.Equal(time.Unix(0, 0).UTC()) {
@@ -789,10 +815,19 @@ WHERE workspace_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL AND me
 	}
 
 	target := asOf.Add(-compareDur)
-	if err := db.QueryRowContext(ctxReq, `SELECT COALESCE(MAX(period_end), 'epoch'::timestamptz)
-FROM sf_capacity_rollups
-WHERE workspace_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL AND metric=$3 AND window_label=$4 AND period_end <= $5`,
-		workspaceID, forwardNetworkID, metric, window, target).Scan(&compareAsOf); err != nil {
+	if err := db.QueryRowContext(ctxReq, `WITH me AS (
+  SELECT id FROM sf_users WHERE username=$1 LIMIT 1
+)
+SELECT COALESCE(MAX(r.period_end), 'epoch'::timestamptz)
+FROM sf_capacity_rollups r
+LEFT JOIN me ON true
+WHERE r.forward_network_id=$3
+  AND r.deployment_id IS NULL
+  AND r.metric=$4
+  AND r.window_label=$5
+  AND r.period_end <= $6
+  AND ((me.id IS NOT NULL AND r.user_id=me.id) OR ($2 <> '' AND r.workspace_id=$2))`,
+		username, userContextID, forwardNetworkID, metric, window, target).Scan(&compareAsOf); err != nil {
 		return asOf, time.Time{}, nil, err
 	}
 	if compareAsOf.IsZero() || compareAsOf.Equal(time.Unix(0, 0).UTC()) {
@@ -803,13 +838,22 @@ WHERE workspace_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL AND me
 		if ts.IsZero() {
 			return []CapacityRollupRow{}, nil
 		}
-		args := []any{workspaceID, forwardNetworkID, metric, window, ts}
-		query := `SELECT forward_network_id, object_type, object_id, metric, window_label,
+		args := []any{username, userContextID, forwardNetworkID, metric, window, ts}
+		query := `WITH me AS (
+  SELECT id FROM sf_users WHERE username=$1 LIMIT 1
+)
+SELECT r.forward_network_id, r.object_type, r.object_id, r.metric, r.window_label,
   period_end, samples, avg, p95, p99, max, slope_per_day, forecast_crossing_ts, threshold, details, created_at
-FROM sf_capacity_rollups
-WHERE workspace_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL AND metric=$3 AND window_label=$4 AND period_end=$5`
+FROM sf_capacity_rollups r
+LEFT JOIN me ON true
+WHERE r.forward_network_id=$3
+  AND r.deployment_id IS NULL
+  AND r.metric=$4
+  AND r.window_label=$5
+  AND r.period_end=$6
+  AND ((me.id IS NOT NULL AND r.user_id=me.id) OR ($2 <> '' AND r.workspace_id=$2))`
 		if objectType != "" {
-			query += " AND object_type=$6"
+			query += " AND r.object_type=$7"
 			args = append(args, objectType)
 		}
 		rows, err := db.QueryContext(ctxReq, query, args...)
@@ -835,7 +879,7 @@ WHERE workspace_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL AND me
 				continue
 			}
 			row := CapacityRollupRow{
-				WorkspaceID:      workspaceID,
+				UserContextID:    userContextID,
 				ForwardNetworkID: strings.TrimSpace(forwardID),
 				ObjectType:       strings.TrimSpace(ot),
 				ObjectID:         strings.TrimSpace(oid),

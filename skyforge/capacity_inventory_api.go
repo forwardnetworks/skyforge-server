@@ -89,7 +89,7 @@ type capacityCachedNQEResponse struct {
 }
 
 type DeploymentCapacityInventoryResponse struct {
-	WorkspaceID      string `json:"workspaceId"`
+	UserContextID    string `json:"userContextId"`
 	DeploymentID     string `json:"deploymentId"`
 	ForwardNetworkID string `json:"forwardNetworkId"`
 	AsOf             string `json:"asOf,omitempty"`
@@ -105,13 +105,13 @@ type DeploymentCapacityInventoryResponse struct {
 
 // GetWorkspaceDeploymentCapacityInventory returns the latest cached NQE results for inventory/routing scale.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/capacity/inventory
+//encore:api auth method=GET path=/api/user-contexts/:id/deployments/:deploymentID/capacity/inventory
 func (s *Service) GetWorkspaceDeploymentCapacityInventory(ctx context.Context, id, deploymentID string) (*DeploymentCapacityInventoryResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -119,18 +119,18 @@ func (s *Service) GetWorkspaceDeploymentCapacityInventory(ctx context.Context, i
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	_, _, forwardNetworkID, err := s.requireDeploymentForwardNetwork(ctx, pc.workspace.ID, deploymentID)
+	_, _, forwardNetworkID, err := s.requireDeploymentForwardNetwork(ctx, pc.userContext.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
 
-	asOf, snapshotID, devices, ifaces, ifaceVrfs, hwTcam, routes, bgp, err := loadLatestCapacityInventory(ctx, s.db, pc.workspace.ID, deploymentID)
+	asOf, snapshotID, devices, ifaces, ifaceVrfs, hwTcam, routes, bgp, err := loadLatestCapacityInventory(ctx, s.db, pc.userContext.ID, deploymentID)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load capacity inventory").Err()
 	}
 
 	out := &DeploymentCapacityInventoryResponse{
-		WorkspaceID:      pc.workspace.ID,
+		UserContextID:    pc.userContext.ID,
 		DeploymentID:     deploymentID,
 		ForwardNetworkID: forwardNetworkID,
 		Devices:          devices,
@@ -147,7 +147,7 @@ func (s *Service) GetWorkspaceDeploymentCapacityInventory(ctx context.Context, i
 	return out, nil
 }
 
-func loadLatestCapacityInventory(ctx context.Context, db *sql.DB, workspaceID, deploymentID string) (asOf time.Time, snapshotID string, devices []CapacityDeviceInventoryRow, ifaces []CapacityInterfaceInventoryRow, ifaceVrfs []CapacityInterfaceVrfRow, hwTcam []CapacityHardwareTcamRow, routes []CapacityRouteScaleRow, bgp []CapacityBgpNeighborRow, err error) {
+func loadLatestCapacityInventory(ctx context.Context, db *sql.DB, userContextID, deploymentID string) (asOf time.Time, snapshotID string, devices []CapacityDeviceInventoryRow, ifaces []CapacityInterfaceInventoryRow, ifaceVrfs []CapacityInterfaceVrfRow, hwTcam []CapacityHardwareTcamRow, routes []CapacityRouteScaleRow, bgp []CapacityBgpNeighborRow, err error) {
 	if db == nil {
 		return time.Time{}, "", nil, nil, nil, nil, nil, nil, fmt.Errorf("db unavailable")
 	}
@@ -157,7 +157,7 @@ func loadLatestCapacityInventory(ctx context.Context, db *sql.DB, workspaceID, d
 	rows, err := db.QueryContext(ctxReq, `SELECT DISTINCT ON (query_id) query_id, payload, created_at
 	FROM sf_capacity_nqe_cache
 	WHERE workspace_id=$1 AND deployment_id=$2 AND snapshot_id=''
-	ORDER BY query_id, created_at DESC`, workspaceID, deploymentID)
+	ORDER BY query_id, created_at DESC`, userContextID, deploymentID)
 	if err != nil {
 		return time.Time{}, "", nil, nil, nil, nil, nil, nil, err
 	}

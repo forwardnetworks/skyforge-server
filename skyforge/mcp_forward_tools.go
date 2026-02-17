@@ -72,14 +72,14 @@ func forwardMCPToolCatalog() []mcpTool {
 	}
 }
 
-func (s *Service) mcpForwardToolsCall(ctx context.Context, user *AuthUser, workspaceID, forwardNetworkID, name string, args map[string]any) (string, error) {
+func (s *Service) mcpForwardToolsCall(ctx context.Context, user *AuthUser, userContextID, forwardNetworkID, name string, args map[string]any) (string, error) {
 	if user == nil {
 		return "", errs.B().Code(errs.Unauthenticated).Msg("authentication required").Err()
 	}
 	explicitCredID, _ := ctx.Value(ctxKeyMCPForwardCredentialID).(string)
 	explicitCredID = strings.TrimSpace(explicitCredID)
 
-	rec, err := resolveForwardCredentialsFor(ctx, s.db, s.cfg.SessionSecret, workspaceID, user.Username, forwardNetworkID, forwardCredResolveOpts{
+	rec, err := resolveForwardCredentialsFor(ctx, s.db, s.cfg.SessionSecret, userContextID, user.Username, forwardNetworkID, forwardCredResolveOpts{
 		ExplicitCredentialID: explicitCredID,
 	})
 	if err != nil {
@@ -258,13 +258,13 @@ func (s *Service) mcpForwardToolsCall(ctx context.Context, user *AuthUser, works
 		b, _ := json.Marshal(merged)
 		return string(b), nil
 	case "get_device_basic_info":
-		return s.mcpForwardToolsCall(ctx, user, workspaceID, forwardNetworkID, "run_nqe_query_by_id", withArgs(args, map[string]any{"query_id": "FQ_ac651cb2901b067fe7dbfb511613ab44776d8029"}))
+		return s.mcpForwardToolsCall(ctx, user, userContextID, forwardNetworkID, "run_nqe_query_by_id", withArgs(args, map[string]any{"query_id": "FQ_ac651cb2901b067fe7dbfb511613ab44776d8029"}))
 	case "get_device_hardware":
-		return s.mcpForwardToolsCall(ctx, user, workspaceID, forwardNetworkID, "run_nqe_query_by_id", withArgs(args, map[string]any{"query_id": "FQ_7ec4a8148b48a91271f342c512b2af1cdb276744"}))
+		return s.mcpForwardToolsCall(ctx, user, userContextID, forwardNetworkID, "run_nqe_query_by_id", withArgs(args, map[string]any{"query_id": "FQ_7ec4a8148b48a91271f342c512b2af1cdb276744"}))
 	case "get_hardware_support":
-		return s.mcpForwardToolsCall(ctx, user, workspaceID, forwardNetworkID, "run_nqe_query_by_id", withArgs(args, map[string]any{"query_id": "FQ_f0984b777b940b4376ed3ec4317ad47437426e7c"}))
+		return s.mcpForwardToolsCall(ctx, user, userContextID, forwardNetworkID, "run_nqe_query_by_id", withArgs(args, map[string]any{"query_id": "FQ_f0984b777b940b4376ed3ec4317ad47437426e7c"}))
 	case "get_os_support":
-		return s.mcpForwardToolsCall(ctx, user, workspaceID, forwardNetworkID, "run_nqe_query_by_id", withArgs(args, map[string]any{"query_id": "FQ_fc33d9fd70ba19a18455b0e4d26ca8420003d9cc"}))
+		return s.mcpForwardToolsCall(ctx, user, userContextID, forwardNetworkID, "run_nqe_query_by_id", withArgs(args, map[string]any{"query_id": "FQ_fc33d9fd70ba19a18455b0e4d26ca8420003d9cc"}))
 	case "search_configs":
 		// Forward's library query expects parameter searchPattern.
 		search := strings.TrimSpace(getStringArg(args, "search_term"))
@@ -280,7 +280,7 @@ func (s *Service) mcpForwardToolsCall(ctx context.Context, user *AuthUser, works
 				"searchPattern": search,
 			},
 		})
-		return s.mcpForwardToolsCall(ctx, user, workspaceID, forwardNetworkID, "run_nqe_query_by_id", a2)
+		return s.mcpForwardToolsCall(ctx, user, userContextID, forwardNetworkID, "run_nqe_query_by_id", a2)
 	case "get_config_diff":
 		after := strings.TrimSpace(getStringArg(args, "after_snapshot"))
 		before := strings.TrimSpace(getStringArg(args, "before_snapshot"))
@@ -296,7 +296,7 @@ func (s *Service) mcpForwardToolsCall(ctx context.Context, user *AuthUser, works
 			"query_id":    "FQ_51f090cbea069b4049eb283716ab3bbb3f578aea",
 			"parameters":  params,
 		})
-		return s.mcpForwardToolsCall(ctx, user, workspaceID, forwardNetworkID, "run_nqe_query_by_id", a2)
+		return s.mcpForwardToolsCall(ctx, user, userContextID, forwardNetworkID, "run_nqe_query_by_id", a2)
 	case "list_devices":
 		if networkID == "" {
 			return "", errs.B().Code(errs.InvalidArgument).Msg("network_id is required").Err()

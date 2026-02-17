@@ -11,15 +11,15 @@ import (
 	"encore.dev/beta/errs"
 )
 
-// SimulateWorkspacePolicyReportChangePlanning simulates a rule change against a set of flows (no config push).
+// SimulateUserContextPolicyReportChangePlanning simulates a rule change against a set of flows (no config push).
 //
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/change-planning/simulate
-func (s *Service) SimulateWorkspacePolicyReportChangePlanning(ctx context.Context, id string, req *PolicyReportChangePlanningRequest) (*PolicyReportChangePlanningResponse, error) {
+//encore:api auth method=POST path=/api/user-contexts/:id/policy-reports/change-planning/simulate
+func (s *Service) SimulateUserContextPolicyReportChangePlanning(ctx context.Context, id string, req *PolicyReportChangePlanningRequest) (*PolicyReportChangePlanningResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +57,7 @@ func (s *Service) SimulateWorkspacePolicyReportChangePlanning(ctx context.Contex
 		return nil, errs.B().Code(errs.Unavailable).Msg("embedded check missing").Meta("checkId", checkID).Err()
 	}
 
-	client, err := s.policyReportsForwardClient(ctx, pc.workspace.ID, pc.claims.Username, networkID)
+	client, err := s.policyReportsForwardClient(ctx, pc.userContext.ID, pc.claims.Username, networkID)
 	if err != nil {
 		return nil, err
 	}

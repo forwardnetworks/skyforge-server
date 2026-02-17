@@ -10,16 +10,16 @@ import (
 	"time"
 )
 
-var errWorkspaceNotFound = errors.New("workspace not found")
+var errWorkspaceNotFound = errors.New("user context not found")
 
-func (e *Engine) loadWorkspaceByKey(ctx context.Context, key string) (*Workspace, error) {
+func (e *Engine) loadUserContextByKey(ctx context.Context, key string) (*Workspace, error) {
 	db, err := e.requireDB()
 	if err != nil {
 		return nil, err
 	}
 	key = strings.TrimSpace(key)
 	if key == "" {
-		return nil, fmt.Errorf("workspace id is required")
+		return nil, fmt.Errorf("userContextId is required")
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -63,7 +63,7 @@ LIMIT 1`, key)
 	return w, nil
 }
 
-func parseWorkspaceServerRef(value string) (string, bool) {
+func parseUserContextServerRef(value string) (string, bool) {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return "", false
@@ -79,22 +79,22 @@ func parseWorkspaceServerRef(value string) (string, bool) {
 	return "", false
 }
 
-func (e *Engine) resolveWorkspaceNetlabServer(ctx context.Context, workspaceID, serverRef string) (*NetlabServerConfig, error) {
+func (e *Engine) resolveUserContextNetlabServer(ctx context.Context, userContextID, serverRef string) (*NetlabServerConfig, error) {
 	db, err := e.requireDB()
 	if err != nil {
 		return nil, err
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userContextID = strings.TrimSpace(userContextID)
 	serverRef = strings.TrimSpace(serverRef)
-	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace id required")
+	if userContextID == "" {
+		return nil, fmt.Errorf("userContextId required")
 	}
 	if serverRef == "" {
-		return nil, fmt.Errorf("netlab server is required (configure a Netlab server in workspace settings)")
+		return nil, fmt.Errorf("netlab server is required (configure a Netlab server in user-context settings)")
 	}
-	serverID, ok := parseWorkspaceServerRef(serverRef)
+	serverID, ok := parseUserContextServerRef(serverRef)
 	if !ok {
-		return nil, fmt.Errorf("netlab server must be a workspace server reference (ws:...)")
+		return nil, fmt.Errorf("netlab server must be a user-context server reference (ws:...)")
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -102,12 +102,12 @@ func (e *Engine) resolveWorkspaceNetlabServer(ctx context.Context, workspaceID, 
 	var rec netlabServerRecord
 	var tokenEnc sql.NullString
 	err = db.QueryRowContext(ctxReq, `SELECT id, project_id, name, api_url, api_insecure, COALESCE(api_token,''), created_at, updated_at
-FROM sf_project_netlab_servers WHERE project_id=$1 AND id=$2`, workspaceID, serverID).Scan(
+FROM sf_project_netlab_servers WHERE project_id=$1 AND id=$2`, userContextID, serverID).Scan(
 		&rec.ID, &rec.WorkspaceID, &rec.Name, &rec.APIURL, &rec.APIInsecure, &tokenEnc, &rec.CreatedAt, &rec.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("workspace netlab server not found")
+			return nil, fmt.Errorf("user-context netlab server not found")
 		}
 		return nil, err
 	}
@@ -127,23 +127,23 @@ FROM sf_project_netlab_servers WHERE project_id=$1 AND id=$2`, workspaceID, serv
 	return &cfg, nil
 }
 
-func (e *Engine) loadDeployment(ctx context.Context, workspaceID, deploymentID string) (*WorkspaceDeployment, error) {
+func (e *Engine) loadDeployment(ctx context.Context, userContextID, deploymentID string) (*UserDeployment, error) {
 	db, err := e.requireDB()
 	if err != nil {
 		return nil, err
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userContextID = strings.TrimSpace(userContextID)
 	deploymentID = strings.TrimSpace(deploymentID)
-	if workspaceID == "" || deploymentID == "" {
+	if userContextID == "" || deploymentID == "" {
 		return nil, nil
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	var dep WorkspaceDeployment
+	var dep UserDeployment
 	var cfgBytes []byte
 	err = db.QueryRowContext(ctxReq, `SELECT id, workspace_id, name, type, config
-FROM sf_deployments WHERE workspace_id=$1 AND id=$2`, workspaceID, deploymentID).Scan(&dep.ID, &dep.WorkspaceID, &dep.Name, &dep.Type, &cfgBytes)
+FROM sf_deployments WHERE workspace_id=$1 AND id=$2`, userContextID, deploymentID).Scan(&dep.ID, &dep.WorkspaceID, &dep.Name, &dep.Type, &cfgBytes)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil

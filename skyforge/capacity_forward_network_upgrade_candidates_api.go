@@ -30,10 +30,10 @@ type ForwardNetworkCapacityUpgradeCandidatesQuery struct {
 }
 
 type ForwardNetworkCapacityUpgradeCandidate struct {
-	ScopeType string   `json:"scopeType"`
-	Device    string   `json:"device"`
-	Name      string   `json:"name"`
-	Members   []string `json:"members,omitempty"`
+	TargetType string   `json:"targetType"`
+	Device     string   `json:"device"`
+	Name       string   `json:"name"`
+	Members    []string `json:"members,omitempty"`
 
 	SpeedMbps          int     `json:"speedMbps"`
 	WorstDirection     string  `json:"worstDirection"`
@@ -52,7 +52,7 @@ type ForwardNetworkCapacityUpgradeCandidate struct {
 }
 
 type ForwardNetworkCapacityUpgradeCandidatesResponse struct {
-	WorkspaceID      string `json:"workspaceId"`
+	UserContextID    string `json:"userContextId"`
 	NetworkRef       string `json:"networkRef"`
 	ForwardNetworkID string `json:"forwardNetworkId"`
 	AsOf             string `json:"asOf,omitempty"`
@@ -262,7 +262,7 @@ func capacityUpgradeCandidatesFromRollups(window string, rollups []CapacityRollu
 
 		den := float64(totalSpeedMbps) / 1000.0
 		item := ForwardNetworkCapacityUpgradeCandidate{
-			ScopeType:      "lag",
+			TargetType:     "lag",
 			Device:         dev,
 			Name:           lagIf,
 			Members:        memberNames,
@@ -310,7 +310,7 @@ func capacityUpgradeCandidatesFromRollups(window string, rollups []CapacityRollu
 		p95Gbps := speedGbps * s.p95
 		maxGbps := speedGbps * s.max
 		item := ForwardNetworkCapacityUpgradeCandidate{
-			ScopeType:          "iface",
+			TargetType:         "iface",
 			Device:             dev,
 			Name:               ifn,
 			SpeedMbps:          s.speedMbps,
@@ -350,24 +350,22 @@ func capacityUpgradeCandidatesFromRollups(window string, rollups []CapacityRollu
 	return keep
 }
 
-// GetWorkspaceForwardNetworkCapacityUpgradeCandidates proposes "what to upgrade" based on rollups + inventory.
+// GetUserContextForwardNetworkCapacityUpgradeCandidates proposes "what to upgrade" based on rollups + inventory.
 //
 // This is intentionally a showcase/heuristic view (not a replacement for full NPM alerting/workflows).
-//
-//encore:api auth method=GET path=/api/workspaces/:id/forward-networks/:networkRef/capacity/upgrade-candidates
-func (s *Service) GetWorkspaceForwardNetworkCapacityUpgradeCandidates(ctx context.Context, id, networkRef string, q *ForwardNetworkCapacityUpgradeCandidatesQuery) (*ForwardNetworkCapacityUpgradeCandidatesResponse, error) {
+func (s *Service) GetUserContextForwardNetworkCapacityUpgradeCandidates(ctx context.Context, id, networkRef string, q *ForwardNetworkCapacityUpgradeCandidatesQuery) (*ForwardNetworkCapacityUpgradeCandidatesResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.userContext.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -377,11 +375,11 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityUpgradeCandidates(ctx contex
 		window = strings.TrimSpace(q.Window)
 	}
 
-	asOf, rollups, err := loadLatestCapacityRollupsForForwardNetwork(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID)
+	asOf, rollups, err := loadLatestCapacityRollupsForForwardNetwork(ctx, s.db, pc.claims.Username, pc.userContext.ID, net.ForwardNetworkID)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load rollups").Err()
 	}
-	_, _, _, ifaces, _, _, _, _, invErr := loadLatestCapacityInventoryForForwardNetwork(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID)
+	_, _, _, ifaces, _, _, _, _, invErr := loadLatestCapacityInventoryForForwardNetwork(ctx, s.db, pc.claims.Username, pc.userContext.ID, net.ForwardNetworkID)
 	if invErr != nil {
 		// Best-effort; we can still return interface candidates that have speed in rollup details.
 		ifaces = []CapacityInterfaceInventoryRow{}
@@ -390,7 +388,7 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityUpgradeCandidates(ctx contex
 	keep := capacityUpgradeCandidatesFromRollups(window, rollups, ifaces)
 
 	out := &ForwardNetworkCapacityUpgradeCandidatesResponse{
-		WorkspaceID:      pc.workspace.ID,
+		UserContextID:    pc.userContext.ID,
 		NetworkRef:       net.ID,
 		ForwardNetworkID: net.ForwardNetworkID,
 		Items:            keep,

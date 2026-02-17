@@ -14,21 +14,21 @@ import (
 // The MinIO bootstrap creates `skyforge-files` and enables access.
 const skyforgeArtifactsBucket = "skyforge-files"
 
-func artifactObjectNameForWorkspace(workspaceID, key string) string {
-	workspaceID = strings.TrimSpace(workspaceID)
+func artifactObjectNameForUserContext(userContextID, key string) string {
+	userContextID = strings.TrimSpace(userContextID)
 	key = strings.TrimPrefix(strings.TrimSpace(key), "/")
-	if workspaceID == "" {
+	if userContextID == "" {
 		return fmt.Sprintf("artifacts/%s", key)
 	}
-	return fmt.Sprintf("artifacts/%s/%s", workspaceID, key)
+	return fmt.Sprintf("artifacts/%s/%s", userContextID, key)
 }
 
-func putWorkspaceArtifact(ctx context.Context, cfg skyforgecore.Config, workspaceID, key string, data []byte, contentType string) (string, error) {
+func putUserContextArtifact(ctx context.Context, cfg skyforgecore.Config, userContextID, key string, data []byte, contentType string) (string, error) {
 	key = strings.TrimPrefix(strings.TrimSpace(key), "/")
 	if key == "" {
 		return "", fmt.Errorf("artifact key is required")
 	}
-	obj := artifactObjectNameForWorkspace(workspaceID, key)
+	obj := artifactObjectNameForUserContext(userContextID, key)
 	client, err := objectStoreClientFor(cfg)
 	if err != nil {
 		return "", err
@@ -39,7 +39,7 @@ func putWorkspaceArtifact(ctx context.Context, cfg skyforgecore.Config, workspac
 	return key, nil
 }
 
-func readWorkspaceArtifact(ctx context.Context, cfg skyforgecore.Config, workspaceID, key string, maxBytes int) ([]byte, error) {
+func readUserContextArtifact(ctx context.Context, cfg skyforgecore.Config, userContextID, key string, maxBytes int) ([]byte, error) {
 	if maxBytes <= 0 || maxBytes > 10<<20 {
 		maxBytes = 2 << 20
 	}
@@ -47,7 +47,7 @@ func readWorkspaceArtifact(ctx context.Context, cfg skyforgecore.Config, workspa
 	if key == "" {
 		return nil, fmt.Errorf("artifact key is required")
 	}
-	obj := artifactObjectNameForWorkspace(workspaceID, key)
+	obj := artifactObjectNameForUserContext(userContextID, key)
 	client, err := objectStoreClientFor(cfg)
 	if err != nil {
 		return nil, err

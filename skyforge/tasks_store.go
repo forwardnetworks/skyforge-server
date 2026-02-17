@@ -25,40 +25,40 @@ const (
 
 func defaultTaskPriority(taskType string) int { return taskstore.DefaultTaskPriority(taskType) }
 
-func createTask(ctx context.Context, db *sql.DB, workspaceID string, deploymentID *string, taskType string, message string, createdBy string, metadata JSONMap) (*TaskRecord, error) {
-	return taskstore.CreateTask(ctx, db, workspaceID, deploymentID, taskType, message, createdBy, metadata)
+func createTask(ctx context.Context, db *sql.DB, userContextID string, deploymentID *string, taskType string, message string, createdBy string, metadata JSONMap) (*TaskRecord, error) {
+	return taskstore.CreateTask(ctx, db, userContextID, deploymentID, taskType, message, createdBy, metadata)
 }
 
-func createTaskAllowActive(ctx context.Context, db *sql.DB, workspaceID string, deploymentID *string, taskType string, message string, createdBy string, metadata JSONMap) (*TaskRecord, error) {
-	return taskstore.CreateTaskAllowActive(ctx, db, workspaceID, deploymentID, taskType, message, createdBy, metadata)
+func createTaskAllowActive(ctx context.Context, db *sql.DB, userContextID string, deploymentID *string, taskType string, message string, createdBy string, metadata JSONMap) (*TaskRecord, error) {
+	return taskstore.CreateTaskAllowActive(ctx, db, userContextID, deploymentID, taskType, message, createdBy, metadata)
 }
 
 func hasRecentTaskByDedupeKey(ctx context.Context, db *sql.DB, taskType, dedupeKey string, maxAge time.Duration) (bool, error) {
 	return taskstore.HasRecentTaskByDedupeKey(ctx, db, taskType, dedupeKey, maxAge)
 }
 
-func findActiveTaskByDedupeKey(ctx context.Context, db *sql.DB, workspaceID string, deploymentID *string, taskType string, dedupeKey string) (*TaskRecord, error) {
-	return taskstore.FindActiveTaskByDedupeKey(ctx, db, workspaceID, deploymentID, taskType, dedupeKey)
+func findActiveTaskByDedupeKey(ctx context.Context, db *sql.DB, userContextID string, deploymentID *string, taskType string, dedupeKey string) (*TaskRecord, error) {
+	return taskstore.FindActiveTaskByDedupeKey(ctx, db, userContextID, deploymentID, taskType, dedupeKey)
 }
 
-func hasActiveDeploymentTask(ctx context.Context, db *sql.DB, workspaceID string, deploymentID string) (bool, error) {
-	return taskstore.HasActiveDeploymentTask(ctx, db, workspaceID, deploymentID)
+func hasActiveDeploymentTask(ctx context.Context, db *sql.DB, userContextID string, deploymentID string) (bool, error) {
+	return taskstore.HasActiveDeploymentTask(ctx, db, userContextID, deploymentID)
 }
 
-func getActiveDeploymentTask(ctx context.Context, db *sql.DB, workspaceID string, deploymentID string) (*TaskRecord, error) {
-	return taskstore.GetActiveDeploymentTask(ctx, db, workspaceID, deploymentID)
+func getActiveDeploymentTask(ctx context.Context, db *sql.DB, userContextID string, deploymentID string) (*TaskRecord, error) {
+	return taskstore.GetActiveDeploymentTask(ctx, db, userContextID, deploymentID)
 }
 
-func getOldestQueuedDeploymentTaskID(ctx context.Context, db *sql.DB, workspaceID string, deploymentID string) (int, error) {
-	return taskstore.GetOldestQueuedDeploymentTaskID(ctx, db, workspaceID, deploymentID)
+func getOldestQueuedDeploymentTaskID(ctx context.Context, db *sql.DB, userContextID string, deploymentID string) (int, error) {
+	return taskstore.GetOldestQueuedDeploymentTaskID(ctx, db, userContextID, deploymentID)
 }
 
-func getOldestQueuedWorkspaceTaskID(ctx context.Context, db *sql.DB, workspaceID string) (int, error) {
-	return taskstore.GetOldestQueuedWorkspaceTaskID(ctx, db, workspaceID)
+func getOldestQueuedWorkspaceTaskID(ctx context.Context, db *sql.DB, userContextID string) (int, error) {
+	return taskstore.GetOldestQueuedUserContextTaskID(ctx, db, userContextID)
 }
 
-func getDeploymentQueueSummary(ctx context.Context, db *sql.DB, workspaceID string, deploymentID string) (*deploymentQueueSummary, error) {
-	return taskstore.GetDeploymentQueueSummary(ctx, db, workspaceID, deploymentID)
+func getDeploymentQueueSummary(ctx context.Context, db *sql.DB, userContextID string, deploymentID string) (*deploymentQueueSummary, error) {
+	return taskstore.GetDeploymentQueueSummary(ctx, db, userContextID, deploymentID)
 }
 
 func markTaskStarted(ctx context.Context, db *sql.DB, taskID int) (bool, error) {
@@ -85,16 +85,16 @@ func updateTaskMetadata(ctx context.Context, db *sql.DB, taskID int, metadata JS
 	return taskstore.UpdateTaskMetadata(ctx, db, taskID, metadata)
 }
 
-func listTasks(ctx context.Context, db *sql.DB, workspaceID string, limit int) ([]TaskRecord, error) {
-	return taskstore.ListTasks(ctx, db, workspaceID, limit)
+func listTasks(ctx context.Context, db *sql.DB, userContextID string, limit int) ([]TaskRecord, error) {
+	return taskstore.ListTasks(ctx, db, userContextID, limit)
 }
 
 func getTask(ctx context.Context, db *sql.DB, taskID int) (*TaskRecord, error) {
 	return taskstore.GetTask(ctx, db, taskID)
 }
 
-func getLatestDeploymentTask(ctx context.Context, db *sql.DB, workspaceID string, deploymentID string, taskType string) (*TaskRecord, error) {
-	return taskstore.GetLatestDeploymentTask(ctx, db, workspaceID, deploymentID, taskType)
+func getLatestDeploymentTask(ctx context.Context, db *sql.DB, userContextID string, deploymentID string, taskType string) (*TaskRecord, error) {
+	return taskstore.GetLatestDeploymentTask(ctx, db, userContextID, deploymentID, taskType)
 }
 
 func listTaskTypesSince(ctx context.Context, db *sql.DB, window time.Duration) ([]string, error) {

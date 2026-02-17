@@ -26,21 +26,19 @@ type ForwardNetworkCapacityPortfolioItem struct {
 }
 
 type ForwardNetworkCapacityPortfolioResponse struct {
-	WorkspaceID string                                `json:"workspaceId"`
-	Items       []ForwardNetworkCapacityPortfolioItem `json:"items"`
+	UserContextID string                                `json:"userContextId"`
+	Items         []ForwardNetworkCapacityPortfolioItem `json:"items"`
 }
 
-// GetWorkspaceForwardNetworkCapacityPortfolio returns a cross-network capacity summary for a workspace.
+// GetUserContextForwardNetworkCapacityPortfolio returns a cross-network capacity summary for a user context.
 //
 // Intended as a "portfolio view" across all saved Forward networks (not a NOC alerting page).
-//
-//encore:api auth method=GET path=/api/workspaces/:id/capacity/forward-networks/portfolio
-func (s *Service) GetWorkspaceForwardNetworkCapacityPortfolio(ctx context.Context, id string) (*ForwardNetworkCapacityPortfolioResponse, error) {
+func (s *Service) GetUserContextForwardNetworkCapacityPortfolio(ctx context.Context, id string) (*ForwardNetworkCapacityPortfolioResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -48,12 +46,12 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityPortfolio(ctx context.Contex
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	// For a workspace portfolio view, include both:
-	// - workspace-scoped saved networks (shared with workspace collaborators)
+	// For a user-context portfolio view, include both:
+	// - user-context saved networks (shared with user-context collaborators)
 	// - user-scoped saved networks (owned by the current user)
 	//
-	// Dedup by Forward network id (workspace-scoped wins).
-	wsNets, err := listPolicyReportForwardNetworks(ctx, s.db, pc.workspace.ID)
+	// Dedup by Forward network id (user-context wins).
+	wsNets, err := listPolicyReportForwardNetworks(ctx, s.db, pc.userContext.ID)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load networks").Err()
 	}
@@ -83,7 +81,7 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityPortfolio(ctx context.Contex
 
 	items := make([]ForwardNetworkCapacityPortfolioItem, 0, len(nets))
 	for _, n := range nets {
-		asOf, hot, soonest, maxMax, maxP95, err := loadForwardNetworkPortfolioStats(ctx, s.db, pc.workspace.ID, n.ForwardNetwork)
+		asOf, hot, soonest, maxMax, maxP95, err := loadForwardNetworkPortfolioStats(ctx, s.db, pc.userContext.ID, n.ForwardNetwork)
 		if err != nil {
 			// Best-effort.
 			asOf = time.Time{}
@@ -118,18 +116,18 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityPortfolio(ctx context.Contex
 	}
 
 	return &ForwardNetworkCapacityPortfolioResponse{
-		WorkspaceID: pc.workspace.ID,
-		Items:       items,
+		UserContextID: pc.userContext.ID,
+		Items:         items,
 	}, nil
 }
 
-func loadForwardNetworkPortfolioStats(ctx context.Context, db *sql.DB, workspaceID, forwardNetworkID string) (asOf time.Time, hot int, soonestForecast string, maxUtilMax *float64, maxUtilP95 *float64, err error) {
+func loadForwardNetworkPortfolioStats(ctx context.Context, db *sql.DB, userContextID, forwardNetworkID string) (asOf time.Time, hot int, soonestForecast string, maxUtilMax *float64, maxUtilP95 *float64, err error) {
 	if db == nil {
 		return time.Time{}, 0, "", nil, nil, fmt.Errorf("db unavailable")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userContextID = strings.TrimSpace(userContextID)
 	forwardNetworkID = strings.TrimSpace(forwardNetworkID)
-	if workspaceID == "" || forwardNetworkID == "" {
+	if userContextID == "" || forwardNetworkID == "" {
 		return time.Time{}, 0, "", nil, nil, fmt.Errorf("invalid identifiers")
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -137,7 +135,7 @@ func loadForwardNetworkPortfolioStats(ctx context.Context, db *sql.DB, workspace
 
 	if err := db.QueryRowContext(ctxReq, `SELECT COALESCE(MAX(period_end), 'epoch'::timestamptz)
 FROM sf_capacity_rollups
-WHERE workspace_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL`, workspaceID, forwardNetworkID).Scan(&asOf); err != nil {
+WHERE workspace_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL`, userContextID, forwardNetworkID).Scan(&asOf); err != nil {
 		return time.Time{}, 0, "", nil, nil, err
 	}
 	if asOf.IsZero() || asOf.Equal(time.Unix(0, 0).UTC()) {
@@ -148,7 +146,7 @@ WHERE workspace_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL`, work
 FROM sf_capacity_rollups
 WHERE workspace_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL AND period_end=$3
   AND object_type='interface' AND metric IN ('util_ingress','util_egress') AND window_label='7d'`,
-		workspaceID, forwardNetworkID, asOf,
+		userContextID, forwardNetworkID, asOf,
 	)
 	if err != nil {
 		return asOf, 0, "", nil, nil, err

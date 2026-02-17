@@ -15,14 +15,14 @@ type CreateContainerlabDeploymentFromYAMLRequest struct {
 	// Name becomes the Skyforge deployment name (and drives the containerlab lab name).
 	Name string `json:"name"`
 
-	// NetlabServer is a workspace netlab server ref (e.g. "ws:<id>").
-	// If omitted, we fall back to the workspace default.
+	// NetlabServer is a user-context netlab server ref (e.g. "ws:<id>").
+	// If omitted, we fall back to the user-context default.
 	NetlabServer string `json:"netlabServer,omitempty"`
 
 	// TopologyYAML is the raw containerlab topology YAML.
 	TopologyYAML string `json:"topologyYAML"`
 
-	// TemplatesDir is where we store the YAML inside the workspace repo.
+	// TemplatesDir is where we store the YAML inside the user-context repo.
 	// Default: "containerlab/designer".
 	TemplatesDir string `json:"templatesDir,omitempty"`
 
@@ -36,10 +36,10 @@ type CreateContainerlabDeploymentFromYAMLRequest struct {
 }
 
 type CreateContainerlabDeploymentFromYAMLResponse struct {
-	WorkspaceID string               `json:"workspaceId"`
-	Deployment  *WorkspaceDeployment `json:"deployment,omitempty"`
-	Run         JSONMap              `json:"run,omitempty"`
-	Note        string               `json:"note,omitempty"`
+	UserContextID string          `json:"userContextId"`
+	Deployment    *UserDeployment `json:"deployment,omitempty"`
+	Run           JSONMap         `json:"run,omitempty"`
+	Note          string          `json:"note,omitempty"`
 }
 
 type CreateClabernetesDeploymentFromYAMLRequest struct {
@@ -49,7 +49,7 @@ type CreateClabernetesDeploymentFromYAMLRequest struct {
 	// TopologyYAML is the raw containerlab topology YAML.
 	TopologyYAML string `json:"topologyYAML"`
 
-	// TemplatesDir is where we store the YAML inside the workspace repo.
+	// TemplatesDir is where we store the YAML inside the user-context repo.
 	// Default: "containerlab/designer".
 	TemplatesDir string `json:"templatesDir,omitempty"`
 
@@ -63,10 +63,10 @@ type CreateClabernetesDeploymentFromYAMLRequest struct {
 }
 
 type CreateClabernetesDeploymentFromYAMLResponse struct {
-	WorkspaceID string               `json:"workspaceId"`
-	Deployment  *WorkspaceDeployment `json:"deployment,omitempty"`
-	Run         JSONMap              `json:"run,omitempty"`
-	Note        string               `json:"note,omitempty"`
+	UserContextID string          `json:"userContextId"`
+	Deployment    *UserDeployment `json:"deployment,omitempty"`
+	Run           JSONMap         `json:"run,omitempty"`
+	Note          string          `json:"note,omitempty"`
 }
 
 type SaveContainerlabTopologyYAMLRequest struct {
@@ -76,7 +76,7 @@ type SaveContainerlabTopologyYAMLRequest struct {
 	// TopologyYAML is the raw containerlab topology YAML.
 	TopologyYAML string `json:"topologyYAML"`
 
-	// TemplatesDir is where we store the YAML inside the workspace repo.
+	// TemplatesDir is where we store the YAML inside the user-context repo.
 	// Default: "containerlab/designer".
 	//
 	// For this endpoint, TemplatesDir must be under "containerlab/".
@@ -88,11 +88,11 @@ type SaveContainerlabTopologyYAMLRequest struct {
 }
 
 type SaveContainerlabTopologyYAMLResponse struct {
-	WorkspaceID  string `json:"workspaceId"`
-	Branch       string `json:"branch"`
-	TemplatesDir string `json:"templatesDir"`
-	Template     string `json:"template"`
-	FilePath     string `json:"filePath"`
+	UserContextID string `json:"userContextId"`
+	Branch        string `json:"branch"`
+	TemplatesDir  string `json:"templatesDir"`
+	Template      string `json:"template"`
+	FilePath      string `json:"filePath"`
 }
 
 type CreateDeploymentFromTemplateRequest struct {
@@ -100,7 +100,7 @@ type CreateDeploymentFromTemplateRequest struct {
 	Name string `json:"name"`
 
 	// TemplateSource is the repository scope to resolve templates from.
-	// For now, only "workspace" is supported by this endpoint.
+	// For now, only "user" is supported by this endpoint.
 	TemplateSource string `json:"templateSource,omitempty"`
 
 	// TemplatesDir is the repo-relative directory containing the YAML.
@@ -116,32 +116,32 @@ type CreateDeploymentFromTemplateRequest struct {
 }
 
 type CreateDeploymentFromTemplateResponse struct {
-	WorkspaceID string               `json:"workspaceId"`
-	Deployment  *WorkspaceDeployment `json:"deployment,omitempty"`
-	Run         JSONMap              `json:"run,omitempty"`
-	Note        string               `json:"note,omitempty"`
+	UserContextID string          `json:"userContextId"`
+	Deployment    *UserDeployment `json:"deployment,omitempty"`
+	Run           JSONMap         `json:"run,omitempty"`
+	Note          string          `json:"note,omitempty"`
 }
 
 type CreateContainerlabDeploymentFromTemplateRequest struct {
 	CreateDeploymentFromTemplateRequest
 
-	// NetlabServer is a workspace netlab server ref (e.g. "ws:<id>").
-	// If omitted, we fall back to the workspace default.
+	// NetlabServer is a user-context netlab server ref (e.g. "ws:<id>").
+	// If omitted, we fall back to the user-context default.
 	NetlabServer string `json:"netlabServer,omitempty"`
 }
 
-// CreateContainerlabDeploymentFromYAML persists a containerlab topology YAML into the workspace repo,
+// CreateContainerlabDeploymentFromYAML persists a containerlab topology YAML into the user-context repo,
 // creates a "containerlab" deployment referencing that template, and (optionally) queues an initial deploy.
 //
-// NOTE: containerlab is BYOS mode (requires a workspace netlabServer selection).
+// NOTE: containerlab is BYOS mode (requires a user-context netlabServer selection).
 //
-//encore:api auth method=POST path=/api/workspaces/:id/deployments-designer/containerlab/from-yaml
+//encore:api auth method=POST path=/api/user-contexts/:id/deployments-designer/containerlab/from-yaml
 func (s *Service) CreateContainerlabDeploymentFromYAML(ctx context.Context, id string, req *CreateContainerlabDeploymentFromYAMLRequest) (*CreateContainerlabDeploymentFromYAMLResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +200,7 @@ func (s *Service) CreateContainerlabDeploymentFromYAML(ctx context.Context, id s
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("template must be a filename").Err()
 	}
 
-	branch := strings.TrimSpace(pc.workspace.DefaultBranch)
+	branch := strings.TrimSpace(pc.userContext.DefaultBranch)
 	if branch == "" {
 		branch = "main"
 	}
@@ -211,14 +211,14 @@ func (s *Service) CreateContainerlabDeploymentFromYAML(ctx context.Context, id s
 		ctxWrite, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 		_ = ctxWrite
-		if err := ensureGiteaFile(s.cfg, pc.workspace.GiteaOwner, pc.workspace.GiteaRepo, filePath, content, commitMsg, branch, pc.claims); err != nil {
-			return nil, errs.B().Code(errs.Unavailable).Msg("failed to write topology into workspace repo").Err()
+		if err := ensureGiteaFile(s.cfg, pc.userContext.GiteaOwner, pc.userContext.GiteaRepo, filePath, content, commitMsg, branch, pc.claims); err != nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to write topology into user-context repo").Err()
 		}
 	}
 
 	netlabServer := strings.TrimSpace(req.NetlabServer)
 	if netlabServer == "" {
-		netlabServer = strings.TrimSpace(pc.workspace.NetlabServer)
+		netlabServer = strings.TrimSpace(pc.userContext.NetlabServer)
 	}
 	if netlabServer == "" {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
@@ -226,14 +226,14 @@ func (s *Service) CreateContainerlabDeploymentFromYAML(ctx context.Context, id s
 
 	cfg, err := toJSONMap(map[string]any{
 		"netlabServer":   netlabServer,
-		"templateSource": "workspace",
+		"templateSource": "user",
 		"templatesDir":   templatesDir,
 		"template":       template,
 	})
 	if err != nil {
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode deployment config").Err()
 	}
-	dep, err := s.CreateWorkspaceDeployment(ctx, id, &WorkspaceDeploymentCreateRequest{
+	dep, err := s.CreateUserDeployment(ctx, id, &UserDeploymentCreateRequest{
 		Name:   name,
 		Type:   "containerlab",
 		Config: cfg,
@@ -248,36 +248,36 @@ func (s *Service) CreateContainerlabDeploymentFromYAML(ctx context.Context, id s
 	}
 	if !auto {
 		return &CreateContainerlabDeploymentFromYAMLResponse{
-			WorkspaceID: pc.workspace.ID,
-			Deployment:  dep,
-			Note:        "deployment created; deploy not queued",
+			UserContextID: pc.userContext.ID,
+			Deployment:    dep,
+			Note:          "deployment created; deploy not queued",
 		}, nil
 	}
 
-	actionResp, err := s.RunWorkspaceDeploymentAction(ctx, id, dep.ID, &WorkspaceDeploymentOpRequest{Action: "create"})
+	actionResp, err := s.RunUserDeploymentAction(ctx, id, dep.ID, &UserDeploymentOpRequest{Action: "create"})
 	if err != nil {
 		return nil, err
 	}
 
 	return &CreateContainerlabDeploymentFromYAMLResponse{
-		WorkspaceID: pc.workspace.ID,
-		Deployment:  actionResp.Deployment,
-		Run:         actionResp.Run,
+		UserContextID: pc.userContext.ID,
+		Deployment:    actionResp.Deployment,
+		Run:           actionResp.Run,
 	}, nil
 }
 
-// CreateClabernetesDeploymentFromYAML persists a containerlab topology YAML into the workspace repo,
+// CreateClabernetesDeploymentFromYAML persists a containerlab topology YAML into the user-context repo,
 // creates a "clabernetes" deployment referencing that template, and (optionally) queues an initial deploy.
 //
 // This is the first-class in-cluster mode (no netlab server required).
 //
-//encore:api auth method=POST path=/api/workspaces/:id/deployments-designer/clabernetes/from-yaml
+//encore:api auth method=POST path=/api/user-contexts/:id/deployments-designer/clabernetes/from-yaml
 func (s *Service) CreateClabernetesDeploymentFromYAML(ctx context.Context, id string, req *CreateClabernetesDeploymentFromYAMLRequest) (*CreateClabernetesDeploymentFromYAMLResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -336,7 +336,7 @@ func (s *Service) CreateClabernetesDeploymentFromYAML(ctx context.Context, id st
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("template must be a filename").Err()
 	}
 
-	branch := strings.TrimSpace(pc.workspace.DefaultBranch)
+	branch := strings.TrimSpace(pc.userContext.DefaultBranch)
 	if branch == "" {
 		branch = "main"
 	}
@@ -347,20 +347,20 @@ func (s *Service) CreateClabernetesDeploymentFromYAML(ctx context.Context, id st
 		ctxWrite, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 		_ = ctxWrite
-		if err := ensureGiteaFile(s.cfg, pc.workspace.GiteaOwner, pc.workspace.GiteaRepo, filePath, content, commitMsg, branch, pc.claims); err != nil {
-			return nil, errs.B().Code(errs.Unavailable).Msg("failed to write topology into workspace repo").Err()
+		if err := ensureGiteaFile(s.cfg, pc.userContext.GiteaOwner, pc.userContext.GiteaRepo, filePath, content, commitMsg, branch, pc.claims); err != nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to write topology into user-context repo").Err()
 		}
 	}
 
 	cfg, err := toJSONMap(map[string]any{
-		"templateSource": "workspace",
+		"templateSource": "user",
 		"templatesDir":   templatesDir,
 		"template":       template,
 	})
 	if err != nil {
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode deployment config").Err()
 	}
-	dep, err := s.CreateWorkspaceDeployment(ctx, id, &WorkspaceDeploymentCreateRequest{
+	dep, err := s.CreateUserDeployment(ctx, id, &UserDeploymentCreateRequest{
 		Name:   name,
 		Type:   "clabernetes",
 		Config: cfg,
@@ -375,34 +375,34 @@ func (s *Service) CreateClabernetesDeploymentFromYAML(ctx context.Context, id st
 	}
 	if !auto {
 		return &CreateClabernetesDeploymentFromYAMLResponse{
-			WorkspaceID: pc.workspace.ID,
-			Deployment:  dep,
-			Note:        "deployment created; deploy not queued",
+			UserContextID: pc.userContext.ID,
+			Deployment:    dep,
+			Note:          "deployment created; deploy not queued",
 		}, nil
 	}
 
-	actionResp, err := s.RunWorkspaceDeploymentAction(ctx, id, dep.ID, &WorkspaceDeploymentOpRequest{Action: "create"})
+	actionResp, err := s.RunUserDeploymentAction(ctx, id, dep.ID, &UserDeploymentOpRequest{Action: "create"})
 	if err != nil {
 		return nil, err
 	}
 
 	return &CreateClabernetesDeploymentFromYAMLResponse{
-		WorkspaceID: pc.workspace.ID,
-		Deployment:  actionResp.Deployment,
-		Run:         actionResp.Run,
+		UserContextID: pc.userContext.ID,
+		Deployment:    actionResp.Deployment,
+		Run:           actionResp.Run,
 	}, nil
 }
 
-// SaveContainerlabTopologyYAML writes a containerlab topology YAML into the user's workspace repo so it can be
+// SaveContainerlabTopologyYAML writes a containerlab topology YAML into the user's context repo so it can be
 // deployed later (e.g. by creating a deployment referencing the file).
 //
-//encore:api auth method=POST path=/api/workspaces/:id/containerlab/topologies
+//encore:api auth method=POST path=/api/user-contexts/:id/containerlab/topologies
 func (s *Service) SaveContainerlabTopologyYAML(ctx context.Context, id string, req *SaveContainerlabTopologyYAMLRequest) (*SaveContainerlabTopologyYAMLResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -461,7 +461,7 @@ func (s *Service) SaveContainerlabTopologyYAML(ctx context.Context, id string, r
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("template must be a filename").Err()
 	}
 
-	branch := strings.TrimSpace(pc.workspace.DefaultBranch)
+	branch := strings.TrimSpace(pc.userContext.DefaultBranch)
 	if branch == "" {
 		branch = "main"
 	}
@@ -472,30 +472,30 @@ func (s *Service) SaveContainerlabTopologyYAML(ctx context.Context, id string, r
 		ctxWrite, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 		_ = ctxWrite
-		if err := ensureGiteaFile(s.cfg, pc.workspace.GiteaOwner, pc.workspace.GiteaRepo, filePath, content, commitMsg, branch, pc.claims); err != nil {
-			return nil, errs.B().Code(errs.Unavailable).Msg("failed to write topology into workspace repo").Err()
+		if err := ensureGiteaFile(s.cfg, pc.userContext.GiteaOwner, pc.userContext.GiteaRepo, filePath, content, commitMsg, branch, pc.claims); err != nil {
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to write topology into user-context repo").Err()
 		}
 	}
 
 	return &SaveContainerlabTopologyYAMLResponse{
-		WorkspaceID:  pc.workspace.ID,
-		Branch:       branch,
-		TemplatesDir: templatesDir,
-		Template:     template,
-		FilePath:     filePath,
+		UserContextID: pc.userContext.ID,
+		Branch:        branch,
+		TemplatesDir:  templatesDir,
+		Template:      template,
+		FilePath:      filePath,
 	}, nil
 }
 
-// CreateClabernetesDeploymentFromTemplate creates a clabernetes deployment pointing at an existing workspace template YAML
+// CreateClabernetesDeploymentFromTemplate creates a clabernetes deployment pointing at an existing user-context template YAML
 // (no YAML commit step).
 //
-//encore:api auth method=POST path=/api/workspaces/:id/deployments-designer/clabernetes/from-template
+//encore:api auth method=POST path=/api/user-contexts/:id/deployments-designer/clabernetes/from-template
 func (s *Service) CreateClabernetesDeploymentFromTemplate(ctx context.Context, id string, req *CreateDeploymentFromTemplateRequest) (*CreateDeploymentFromTemplateResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -513,10 +513,10 @@ func (s *Service) CreateClabernetesDeploymentFromTemplate(ctx context.Context, i
 
 	templateSource := strings.ToLower(strings.TrimSpace(req.TemplateSource))
 	if templateSource == "" {
-		templateSource = "workspace"
+		templateSource = "user"
 	}
-	if templateSource != "workspace" {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("templateSource must be 'workspace'").Err()
+	if templateSource != "user" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("templateSource must be 'user'").Err()
 	}
 
 	templatesDir := strings.Trim(strings.TrimSpace(req.TemplatesDir), "/")
@@ -542,15 +542,15 @@ func (s *Service) CreateClabernetesDeploymentFromTemplate(ctx context.Context, i
 	}
 
 	// Confirm the file exists and is a plausible containerlab topology.
-	branch := strings.TrimSpace(pc.workspace.DefaultBranch)
+	branch := strings.TrimSpace(pc.userContext.DefaultBranch)
 	if branch == "" {
 		branch = "main"
 	}
 	filePath := path.Join(templatesDir, template)
 	{
-		body, err := readGiteaFileBytes(s.cfg, pc.workspace.GiteaOwner, pc.workspace.GiteaRepo, filePath, branch)
+		body, err := readGiteaFileBytes(s.cfg, pc.userContext.GiteaOwner, pc.userContext.GiteaRepo, filePath, branch)
 		if err != nil {
-			return nil, errs.B().Code(errs.NotFound).Msg("template not found in workspace repo").Err()
+			return nil, errs.B().Code(errs.NotFound).Msg("template not found in user-context repo").Err()
 		}
 		var parsed map[string]any
 		if err := yaml.Unmarshal(body, &parsed); err != nil || parsed == nil {
@@ -569,7 +569,7 @@ func (s *Service) CreateClabernetesDeploymentFromTemplate(ctx context.Context, i
 	if err != nil {
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode deployment config").Err()
 	}
-	dep, err := s.CreateWorkspaceDeployment(ctx, id, &WorkspaceDeploymentCreateRequest{
+	dep, err := s.CreateUserDeployment(ctx, id, &UserDeploymentCreateRequest{
 		Name:   name,
 		Type:   "clabernetes",
 		Config: cfg,
@@ -584,32 +584,32 @@ func (s *Service) CreateClabernetesDeploymentFromTemplate(ctx context.Context, i
 	}
 	if !auto {
 		return &CreateDeploymentFromTemplateResponse{
-			WorkspaceID: pc.workspace.ID,
-			Deployment:  dep,
-			Note:        "deployment created; deploy not queued",
+			UserContextID: pc.userContext.ID,
+			Deployment:    dep,
+			Note:          "deployment created; deploy not queued",
 		}, nil
 	}
-	actionResp, err := s.RunWorkspaceDeploymentAction(ctx, id, dep.ID, &WorkspaceDeploymentOpRequest{Action: "create"})
+	actionResp, err := s.RunUserDeploymentAction(ctx, id, dep.ID, &UserDeploymentOpRequest{Action: "create"})
 	if err != nil {
 		return nil, err
 	}
 	return &CreateDeploymentFromTemplateResponse{
-		WorkspaceID: pc.workspace.ID,
-		Deployment:  actionResp.Deployment,
-		Run:         actionResp.Run,
+		UserContextID: pc.userContext.ID,
+		Deployment:    actionResp.Deployment,
+		Run:           actionResp.Run,
 	}, nil
 }
 
-// CreateContainerlabDeploymentFromTemplate creates a containerlab (BYOS) deployment pointing at an existing workspace template YAML
+// CreateContainerlabDeploymentFromTemplate creates a containerlab (BYOS) deployment pointing at an existing user-context template YAML
 // (no YAML commit step).
 //
-//encore:api auth method=POST path=/api/workspaces/:id/deployments-designer/containerlab/from-template
+//encore:api auth method=POST path=/api/user-contexts/:id/deployments-designer/containerlab/from-template
 func (s *Service) CreateContainerlabDeploymentFromTemplate(ctx context.Context, id string, req *CreateContainerlabDeploymentFromTemplateRequest) (*CreateDeploymentFromTemplateResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -627,10 +627,10 @@ func (s *Service) CreateContainerlabDeploymentFromTemplate(ctx context.Context, 
 
 	templateSource := strings.ToLower(strings.TrimSpace(req.TemplateSource))
 	if templateSource == "" {
-		templateSource = "workspace"
+		templateSource = "user"
 	}
-	if templateSource != "workspace" {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("templateSource must be 'workspace'").Err()
+	if templateSource != "user" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("templateSource must be 'user'").Err()
 	}
 
 	templatesDir := strings.Trim(strings.TrimSpace(req.TemplatesDir), "/")
@@ -655,15 +655,15 @@ func (s *Service) CreateContainerlabDeploymentFromTemplate(ctx context.Context, 
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("template must be a .yml/.yaml file").Err()
 	}
 
-	branch := strings.TrimSpace(pc.workspace.DefaultBranch)
+	branch := strings.TrimSpace(pc.userContext.DefaultBranch)
 	if branch == "" {
 		branch = "main"
 	}
 	filePath := path.Join(templatesDir, template)
 	{
-		body, err := readGiteaFileBytes(s.cfg, pc.workspace.GiteaOwner, pc.workspace.GiteaRepo, filePath, branch)
+		body, err := readGiteaFileBytes(s.cfg, pc.userContext.GiteaOwner, pc.userContext.GiteaRepo, filePath, branch)
 		if err != nil {
-			return nil, errs.B().Code(errs.NotFound).Msg("template not found in workspace repo").Err()
+			return nil, errs.B().Code(errs.NotFound).Msg("template not found in user-context repo").Err()
 		}
 		var parsed map[string]any
 		if err := yaml.Unmarshal(body, &parsed); err != nil || parsed == nil {
@@ -676,7 +676,7 @@ func (s *Service) CreateContainerlabDeploymentFromTemplate(ctx context.Context, 
 
 	netlabServer := strings.TrimSpace(req.NetlabServer)
 	if netlabServer == "" {
-		netlabServer = strings.TrimSpace(pc.workspace.NetlabServer)
+		netlabServer = strings.TrimSpace(pc.userContext.NetlabServer)
 	}
 	if netlabServer == "" {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server selection is required").Err()
@@ -691,7 +691,7 @@ func (s *Service) CreateContainerlabDeploymentFromTemplate(ctx context.Context, 
 	if err != nil {
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode deployment config").Err()
 	}
-	dep, err := s.CreateWorkspaceDeployment(ctx, id, &WorkspaceDeploymentCreateRequest{
+	dep, err := s.CreateUserDeployment(ctx, id, &UserDeploymentCreateRequest{
 		Name:   name,
 		Type:   "containerlab",
 		Config: cfg,
@@ -706,18 +706,18 @@ func (s *Service) CreateContainerlabDeploymentFromTemplate(ctx context.Context, 
 	}
 	if !auto {
 		return &CreateDeploymentFromTemplateResponse{
-			WorkspaceID: pc.workspace.ID,
-			Deployment:  dep,
-			Note:        "deployment created; deploy not queued",
+			UserContextID: pc.userContext.ID,
+			Deployment:    dep,
+			Note:          "deployment created; deploy not queued",
 		}, nil
 	}
-	actionResp, err := s.RunWorkspaceDeploymentAction(ctx, id, dep.ID, &WorkspaceDeploymentOpRequest{Action: "create"})
+	actionResp, err := s.RunUserDeploymentAction(ctx, id, dep.ID, &UserDeploymentOpRequest{Action: "create"})
 	if err != nil {
 		return nil, err
 	}
 	return &CreateDeploymentFromTemplateResponse{
-		WorkspaceID: pc.workspace.ID,
-		Deployment:  actionResp.Deployment,
-		Run:         actionResp.Run,
+		UserContextID: pc.userContext.ID,
+		Deployment:    actionResp.Deployment,
+		Run:           actionResp.Run,
 	}, nil
 }

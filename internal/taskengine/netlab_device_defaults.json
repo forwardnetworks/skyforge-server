@@ -27,8 +27,8 @@
       "image_prefix": "vrnetlab/cisco_c8000v",
       "credentials": [
         {
-          "username": "vagrant",
-          "password": "vagrant"
+          "username": "admin",
+          "password": "admin"
         }
       ]
     },
@@ -37,8 +37,8 @@
       "image_prefix": "vrnetlab/vr-csr",
       "credentials": [
         {
-          "username": "vagrant",
-          "password": "vagrant"
+          "username": "admin",
+          "password": "admin"
         }
       ]
     },
@@ -47,8 +47,8 @@
       "image_prefix": "networkop/cx",
       "credentials": [
         {
-          "username": "vagrant",
-          "password": "vagrant"
+          "username": "admin",
+          "password": "admin"
         }
       ]
     },
@@ -117,8 +117,8 @@
       "image_prefix": "vrnetlab/cisco_vios",
       "credentials": [
         {
-          "username": "vagrant",
-          "password": "vagrant"
+          "username": "admin",
+          "password": "admin"
         }
       ]
     },
@@ -127,8 +127,8 @@
       "image_prefix": "vrnetlab/cisco_viosl2",
       "credentials": [
         {
-          "username": "vagrant",
-          "password": "vagrant"
+          "username": "admin",
+          "password": "admin"
         }
       ]
     },
@@ -147,8 +147,8 @@
       "image_prefix": "\u003cnil\u003e",
       "credentials": [
         {
-          "username": "vagrant",
-          "password": "Vagrant"
+          "username": "admin",
+          "password": "admin"
         }
       ]
     },
@@ -157,8 +157,8 @@
       "image_prefix": "python",
       "credentials": [
         {
-          "username": "vagrant",
-          "password": "vagrant"
+          "username": "admin",
+          "password": "admin"
         }
       ]
     },

@@ -26,13 +26,13 @@ type WorkspaceDeploymentNodeSaveConfigResponse struct {
 //
 // For EOS/cEOS, this runs `write memory`.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/deployments/:deploymentID/nodes/:node/save-config
+//encore:api auth method=POST path=/api/user-contexts/:id/deployments/:deploymentID/nodes/:node/save-config
 func (s *Service) SaveWorkspaceDeploymentNodeConfig(ctx context.Context, id, deploymentID, node string) (*WorkspaceDeploymentNodeSaveConfigResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +45,7 @@ func (s *Service) SaveWorkspaceDeploymentNodeConfig(ctx context.Context, id, dep
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("node is required").Err()
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+	dep, err := s.getUserDeployment(ctx, pc.userContext.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +60,7 @@ func (s *Service) SaveWorkspaceDeploymentNodeConfig(ctx context.Context, id, dep
 	k8sNamespace = strings.TrimSpace(k8sNamespace)
 	topologyName = strings.TrimSpace(topologyName)
 	if k8sNamespace == "" {
-		k8sNamespace = clabernetesWorkspaceNamespace(pc.workspace.Slug)
+		k8sNamespace = clabernetesUserContextNamespace(pc.userContext.Slug)
 	}
 	if topologyName == "" {
 		labName, _ := cfgAny["labName"].(string)
@@ -152,28 +152,28 @@ echo "ok: write memory"`
 		Stderr:    strings.TrimSpace(stderr),
 	}
 	if execErr != nil {
-		rlog.Warn("save-config failed", "workspace", pc.workspace.ID, "deployment", dep.ID, "node", node, "err", execErr)
+		rlog.Warn("save-config failed", "userContext", pc.userContext.ID, "deployment", dep.ID, "node", node, "err", execErr)
 		if s.db != nil {
-			_ = insertDeploymentUIEvent(ctx, s.db, pc.workspace.ID, dep.ID, pc.claims.Username, "node.save-config.failed", map[string]any{
+			_ = insertDeploymentUIEvent(ctx, s.db, pc.userContext.ID, dep.ID, pc.claims.Username, "node.save-config.failed", map[string]any{
 				"node":      node,
 				"nodeKind":  nodeKind,
 				"podName":   podName,
 				"container": container,
 				"stderr":    resp.Stderr,
 			})
-			_ = notifyDeploymentEventPG(ctx, s.db, pc.workspace.ID, dep.ID)
+			_ = notifyDeploymentEventPG(ctx, s.db, pc.userContext.ID, dep.ID)
 		}
 		return resp, errs.B().Code(errs.Unavailable).Msg("save-config failed").Err()
 	}
 
 	if s.db != nil {
-		_ = insertDeploymentUIEvent(ctx, s.db, pc.workspace.ID, dep.ID, pc.claims.Username, "node.save-config", map[string]any{
+		_ = insertDeploymentUIEvent(ctx, s.db, pc.userContext.ID, dep.ID, pc.claims.Username, "node.save-config", map[string]any{
 			"node":      node,
 			"nodeKind":  nodeKind,
 			"podName":   podName,
 			"container": container,
 		})
-		_ = notifyDeploymentEventPG(ctx, s.db, pc.workspace.ID, dep.ID)
+		_ = notifyDeploymentEventPG(ctx, s.db, pc.userContext.ID, dep.ID)
 	}
 
 	return resp, nil

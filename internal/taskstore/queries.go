@@ -45,17 +45,17 @@ WHERE task_type=$1
 	return count > 0, nil
 }
 
-func FindActiveTaskByDedupeKey(ctx context.Context, db *sql.DB, workspaceID string, deploymentID *string, taskType string, dedupeKey string) (*TaskRecord, error) {
-	return findActiveTaskByDedupeKey(ctx, db, workspaceID, deploymentID, taskType, dedupeKey)
+func FindActiveTaskByDedupeKey(ctx context.Context, db *sql.DB, userContextID string, deploymentID *string, taskType string, dedupeKey string) (*TaskRecord, error) {
+	return findActiveTaskByDedupeKey(ctx, db, userContextID, deploymentID, taskType, dedupeKey)
 }
 
-func GetActiveDeploymentTask(ctx context.Context, db *sql.DB, workspaceID string, deploymentID string) (*TaskRecord, error) {
+func GetActiveDeploymentTask(ctx context.Context, db *sql.DB, userContextID string, deploymentID string) (*TaskRecord, error) {
 	if db == nil {
 		return nil, errDBUnavailable
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userContextID = strings.TrimSpace(userContextID)
 	deploymentID = strings.TrimSpace(deploymentID)
-	if workspaceID == "" || deploymentID == "" {
+	if userContextID == "" || deploymentID == "" {
 		return nil, nil
 	}
 	var id int
@@ -65,7 +65,7 @@ WHERE workspace_id=$1
   AND deployment_id=$2
   AND status='running'
 ORDER BY id DESC
-LIMIT 1`, workspaceID, deploymentID).Scan(&id)
+LIMIT 1`, userContextID, deploymentID).Scan(&id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -75,13 +75,13 @@ LIMIT 1`, workspaceID, deploymentID).Scan(&id)
 	return GetTask(ctx, db, id)
 }
 
-func GetOldestQueuedDeploymentTaskID(ctx context.Context, db *sql.DB, workspaceID string, deploymentID string) (int, error) {
+func GetOldestQueuedDeploymentTaskID(ctx context.Context, db *sql.DB, userContextID string, deploymentID string) (int, error) {
 	if db == nil {
 		return 0, errDBUnavailable
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userContextID = strings.TrimSpace(userContextID)
 	deploymentID = strings.TrimSpace(deploymentID)
-	if workspaceID == "" || deploymentID == "" {
+	if userContextID == "" || deploymentID == "" {
 		return 0, nil
 	}
 	var id int
@@ -91,7 +91,7 @@ WHERE workspace_id=$1
   AND deployment_id=$2
   AND status='queued'
 ORDER BY priority DESC, id ASC
-LIMIT 1`, workspaceID, deploymentID).Scan(&id)
+LIMIT 1`, userContextID, deploymentID).Scan(&id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, nil
@@ -101,12 +101,12 @@ LIMIT 1`, workspaceID, deploymentID).Scan(&id)
 	return id, nil
 }
 
-func GetOldestQueuedWorkspaceTaskID(ctx context.Context, db *sql.DB, workspaceID string) (int, error) {
+func GetOldestQueuedUserContextTaskID(ctx context.Context, db *sql.DB, userContextID string) (int, error) {
 	if db == nil {
 		return 0, errDBUnavailable
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
+	userContextID = strings.TrimSpace(userContextID)
+	if userContextID == "" {
 		return 0, nil
 	}
 	var id int
@@ -116,7 +116,7 @@ WHERE workspace_id=$1
   AND deployment_id IS NULL
   AND status='queued'
 ORDER BY priority DESC, id ASC
-LIMIT 1`, workspaceID).Scan(&id)
+LIMIT 1`, userContextID).Scan(&id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, nil
@@ -126,13 +126,13 @@ LIMIT 1`, workspaceID).Scan(&id)
 	return id, nil
 }
 
-func GetDeploymentQueueSummary(ctx context.Context, db *sql.DB, workspaceID string, deploymentID string) (*DeploymentQueueSummary, error) {
+func GetDeploymentQueueSummary(ctx context.Context, db *sql.DB, userContextID string, deploymentID string) (*DeploymentQueueSummary, error) {
 	if db == nil {
 		return nil, errDBUnavailable
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userContextID = strings.TrimSpace(userContextID)
 	deploymentID = strings.TrimSpace(deploymentID)
-	if workspaceID == "" || deploymentID == "" {
+	if userContextID == "" || deploymentID == "" {
 		return nil, nil
 	}
 
@@ -150,7 +150,7 @@ func GetDeploymentQueueSummary(ctx context.Context, db *sql.DB, workspaceID stri
 FROM sf_tasks
 WHERE workspace_id=$1
   AND deployment_id=$2
-  AND status IN ('queued','running')`, workspaceID, deploymentID).Scan(&queuedCount, &runningCount, &oldestQueued, &runningID)
+  AND status IN ('queued','running')`, userContextID, deploymentID).Scan(&queuedCount, &runningCount, &oldestQueued, &runningID)
 	if err != nil {
 		return nil, err
 	}
@@ -175,12 +175,12 @@ WHERE workspace_id=$1
 	return out, nil
 }
 
-func ListTasks(ctx context.Context, db *sql.DB, workspaceID string, limit int) ([]TaskRecord, error) {
+func ListTasks(ctx context.Context, db *sql.DB, userContextID string, limit int) ([]TaskRecord, error) {
 	if db == nil {
 		return nil, errDBUnavailable
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
+	userContextID = strings.TrimSpace(userContextID)
+	if userContextID == "" {
 		return nil, nil
 	}
 	if limit <= 0 {
@@ -190,7 +190,7 @@ func ListTasks(ctx context.Context, db *sql.DB, workspaceID string, limit int) (
 FROM sf_tasks
 WHERE workspace_id=$1
 ORDER BY created_at DESC
-LIMIT $2`, workspaceID, limit)
+LIMIT $2`, userContextID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -211,14 +211,14 @@ LIMIT $2`, workspaceID, limit)
 	return out, nil
 }
 
-func GetLatestDeploymentTask(ctx context.Context, db *sql.DB, workspaceID string, deploymentID string, taskType string) (*TaskRecord, error) {
+func GetLatestDeploymentTask(ctx context.Context, db *sql.DB, userContextID string, deploymentID string, taskType string) (*TaskRecord, error) {
 	if db == nil {
 		return nil, errDBUnavailable
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userContextID = strings.TrimSpace(userContextID)
 	deploymentID = strings.TrimSpace(deploymentID)
 	taskType = strings.TrimSpace(taskType)
-	if workspaceID == "" || deploymentID == "" {
+	if userContextID == "" || deploymentID == "" {
 		return nil, nil
 	}
 	var id int
@@ -226,7 +226,7 @@ func GetLatestDeploymentTask(ctx context.Context, db *sql.DB, workspaceID string
 FROM sf_tasks
 WHERE workspace_id=$1
   AND deployment_id=$2`
-	args := []any{workspaceID, deploymentID}
+	args := []any{userContextID, deploymentID}
 	if taskType != "" {
 		query += ` AND task_type=$3`
 		args = append(args, taskType)
@@ -456,7 +456,7 @@ func TaskToRunInfo(task TaskRecord) map[string]any {
 		"created":   task.CreatedAt.UTC().Format(time.RFC3339),
 	}
 	if strings.TrimSpace(task.WorkspaceID) != "" {
-		run["workspaceId"] = strings.TrimSpace(task.WorkspaceID)
+		run["userContextId"] = strings.TrimSpace(task.WorkspaceID)
 	}
 	if task.DeploymentID.Valid {
 		dep := strings.TrimSpace(task.DeploymentID.String)

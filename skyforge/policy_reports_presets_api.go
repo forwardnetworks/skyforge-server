@@ -20,19 +20,19 @@ type PolicyReportListPresetsRequest struct {
 	Limit   int    `query:"limit" encore:"optional"`
 }
 
-// CreateWorkspacePolicyReportPreset creates a saved, scheduled preset.
+// CreateUserContextPolicyReportPreset creates a saved, scheduled preset.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/presets
-func (s *Service) CreateWorkspacePolicyReportPreset(ctx context.Context, id string, req *PolicyReportCreatePresetRequest) (*PolicyReportPreset, error) {
+//encore:api auth method=POST path=/api/user-contexts/:id/policy-reports/presets
+func (s *Service) CreateUserContextPolicyReportPreset(ctx context.Context, id string, req *PolicyReportCreatePresetRequest) (*PolicyReportPreset, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceEditor(pc); err != nil {
+	if err := requireUserContextEditor(pc); err != nil {
 		return nil, err
 	}
 	if s.db == nil {
@@ -41,11 +41,11 @@ func (s *Service) CreateWorkspacePolicyReportPreset(ctx context.Context, id stri
 	if req == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("request required").Err()
 	}
-	out, err := createPolicyReportPreset(ctx, s.db, pc.workspace.ID, pc.claims.Username, req)
+	out, err := createPolicyReportPreset(ctx, s.db, pc.userContext.ID, pc.claims.Username, req)
 	if err != nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 	}
-	policyReportAudit(ctx, s.db, pc.workspace.ID, pc.claims.Username, "policy_reports.preset.create", map[string]any{
+	policyReportAudit(ctx, s.db, pc.userContext.ID, pc.claims.Username, "policy_reports.preset.create", map[string]any{
 		"id":               out.ID,
 		"forwardNetworkId": out.ForwardNetworkID,
 		"name":             out.Name,
@@ -56,15 +56,15 @@ func (s *Service) CreateWorkspacePolicyReportPreset(ctx context.Context, id stri
 	return out, nil
 }
 
-// ListWorkspacePolicyReportPresets lists presets for a workspace (optionally filtered).
+// ListUserContextPolicyReportPresets lists presets for a user context (optionally filtered).
 //
-//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/presets
-func (s *Service) ListWorkspacePolicyReportPresets(ctx context.Context, id string, req *PolicyReportListPresetsRequest) (*PolicyReportListPresetsResponse, error) {
+//encore:api auth method=GET path=/api/user-contexts/:id/policy-reports/presets
+func (s *Service) ListUserContextPolicyReportPresets(ctx context.Context, id string, req *PolicyReportListPresetsRequest) (*PolicyReportListPresetsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func (s *Service) ListWorkspacePolicyReportPresets(ctx context.Context, id strin
 		}
 	}
 
-	out, err := listPolicyReportPresets(ctx, s.db, pc.workspace.ID, forwardNetworkID, enabled, limit)
+	out, err := listPolicyReportPresets(ctx, s.db, pc.userContext.ID, forwardNetworkID, enabled, limit)
 	if err != nil {
 		if isMissingDBRelation(err) {
 			return &PolicyReportListPresetsResponse{Presets: []PolicyReportPreset{}}, nil
@@ -99,19 +99,19 @@ func (s *Service) ListWorkspacePolicyReportPresets(ctx context.Context, id strin
 	return &PolicyReportListPresetsResponse{Presets: out}, nil
 }
 
-// UpdateWorkspacePolicyReportPreset updates an existing preset.
+// UpdateUserContextPolicyReportPreset updates an existing preset.
 //
-//encore:api auth method=PUT path=/api/workspaces/:id/policy-reports/presets/:presetId
-func (s *Service) UpdateWorkspacePolicyReportPreset(ctx context.Context, id string, presetId string, req *PolicyReportUpdatePresetRequest) (*PolicyReportPreset, error) {
+//encore:api auth method=PUT path=/api/user-contexts/:id/policy-reports/presets/:presetId
+func (s *Service) UpdateUserContextPolicyReportPreset(ctx context.Context, id string, presetId string, req *PolicyReportUpdatePresetRequest) (*PolicyReportPreset, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceEditor(pc); err != nil {
+	if err := requireUserContextEditor(pc); err != nil {
 		return nil, err
 	}
 	if s.db == nil {
@@ -121,14 +121,14 @@ func (s *Service) UpdateWorkspacePolicyReportPreset(ctx context.Context, id stri
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("request required").Err()
 	}
 
-	out, err := updatePolicyReportPreset(ctx, s.db, pc.workspace.ID, pc.claims.Username, presetId, req)
+	out, err := updatePolicyReportPreset(ctx, s.db, pc.userContext.ID, pc.claims.Username, presetId, req)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, errs.B().Code(errs.NotFound).Msg("preset not found").Err()
 		}
 		return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 	}
-	policyReportAudit(ctx, s.db, pc.workspace.ID, pc.claims.Username, "policy_reports.preset.update", map[string]any{
+	policyReportAudit(ctx, s.db, pc.userContext.ID, pc.claims.Username, "policy_reports.preset.update", map[string]any{
 		"id":               out.ID,
 		"forwardNetworkId": out.ForwardNetworkID,
 		"name":             out.Name,
@@ -137,50 +137,50 @@ func (s *Service) UpdateWorkspacePolicyReportPreset(ctx context.Context, id stri
 	return out, nil
 }
 
-// DeleteWorkspacePolicyReportPreset deletes a preset.
+// DeleteUserContextPolicyReportPreset deletes a preset.
 //
-//encore:api auth method=DELETE path=/api/workspaces/:id/policy-reports/presets/:presetId
-func (s *Service) DeleteWorkspacePolicyReportPreset(ctx context.Context, id string, presetId string) (*PolicyReportDecisionResponse, error) {
+//encore:api auth method=DELETE path=/api/user-contexts/:id/policy-reports/presets/:presetId
+func (s *Service) DeleteUserContextPolicyReportPreset(ctx context.Context, id string, presetId string) (*PolicyReportDecisionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceEditor(pc); err != nil {
+	if err := requireUserContextEditor(pc); err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("db not configured").Err()
 	}
 
-	if err := deletePolicyReportPreset(ctx, s.db, pc.workspace.ID, presetId); err != nil {
+	if err := deletePolicyReportPreset(ctx, s.db, pc.userContext.ID, presetId); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, errs.B().Code(errs.NotFound).Msg("preset not found").Err()
 		}
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to delete preset").Err()
 	}
-	policyReportAudit(ctx, s.db, pc.workspace.ID, pc.claims.Username, "policy_reports.preset.delete", map[string]any{
+	policyReportAudit(ctx, s.db, pc.userContext.ID, pc.claims.Username, "policy_reports.preset.delete", map[string]any{
 		"id": presetId,
 	})
 	return &PolicyReportDecisionResponse{Ok: true}, nil
 }
 
-// RunWorkspacePolicyReportPreset executes the preset immediately and stores a run.
+// RunUserContextPolicyReportPreset executes the preset immediately and stores a run.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/presets/:presetId/run
-func (s *Service) RunWorkspacePolicyReportPreset(ctx context.Context, id string, presetId string) (*PolicyReportRunPresetResponse, error) {
+//encore:api auth method=POST path=/api/user-contexts/:id/policy-reports/presets/:presetId/run
+func (s *Service) RunUserContextPolicyReportPreset(ctx context.Context, id string, presetId string) (*PolicyReportRunPresetResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceEditor(pc); err != nil {
+	if err := requireUserContextEditor(pc); err != nil {
 		return nil, err
 	}
 	if s.db == nil {
@@ -188,7 +188,7 @@ func (s *Service) RunWorkspacePolicyReportPreset(ctx context.Context, id string,
 	}
 
 	// Load preset via list helper (simple for demo; bounded by limit).
-	presets, err := listPolicyReportPresets(ctx, s.db, pc.workspace.ID, "", nil, 500)
+	presets, err := listPolicyReportPresets(ctx, s.db, pc.userContext.ID, "", nil, 500)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load preset").Err()
 	}
@@ -206,7 +206,7 @@ func (s *Service) RunWorkspacePolicyReportPreset(ctx context.Context, id string,
 	var runResp any
 	switch strings.ToUpper(strings.TrimSpace(preset.Kind)) {
 	case "PACK":
-		runResp, err = s.CreateWorkspacePolicyReportRun(ctx, id, &PolicyReportCreateRunRequest{
+		runResp, err = s.CreateUserContextPolicyReportRun(ctx, id, &PolicyReportCreateRunRequest{
 			ForwardNetworkID: preset.ForwardNetworkID,
 			SnapshotID:       preset.SnapshotID,
 			PackID:           preset.PackID,
@@ -215,7 +215,7 @@ func (s *Service) RunWorkspacePolicyReportPreset(ctx context.Context, id string,
 			MaxTotal:         preset.MaxTotal,
 		})
 	case "CUSTOM":
-		runResp, err = s.CreateWorkspacePolicyReportCustomRun(ctx, id, &PolicyReportCreateCustomRunRequest{
+		runResp, err = s.CreateUserContextPolicyReportCustomRun(ctx, id, &PolicyReportCreateCustomRunRequest{
 			ForwardNetworkID: preset.ForwardNetworkID,
 			SnapshotID:       preset.SnapshotID,
 			PackID:           preset.PackID,
@@ -244,7 +244,7 @@ func (s *Service) RunWorkspacePolicyReportPreset(ctx context.Context, id string,
 		storeReq.SnapshotID = preset.SnapshotID
 		storeReq.Title = renderPresetTitle(preset.TitleTemplate, preset.ForwardNetworkID, "paths-assurance", time.Now().UTC())
 
-		runResp, err = s.PostWorkspacePolicyReportPathsEnforcementBypassStore(ctx, id, &storeReq)
+		runResp, err = s.PostUserContextPolicyReportPathsEnforcementBypassStore(ctx, id, &storeReq)
 	default:
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid preset kind").Err()
 	}

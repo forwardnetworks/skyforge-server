@@ -17,15 +17,15 @@ type PurgeUserRequest struct {
 }
 
 type PurgeUserResponse struct {
-	Status            string   `json:"status"`
-	DeletedWorkspaces int      `json:"deletedWorkspaces"`
-	Warnings          []string `json:"warnings,omitempty"`
+	Status              string   `json:"status"`
+	DeletedUserContexts int      `json:"deletedUserContexts"`
+	Warnings            []string `json:"warnings,omitempty"`
 }
 
 // PurgeUser removes a user and their state (admin only).
 //
 // This is intended for development environments where you want to rerun
-// "first-login" bootstrap (Gitea user/provisioning, default workspace, etc).
+// "first-login" bootstrap (Gitea user/provisioning, default user context, etc).
 //
 //encore:api auth method=POST path=/api/admin/users/purge tag:admin
 func (s *Service) PurgeUser(ctx context.Context, req *PurgeUserRequest) (*PurgeUserResponse, error) {
@@ -49,28 +49,28 @@ func (s *Service) PurgeUser(ctx context.Context, req *PurgeUserRequest) (*PurgeU
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	deletedWorkspaces, warnings, err := purgeUserSQL(ctx, s.db, username)
+	deletedUserContexts, warnings, err := purgeUserSQL(ctx, s.db, username)
 	if err != nil {
 		return nil, errs.B().Code(errs.Internal).Msg("purge failed").Err()
 	}
 
 	// Best-effort cleanup of file-backed state.
-	if workspaces, err := s.workspaceStore.load(); err == nil {
-		for _, ws := range workspaces {
+	if userContexts, err := s.userContextStore.load(); err == nil {
+		for _, ws := range userContexts {
 			if strings.EqualFold(ws.CreatedBy, username) {
-				if err := s.workspaceStore.delete(ws.ID); err != nil {
-					warnings = append(warnings, fmt.Sprintf("failed to delete workspace %s: %v", ws.ID, err))
+				if err := s.userContextStore.delete(ws.ID); err != nil {
+					warnings = append(warnings, fmt.Sprintf("failed to delete user context %s: %v", ws.ID, err))
 				}
 				continue
 			}
 		}
 	} else {
-		warnings = append(warnings, fmt.Sprintf("failed to load workspaces store: %v", err))
+		warnings = append(warnings, fmt.Sprintf("failed to load user contexts store: %v", err))
 	}
 	if err := s.userStore.remove(username); err != nil {
 		warnings = append(warnings, fmt.Sprintf("failed to update users store: %v", err))
 	}
-	_ = notifyWorkspacesUpdatePG(ctx, s.db, "*")
+	_ = notifyUserContextsUpdatePG(ctx, s.db, "*")
 	_ = notifyDashboardUpdatePG(ctx, s.db)
 
 	// Best-effort cleanup of Gitea user and repos.
@@ -83,9 +83,9 @@ func (s *Service) PurgeUser(ctx context.Context, req *PurgeUserRequest) (*PurgeU
 	}
 
 	return &PurgeUserResponse{
-		Status:            "ok",
-		DeletedWorkspaces: deletedWorkspaces,
-		Warnings:          warnings,
+		Status:              "ok",
+		DeletedUserContexts: deletedUserContexts,
+		Warnings:            warnings,
 	}, nil
 }
 
@@ -99,9 +99,9 @@ func purgeUserSQL(ctx context.Context, db *sql.DB, username string) (int, []stri
 		return 0, nil, err
 	}
 
-	// Identify workspaces created by this user so we can delete all workspace-scoped rows
-	// before deleting the workspace itself (no cascade).
-	workspaceIDs := make([]string, 0, 4)
+	// Identify userContexts created by this user so we can delete all user-context rows
+	// before deleting the user context itself (no cascade).
+	userContextIDs := make([]string, 0, 4)
 	rows, err := tx.QueryContext(ctx, `SELECT id FROM sf_workspaces WHERE created_by = $1`, username)
 	if err != nil {
 		return rollback(err)
@@ -112,7 +112,7 @@ func purgeUserSQL(ctx context.Context, db *sql.DB, username string) (int, []stri
 			_ = rows.Close()
 			return rollback(err)
 		}
-		workspaceIDs = append(workspaceIDs, id)
+		userContextIDs = append(userContextIDs, id)
 	}
 	_ = rows.Close()
 
@@ -124,7 +124,7 @@ func purgeUserSQL(ctx context.Context, db *sql.DB, username string) (int, []stri
 	}{
 		{"notifications", `DELETE FROM sf_notifications WHERE username = $1`, []any{username}},
 		{"audit_actor", `DELETE FROM sf_audit_log WHERE actor_username = $1 OR impersonated_username = $1`, []any{username}},
-		{"workspace_members", `DELETE FROM sf_workspace_members WHERE username = $1`, []any{username}},
+		{"user_context_members", `DELETE FROM sf_workspace_members WHERE username = $1`, []any{username}},
 		{"user_variable_groups", `DELETE FROM sf_user_variable_groups WHERE username = $1`, []any{username}},
 		{"user_servicenow_configs", `DELETE FROM sf_user_servicenow_configs WHERE username = $1`, []any{username}},
 		{"aws_sso_tokens", `DELETE FROM sf_aws_sso_tokens WHERE username = $1`, []any{username}},
@@ -147,29 +147,29 @@ func purgeUserSQL(ctx context.Context, db *sql.DB, username string) (int, []stri
 		}
 	}
 
-	deletedWorkspaces := 0
-	if len(workspaceIDs) > 0 {
-		workspaceScopedDeletes := []struct {
+	deletedUserContexts := 0
+	if len(userContextIDs) > 0 {
+		userContextScopedDeletes := []struct {
 			label string
 			query string
 		}{
-			{"workspace_cost_snapshots", `DELETE FROM sf_cost_snapshots WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_usage_snapshots", `DELETE FROM sf_usage_snapshots WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_resource_events", `DELETE FROM sf_resource_events WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_resources", `DELETE FROM sf_resources WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_tasks", `DELETE FROM sf_tasks WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_deployments", `DELETE FROM sf_deployments WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_pki_certs", `DELETE FROM sf_pki_certs WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_forward_credentials", `DELETE FROM sf_workspace_forward_credentials WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_aws_static_credentials", `DELETE FROM sf_workspace_aws_static_credentials WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_azure_credentials", `DELETE FROM sf_workspace_azure_credentials WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_gcp_credentials", `DELETE FROM sf_workspace_gcp_credentials WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_groups", `DELETE FROM sf_workspace_groups WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_variable_groups", `DELETE FROM sf_workspace_variable_groups WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_members_all", `DELETE FROM sf_workspace_members WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_audit_log", `DELETE FROM sf_audit_log WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"user_context_cost_snapshots", `DELETE FROM sf_cost_snapshots WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"user_context_usage_snapshots", `DELETE FROM sf_usage_snapshots WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"user_context_resource_events", `DELETE FROM sf_resource_events WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"user_context_resources", `DELETE FROM sf_resources WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"user_context_tasks", `DELETE FROM sf_tasks WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"user_context_deployments", `DELETE FROM sf_deployments WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"user_context_pki_certs", `DELETE FROM sf_pki_certs WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"user_context_forward_credentials", `DELETE FROM sf_workspace_forward_credentials WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"user_context_aws_static_credentials", `DELETE FROM sf_workspace_aws_static_credentials WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"user_context_azure_credentials", `DELETE FROM sf_workspace_azure_credentials WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"user_context_gcp_credentials", `DELETE FROM sf_workspace_gcp_credentials WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"user_context_groups", `DELETE FROM sf_workspace_groups WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"user_context_variable_groups", `DELETE FROM sf_workspace_variable_groups WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"user_context_members_all", `DELETE FROM sf_workspace_members WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"user_context_audit_log", `DELETE FROM sf_audit_log WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
 		}
-		for _, stmt := range workspaceScopedDeletes {
+		for _, stmt := range userContextScopedDeletes {
 			if _, err := tx.ExecContext(ctx, stmt.query, username); err != nil {
 				return rollback(fmt.Errorf("%s: %w", stmt.label, err))
 			}
@@ -180,7 +180,7 @@ func purgeUserSQL(ctx context.Context, db *sql.DB, username string) (int, []stri
 			return rollback(err)
 		}
 		if n, _ := res.RowsAffected(); n > 0 {
-			deletedWorkspaces = int(n)
+			deletedUserContexts = int(n)
 		}
 	}
 
@@ -191,5 +191,5 @@ func purgeUserSQL(ctx context.Context, db *sql.DB, username string) (int, []stri
 	if err := tx.Commit(); err != nil {
 		return rollback(err)
 	}
-	return deletedWorkspaces, nil, nil
+	return deletedUserContexts, nil, nil
 }

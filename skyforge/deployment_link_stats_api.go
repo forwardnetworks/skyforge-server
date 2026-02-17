@@ -48,13 +48,13 @@ type LinkEdgeStats struct {
 //
 // This is used to render live link utilization on the topology graph (similar to c9s VSCode extension).
 //
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/links/stats
+//encore:api auth method=GET path=/api/user-contexts/:id/deployments/:deploymentID/links/stats
 func (s *Service) GetWorkspaceDeploymentLinkStats(ctx context.Context, id, deploymentID string) (*LinkStatsSnapshot, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +62,7 @@ func (s *Service) GetWorkspaceDeploymentLinkStats(ctx context.Context, id, deplo
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+	dep, err := s.getUserDeployment(ctx, pc.userContext.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +77,7 @@ func (s *Service) GetWorkspaceDeploymentLinkStats(ctx context.Context, id, deplo
 	k8sNamespace = strings.TrimSpace(k8sNamespace)
 	topologyName = strings.TrimSpace(topologyName)
 	if k8sNamespace == "" {
-		k8sNamespace = clabernetesWorkspaceNamespace(pc.workspace.Slug)
+		k8sNamespace = clabernetesUserContextNamespace(pc.userContext.Slug)
 	}
 	if topologyName == "" {
 		labName, _ := cfgAny["labName"].(string)
@@ -266,7 +266,7 @@ type LinkStatsSSEEvent struct {
 
 // GetWorkspaceDeploymentLinkStatsEvents streams link stats snapshots as SSE.
 //
-//encore:api auth raw method=GET path=/api/workspaces/:id/deployments/:deploymentID/links/stats/events
+//encore:api auth raw method=GET path=/api/user-contexts/:id/deployments/:deploymentID/links/stats/events
 func (s *Service) GetWorkspaceDeploymentLinkStatsEvents(w http.ResponseWriter, req *http.Request) {
 	if s == nil || s.db == nil || s.sessionManager == nil {
 		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
@@ -277,18 +277,18 @@ func (s *Service) GetWorkspaceDeploymentLinkStatsEvents(w http.ResponseWriter, r
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	workspaceKey := strings.TrimSpace(req.PathValue("id"))
+	userContextKey := strings.TrimSpace(req.PathValue("id"))
 	deploymentID := strings.TrimSpace(req.PathValue("deploymentID"))
-	if workspaceKey == "" || deploymentID == "" {
+	if userContextKey == "" || deploymentID == "" {
 		// Best-effort path param extraction (PathValue is only populated when the
 		// underlying mux supports it).
 		parts := strings.Split(strings.Trim(req.URL.Path, "/"), "/")
-		// expected: api/workspaces/<id>/deployments/<deploymentID>/links/stats/events
+		// expected: api/user-contexts/<id>/deployments/<deploymentID>/links/stats/events
 		for i := 0; i+1 < len(parts); i++ {
 			switch parts[i] {
-			case "workspaces":
-				if workspaceKey == "" {
-					workspaceKey = strings.TrimSpace(parts[i+1])
+			case "user-contexts":
+				if userContextKey == "" {
+					userContextKey = strings.TrimSpace(parts[i+1])
 				}
 			case "deployments":
 				if deploymentID == "" {
@@ -297,16 +297,16 @@ func (s *Service) GetWorkspaceDeploymentLinkStatsEvents(w http.ResponseWriter, r
 			}
 		}
 	}
-	if workspaceKey == "" || deploymentID == "" {
+	if userContextKey == "" || deploymentID == "" {
 		http.Error(w, "invalid path params", http.StatusBadRequest)
 		return
 	}
-	_, _, ws, err := s.loadWorkspaceByKey(workspaceKey)
+	_, _, ws, err := s.loadUserContextByKey(userContextKey)
 	if err != nil || strings.TrimSpace(ws.ID) == "" {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	if workspaceAccessLevelForClaims(s.cfg, ws, claims) == "none" {
+	if userContextAccessLevelForClaims(s.cfg, ws, claims) == "none" {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -331,7 +331,7 @@ func (s *Service) GetWorkspaceDeploymentLinkStatsEvents(w http.ResponseWriter, r
 	}
 
 	// initial
-	snap, err := s.GetWorkspaceDeploymentLinkStats(ctx, workspaceKey, deploymentID)
+	snap, err := s.GetWorkspaceDeploymentLinkStats(ctx, userContextKey, deploymentID)
 	if err != nil {
 		send(LinkStatsSSEEvent{Type: "error", Error: err.Error()})
 	} else {
@@ -343,7 +343,7 @@ func (s *Service) GetWorkspaceDeploymentLinkStatsEvents(w http.ResponseWriter, r
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			snap, err := s.GetWorkspaceDeploymentLinkStats(ctx, workspaceKey, deploymentID)
+			snap, err := s.GetWorkspaceDeploymentLinkStats(ctx, userContextKey, deploymentID)
 			if err != nil {
 				send(LinkStatsSSEEvent{Type: "error", Error: err.Error()})
 				continue

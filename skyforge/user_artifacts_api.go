@@ -18,22 +18,22 @@ type WorkspaceArtifactsListParams struct {
 }
 
 type WorkspaceArtifactsListResponse struct {
-	WorkspaceID     string                 `json:"workspaceId"`
-	WorkspaceSlug   string                 `json:"workspaceSlug"`
+	UserContextID   string                 `json:"userContextId"`
+	UserContextSlug string                 `json:"workspaceSlug"`
 	ArtifactsBucket string                 `json:"artifactsBucket"`
 	Prefix          string                 `json:"prefix"`
 	Items           []storageObjectSummary `json:"items"`
 }
 
-// ListWorkspaceArtifacts lists artifact objects for a workspace.
+// ListWorkspaceArtifacts lists artifact objects for a user context.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/artifacts
+//encore:api auth method=GET path=/api/user-contexts/:id/artifacts
 func (s *Service) ListWorkspaceArtifacts(ctx context.Context, id string, params *WorkspaceArtifactsListParams) (*WorkspaceArtifactsListResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -49,20 +49,20 @@ func (s *Service) ListWorkspaceArtifacts(ctx context.Context, id string, params 
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	items, err := listStorageArtifacts(ctx, s.cfg, pc.workspace.ID, prefix, limit)
+	items, err := listStorageArtifacts(ctx, s.cfg, pc.userContext.ID, prefix, limit)
 	if err != nil {
 		log.Printf("list artifacts: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to list artifacts").Err()
 	}
 	return &WorkspaceArtifactsListResponse{
-		WorkspaceID:     pc.workspace.ID,
-		WorkspaceSlug:   pc.workspace.Slug,
+		UserContextID:   pc.userContext.ID,
+		UserContextSlug: pc.userContext.Slug,
 		ArtifactsBucket: storage.StorageBucketName,
 		Prefix:          prefix,
 		Items:           items,
 	}, nil
 }
 
-func listStorageArtifacts(ctx context.Context, cfg Config, workspaceID, prefix string, limit int) ([]storageObjectSummary, error) {
-	return listArtifactEntries(ctx, cfg, workspaceID, prefix, limit)
+func listStorageArtifacts(ctx context.Context, cfg Config, userContextID, prefix string, limit int) ([]storageObjectSummary, error) {
+	return listArtifactEntries(ctx, cfg, userContextID, prefix, limit)
 }

@@ -36,13 +36,13 @@ type DeploymentNodeInterface struct {
 
 // GetWorkspaceDeploymentNodeInterfaces returns interface stats (launcher container) for a clabernetes node.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/nodes/:node/interfaces
+//encore:api auth method=GET path=/api/user-contexts/:id/deployments/:deploymentID/nodes/:node/interfaces
 func (s *Service) GetWorkspaceDeploymentNodeInterfaces(ctx context.Context, id, deploymentID, node string) (*DeploymentNodeInterfacesResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +54,7 @@ func (s *Service) GetWorkspaceDeploymentNodeInterfaces(ctx context.Context, id, 
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("node is required").Err()
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+	dep, err := s.getUserDeployment(ctx, pc.userContext.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func (s *Service) GetWorkspaceDeploymentNodeInterfaces(ctx context.Context, id, 
 	k8sNamespace = strings.TrimSpace(k8sNamespace)
 	topologyName = strings.TrimSpace(topologyName)
 	if k8sNamespace == "" {
-		k8sNamespace = clabernetesWorkspaceNamespace(pc.workspace.Slug)
+		k8sNamespace = clabernetesUserContextNamespace(pc.userContext.Slug)
 	}
 	if topologyName == "" {
 		labName, _ := cfgAny["labName"].(string)

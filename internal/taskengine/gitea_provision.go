@@ -15,9 +15,9 @@ import (
 
 func giteaClientFor(cfg skyforgecore.Config, repoPrivate bool) *gitea.Client {
 	return gitea.New(gitea.Config{
-		APIURL:      strings.TrimRight(strings.TrimSpace(cfg.Workspaces.GiteaAPIURL), "/"),
-		Username:    strings.TrimSpace(cfg.Workspaces.GiteaUsername),
-		Password:    strings.TrimSpace(cfg.Workspaces.GiteaPassword),
+		APIURL:      strings.TrimRight(strings.TrimSpace(cfg.UserContexts.GiteaAPIURL), "/"),
+		Username:    strings.TrimSpace(cfg.UserContexts.GiteaUsername),
+		Password:    strings.TrimSpace(cfg.UserContexts.GiteaPassword),
 		Timeout:     20 * time.Second,
 		RepoPrivate: repoPrivate,
 	})
@@ -117,7 +117,7 @@ func ensureBlueprintCatalogRepo(cfg skyforgecore.Config, blueprint string) error
 	if err := ensureGiteaRepo(cfg, owner, repo, false); err != nil {
 		return err
 	}
-	readme := "# Skyforge Blueprint Catalog\n\nThis repository contains validated deployment blueprints synced into user workspaces.\n"
+	readme := "# Skyforge Blueprint Catalog\n\nThis repository contains validated deployment blueprints synced into user userContexts.\n"
 	_ = ensureGiteaFile(cfg, owner, repo, "README.md", readme, "docs: add blueprint catalog README", "main", nil)
 
 	smoke := strings.TrimSpace(`name: skyforge-c9s-smoke

@@ -8,31 +8,31 @@ import (
 	"encore.dev/beta/errs"
 )
 
-func (s *Service) resolveWorkspaceNetlabServerConfig(ctx context.Context, workspaceID string, serverRef string) (*NetlabServerConfig, error) {
+func (s *Service) resolveUserContextNetlabServerConfig(ctx context.Context, userContextID string, serverRef string) (*NetlabServerConfig, error) {
 	if s == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("service unavailable").Err()
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("workspace id required").Err()
+	userContextID = strings.TrimSpace(userContextID)
+	if userContextID == "" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("userContextId required").Err()
 	}
 	serverRef = strings.TrimSpace(serverRef)
 	if serverRef == "" {
-		return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server is required (configure a Netlab server in workspace settings)").Err()
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("netlab server is required (configure a Netlab server in user-context settings)").Err()
 	}
-	serverID, ok := parseWorkspaceServerRef(serverRef)
+	serverID, ok := parseUserContextServerRef(serverRef)
 	if !ok {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("netlab server must be a workspace server reference (ws:...)").Err()
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("netlab server must be a user-context server reference (ws:...)").Err()
 	}
-	rec, err := getWorkspaceNetlabServerByID(ctx, s.db, s.box, workspaceID, serverID)
+	rec, err := getUserContextNetlabServerByID(ctx, s.db, s.box, userContextID, serverID)
 	if err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load workspace netlab server").Err()
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load user-context netlab server").Err()
 	}
 	if rec == nil {
-		return nil, errs.B().Code(errs.NotFound).Msg("workspace netlab server not found").Err()
+		return nil, errs.B().Code(errs.NotFound).Msg("user-context netlab server not found").Err()
 	}
 	custom := NetlabServerConfig{
 		Name:        strings.TrimSpace(rec.Name),
@@ -45,9 +45,9 @@ func (s *Service) resolveWorkspaceNetlabServerConfig(ctx context.Context, worksp
 	return &custom, nil
 }
 
-func (s *Service) resolveNetlabServerConfig(ctx context.Context, pc *workspaceContext, serverRef string) (*NetlabServerConfig, error) {
+func (s *Service) resolveNetlabServerConfig(ctx context.Context, pc *userContext, serverRef string) (*NetlabServerConfig, error) {
 	if pc == nil || pc.claims == nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("workspace context unavailable").Err()
+		return nil, errs.B().Code(errs.Unavailable).Msg("user context unavailable").Err()
 	}
 	serverRef = strings.TrimSpace(serverRef)
 	if serverRef == "" {
@@ -89,15 +89,15 @@ func (s *Service) resolveNetlabServerConfig(ctx context.Context, pc *workspaceCo
 		return &custom, nil
 	}
 
-	if _, ok := parseWorkspaceServerRef(serverRef); ok {
-		return s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, serverRef)
+	if _, ok := parseUserContextServerRef(serverRef); ok {
+		return s.resolveUserContextNetlabServerConfig(ctx, pc.userContext.ID, serverRef)
 	}
-	return nil, errs.B().Code(errs.InvalidArgument).Msg("netlab server must be a workspace reference (ws:...) or user reference (user:...)").Err()
+	return nil, errs.B().Code(errs.InvalidArgument).Msg("netlab server must be a user-context reference (ws:...) or user reference (user:...)").Err()
 }
 
-func (s *Service) resolveContainerlabServerConfig(ctx context.Context, pc *workspaceContext, serverRef string) (*NetlabServerConfig, error) {
+func (s *Service) resolveContainerlabServerConfig(ctx context.Context, pc *userContext, serverRef string) (*NetlabServerConfig, error) {
 	if pc == nil || pc.claims == nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("workspace context unavailable").Err()
+		return nil, errs.B().Code(errs.Unavailable).Msg("user context unavailable").Err()
 	}
 	serverRef = strings.TrimSpace(serverRef)
 	if serverRef == "" {
@@ -139,15 +139,15 @@ func (s *Service) resolveContainerlabServerConfig(ctx context.Context, pc *works
 		return &custom, nil
 	}
 
-	if _, ok := parseWorkspaceServerRef(serverRef); ok {
-		return s.resolveWorkspaceNetlabServerConfig(ctx, pc.workspace.ID, serverRef)
+	if _, ok := parseUserContextServerRef(serverRef); ok {
+		return s.resolveUserContextNetlabServerConfig(ctx, pc.userContext.ID, serverRef)
 	}
-	return nil, errs.B().Code(errs.InvalidArgument).Msg("containerlab server must be a workspace reference (ws:...) or user reference (user:...)").Err()
+	return nil, errs.B().Code(errs.InvalidArgument).Msg("containerlab server must be a user-context reference (ws:...) or user reference (user:...)").Err()
 }
 
-func (s *Service) resolveEveServerConfig(ctx context.Context, pc *workspaceContext, serverRef string) (*EveServerConfig, error) {
+func (s *Service) resolveEveServerConfig(ctx context.Context, pc *userContext, serverRef string) (*EveServerConfig, error) {
 	if pc == nil || pc.claims == nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("workspace context unavailable").Err()
+		return nil, errs.B().Code(errs.Unavailable).Msg("user context unavailable").Err()
 	}
 	serverRef = strings.TrimSpace(serverRef)
 	if serverRef == "" {
@@ -182,13 +182,13 @@ func (s *Service) resolveEveServerConfig(ctx context.Context, pc *workspaceConte
 		}, nil
 	}
 
-	if serverID, ok := parseWorkspaceServerRef(serverRef); ok {
-		rec, err := getWorkspaceEveServerByID(ctx, s.db, s.box, pc.workspace.ID, serverID)
+	if serverID, ok := parseUserContextServerRef(serverRef); ok {
+		rec, err := getUserContextEveServerByID(ctx, s.db, s.box, pc.userContext.ID, serverID)
 		if err != nil {
-			return nil, errs.B().Code(errs.Unavailable).Msg("failed to load workspace eve-ng server").Err()
+			return nil, errs.B().Code(errs.Unavailable).Msg("failed to load user-context eve-ng server").Err()
 		}
 		if rec == nil {
-			return nil, errs.B().Code(errs.NotFound).Msg("workspace eve-ng server not found").Err()
+			return nil, errs.B().Code(errs.NotFound).Msg("user-context eve-ng server not found").Err()
 		}
 		return &EveServerConfig{
 			Name:          strings.TrimSpace(rec.Name),
@@ -203,11 +203,11 @@ func (s *Service) resolveEveServerConfig(ctx context.Context, pc *workspaceConte
 		}, nil
 	}
 
-	return nil, errs.B().Code(errs.InvalidArgument).Msg("eve-ng server must be a workspace reference (ws:...) or user reference (user:...)").Err()
+	return nil, errs.B().Code(errs.InvalidArgument).Msg("eve-ng server must be a user-context reference (ws:...) or user reference (user:...)").Err()
 }
 
-func (s *Service) checkWorkspaceNetlabHealth(ctx context.Context, workspaceID string, serverRef string) error {
-	server, err := s.resolveWorkspaceNetlabServerConfig(ctx, workspaceID, serverRef)
+func (s *Service) checkUserContextNetlabHealth(ctx context.Context, userContextID string, serverRef string) error {
+	server, err := s.resolveUserContextNetlabServerConfig(ctx, userContextID, serverRef)
 	if err != nil {
 		return err
 	}

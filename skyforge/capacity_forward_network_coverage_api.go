@@ -11,7 +11,7 @@ import (
 )
 
 type ForwardNetworkCapacityCoverageResponse struct {
-	WorkspaceID      string `json:"workspaceId"`
+	UserContextID    string `json:"userContextId"`
 	NetworkRef       string `json:"networkRef"`
 	ForwardNetworkID string `json:"forwardNetworkId"`
 
@@ -30,18 +30,16 @@ type ForwardNetworkCapacityCoverageResponse struct {
 	RollupsWithSamples    int `json:"rollupsWithSamples"`
 }
 
-// GetWorkspaceForwardNetworkCapacityCoverage returns collection coverage / data-quality counters.
+// GetUserContextForwardNetworkCapacityCoverage returns collection coverage / data-quality counters.
 //
 // This is intentionally lightweight: it's used to build trust in the dashboard and
 // to quickly identify missing speed, missing samples, staleness, etc.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/forward-networks/:networkRef/capacity/coverage
-func (s *Service) GetWorkspaceForwardNetworkCapacityCoverage(ctx context.Context, id, networkRef string) (*ForwardNetworkCapacityCoverageResponse, error) {
+func (s *Service) GetUserContextForwardNetworkCapacityCoverage(ctx context.Context, id, networkRef string) (*ForwardNetworkCapacityCoverageResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -49,12 +47,12 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityCoverage(ctx context.Context
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.userContext.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
 
-	asOfInv, _, devices, ifaces, _, _, _, _, err := loadLatestCapacityInventoryForForwardNetwork(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID)
+	asOfInv, _, devices, ifaces, _, _, _, _, err := loadLatestCapacityInventoryForForwardNetwork(ctx, s.db, pc.claims.Username, pc.userContext.ID, net.ForwardNetworkID)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load inventory").Err()
 	}
@@ -74,13 +72,13 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityCoverage(ctx context.Context
 		}
 	}
 
-	asOfRollups, ifaceRows, devRows, withSamples, err := loadForwardNetworkRollupCoverage(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID)
+	asOfRollups, ifaceRows, devRows, withSamples, err := loadForwardNetworkRollupCoverage(ctx, s.db, pc.userContext.ID, net.ForwardNetworkID)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load rollup coverage").Err()
 	}
 
 	out := &ForwardNetworkCapacityCoverageResponse{
-		WorkspaceID:           pc.workspace.ID,
+		UserContextID:         pc.userContext.ID,
 		NetworkRef:            net.ID,
 		ForwardNetworkID:      net.ForwardNetworkID,
 		DevicesTotal:          len(devices),
@@ -101,13 +99,13 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityCoverage(ctx context.Context
 	return out, nil
 }
 
-func loadForwardNetworkRollupCoverage(ctx context.Context, db *sql.DB, workspaceID, forwardNetworkID string) (asOf time.Time, ifaceRows int, devRows int, withSamples int, err error) {
+func loadForwardNetworkRollupCoverage(ctx context.Context, db *sql.DB, userContextID, forwardNetworkID string) (asOf time.Time, ifaceRows int, devRows int, withSamples int, err error) {
 	if db == nil {
 		return time.Time{}, 0, 0, 0, fmt.Errorf("db unavailable")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userContextID = strings.TrimSpace(userContextID)
 	forwardNetworkID = strings.TrimSpace(forwardNetworkID)
-	if workspaceID == "" || forwardNetworkID == "" {
+	if userContextID == "" || forwardNetworkID == "" {
 		return time.Time{}, 0, 0, 0, fmt.Errorf("invalid identifiers")
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -115,7 +113,7 @@ func loadForwardNetworkRollupCoverage(ctx context.Context, db *sql.DB, workspace
 
 	if err := db.QueryRowContext(ctxReq, `SELECT COALESCE(MAX(period_end), 'epoch'::timestamptz)
 FROM sf_capacity_rollups
-WHERE workspace_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL`, workspaceID, forwardNetworkID).Scan(&asOf); err != nil {
+WHERE workspace_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL`, userContextID, forwardNetworkID).Scan(&asOf); err != nil {
 		return time.Time{}, 0, 0, 0, err
 	}
 	if asOf.IsZero() || asOf.Equal(time.Unix(0, 0).UTC()) {
@@ -124,7 +122,7 @@ WHERE workspace_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL`, work
 
 	rows, err := db.QueryContext(ctxReq, `SELECT object_type, samples
 FROM sf_capacity_rollups
-WHERE workspace_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL AND period_end=$3`, workspaceID, forwardNetworkID, asOf)
+WHERE workspace_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL AND period_end=$3`, userContextID, forwardNetworkID, asOf)
 	if err != nil {
 		return time.Time{}, 0, 0, 0, err
 	}

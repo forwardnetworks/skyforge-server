@@ -52,7 +52,7 @@ type ctxKey string
 
 const ctxKeyMCPForwardCredentialID ctxKey = "mcp_forward_credential_id"
 
-func (s *Service) handleMCPJSONRPC(ctx context.Context, user *AuthUser, workspaceID string, forwardNetworkID string, req mcpJSONRPCRequest) mcpJSONRPCResponse {
+func (s *Service) handleMCPJSONRPC(ctx context.Context, user *AuthUser, userContextID string, forwardNetworkID string, req mcpJSONRPCRequest) mcpJSONRPCResponse {
 	resp := mcpJSONRPCResponse{JSONRPC: "2.0", ID: req.ID}
 
 	// Notifications (no ID) must not get a response per JSON-RPC.
@@ -84,7 +84,7 @@ func (s *Service) handleMCPJSONRPC(ctx context.Context, user *AuthUser, workspac
 		resp.Result = []byte(`{}`)
 		return resp
 	case "tools/list":
-		tools := s.mcpToolsList(workspaceID, forwardNetworkID)
+		tools := s.mcpToolsList(userContextID, forwardNetworkID)
 		out := map[string]any{"tools": tools}
 		b, _ := json.Marshal(out)
 		resp.Result = b
@@ -95,7 +95,7 @@ func (s *Service) handleMCPJSONRPC(ctx context.Context, user *AuthUser, workspac
 			resp.Error = &mcpJSONRPCError{Code: -32602, Message: "invalid params"}
 			return resp
 		}
-		result, err := s.mcpToolsCall(ctx, user, workspaceID, forwardNetworkID, strings.TrimSpace(p.Name), p.Arguments)
+		result, err := s.mcpToolsCall(ctx, user, userContextID, forwardNetworkID, strings.TrimSpace(p.Name), p.Arguments)
 		if err != nil {
 			// Tool errors are surfaced as a successful JSON-RPC response with isError=true.
 			out := map[string]any{
@@ -123,7 +123,7 @@ func (s *Service) handleMCPJSONRPC(ctx context.Context, user *AuthUser, workspac
 	}
 }
 
-func (s *Service) mcpToolsList(workspaceID, forwardNetworkID string) []mcpTool {
+func (s *Service) mcpToolsList(userContextID, forwardNetworkID string) []mcpTool {
 	// Base tools are always available.
 	tools := []mcpTool{
 		{
@@ -200,7 +200,7 @@ func (s *Service) mcpToolsList(workspaceID, forwardNetworkID string) []mcpTool {
 	return tools
 }
 
-func (s *Service) mcpToolsCall(ctx context.Context, user *AuthUser, workspaceID, forwardNetworkID, name string, args map[string]any) (string, error) {
+func (s *Service) mcpToolsCall(ctx context.Context, user *AuthUser, userContextID, forwardNetworkID, name string, args map[string]any) (string, error) {
 	switch name {
 	case "validate_containerlab_topology":
 		yaml, _ := args["yaml"].(string)
@@ -294,7 +294,7 @@ func (s *Service) mcpToolsCall(ctx context.Context, user *AuthUser, workspaceID,
 		if strings.TrimSpace(forwardNetworkID) == "" {
 			return "", errs.B().Code(errs.NotFound).Msg("tool not found").Err()
 		}
-		return s.mcpForwardToolsCall(ctx, user, workspaceID, forwardNetworkID, name, args)
+		return s.mcpForwardToolsCall(ctx, user, userContextID, forwardNetworkID, name, args)
 	}
 }
 
@@ -335,7 +335,7 @@ func (s *Service) mcpAuthFromRequest(r *http.Request) (*AuthUser, error) {
 	return u, nil
 }
 
-func (s *Service) mcpHandleRPC(w http.ResponseWriter, r *http.Request, user *AuthUser, workspaceID, forwardNetworkID string) {
+func (s *Service) mcpHandleRPC(w http.ResponseWriter, r *http.Request, user *AuthUser, userContextID, forwardNetworkID string) {
 	if s == nil || !s.cfg.MCP.Enabled {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -368,7 +368,7 @@ func (s *Service) mcpHandleRPC(w http.ResponseWriter, r *http.Request, user *Aut
 		}
 		resps := make([]mcpJSONRPCResponse, 0, len(reqs))
 		for _, req := range reqs {
-			resp := s.handleMCPJSONRPC(ctx, user, workspaceID, forwardNetworkID, req)
+			resp := s.handleMCPJSONRPC(ctx, user, userContextID, forwardNetworkID, req)
 			if req.ID != nil {
 				resps = append(resps, resp)
 			}
@@ -382,7 +382,7 @@ func (s *Service) mcpHandleRPC(w http.ResponseWriter, r *http.Request, user *Aut
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-	resp := s.handleMCPJSONRPC(ctx, user, workspaceID, forwardNetworkID, req)
+	resp := s.handleMCPJSONRPC(ctx, user, userContextID, forwardNetworkID, req)
 	if req.ID == nil {
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -407,7 +407,7 @@ func (s *Service) MCPRPC(w http.ResponseWriter, r *http.Request) {
 // The Forward network is supplied via the URL path. Tool arguments that include network_id
 // may omit it; it will default to :forwardNetworkId.
 //
-//encore:api auth raw method=POST path=/api/workspaces/:id/mcp/forward/:forwardNetworkId/rpc
+//encore:api auth raw method=POST path=/api/user-contexts/:id/mcp/forward/:forwardNetworkId/rpc
 func (s *Service) MCPForwardRPC(w http.ResponseWriter, r *http.Request) {
 	user, err := s.mcpAuthFromRequest(r)
 	if err != nil {
@@ -429,7 +429,7 @@ func (s *Service) MCPForwardRPC(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid path", http.StatusBadRequest)
 		return
 	}
-	if _, err := s.workspaceContextForUser(user, id); err != nil {
+	if _, err := s.userContextForUser(user, id); err != nil {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -440,7 +440,7 @@ func (s *Service) MCPForwardRPC(w http.ResponseWriter, r *http.Request) {
 	s.mcpHandleRPC(w, r, user, id, forwardNetworkId)
 }
 
-// MCPForwardNetworkRPC exposes a Forward-scoped MCP JSON-RPC endpoint without requiring a workspace context.
+// MCPForwardNetworkRPC exposes a Forward-scoped MCP JSON-RPC endpoint without requiring a user context.
 //
 // This is useful for connecting MCP clients to an arbitrary Forward network id, using the caller's
 // saved credential sets (or user default collector config).

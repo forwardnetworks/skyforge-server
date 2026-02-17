@@ -40,15 +40,15 @@ type DeploymentLinkAdminResponse struct {
 	Results   []DeploymentLinkAdminResult `json:"results"`
 }
 
-// UpdateWorkspaceDeploymentLinkAdmin performs administrative link operations (up/down) on a topology edge.
+// UpdateUserDeploymentLinkAdmin performs administrative link operations (up/down) on a topology edge.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/deployments/:deploymentID/links/admin
-func (s *Service) UpdateWorkspaceDeploymentLinkAdmin(ctx context.Context, id, deploymentID string, req *DeploymentLinkAdminRequest) (*DeploymentLinkAdminResponse, error) {
+//encore:api auth method=POST path=/api/user-contexts/:id/deployments/:deploymentID/links/admin
+func (s *Service) UpdateUserDeploymentLinkAdmin(ctx context.Context, id, deploymentID string, req *DeploymentLinkAdminRequest) (*DeploymentLinkAdminResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +67,7 @@ func (s *Service) UpdateWorkspaceDeploymentLinkAdmin(ctx context.Context, id, de
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("action must be up or down").Err()
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+	dep, err := s.getUserDeployment(ctx, pc.userContext.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func (s *Service) UpdateWorkspaceDeploymentLinkAdmin(ctx context.Context, id, de
 	k8sNamespace = strings.TrimSpace(k8sNamespace)
 	topologyName = strings.TrimSpace(topologyName)
 	if k8sNamespace == "" {
-		k8sNamespace = clabernetesWorkspaceNamespace(pc.workspace.Slug)
+		k8sNamespace = clabernetesUserContextNamespace(pc.userContext.Slug)
 	}
 	if topologyName == "" {
 		labName, _ := cfgAny["labName"].(string)
@@ -181,8 +181,8 @@ func (s *Service) UpdateWorkspaceDeploymentLinkAdmin(ctx context.Context, id, de
 			"action":  action,
 			"results": results,
 		}
-		if err := insertDeploymentUIEvent(ctx, s.db, pc.workspace.ID, deploymentID, pc.claims.Username, "link."+action, payload); err == nil {
-			_ = notifyDeploymentEventPG(ctx, s.db, pc.workspace.ID, deploymentID)
+		if err := insertDeploymentUIEvent(ctx, s.db, pc.userContext.ID, deploymentID, pc.claims.Username, "link."+action, payload); err == nil {
+			_ = notifyDeploymentEventPG(ctx, s.db, pc.userContext.ID, deploymentID)
 		}
 	}
 	return &DeploymentLinkAdminResponse{
@@ -214,15 +214,15 @@ type DeploymentLinkCaptureResponse struct {
 	Stderr      string `json:"stderr,omitempty"`
 }
 
-// CaptureWorkspaceDeploymentLinkPcap captures a short pcap on a topology link and uploads it as a workspace artifact.
+// CaptureWorkspaceDeploymentLinkPcap captures a short pcap on a topology link and uploads it as a user-context artifact.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/deployments/:deploymentID/links/capture
+//encore:api auth method=POST path=/api/user-contexts/:id/deployments/:deploymentID/links/capture
 func (s *Service) CaptureWorkspaceDeploymentLinkPcap(ctx context.Context, id, deploymentID string, req *DeploymentLinkCaptureRequest) (*DeploymentLinkCaptureResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +272,7 @@ func (s *Service) CaptureWorkspaceDeploymentLinkPcap(ctx context.Context, id, de
 		maxBytes = 25 << 20
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+	dep, err := s.getUserDeployment(ctx, pc.userContext.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -287,7 +287,7 @@ func (s *Service) CaptureWorkspaceDeploymentLinkPcap(ctx context.Context, id, de
 	k8sNamespace = strings.TrimSpace(k8sNamespace)
 	topologyName = strings.TrimSpace(topologyName)
 	if k8sNamespace == "" {
-		k8sNamespace = clabernetesWorkspaceNamespace(pc.workspace.Slug)
+		k8sNamespace = clabernetesUserContextNamespace(pc.userContext.Slug)
 	}
 	if topologyName == "" {
 		labName, _ := cfgAny["labName"].(string)
@@ -401,7 +401,7 @@ func (s *Service) CaptureWorkspaceDeploymentLinkPcap(ctx context.Context, id, de
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("artifact storage unavailable").Err()
 	}
-	if err := storageSvc.Write(ctx, &storage.WriteRequest{ObjectName: artifactObjectName(pc.workspace.ID, key), Data: payload}); err != nil {
+	if err := storageSvc.Write(ctx, &storage.WriteRequest{ObjectName: artifactObjectName(pc.userContext.ID, key), Data: payload}); err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to upload pcap").Err()
 	}
 
@@ -426,8 +426,8 @@ func (s *Service) CaptureWorkspaceDeploymentLinkPcap(ctx context.Context, id, de
 			"artifactKey": key,
 			"sizeBytes":   size,
 		}
-		if err := insertDeploymentUIEvent(ctx, s.db, pc.workspace.ID, deploymentID, pc.claims.Username, "link.capture", payloadEv); err == nil {
-			_ = notifyDeploymentEventPG(ctx, s.db, pc.workspace.ID, deploymentID)
+		if err := insertDeploymentUIEvent(ctx, s.db, pc.userContext.ID, deploymentID, pc.claims.Username, "link.capture", payloadEv); err == nil {
+			_ = notifyDeploymentEventPG(ctx, s.db, pc.userContext.ID, deploymentID)
 		}
 	}
 

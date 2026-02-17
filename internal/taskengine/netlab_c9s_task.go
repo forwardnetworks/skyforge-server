@@ -22,12 +22,12 @@ type netlabC9sTaskSpec struct {
 	Server          string            `json:"server,omitempty"`
 	Deployment      string            `json:"deployment,omitempty"`
 	DeploymentID    string            `json:"deploymentId,omitempty"`
-	WorkspaceRoot   string            `json:"workspaceRoot,omitempty"`
+	UserContextRoot string            `json:"userContextRoot,omitempty"`
 	TemplateSource  string            `json:"templateSource,omitempty"`
 	TemplateRepo    string            `json:"templateRepo,omitempty"`
 	TemplatesDir    string            `json:"templatesDir,omitempty"`
 	Template        string            `json:"template,omitempty"`
-	WorkspaceDir    string            `json:"workspaceDir,omitempty"`
+	UserContextDir  string            `json:"userContextDir,omitempty"`
 	MultilabNumeric int               `json:"multilabNumeric,omitempty"`
 	TopologyPath    string            `json:"topologyPath,omitempty"`
 	ClabTarball     string            `json:"clabTarball,omitempty"`
@@ -40,20 +40,20 @@ type netlabC9sTaskSpec struct {
 
 type netlabC9sRunSpec struct {
 	TaskID          int
-	WorkspaceCtx    *workspaceContext
-	WorkspaceSlug   string
+	UserCtx         *userContext
+	UserContextSlug string
 	Username        string
 	Environment     map[string]string
 	SetOverrides    []string
 	Action          string
 	Deployment      string
 	DeploymentID    string
-	WorkspaceRoot   string
+	UserContextRoot string
 	TemplateSource  string
 	TemplateRepo    string
 	TemplatesDir    string
 	Template        string
-	WorkspaceDir    string
+	UserContextDir  string
 	MultilabNumeric int
 	StateRoot       string
 	Server          NetlabServerConfig
@@ -72,12 +72,12 @@ func tarballNameFromSpec(spec netlabC9sRunSpec) string {
 	return tarballName
 }
 
-func clabernetesWorkspaceNamespace(workspaceSlug string) string {
-	workspaceSlug = strings.TrimSpace(workspaceSlug)
-	if workspaceSlug == "" {
+func clabernetesUserContextNamespace(userContextSlug string) string {
+	userContextSlug = strings.TrimSpace(userContextSlug)
+	if userContextSlug == "" {
 		return "ws"
 	}
-	return sanitizeKubeNameFallback("ws-"+workspaceSlug, "ws")
+	return sanitizeKubeNameFallback("ws-"+userContextSlug, "ws")
 }
 
 func clabernetesTopologyName(labName string) string {
@@ -96,7 +96,7 @@ func (e *Engine) dispatchNetlabC9sTask(ctx context.Context, task *taskstore.Task
 	if err := decodeTaskSpec(task, &specIn); err != nil {
 		return err
 	}
-	ws, err := e.loadWorkspaceByKey(ctx, task.WorkspaceID)
+	ws, err := e.loadUserContextByKey(ctx, task.WorkspaceID)
 	if err != nil {
 		return err
 	}
@@ -104,8 +104,8 @@ func (e *Engine) dispatchNetlabC9sTask(ctx context.Context, task *taskstore.Task
 	if username == "" {
 		username = ws.primaryOwner()
 	}
-	pc := &workspaceContext{
-		workspace: *ws,
+	pc := &userContext{
+		userContext: *ws,
 		claims: SessionClaims{
 			Username: username,
 		},
@@ -118,20 +118,20 @@ func (e *Engine) dispatchNetlabC9sTask(ctx context.Context, task *taskstore.Task
 
 	runSpec := netlabC9sRunSpec{
 		TaskID:          task.ID,
-		WorkspaceCtx:    pc,
-		WorkspaceSlug:   strings.TrimSpace(pc.workspace.Slug),
+		UserCtx:         pc,
+		UserContextSlug: strings.TrimSpace(pc.userContext.Slug),
 		Username:        username,
 		Environment:     specIn.Environment,
 		SetOverrides:    specIn.SetOverrides,
 		Action:          strings.TrimSpace(specIn.Action),
 		Deployment:      strings.TrimSpace(specIn.Deployment),
 		DeploymentID:    strings.TrimSpace(specIn.DeploymentID),
-		WorkspaceRoot:   strings.TrimSpace(specIn.WorkspaceRoot),
+		UserContextRoot: strings.TrimSpace(specIn.UserContextRoot),
 		TemplateSource:  strings.TrimSpace(specIn.TemplateSource),
 		TemplateRepo:    strings.TrimSpace(specIn.TemplateRepo),
 		TemplatesDir:    strings.TrimSpace(specIn.TemplatesDir),
 		Template:        strings.TrimSpace(specIn.Template),
-		WorkspaceDir:    strings.TrimSpace(specIn.WorkspaceDir),
+		UserContextDir:  strings.TrimSpace(specIn.UserContextDir),
 		MultilabNumeric: specIn.MultilabNumeric,
 		StateRoot:       "",
 		Server:          NetlabServerConfig{},
@@ -160,8 +160,8 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 			return fmt.Errorf("netlab c9s job canceled")
 		}
 	}
-	if spec.WorkspaceCtx == nil {
-		return fmt.Errorf("workspace context unavailable")
+	if spec.UserCtx == nil {
+		return fmt.Errorf("user context unavailable")
 	}
 
 	action := strings.ToLower(strings.TrimSpace(spec.Action))
@@ -176,11 +176,11 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 
 	ns := strings.TrimSpace(spec.K8sNamespace)
 	if ns == "" {
-		ns = clabernetesWorkspaceNamespace(spec.WorkspaceCtx.workspace.Slug)
+		ns = clabernetesUserContextNamespace(spec.UserCtx.userContext.Slug)
 	}
 	labName := strings.TrimSpace(spec.LabName)
 	if labName == "" {
-		labName = containerlabLabName(spec.WorkspaceCtx.workspace.Slug, spec.Deployment)
+		labName = containerlabLabName(spec.UserCtx.userContext.Slug, spec.Deployment)
 	}
 	topologyName := strings.TrimSpace(spec.TopologyName)
 	if topologyName == "" {
@@ -288,7 +288,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 
 	clabSpec := clabernetesRunSpec{
 		TaskID:             spec.TaskID,
-		WorkspaceID:        strings.TrimSpace(spec.WorkspaceCtx.workspace.ID),
+		WorkspaceID:        strings.TrimSpace(spec.UserCtx.userContext.ID),
 		Action:             "deploy",
 		Namespace:          ns,
 		TopologyName:       topologyName,
@@ -311,8 +311,8 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	// (slow SSH, slow Forward collection, etc.) unless resources and node sizing are perfect.
 	preferColocate := envBool(spec.Environment, "SKYFORGE_C9S_PREFER_COLOCATE_WITH_COLLECTOR", false)
 	preferredNode := ""
-	if preferColocate && spec.WorkspaceCtx != nil {
-		if nodeName, err := kubeCollectorNodeForUser(ctx, spec.WorkspaceCtx.claims.Username); err == nil {
+	if preferColocate && spec.UserCtx != nil {
+		if nodeName, err := kubeCollectorNodeForUser(ctx, spec.UserCtx.claims.Username); err == nil {
 			preferredNode = strings.TrimSpace(nodeName)
 		}
 	}
@@ -353,7 +353,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	// Capture a lightweight topology graph after deploy so the UI can render
 	// resolved management IPs without querying netlab output.
 	var graph *TopologyGraph
-	var dep *WorkspaceDeployment
+	var dep *UserDeployment
 
 	captureErr := error(nil)
 	graph, captureErr = e.captureC9sTopologyArtifact(ctx, spec, ns, topologyName, labName, topologyBytes, nodeNameMapping, log)
@@ -365,7 +365,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	}
 
 	if graph != nil {
-		depLoaded, depErr := e.loadDeployment(ctx, spec.WorkspaceCtx.workspace.ID, strings.TrimSpace(spec.DeploymentID))
+		depLoaded, depErr := e.loadDeployment(ctx, spec.UserCtx.userContext.ID, strings.TrimSpace(spec.DeploymentID))
 		if depErr != nil {
 			if log != nil {
 				log.Infof("forward sync skipped: failed to load deployment: %v", depErr)
@@ -385,7 +385,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		// 1) Import devices/endpoints into Forward as soon as management IPs are available.
 		// We intentionally do this before applying post-up config so Forward can start its
 		// own reachability checks early.
-		if _, err := e.syncForwardTopologyGraphDevices(ctx, spec.TaskID, spec.WorkspaceCtx, dep, graph, forwardSyncOptions{
+		if _, err := e.syncForwardTopologyGraphDevices(ctx, spec.TaskID, spec.UserCtx, dep, graph, forwardSyncOptions{
 			StartConnectivity: false,
 			StartCollection:   false,
 		}); err != nil {
@@ -461,7 +461,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		}
 
 		_ = taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "forward.collection.start", func() error {
-			if err := e.startForwardCollectionForDeployment(ctx, spec.TaskID, spec.WorkspaceCtx, dep); err != nil {
+			if err := e.startForwardCollectionForDeployment(ctx, spec.TaskID, spec.UserCtx, dep); err != nil {
 				if log != nil {
 					log.Infof("forward sync skipped: %v", err)
 				}
@@ -479,7 +479,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	_ = taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.artifacts", func() error {
 		err := storeNetlabC9sArtifacts(ctx, e.cfg, netlabC9sArtifactsSpec{
 			TaskID:        spec.TaskID,
-			WorkspaceID:   strings.TrimSpace(spec.WorkspaceCtx.workspace.ID),
+			WorkspaceID:   strings.TrimSpace(spec.UserCtx.userContext.ID),
 			TopologyName:  topologyName,
 			LabName:       labName,
 			Namespace:     ns,
@@ -790,7 +790,7 @@ func forwardSSHBannerReadyOnce(ctx context.Context, host string) bool {
 }
 
 func (e *Engine) captureC9sTopologyArtifact(ctx context.Context, spec netlabC9sRunSpec, ns, topologyName, labName string, topologyYAML []byte, nodeNameMapping map[string]string, log Logger) (*TopologyGraph, error) {
-	if e == nil || e.db == nil || spec.TaskID <= 0 || spec.WorkspaceCtx == nil || strings.TrimSpace(spec.WorkspaceCtx.workspace.ID) == "" {
+	if e == nil || e.db == nil || spec.TaskID <= 0 || spec.UserCtx == nil || strings.TrimSpace(spec.UserCtx.userContext.ID) == "" {
 		return nil, fmt.Errorf("invalid task context")
 	}
 	ns = strings.TrimSpace(ns)
@@ -851,7 +851,7 @@ func (e *Engine) captureC9sTopologyArtifact(ctx context.Context, spec netlabC9sR
 	key := fmt.Sprintf("topology/netlab-c9s/%s.json", sanitizeArtifactKeySegment(labName))
 	ctxPut, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	putKey, err := putWorkspaceArtifact(ctxPut, e.cfg, spec.WorkspaceCtx.workspace.ID, key, graphBytes, "application/json")
+	putKey, err := putUserContextArtifact(ctxPut, e.cfg, spec.UserCtx.userContext.ID, key, graphBytes, "application/json")
 	if err != nil {
 		if isObjectStoreNotConfigured(err) {
 			if log != nil {

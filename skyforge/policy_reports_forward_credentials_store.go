@@ -20,14 +20,14 @@ type policyReportForwardCreds struct {
 	UpdatedAt     time.Time
 }
 
-func getPolicyReportForwardCreds(ctx context.Context, db *sql.DB, box *secretBox, workspaceID, username, forwardNetworkID string) (*policyReportForwardCreds, error) {
+func getPolicyReportForwardCreds(ctx context.Context, db *sql.DB, box *secretBox, userContextID, username, forwardNetworkID string) (*policyReportForwardCreds, error) {
 	if db == nil || box == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userContextID = strings.TrimSpace(userContextID)
 	username = strings.ToLower(strings.TrimSpace(username))
 	forwardNetworkID = strings.TrimSpace(forwardNetworkID)
-	if workspaceID == "" || username == "" || forwardNetworkID == "" {
+	if userContextID == "" || username == "" || forwardNetworkID == "" {
 		return nil, fmt.Errorf("invalid input")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -44,7 +44,7 @@ SELECT COALESCE(credential_id, ''),
        updated_at
   FROM sf_policy_report_forward_network_credentials
  WHERE workspace_id=$1 AND username=$2 AND forward_network_id=$3
-`, workspaceID, username, forwardNetworkID).Scan(&credID, &baseEnc, &userEnc, &passEnc, &skipTLS, &updatedAt)
+`, userContextID, username, forwardNetworkID).Scan(&credID, &baseEnc, &userEnc, &passEnc, &skipTLS, &updatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) || isMissingDBRelation(err) {
 			return nil, nil
@@ -109,14 +109,14 @@ SELECT COALESCE(credential_id, ''),
 	return out, nil
 }
 
-func putPolicyReportForwardCreds(ctx context.Context, db *sql.DB, box *secretBox, workspaceID, actor, forwardNetworkID string, req PolicyReportPutForwardCredentialsRequest) (*policyReportForwardCreds, error) {
+func putPolicyReportForwardCreds(ctx context.Context, db *sql.DB, box *secretBox, userContextID, actor, forwardNetworkID string, req PolicyReportPutForwardCredentialsRequest) (*policyReportForwardCreds, error) {
 	if db == nil || box == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userContextID = strings.TrimSpace(userContextID)
 	actor = strings.ToLower(strings.TrimSpace(actor))
 	forwardNetworkID = strings.TrimSpace(forwardNetworkID)
-	if workspaceID == "" || actor == "" || forwardNetworkID == "" {
+	if userContextID == "" || actor == "" || forwardNetworkID == "" {
 		return nil, fmt.Errorf("invalid input")
 	}
 
@@ -137,7 +137,7 @@ func putPolicyReportForwardCreds(ctx context.Context, db *sql.DB, box *secretBox
 SELECT COALESCE(credential_id,'')
   FROM sf_policy_report_forward_network_credentials
  WHERE workspace_id=$1 AND username=$2 AND forward_network_id=$3
-`, workspaceID, actor, forwardNetworkID).Scan(&existingCredID)
+`, userContextID, actor, forwardNetworkID).Scan(&existingCredID)
 
 	// If the caller didn't specify a credential set, we manage a dedicated set per mapping.
 	managedSet := strings.TrimSpace(credID) == ""
@@ -211,7 +211,7 @@ ON CONFLICT (workspace_id, username, forward_network_id) DO UPDATE SET
   skip_tls_verify=excluded.skip_tls_verify,
   credential_id=excluded.credential_id,
   updated_at=now()
-`, workspaceID, actor, forwardNetworkID, req.SkipTLSVerify, credID)
+`, userContextID, actor, forwardNetworkID, req.SkipTLSVerify, credID)
 	if err != nil {
 		return nil, err
 	}
@@ -226,18 +226,18 @@ ON CONFLICT (workspace_id, username, forward_network_id) DO UPDATE SET
 SELECT updated_at
   FROM sf_policy_report_forward_network_credentials
  WHERE workspace_id=$1 AND username=$2 AND forward_network_id=$3
-`, workspaceID, actor, forwardNetworkID).Scan(&out.UpdatedAt)
+`, userContextID, actor, forwardNetworkID).Scan(&out.UpdatedAt)
 	return out, nil
 }
 
-func deletePolicyReportForwardCreds(ctx context.Context, db *sql.DB, workspaceID, username, forwardNetworkID string) error {
+func deletePolicyReportForwardCreds(ctx context.Context, db *sql.DB, userContextID, username, forwardNetworkID string) error {
 	if db == nil {
 		return fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userContextID = strings.TrimSpace(userContextID)
 	username = strings.ToLower(strings.TrimSpace(username))
 	forwardNetworkID = strings.TrimSpace(forwardNetworkID)
-	if workspaceID == "" || username == "" || forwardNetworkID == "" {
+	if userContextID == "" || username == "" || forwardNetworkID == "" {
 		return fmt.Errorf("invalid input")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -246,7 +246,7 @@ func deletePolicyReportForwardCreds(ctx context.Context, db *sql.DB, workspaceID
 	res, err := db.ExecContext(ctx, `
 DELETE FROM sf_policy_report_forward_network_credentials
  WHERE workspace_id=$1 AND username=$2 AND forward_network_id=$3
-`, workspaceID, username, forwardNetworkID)
+`, userContextID, username, forwardNetworkID)
 	if err != nil {
 		return err
 	}

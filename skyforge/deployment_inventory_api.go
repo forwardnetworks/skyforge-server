@@ -18,12 +18,12 @@ type DeploymentInventoryNode struct {
 }
 
 type DeploymentInventoryResponse struct {
-	GeneratedAt  string                    `json:"generatedAt"`
-	WorkspaceID  string                    `json:"workspaceId"`
-	DeploymentID string                    `json:"deploymentId"`
-	Format       string                    `json:"format"`
-	Nodes        []DeploymentInventoryNode `json:"nodes,omitempty"`
-	CSV          string                    `json:"csv,omitempty"`
+	GeneratedAt   string                    `json:"generatedAt"`
+	UserContextID string                    `json:"userContextId"`
+	DeploymentID  string                    `json:"deploymentId"`
+	Format        string                    `json:"format"`
+	Nodes         []DeploymentInventoryNode `json:"nodes,omitempty"`
+	CSV           string                    `json:"csv,omitempty"`
 }
 
 type DeploymentInventoryParams struct {
@@ -32,13 +32,13 @@ type DeploymentInventoryParams struct {
 
 // GetWorkspaceDeploymentInventory returns a simple inventory of nodes and management IPs.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/inventory
+//encore:api auth method=GET path=/api/user-contexts/:id/deployments/:deploymentID/inventory
 func (s *Service) GetWorkspaceDeploymentInventory(ctx context.Context, id, deploymentID string, params *DeploymentInventoryParams) (*DeploymentInventoryResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +46,7 @@ func (s *Service) GetWorkspaceDeploymentInventory(ctx context.Context, id, deplo
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+	dep, err := s.getUserDeployment(ctx, pc.userContext.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -94,10 +94,10 @@ func (s *Service) GetWorkspaceDeploymentInventory(ctx context.Context, id, deplo
 	}
 
 	resp := &DeploymentInventoryResponse{
-		GeneratedAt:  time.Now().UTC().Format(time.RFC3339),
-		WorkspaceID:  pc.workspace.ID,
-		DeploymentID: deploymentID,
-		Format:       format,
+		GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
+		UserContextID: pc.userContext.ID,
+		DeploymentID:  deploymentID,
+		Format:        format,
 	}
 
 	if format == "csv" {

@@ -36,7 +36,7 @@ func (e *Engine) dispatchCapacityRollupTask(ctx context.Context, task *taskstore
 	var specIn capacityRollupTaskSpec
 	_ = decodeTaskSpec(task, &specIn)
 
-	ws, err := e.loadWorkspaceByKey(ctx, task.WorkspaceID)
+	ws, err := e.loadUserContextByKey(ctx, task.WorkspaceID)
 	if err != nil {
 		return err
 	}
@@ -44,8 +44,8 @@ func (e *Engine) dispatchCapacityRollupTask(ctx context.Context, task *taskstore
 	if username == "" {
 		username = ws.primaryOwner()
 	}
-	pc := &workspaceContext{
-		workspace: *ws,
+	pc := &userContext{
+		userContext: *ws,
 		claims: SessionClaims{
 			Username: username,
 		},
@@ -113,14 +113,14 @@ type fwdDeviceMetricHistoryResponse struct {
 	Metrics []fwdDeviceMetricHistory `json:"metrics"`
 }
 
-func (e *Engine) runCapacityRollup(ctx context.Context, pc *workspaceContext, deploymentID string, taskID int, log Logger) error {
+func (e *Engine) runCapacityRollup(ctx context.Context, pc *userContext, deploymentID string, taskID int, log Logger) error {
 	if e == nil || e.db == nil {
 		return fmt.Errorf("engine unavailable")
 	}
 	if pc == nil {
-		return fmt.Errorf("workspace context unavailable")
+		return fmt.Errorf("user context unavailable")
 	}
-	dep, err := e.loadDeployment(ctx, pc.workspace.ID, deploymentID)
+	dep, err := e.loadDeployment(ctx, pc.userContext.ID, deploymentID)
 	if err != nil {
 		return err
 	}
@@ -163,7 +163,7 @@ func (e *Engine) runCapacityRollup(ctx context.Context, pc *workspaceContext, de
 	}
 
 	// Refresh NQE cache and load lightweight enrichment maps.
-	inv, invErr := e.refreshCapacityInventoryCache(ctx, e.db, client, pc.workspace.ID, &deploymentID, networkID, log)
+	inv, invErr := e.refreshCapacityInventoryCache(ctx, e.db, client, pc.userContext.ID, &deploymentID, networkID, log)
 	if invErr != nil && log != nil {
 		log.Errorf("capacity inventory refresh failed: %v", invErr)
 	}
@@ -171,32 +171,32 @@ func (e *Engine) runCapacityRollup(ctx context.Context, pc *workspaceContext, de
 	// Compute interface rollups for INGRESS/EGRESS.
 	for _, w := range windows {
 		threshold := 0.85 // ratio in [0..1]; stays consistent with Forward utilization semantics
-		if err := e.rollupInterfaceMetric(ctx, client, pc.workspace.ID, &deploymentID, networkID, periodEnd, w, "UTILIZATION", "util_ingress", "INGRESS", &threshold, inv, taskID, log); err != nil {
+		if err := e.rollupInterfaceMetric(ctx, client, pc.userContext.ID, &deploymentID, networkID, periodEnd, w, "UTILIZATION", "util_ingress", "INGRESS", &threshold, inv, taskID, log); err != nil {
 			log.Errorf("interface rollup failed (window=%s type=%s dir=%s): %v", w.Label, "UTILIZATION", "INGRESS", err)
 		}
-		if err := e.rollupInterfaceMetric(ctx, client, pc.workspace.ID, &deploymentID, networkID, periodEnd, w, "UTILIZATION", "util_egress", "EGRESS", &threshold, inv, taskID, log); err != nil {
+		if err := e.rollupInterfaceMetric(ctx, client, pc.userContext.ID, &deploymentID, networkID, periodEnd, w, "UTILIZATION", "util_egress", "EGRESS", &threshold, inv, taskID, log); err != nil {
 			log.Errorf("interface rollup failed (window=%s type=%s dir=%s): %v", w.Label, "UTILIZATION", "EGRESS", err)
 		}
 
 		// Interface error rate and packet loss (best-effort).
-		if err := e.rollupInterfaceMetric(ctx, client, pc.workspace.ID, &deploymentID, networkID, periodEnd, w, "ERROR", "if_error_ingress", "INGRESS", nil, inv, taskID, log); err != nil {
+		if err := e.rollupInterfaceMetric(ctx, client, pc.userContext.ID, &deploymentID, networkID, periodEnd, w, "ERROR", "if_error_ingress", "INGRESS", nil, inv, taskID, log); err != nil {
 			log.Errorf("interface rollup failed (window=%s type=%s dir=%s): %v", w.Label, "ERROR", "INGRESS", err)
 		}
-		if err := e.rollupInterfaceMetric(ctx, client, pc.workspace.ID, &deploymentID, networkID, periodEnd, w, "ERROR", "if_error_egress", "EGRESS", nil, inv, taskID, log); err != nil {
+		if err := e.rollupInterfaceMetric(ctx, client, pc.userContext.ID, &deploymentID, networkID, periodEnd, w, "ERROR", "if_error_egress", "EGRESS", nil, inv, taskID, log); err != nil {
 			log.Errorf("interface rollup failed (window=%s type=%s dir=%s): %v", w.Label, "ERROR", "EGRESS", err)
 		}
-		if err := e.rollupInterfaceMetric(ctx, client, pc.workspace.ID, &deploymentID, networkID, periodEnd, w, "PACKET_LOSS", "if_packet_loss_ingress", "INGRESS", nil, inv, taskID, log); err != nil {
+		if err := e.rollupInterfaceMetric(ctx, client, pc.userContext.ID, &deploymentID, networkID, periodEnd, w, "PACKET_LOSS", "if_packet_loss_ingress", "INGRESS", nil, inv, taskID, log); err != nil {
 			log.Errorf("interface rollup failed (window=%s type=%s dir=%s): %v", w.Label, "PACKET_LOSS", "INGRESS", err)
 		}
-		if err := e.rollupInterfaceMetric(ctx, client, pc.workspace.ID, &deploymentID, networkID, periodEnd, w, "PACKET_LOSS", "if_packet_loss_egress", "EGRESS", nil, inv, taskID, log); err != nil {
+		if err := e.rollupInterfaceMetric(ctx, client, pc.userContext.ID, &deploymentID, networkID, periodEnd, w, "PACKET_LOSS", "if_packet_loss_egress", "EGRESS", nil, inv, taskID, log); err != nil {
 			log.Errorf("interface rollup failed (window=%s type=%s dir=%s): %v", w.Label, "PACKET_LOSS", "EGRESS", err)
 		}
 
 		// CPU + memory devices.
-		if err := e.rollupDeviceMetric(ctx, client, pc.workspace.ID, &deploymentID, networkID, periodEnd, w, "CPU", inv, taskID, log); err != nil {
+		if err := e.rollupDeviceMetric(ctx, client, pc.userContext.ID, &deploymentID, networkID, periodEnd, w, "CPU", inv, taskID, log); err != nil {
 			log.Errorf("device rollup failed (window=%s type=%s): %v", w.Label, "CPU", err)
 		}
-		if err := e.rollupDeviceMetric(ctx, client, pc.workspace.ID, &deploymentID, networkID, periodEnd, w, "MEMORY", inv, taskID, log); err != nil {
+		if err := e.rollupDeviceMetric(ctx, client, pc.userContext.ID, &deploymentID, networkID, periodEnd, w, "MEMORY", inv, taskID, log); err != nil {
 			log.Errorf("device rollup failed (window=%s type=%s): %v", w.Label, "MEMORY", err)
 		}
 	}

@@ -9,30 +9,30 @@ import (
 	"encore.dev/beta/errs"
 )
 
-type WorkspaceArtifactPutObjectRequest struct {
+type UserArtifactPutObjectRequest struct {
 	Key         string `json:"key"`
 	ContentB64  string `json:"contentBase64"`
 	ContentType string `json:"contentType,omitempty"`
 }
 
-type WorkspaceArtifactPutObjectResponse struct {
+type UserArtifactPutObjectResponse struct {
 	Status string `json:"status"`
 	Key    string `json:"key"`
 	Bytes  int    `json:"bytes"`
 }
 
-// PutWorkspaceArtifactObject writes/overwrites a single artifact object.
+// PutUserArtifactObject writes/overwrites a single artifact object.
 //
-// This is an object-store-native alternative to the legacy `UploadWorkspaceArtifact`
+// This is an object-store-native alternative to the legacy `UploadUserArtifact`
 // endpoint (which uses Encore's objects SDK and may require bucket subdomain DNS).
 //
-//encore:api auth method=POST path=/api/workspaces/:id/artifacts/object
-func (s *Service) PutWorkspaceArtifactObject(ctx context.Context, id string, req *WorkspaceArtifactPutObjectRequest) (*WorkspaceArtifactPutObjectResponse, error) {
+//encore:api auth method=POST path=/api/user-contexts/:id/artifacts/object
+func (s *Service) PutUserArtifactObject(ctx context.Context, id string, req *UserArtifactPutObjectRequest) (*UserArtifactPutObjectResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -67,35 +67,35 @@ func (s *Service) PutWorkspaceArtifactObject(ctx context.Context, id string, req
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	objectKey := artifactObjectName(pc.workspace.ID, key)
+	objectKey := artifactObjectName(pc.userContext.ID, key)
 	if err := client.PutObjectWithContentType(ctx, artifactsBucketName, objectKey, payload, contentType); err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to upload artifact").Err()
 	}
-	return &WorkspaceArtifactPutObjectResponse{
+	return &UserArtifactPutObjectResponse{
 		Status: "ok",
 		Key:    key,
 		Bytes:  len(payload),
 	}, nil
 }
 
-type WorkspaceArtifactDeleteParams struct {
+type UserArtifactDeleteParams struct {
 	Key string `query:"key"`
 }
 
-type WorkspaceArtifactDeleteResponse struct {
+type UserArtifactDeleteResponse struct {
 	Status string `json:"status"`
 	Key    string `json:"key"`
 }
 
-// DeleteWorkspaceArtifactObject deletes a single artifact object.
+// DeleteUserArtifactObject deletes a single artifact object.
 //
-//encore:api auth method=DELETE path=/api/workspaces/:id/artifacts/object
-func (s *Service) DeleteWorkspaceArtifactObject(ctx context.Context, id string, params *WorkspaceArtifactDeleteParams) (*WorkspaceArtifactDeleteResponse, error) {
+//encore:api auth method=DELETE path=/api/user-contexts/:id/artifacts/object
+func (s *Service) DeleteUserArtifactObject(ctx context.Context, id string, params *UserArtifactDeleteParams) (*UserArtifactDeleteResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -117,34 +117,34 @@ func (s *Service) DeleteWorkspaceArtifactObject(ctx context.Context, id string, 
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	objectKey := artifactObjectName(pc.workspace.ID, key)
+	objectKey := artifactObjectName(pc.userContext.ID, key)
 	if err := client.RemoveObject(ctx, artifactsBucketName, objectKey); err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to delete artifact").Err()
 	}
-	return &WorkspaceArtifactDeleteResponse{
+	return &UserArtifactDeleteResponse{
 		Status: "deleted",
 		Key:    key,
 	}, nil
 }
 
-type WorkspaceArtifactCreateFolderRequest struct {
+type UserArtifactCreateFolderRequest struct {
 	Prefix string `json:"prefix"`
 }
 
-type WorkspaceArtifactCreateFolderResponse struct {
+type UserArtifactCreateFolderResponse struct {
 	Status string `json:"status"`
 	Prefix string `json:"prefix"`
 }
 
-// CreateWorkspaceArtifactFolder creates a "folder" placeholder (zero-byte object with trailing slash).
+// CreateUserArtifactFolder creates a "folder" placeholder (zero-byte object with trailing slash).
 //
-//encore:api auth method=POST path=/api/workspaces/:id/artifacts/folder
-func (s *Service) CreateWorkspaceArtifactFolder(ctx context.Context, id string, req *WorkspaceArtifactCreateFolderRequest) (*WorkspaceArtifactCreateFolderResponse, error) {
+//encore:api auth method=POST path=/api/user-contexts/:id/artifacts/folder
+func (s *Service) CreateUserArtifactFolder(ctx context.Context, id string, req *UserArtifactCreateFolderRequest) (*UserArtifactCreateFolderResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -170,9 +170,9 @@ func (s *Service) CreateWorkspaceArtifactFolder(ctx context.Context, id string, 
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	objectKey := artifactObjectName(pc.workspace.ID, prefix)
+	objectKey := artifactObjectName(pc.userContext.ID, prefix)
 	if err := client.PutObjectWithContentType(ctx, artifactsBucketName, objectKey, []byte{}, "application/x-directory"); err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to create folder").Err()
 	}
-	return &WorkspaceArtifactCreateFolderResponse{Status: "ok", Prefix: prefix}, nil
+	return &UserArtifactCreateFolderResponse{Status: "ok", Prefix: prefix}, nil
 }

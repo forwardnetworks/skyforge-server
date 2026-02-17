@@ -10,36 +10,36 @@ import (
 	"encore.dev/beta/errs"
 )
 
-// SyncWorkspace syncs resources for a single workspace.
+// SyncUserContext syncs resources for a single user context.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/sync
-func (s *Service) SyncWorkspace(ctx context.Context, id string) (*workspaceSyncReport, error) {
-	workspaceSyncManualRequests.Add(1)
+//encore:api auth method=POST path=/api/user-contexts/:id/sync
+func (s *Service) SyncUserContext(ctx context.Context, id string) (*userContextSyncReport, error) {
+	userContextSyncManualRequests.Add(1)
 	user, err := requireAuthUser()
 	if err != nil {
-		workspaceSyncFailures.Add(1)
+		userContextSyncFailures.Add(1)
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
-		workspaceSyncFailures.Add(1)
+		userContextSyncFailures.Add(1)
 		return nil, err
 	}
 	if pc.access != "admin" && pc.access != "owner" {
-		workspaceSyncFailures.Add(1)
+		userContextSyncFailures.Add(1)
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	report := syncWorkspaceResources(ctx, s.cfg, &pc.workspace)
+	report := syncUserContextResources(ctx, s.cfg, &pc.userContext)
 	if report.Updated {
-		if err := s.workspaceStore.upsert(pc.workspace); err != nil {
-			log.Printf("workspace upsert after sync: %v", err)
-			workspaceSyncFailures.Add(1)
+		if err := s.userContextStore.upsert(pc.userContext); err != nil {
+			log.Printf("user context upsert after sync: %v", err)
+			userContextSyncFailures.Add(1)
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist sync").Err()
 		}
 		if s.db != nil {
-			_ = notifyWorkspacesUpdatePG(ctx, s.db, "*")
+			_ = notifyUserContextsUpdatePG(ctx, s.db, "*")
 			_ = notifyDashboardUpdatePG(ctx, s.db)
 		}
 	}
@@ -48,15 +48,15 @@ func (s *Service) SyncWorkspace(ctx context.Context, id string) (*workspaceSyncR
 		defer cancel()
 		actor, actorIsAdmin, impersonated := auditActor(s.cfg, pc.claims)
 		details := fmt.Sprintf("updated=%t errors=%d", report.Updated, len(report.Errors))
-		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "workspace.sync.manual", pc.workspace.ID, details)
+		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "user.sync.manual", pc.userContext.ID, details)
 	}
 	if len(report.Errors) > 0 {
-		workspaceSyncErrors.Add(1)
+		userContextSyncErrors.Add(1)
 	}
 	return &report, nil
 }
 
-type WorkspaceMembersRequest struct {
+type UserContextMembersRequest struct {
 	IsPublic     *bool    `json:"isPublic,omitempty"`
 	Owners       []string `json:"owners"`
 	OwnerGroups  []string `json:"ownerGroups"`
@@ -66,15 +66,15 @@ type WorkspaceMembersRequest struct {
 	ViewerGroups []string `json:"viewerGroups"`
 }
 
-// UpdateWorkspaceMembers updates workspace membership.
+// UpdateUserContextMembers updates user-context membership.
 //
-//encore:api auth method=PUT path=/api/workspaces/:id/members
-func (s *Service) UpdateWorkspaceMembers(ctx context.Context, id string, req *WorkspaceMembersRequest) (*SkyforgeWorkspace, error) {
+//encore:api auth method=PUT path=/api/user-contexts/:id/members
+func (s *Service) UpdateUserContextMembers(ctx context.Context, id string, req *UserContextMembersRequest) (*SkyforgeWorkspace, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -93,24 +93,24 @@ func (s *Service) UpdateWorkspaceMembers(ctx context.Context, id string, req *Wo
 	if len(nextOwners) == 0 {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("owners is required").Err()
 	}
-	if pc.access != "admin" && !containsUser(nextOwners, user.Username) && !strings.EqualFold(pc.workspace.CreatedBy, user.Username) {
+	if pc.access != "admin" && !containsUser(nextOwners, user.Username) && !strings.EqualFold(pc.userContext.CreatedBy, user.Username) {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("you cannot remove yourself from owners").Err()
 	}
 	if req.IsPublic != nil {
-		pc.workspace.IsPublic = *req.IsPublic
+		pc.userContext.IsPublic = *req.IsPublic
 	}
-	pc.workspace.Owners = nextOwners
-	pc.workspace.OwnerGroups = nextOwnerGroups
-	pc.workspace.Editors = nextEditors
-	pc.workspace.EditorGroups = nextEditorGroups
-	pc.workspace.Viewers = nextViewers
-	pc.workspace.ViewerGroups = nextViewerGroups
-	if err := s.workspaceStore.upsert(pc.workspace); err != nil {
-		log.Printf("workspace upsert: %v", err)
+	pc.userContext.Owners = nextOwners
+	pc.userContext.OwnerGroups = nextOwnerGroups
+	pc.userContext.Editors = nextEditors
+	pc.userContext.EditorGroups = nextEditorGroups
+	pc.userContext.Viewers = nextViewers
+	pc.userContext.ViewerGroups = nextViewerGroups
+	if err := s.userContextStore.upsert(pc.userContext); err != nil {
+		log.Printf("user context upsert: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist members").Err()
 	}
 	if s.db != nil {
-		_ = notifyWorkspacesUpdatePG(ctx, s.db, "*")
+		_ = notifyUserContextsUpdatePG(ctx, s.db, "*")
 		_ = notifyDashboardUpdatePG(ctx, s.db)
 	}
 	{
@@ -123,34 +123,34 @@ func (s *Service) UpdateWorkspaceMembers(ctx context.Context, id string, req *Wo
 			actor,
 			actorIsAdmin,
 			impersonated,
-			"workspace.members.update",
-			pc.workspace.ID,
-			fmt.Sprintf("owners=%d ownerGroups=%d editors=%d editorGroups=%d viewers=%d viewerGroups=%d", len(pc.workspace.Owners), len(pc.workspace.OwnerGroups), len(pc.workspace.Editors), len(pc.workspace.EditorGroups), len(pc.workspace.Viewers), len(pc.workspace.ViewerGroups)),
+			"user.members.update",
+			pc.userContext.ID,
+			fmt.Sprintf("owners=%d ownerGroups=%d editors=%d editorGroups=%d viewers=%d viewerGroups=%d", len(pc.userContext.Owners), len(pc.userContext.OwnerGroups), len(pc.userContext.Editors), len(pc.userContext.EditorGroups), len(pc.userContext.Viewers), len(pc.userContext.ViewerGroups)),
 		)
 	}
-	syncGiteaCollaboratorsForWorkspace(s.cfg, pc.workspace)
-	return &pc.workspace, nil
+	syncGiteaCollaboratorsForUserContext(s.cfg, pc.userContext)
+	return &pc.userContext, nil
 }
 
-type WorkspaceNetlabConfigResponse struct {
-	WorkspaceID   string   `json:"workspaceId"`
+type UserContextNetlabConfigResponse struct {
+	UserContextID string   `json:"userContextId"`
 	NetlabServer  string   `json:"netlabServer"`
 	NetlabServers []string `json:"netlabServers"`
 }
 
-type WorkspaceNetlabConfigRequest struct {
+type UserContextNetlabConfigRequest struct {
 	NetlabServer string `json:"netlabServer"`
 }
 
-// GetWorkspaceNetlab returns the workspace's netlab server selection.
+// GetUserContextNetlab returns the user-context netlab server selection.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/netlab
-func (s *Service) GetWorkspaceNetlab(ctx context.Context, id string) (*WorkspaceNetlabConfigResponse, error) {
+//encore:api auth method=GET path=/api/user-contexts/:id/netlab
+func (s *Service) GetUserContextNetlab(ctx context.Context, id string) (*UserContextNetlabConfigResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -158,22 +158,22 @@ func (s *Service) GetWorkspaceNetlab(ctx context.Context, id string) (*Workspace
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
 	_ = ctx
-	return &WorkspaceNetlabConfigResponse{
-		WorkspaceID:   pc.workspace.ID,
-		NetlabServer:  pc.workspace.NetlabServer,
+	return &UserContextNetlabConfigResponse{
+		UserContextID: pc.userContext.ID,
+		NetlabServer:  pc.userContext.NetlabServer,
 		NetlabServers: []string{},
 	}, nil
 }
 
-// UpdateWorkspaceNetlab updates the workspace's netlab server selection.
+// UpdateUserContextNetlab updates the user-context netlab server selection.
 //
-//encore:api auth method=PUT path=/api/workspaces/:id/netlab
-func (s *Service) UpdateWorkspaceNetlab(ctx context.Context, id string, req *WorkspaceNetlabConfigRequest) (*SkyforgeWorkspace, error) {
+//encore:api auth method=PUT path=/api/user-contexts/:id/netlab
+func (s *Service) UpdateUserContextNetlab(ctx context.Context, id string, req *UserContextNetlabConfigRequest) (*SkyforgeWorkspace, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -185,74 +185,74 @@ func (s *Service) UpdateWorkspaceNetlab(ctx context.Context, id string, req *Wor
 	}
 	next := strings.TrimSpace(req.NetlabServer)
 	if next != "" {
-		serverID, ok := parseWorkspaceServerRef(next)
+		serverID, ok := parseUserContextServerRef(next)
 		if !ok {
-			return nil, errs.B().Code(errs.InvalidArgument).Msg("netlabServer must be a workspace server (ws:...)").Err()
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("netlabServer must be a user-context server (ws:...)").Err()
 		}
 		if s.db == nil {
 			return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 		}
-		rec, err := getWorkspaceNetlabServerByID(ctx, s.db, s.box, pc.workspace.ID, serverID)
+		rec, err := getUserContextNetlabServerByID(ctx, s.db, s.box, pc.userContext.ID, serverID)
 		if err != nil || rec == nil {
 			return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown netlabServer").Err()
 		}
 	}
-	pc.workspace.NetlabServer = next
-	if err := s.workspaceStore.upsert(pc.workspace); err != nil {
-		log.Printf("workspace upsert: %v", err)
+	pc.userContext.NetlabServer = next
+	if err := s.userContextStore.upsert(pc.userContext); err != nil {
+		log.Printf("user context upsert: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist netlab server").Err()
 	}
 	if s.db != nil {
-		_ = notifyWorkspacesUpdatePG(ctx, s.db, "*")
+		_ = notifyUserContextsUpdatePG(ctx, s.db, "*")
 		_ = notifyDashboardUpdatePG(ctx, s.db)
 	}
 	{
 		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 		defer cancel()
 		actor, actorIsAdmin, impersonated := auditActor(s.cfg, pc.claims)
-		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "workspace.netlab.update", pc.workspace.ID, fmt.Sprintf("netlabServer=%s", next))
+		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "user.netlab.update", pc.userContext.ID, fmt.Sprintf("netlabServer=%s", next))
 	}
-	return &pc.workspace, nil
+	return &pc.userContext, nil
 }
 
-type WorkspaceAWSStaticGetResponse struct {
+type UserContextAWSStaticGetResponse struct {
 	Configured     bool   `json:"configured"`
 	AccessKeyLast4 string `json:"accessKeyLast4,omitempty"`
 	UpdatedAt      string `json:"updatedAt,omitempty"`
 }
 
-type WorkspaceAWSStaticPutRequest struct {
+type UserContextAWSStaticPutRequest struct {
 	AccessKeyID     string `json:"accessKeyId"`
 	SecretAccessKey string `json:"secretAccessKey"`
 	SessionToken    string `json:"sessionToken,omitempty"`
 }
 
-type WorkspaceAWSStaticStatusResponse struct {
+type UserContextAWSStaticStatusResponse struct {
 	Status string `json:"status"`
 }
 
-type WorkspaceAWSSSOUpdateRequest struct {
+type UserContextAWSSSOUpdateRequest struct {
 	AccountID string `json:"accountId"`
 	RoleName  string `json:"roleName"`
 	Region    string `json:"region,omitempty"`
 }
 
-type WorkspaceAWSSSOUpdateResponse struct {
+type UserContextAWSSSOUpdateResponse struct {
 	Status    string `json:"status"`
 	AccountID string `json:"accountId"`
 	RoleName  string `json:"roleName"`
 	Region    string `json:"region,omitempty"`
 }
 
-// PutWorkspaceAWSSSOConfig stores the AWS SSO account/role for the workspace.
+// PutUserContextAWSSSOConfig stores the AWS SSO account/role for the user context.
 //
-//encore:api auth method=PUT path=/api/workspaces/:id/cloud/aws-sso
-func (s *Service) PutWorkspaceAWSSSOConfig(ctx context.Context, id string, req *WorkspaceAWSSSOUpdateRequest) (*WorkspaceAWSSSOUpdateResponse, error) {
+//encore:api auth method=PUT path=/api/user-contexts/:id/cloud/aws-sso
+func (s *Service) PutUserContextAWSSSOConfig(ctx context.Context, id string, req *UserContextAWSSSOUpdateRequest) (*UserContextAWSSSOUpdateResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -268,17 +268,17 @@ func (s *Service) PutWorkspaceAWSSSOConfig(ctx context.Context, id string, req *
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("accountId and roleName are required").Err()
 	}
 	region := strings.TrimSpace(req.Region)
-	if region == "" && pc.workspace.AWSRegion == "" && s.cfg.AwsSSORegion != "" {
+	if region == "" && pc.userContext.AWSRegion == "" && s.cfg.AwsSSORegion != "" {
 		region = strings.TrimSpace(s.cfg.AwsSSORegion)
 	}
 	if region != "" {
-		pc.workspace.AWSRegion = region
+		pc.userContext.AWSRegion = region
 	}
-	pc.workspace.AWSAccountID = accountID
-	pc.workspace.AWSRoleName = roleName
-	pc.workspace.AWSAuthMethod = "sso"
-	if err := s.workspaceStore.upsert(pc.workspace); err != nil {
-		log.Printf("workspace upsert: %v", err)
+	pc.userContext.AWSAccountID = accountID
+	pc.userContext.AWSRoleName = roleName
+	pc.userContext.AWSAuthMethod = "sso"
+	if err := s.userContextStore.upsert(pc.userContext); err != nil {
+		log.Printf("user context upsert: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist aws sso config").Err()
 	}
 	{
@@ -286,25 +286,25 @@ func (s *Service) PutWorkspaceAWSSSOConfig(ctx context.Context, id string, req *
 		defer cancel()
 		actor, actorIsAdmin, impersonated := auditActor(s.cfg, pc.claims)
 		details := fmt.Sprintf("accountId=%s roleName=%s", accountID, roleName)
-		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "workspace.cloud.aws-sso.set", pc.workspace.ID, details)
+		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "user.cloud.aws-sso.set", pc.userContext.ID, details)
 	}
-	return &WorkspaceAWSSSOUpdateResponse{
+	return &UserContextAWSSSOUpdateResponse{
 		Status:    "ok",
 		AccountID: accountID,
 		RoleName:  roleName,
-		Region:    pc.workspace.AWSRegion,
+		Region:    pc.userContext.AWSRegion,
 	}, nil
 }
 
-// GetWorkspaceAWSStatic returns AWS static credential status.
+// GetUserContextAWSStatic returns AWS static credential status.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/cloud/aws-static
-func (s *Service) GetWorkspaceAWSStatic(ctx context.Context, id string) (*WorkspaceAWSStaticGetResponse, error) {
+//encore:api auth method=GET path=/api/user-contexts/:id/cloud/aws-static
+func (s *Service) GetUserContextAWSStatic(ctx context.Context, id string) (*UserContextAWSStaticGetResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -317,7 +317,7 @@ func (s *Service) GetWorkspaceAWSStatic(ctx context.Context, id string) (*Worksp
 	box := newSecretBox(s.cfg.SessionSecret)
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	rec, err := getWorkspaceAWSStaticCredentials(ctx, s.db, box, pc.workspace.ID)
+	rec, err := getUserContextAWSStaticCredentials(ctx, s.db, box, pc.userContext.ID)
 	if err != nil {
 		log.Printf("aws static get: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load aws static credentials").Err()
@@ -332,22 +332,22 @@ func (s *Service) GetWorkspaceAWSStatic(ctx context.Context, id string) (*Worksp
 			updatedAt = rec.UpdatedAt.UTC().Format(time.RFC3339)
 		}
 	}
-	return &WorkspaceAWSStaticGetResponse{
+	return &UserContextAWSStaticGetResponse{
 		Configured:     rec != nil && rec.AccessKeyID != "" && rec.SecretAccessKey != "",
 		AccessKeyLast4: akidLast4,
 		UpdatedAt:      updatedAt,
 	}, nil
 }
 
-// PutWorkspaceAWSStatic stores AWS static credentials.
+// PutUserContextAWSStatic stores AWS static credentials.
 //
-//encore:api auth method=PUT path=/api/workspaces/:id/cloud/aws-static
-func (s *Service) PutWorkspaceAWSStatic(ctx context.Context, id string, req *WorkspaceAWSStaticPutRequest) (*WorkspaceAWSStaticStatusResponse, error) {
+//encore:api auth method=PUT path=/api/user-contexts/:id/cloud/aws-static
+func (s *Service) PutUserContextAWSStatic(ctx context.Context, id string, req *UserContextAWSStaticPutRequest) (*UserContextAWSStaticStatusResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -362,7 +362,7 @@ func (s *Service) PutWorkspaceAWSStatic(ctx context.Context, id string, req *Wor
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	if err := putWorkspaceAWSStaticCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), pc.workspace.ID, req.AccessKeyID, req.SecretAccessKey, req.SessionToken); err != nil {
+	if err := putUserContextAWSStaticCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), pc.userContext.ID, req.AccessKeyID, req.SecretAccessKey, req.SessionToken); err != nil {
 		log.Printf("aws static put: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to store aws static credentials").Err()
 	}
@@ -370,20 +370,20 @@ func (s *Service) PutWorkspaceAWSStatic(ctx context.Context, id string, req *Wor
 		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 		defer cancel()
 		actor, actorIsAdmin, impersonated := auditActor(s.cfg, pc.claims)
-		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "workspace.cloud.aws-static.set", pc.workspace.ID, "")
+		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "user.cloud.aws-static.set", pc.userContext.ID, "")
 	}
-	return &WorkspaceAWSStaticStatusResponse{Status: "ok"}, nil
+	return &UserContextAWSStaticStatusResponse{Status: "ok"}, nil
 }
 
-// DeleteWorkspaceAWSStatic clears AWS static credentials.
+// DeleteUserContextAWSStatic clears AWS static credentials.
 //
-//encore:api auth method=DELETE path=/api/workspaces/:id/cloud/aws-static
-func (s *Service) DeleteWorkspaceAWSStatic(ctx context.Context, id string) (*WorkspaceAWSStaticStatusResponse, error) {
+//encore:api auth method=DELETE path=/api/user-contexts/:id/cloud/aws-static
+func (s *Service) DeleteUserContextAWSStatic(ctx context.Context, id string) (*UserContextAWSStaticStatusResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -395,7 +395,7 @@ func (s *Service) DeleteWorkspaceAWSStatic(ctx context.Context, id string) (*Wor
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	if err := deleteWorkspaceAWSStaticCredentials(ctx, s.db, pc.workspace.ID); err != nil {
+	if err := deleteUserContextAWSStaticCredentials(ctx, s.db, pc.userContext.ID); err != nil {
 		log.Printf("aws static delete: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to delete aws static credentials").Err()
 	}
@@ -403,12 +403,12 @@ func (s *Service) DeleteWorkspaceAWSStatic(ctx context.Context, id string) (*Wor
 		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 		defer cancel()
 		actor, actorIsAdmin, impersonated := auditActor(s.cfg, pc.claims)
-		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "workspace.cloud.aws-static.clear", pc.workspace.ID, "")
+		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "user.cloud.aws-static.clear", pc.userContext.ID, "")
 	}
-	return &WorkspaceAWSStaticStatusResponse{Status: "ok"}, nil
+	return &UserContextAWSStaticStatusResponse{Status: "ok"}, nil
 }
 
-type WorkspaceAzureCredentialGetResponse struct {
+type UserContextAzureCredentialGetResponse struct {
 	Configured     bool   `json:"configured"`
 	TenantID       string `json:"tenantId,omitempty"`
 	ClientID       string `json:"clientId,omitempty"`
@@ -416,26 +416,26 @@ type WorkspaceAzureCredentialGetResponse struct {
 	UpdatedAt      string `json:"updatedAt,omitempty"`
 }
 
-type WorkspaceAzureCredentialPutRequest struct {
+type UserContextAzureCredentialPutRequest struct {
 	TenantID       string `json:"tenantId"`
 	ClientID       string `json:"clientId"`
 	ClientSecret   string `json:"clientSecret"`
 	SubscriptionID string `json:"subscriptionId,omitempty"`
 }
 
-type WorkspaceAzureCredentialStatusResponse struct {
+type UserContextAzureCredentialStatusResponse struct {
 	Status string `json:"status"`
 }
 
-// GetWorkspaceAzureCredentials returns Azure service principal status.
+// GetUserContextAzureCredentials returns Azure service principal status.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/cloud/azure
-func (s *Service) GetWorkspaceAzureCredentials(ctx context.Context, id string) (*WorkspaceAzureCredentialGetResponse, error) {
+//encore:api auth method=GET path=/api/user-contexts/:id/cloud/azure
+func (s *Service) GetUserContextAzureCredentials(ctx context.Context, id string) (*UserContextAzureCredentialGetResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -448,7 +448,7 @@ func (s *Service) GetWorkspaceAzureCredentials(ctx context.Context, id string) (
 	box := newSecretBox(s.cfg.SessionSecret)
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	rec, err := getWorkspaceAzureCredentials(ctx, s.db, box, pc.workspace.ID)
+	rec, err := getUserContextAzureCredentials(ctx, s.db, box, pc.userContext.ID)
 	if err != nil {
 		log.Printf("azure get: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load azure credentials").Err()
@@ -465,7 +465,7 @@ func (s *Service) GetWorkspaceAzureCredentials(ctx context.Context, id string) (
 			updatedAt = rec.UpdatedAt.UTC().Format(time.RFC3339)
 		}
 	}
-	return &WorkspaceAzureCredentialGetResponse{
+	return &UserContextAzureCredentialGetResponse{
 		Configured:     rec != nil && rec.ClientID != "" && rec.ClientSecret != "",
 		TenantID:       tenantID,
 		ClientID:       clientID,
@@ -474,15 +474,15 @@ func (s *Service) GetWorkspaceAzureCredentials(ctx context.Context, id string) (
 	}, nil
 }
 
-// PutWorkspaceAzureCredentials stores Azure service principal credentials.
+// PutUserContextAzureCredentials stores Azure service principal credentials.
 //
-//encore:api auth method=PUT path=/api/workspaces/:id/cloud/azure
-func (s *Service) PutWorkspaceAzureCredentials(ctx context.Context, id string, req *WorkspaceAzureCredentialPutRequest) (*WorkspaceAzureCredentialStatusResponse, error) {
+//encore:api auth method=PUT path=/api/user-contexts/:id/cloud/azure
+func (s *Service) PutUserContextAzureCredentials(ctx context.Context, id string, req *UserContextAzureCredentialPutRequest) (*UserContextAzureCredentialStatusResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -503,7 +503,7 @@ func (s *Service) PutWorkspaceAzureCredentials(ctx context.Context, id string, r
 		ClientSecret:   req.ClientSecret,
 		SubscriptionID: req.SubscriptionID,
 	}
-	if err := putWorkspaceAzureCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), pc.workspace.ID, cred); err != nil {
+	if err := putUserContextAzureCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), pc.userContext.ID, cred); err != nil {
 		log.Printf("azure put: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to store azure credentials").Err()
 	}
@@ -511,20 +511,20 @@ func (s *Service) PutWorkspaceAzureCredentials(ctx context.Context, id string, r
 		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 		defer cancel()
 		actor, actorIsAdmin, impersonated := auditActor(s.cfg, pc.claims)
-		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "workspace.cloud.azure.set", pc.workspace.ID, "")
+		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "user.cloud.azure.set", pc.userContext.ID, "")
 	}
-	return &WorkspaceAzureCredentialStatusResponse{Status: "ok"}, nil
+	return &UserContextAzureCredentialStatusResponse{Status: "ok"}, nil
 }
 
-// DeleteWorkspaceAzureCredentials clears Azure credentials.
+// DeleteUserContextAzureCredentials clears Azure credentials.
 //
-//encore:api auth method=DELETE path=/api/workspaces/:id/cloud/azure
-func (s *Service) DeleteWorkspaceAzureCredentials(ctx context.Context, id string) (*WorkspaceAzureCredentialStatusResponse, error) {
+//encore:api auth method=DELETE path=/api/user-contexts/:id/cloud/azure
+func (s *Service) DeleteUserContextAzureCredentials(ctx context.Context, id string) (*UserContextAzureCredentialStatusResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -536,7 +536,7 @@ func (s *Service) DeleteWorkspaceAzureCredentials(ctx context.Context, id string
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	if err := deleteWorkspaceAzureCredentials(ctx, s.db, pc.workspace.ID); err != nil {
+	if err := deleteUserContextAzureCredentials(ctx, s.db, pc.userContext.ID); err != nil {
 		log.Printf("azure delete: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to delete azure credentials").Err()
 	}
@@ -544,37 +544,37 @@ func (s *Service) DeleteWorkspaceAzureCredentials(ctx context.Context, id string
 		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 		defer cancel()
 		actor, actorIsAdmin, impersonated := auditActor(s.cfg, pc.claims)
-		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "workspace.cloud.azure.clear", pc.workspace.ID, "")
+		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "user.cloud.azure.clear", pc.userContext.ID, "")
 	}
-	return &WorkspaceAzureCredentialStatusResponse{Status: "ok"}, nil
+	return &UserContextAzureCredentialStatusResponse{Status: "ok"}, nil
 }
 
-type WorkspaceGCPCredentialGetResponse struct {
-	Configured          bool   `json:"configured"`
-	ClientEmail         string `json:"clientEmail,omitempty"`
-	WorkspaceID         string `json:"workspaceId,omitempty"`
-	SelectedWorkspaceID string `json:"selectedWorkspaceId,omitempty"`
-	UpdatedAt           string `json:"updatedAt,omitempty"`
+type UserContextGCPCredentialGetResponse struct {
+	Configured        bool   `json:"configured"`
+	ClientEmail       string `json:"clientEmail,omitempty"`
+	UserContextID     string `json:"userContextId,omitempty"`
+	SelectedProjectID string `json:"selectedWorkspaceId,omitempty"`
+	UpdatedAt         string `json:"updatedAt,omitempty"`
 }
 
-type WorkspaceGCPCredentialPutRequest struct {
+type UserContextGCPCredentialPutRequest struct {
 	ServiceAccountJSON string `json:"serviceAccountJson"`
-	WorkspaceID        string `json:"workspaceId,omitempty"`
+	UserContextID      string `json:"userContextId,omitempty"`
 }
 
-type WorkspaceGCPCredentialStatusResponse struct {
+type UserContextGCPCredentialStatusResponse struct {
 	Status string `json:"status"`
 }
 
-// GetWorkspaceGCPCredentials returns GCP service account status.
+// GetUserContextGCPCredentials returns GCP service account status.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/cloud/gcp
-func (s *Service) GetWorkspaceGCPCredentials(ctx context.Context, id string) (*WorkspaceGCPCredentialGetResponse, error) {
+//encore:api auth method=GET path=/api/user-contexts/:id/cloud/gcp
+func (s *Service) GetUserContextGCPCredentials(ctx context.Context, id string) (*UserContextGCPCredentialGetResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -587,7 +587,7 @@ func (s *Service) GetWorkspaceGCPCredentials(ctx context.Context, id string) (*W
 	box := newSecretBox(s.cfg.SessionSecret)
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	rec, err := getWorkspaceGCPCredentials(ctx, s.db, box, pc.workspace.ID)
+	rec, err := getUserContextGCPCredentials(ctx, s.db, box, pc.userContext.ID)
 	if err != nil {
 		log.Printf("gcp get: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load gcp credentials").Err()
@@ -606,24 +606,24 @@ func (s *Service) GetWorkspaceGCPCredentials(ctx context.Context, id string) (*W
 			updatedAt = rec.UpdatedAt.UTC().Format(time.RFC3339)
 		}
 	}
-	return &WorkspaceGCPCredentialGetResponse{
-		Configured:          rec != nil && rec.ServiceAccountJSON != "",
-		ClientEmail:         clientEmail,
-		WorkspaceID:         projectID,
-		SelectedWorkspaceID: selectedProjectID,
-		UpdatedAt:           updatedAt,
+	return &UserContextGCPCredentialGetResponse{
+		Configured:        rec != nil && rec.ServiceAccountJSON != "",
+		ClientEmail:       clientEmail,
+		UserContextID:     projectID,
+		SelectedProjectID: selectedProjectID,
+		UpdatedAt:         updatedAt,
 	}, nil
 }
 
-// PutWorkspaceGCPCredentials stores GCP service account JSON.
+// PutUserContextGCPCredentials stores GCP service account JSON.
 //
-//encore:api auth method=PUT path=/api/workspaces/:id/cloud/gcp
-func (s *Service) PutWorkspaceGCPCredentials(ctx context.Context, id string, req *WorkspaceGCPCredentialPutRequest) (*WorkspaceGCPCredentialStatusResponse, error) {
+//encore:api auth method=PUT path=/api/user-contexts/:id/cloud/gcp
+func (s *Service) PutUserContextGCPCredentials(ctx context.Context, id string, req *UserContextGCPCredentialPutRequest) (*UserContextGCPCredentialStatusResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -638,7 +638,7 @@ func (s *Service) PutWorkspaceGCPCredentials(ctx context.Context, id string, req
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	if err := putWorkspaceGCPCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), pc.workspace.ID, req.ServiceAccountJSON, req.WorkspaceID); err != nil {
+	if err := putUserContextGCPCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), pc.userContext.ID, req.ServiceAccountJSON, req.UserContextID); err != nil {
 		log.Printf("gcp put: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to store gcp credentials").Err()
 	}
@@ -646,20 +646,20 @@ func (s *Service) PutWorkspaceGCPCredentials(ctx context.Context, id string, req
 		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 		defer cancel()
 		actor, actorIsAdmin, impersonated := auditActor(s.cfg, pc.claims)
-		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "workspace.cloud.gcp.set", pc.workspace.ID, "")
+		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "user.cloud.gcp.set", pc.userContext.ID, "")
 	}
-	return &WorkspaceGCPCredentialStatusResponse{Status: "ok"}, nil
+	return &UserContextGCPCredentialStatusResponse{Status: "ok"}, nil
 }
 
-// DeleteWorkspaceGCPCredentials clears GCP credentials.
+// DeleteUserContextGCPCredentials clears GCP credentials.
 //
-//encore:api auth method=DELETE path=/api/workspaces/:id/cloud/gcp
-func (s *Service) DeleteWorkspaceGCPCredentials(ctx context.Context, id string) (*WorkspaceGCPCredentialStatusResponse, error) {
+//encore:api auth method=DELETE path=/api/user-contexts/:id/cloud/gcp
+func (s *Service) DeleteUserContextGCPCredentials(ctx context.Context, id string) (*UserContextGCPCredentialStatusResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -671,7 +671,7 @@ func (s *Service) DeleteWorkspaceGCPCredentials(ctx context.Context, id string) 
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	if err := deleteWorkspaceGCPCredentials(ctx, s.db, pc.workspace.ID); err != nil {
+	if err := deleteUserContextGCPCredentials(ctx, s.db, pc.userContext.ID); err != nil {
 		log.Printf("gcp delete: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to delete gcp credentials").Err()
 	}
@@ -679,7 +679,7 @@ func (s *Service) DeleteWorkspaceGCPCredentials(ctx context.Context, id string) 
 		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 		defer cancel()
 		actor, actorIsAdmin, impersonated := auditActor(s.cfg, pc.claims)
-		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "workspace.cloud.gcp.clear", pc.workspace.ID, "")
+		writeAuditEvent(ctx, s.db, actor, actorIsAdmin, impersonated, "user.cloud.gcp.clear", pc.userContext.ID, "")
 	}
-	return &WorkspaceGCPCredentialStatusResponse{Status: "ok"}, nil
+	return &UserContextGCPCredentialStatusResponse{Status: "ok"}, nil
 }

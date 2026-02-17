@@ -36,28 +36,28 @@ type CapacityGrowthRow struct {
 }
 
 type DeploymentCapacityGrowthResponse struct {
-	WorkspaceID  string              `json:"workspaceId"`
-	DeploymentID string              `json:"deploymentId"`
-	Metric       string              `json:"metric"`
-	Window       string              `json:"window"`
-	ObjectType   string              `json:"objectType,omitempty"`
-	AsOf         string              `json:"asOf,omitempty"`
-	CompareAsOf  string              `json:"compareAsOf,omitempty"`
-	CompareHours int                 `json:"compareHours"`
-	Rows         []CapacityGrowthRow `json:"rows"`
+	UserContextID string              `json:"userContextId"`
+	DeploymentID  string              `json:"deploymentId"`
+	Metric        string              `json:"metric"`
+	Window        string              `json:"window"`
+	ObjectType    string              `json:"objectType,omitempty"`
+	AsOf          string              `json:"asOf,omitempty"`
+	CompareAsOf   string              `json:"compareAsOf,omitempty"`
+	CompareHours  int                 `json:"compareHours"`
+	Rows          []CapacityGrowthRow `json:"rows"`
 }
 
 // GetWorkspaceDeploymentCapacityGrowth compares the latest rollup bucket to an earlier one and returns deltas.
 //
 // Intended for “top growers” views (week-over-week, day-over-day) without pulling Forward time series.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/capacity/growth
+//encore:api auth method=GET path=/api/user-contexts/:id/deployments/:deploymentID/capacity/growth
 func (s *Service) GetWorkspaceDeploymentCapacityGrowth(ctx context.Context, id, deploymentID string, q *DeploymentCapacityGrowthQuery) (*DeploymentCapacityGrowthResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +65,7 @@ func (s *Service) GetWorkspaceDeploymentCapacityGrowth(ctx context.Context, id, 
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	_, _, _, err = s.requireDeploymentForwardNetwork(ctx, pc.workspace.ID, deploymentID)
+	_, _, _, err = s.requireDeploymentForwardNetwork(ctx, pc.userContext.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +87,7 @@ func (s *Service) GetWorkspaceDeploymentCapacityGrowth(ctx context.Context, id, 
 		limit = 50
 	}
 
-	asOf, compareAsOf, rows, err := loadCapacityGrowth(ctx, s.db, pc.workspace.ID, deploymentID, metric, window, objectType, time.Duration(compareHours)*time.Hour)
+	asOf, compareAsOf, rows, err := loadCapacityGrowth(ctx, s.db, pc.userContext.ID, deploymentID, metric, window, objectType, time.Duration(compareHours)*time.Hour)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to compute growth").Err()
 	}
@@ -95,13 +95,13 @@ func (s *Service) GetWorkspaceDeploymentCapacityGrowth(ctx context.Context, id, 
 		rows = rows[:limit]
 	}
 	resp := &DeploymentCapacityGrowthResponse{
-		WorkspaceID:  pc.workspace.ID,
-		DeploymentID: deploymentID,
-		Metric:       metric,
-		Window:       window,
-		ObjectType:   objectType,
-		CompareHours: compareHours,
-		Rows:         rows,
+		UserContextID: pc.userContext.ID,
+		DeploymentID:  deploymentID,
+		Metric:        metric,
+		Window:        window,
+		ObjectType:    objectType,
+		CompareHours:  compareHours,
+		Rows:          rows,
 	}
 	if !asOf.IsZero() {
 		resp.AsOf = asOf.UTC().Format(time.RFC3339)
@@ -112,7 +112,7 @@ func (s *Service) GetWorkspaceDeploymentCapacityGrowth(ctx context.Context, id, 
 	return resp, nil
 }
 
-func loadCapacityGrowth(ctx context.Context, db *sql.DB, workspaceID, deploymentID, metric, window, objectType string, compareDur time.Duration) (asOf time.Time, compareAsOf time.Time, out []CapacityGrowthRow, err error) {
+func loadCapacityGrowth(ctx context.Context, db *sql.DB, userContextID, deploymentID, metric, window, objectType string, compareDur time.Duration) (asOf time.Time, compareAsOf time.Time, out []CapacityGrowthRow, err error) {
 	if db == nil {
 		return time.Time{}, time.Time{}, nil, fmt.Errorf("db unavailable")
 	}
@@ -123,7 +123,7 @@ func loadCapacityGrowth(ctx context.Context, db *sql.DB, workspaceID, deployment
 	if err := db.QueryRowContext(ctxReq, `SELECT COALESCE(MAX(period_end), 'epoch'::timestamptz)
 FROM sf_capacity_rollups
 WHERE workspace_id=$1 AND deployment_id=$2 AND metric=$3 AND window=$4`,
-		workspaceID, deploymentID, metric, window).Scan(&asOf); err != nil {
+		userContextID, deploymentID, metric, window).Scan(&asOf); err != nil {
 		return time.Time{}, time.Time{}, nil, err
 	}
 	if asOf.IsZero() || asOf.Equal(time.Unix(0, 0).UTC()) {
@@ -135,7 +135,7 @@ WHERE workspace_id=$1 AND deployment_id=$2 AND metric=$3 AND window=$4`,
 	if err := db.QueryRowContext(ctxReq, `SELECT COALESCE(MAX(period_end), 'epoch'::timestamptz)
 FROM sf_capacity_rollups
 WHERE workspace_id=$1 AND deployment_id=$2 AND metric=$3 AND window=$4 AND period_end <= $5`,
-		workspaceID, deploymentID, metric, window, target).Scan(&compareAsOf); err != nil {
+		userContextID, deploymentID, metric, window, target).Scan(&compareAsOf); err != nil {
 		return asOf, time.Time{}, nil, err
 	}
 	if compareAsOf.IsZero() || compareAsOf.Equal(time.Unix(0, 0).UTC()) {
@@ -146,7 +146,7 @@ WHERE workspace_id=$1 AND deployment_id=$2 AND metric=$3 AND window=$4 AND perio
 		if ts.IsZero() {
 			return []CapacityRollupRow{}, nil
 		}
-		args := []any{workspaceID, deploymentID, metric, window, ts}
+		args := []any{userContextID, deploymentID, metric, window, ts}
 		query := `SELECT forward_network_id, object_type, object_id, metric, window,
   period_end, samples, avg, p95, p99, max, slope_per_day, forecast_crossing_ts, threshold, details, created_at
 FROM sf_capacity_rollups
@@ -178,7 +178,7 @@ WHERE workspace_id=$1 AND deployment_id=$2 AND metric=$3 AND window=$4 AND perio
 				continue
 			}
 			row := CapacityRollupRow{
-				WorkspaceID:      workspaceID,
+				UserContextID:    userContextID,
 				DeploymentID:     deploymentID,
 				ForwardNetworkID: strings.TrimSpace(forwardID),
 				ObjectType:       strings.TrimSpace(ot),

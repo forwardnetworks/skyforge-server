@@ -122,16 +122,16 @@ type capacityInventoryEnrichment struct {
 	IfaceVrfsByKey map[string][]string            // key: deviceName:interfaceName (vrf names)
 }
 
-func (e *Engine) refreshCapacityInventoryCache(ctx context.Context, db *sql.DB, client *forwardClient, workspaceID string, deploymentID *string, networkID string, log Logger) (*capacityInventoryEnrichment, error) {
+func (e *Engine) refreshCapacityInventoryCache(ctx context.Context, db *sql.DB, client *forwardClient, userContextID string, deploymentID *string, networkID string, log Logger) (*capacityInventoryEnrichment, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db unavailable")
 	}
 	if client == nil {
 		return nil, fmt.Errorf("Forward client unavailable")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userContextID = strings.TrimSpace(userContextID)
 	networkID = strings.TrimSpace(networkID)
-	if workspaceID == "" || networkID == "" {
+	if userContextID == "" || networkID == "" {
 		return nil, fmt.Errorf("invalid identifiers")
 	}
 	if deploymentID != nil {
@@ -177,14 +177,14 @@ func (e *Engine) refreshCapacityInventoryCache(ctx context.Context, db *sql.DB, 
 
 		// Store a stable "latest" cache entry (snapshot_id = '') so we don't accumulate rows every run.
 		cachePayload, _ := json.Marshal(resp)
-		if err := upsertCapacityNQECache(ctx, db, workspaceID, deploymentID, networkID, qid, "", cachePayload); err != nil {
+		if err := upsertCapacityNQECache(ctx, db, userContextID, deploymentID, networkID, qid, "", cachePayload); err != nil {
 			if log != nil {
 				log.Errorf("capacity nqe cache upsert failed (query=%s): %v", qid, err)
 			}
 		}
 		// Best-effort: also insert a snapshot-scoped row so we can diff across snapshots later.
 		if sid := strings.TrimSpace(resp.SnapshotID); sid != "" {
-			if err := insertCapacityNQECacheSnapshot(ctx, db, workspaceID, deploymentID, networkID, qid, sid, cachePayload); err != nil {
+			if err := insertCapacityNQECacheSnapshot(ctx, db, userContextID, deploymentID, networkID, qid, sid, cachePayload); err != nil {
 				if log != nil {
 					log.Errorf("capacity nqe cache snapshot insert failed (query=%s): %v", qid, err)
 				}
@@ -260,15 +260,15 @@ func (e *Engine) refreshCapacityInventoryCache(ctx context.Context, db *sql.DB, 
 	return enrich, nil
 }
 
-func upsertCapacityNQECache(ctx context.Context, db *sql.DB, workspaceID string, deploymentID *string, networkID, queryID, snapshotID string, payload []byte) error {
+func upsertCapacityNQECache(ctx context.Context, db *sql.DB, userContextID string, deploymentID *string, networkID, queryID, snapshotID string, payload []byte) error {
 	if db == nil {
 		return fmt.Errorf("db unavailable")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userContextID = strings.TrimSpace(userContextID)
 	networkID = strings.TrimSpace(networkID)
 	queryID = strings.TrimSpace(queryID)
 	snapshotID = strings.TrimSpace(snapshotID)
-	if workspaceID == "" || networkID == "" || queryID == "" {
+	if userContextID == "" || networkID == "" || queryID == "" {
 		return fmt.Errorf("invalid cache key")
 	}
 	if payload == nil {
@@ -292,7 +292,7 @@ DO UPDATE SET
   forward_network_id = EXCLUDED.forward_network_id,
   payload = EXCLUDED.payload,
   created_at = now()`,
-			workspaceID, depVal, networkID, queryID, snapshotID, payload,
+			userContextID, depVal, networkID, queryID, snapshotID, payload,
 		)
 		return err
 	}
@@ -305,20 +305,20 @@ ON CONFLICT (workspace_id, forward_network_id, query_id, snapshot_id) WHERE depl
 DO UPDATE SET
   payload = EXCLUDED.payload,
   created_at = now()`,
-		workspaceID, networkID, queryID, snapshotID, payload,
+		userContextID, networkID, queryID, snapshotID, payload,
 	)
 	return err
 }
 
-func insertCapacityNQECacheSnapshot(ctx context.Context, db *sql.DB, workspaceID string, deploymentID *string, networkID, queryID, snapshotID string, payload []byte) error {
+func insertCapacityNQECacheSnapshot(ctx context.Context, db *sql.DB, userContextID string, deploymentID *string, networkID, queryID, snapshotID string, payload []byte) error {
 	if db == nil {
 		return fmt.Errorf("db unavailable")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userContextID = strings.TrimSpace(userContextID)
 	networkID = strings.TrimSpace(networkID)
 	queryID = strings.TrimSpace(queryID)
 	snapshotID = strings.TrimSpace(snapshotID)
-	if workspaceID == "" || networkID == "" || queryID == "" || snapshotID == "" {
+	if userContextID == "" || networkID == "" || queryID == "" || snapshotID == "" {
 		return fmt.Errorf("invalid cache key")
 	}
 	if payload == nil {
@@ -337,7 +337,7 @@ func insertCapacityNQECacheSnapshot(ctx context.Context, db *sql.DB, workspaceID
   workspace_id, deployment_id, forward_network_id, query_id, snapshot_id, payload
 ) VALUES ($1,$2,$3,$4,$5,$6)
 ON CONFLICT (workspace_id, deployment_id, query_id, snapshot_id)
-DO NOTHING`, workspaceID, depVal, networkID, queryID, snapshotID, payload)
+DO NOTHING`, userContextID, depVal, networkID, queryID, snapshotID, payload)
 		return err
 	}
 
@@ -345,6 +345,6 @@ DO NOTHING`, workspaceID, depVal, networkID, queryID, snapshotID, payload)
   workspace_id, deployment_id, forward_network_id, query_id, snapshot_id, payload
 ) VALUES ($1,NULL,$2,$3,$4,$5)
 ON CONFLICT (workspace_id, forward_network_id, query_id, snapshot_id) WHERE deployment_id IS NULL
-DO NOTHING`, workspaceID, networkID, queryID, snapshotID, payload)
+DO NOTHING`, userContextID, networkID, queryID, snapshotID, payload)
 	return err
 }

@@ -25,13 +25,13 @@ type DeploymentNodeRunningConfigResponse struct {
 //
 // Currently supports EOS/cEOS via `Cli -c "show running-config"`.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/nodes/:node/running-config
+//encore:api auth method=GET path=/api/user-contexts/:id/deployments/:deploymentID/nodes/:node/running-config
 func (s *Service) GetWorkspaceDeploymentNodeRunningConfig(ctx context.Context, id, deploymentID, node string) (*DeploymentNodeRunningConfigResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -43,7 +43,7 @@ func (s *Service) GetWorkspaceDeploymentNodeRunningConfig(ctx context.Context, i
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("node is required").Err()
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+	dep, err := s.getUserDeployment(ctx, pc.userContext.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +58,7 @@ func (s *Service) GetWorkspaceDeploymentNodeRunningConfig(ctx context.Context, i
 	k8sNamespace = strings.TrimSpace(k8sNamespace)
 	topologyName = strings.TrimSpace(topologyName)
 	if k8sNamespace == "" {
-		k8sNamespace = clabernetesWorkspaceNamespace(pc.workspace.Slug)
+		k8sNamespace = clabernetesUserContextNamespace(pc.userContext.Slug)
 	}
 	if topologyName == "" {
 		labName, _ := cfgAny["labName"].(string)
@@ -139,12 +139,12 @@ func (s *Service) GetWorkspaceDeploymentNodeRunningConfig(ctx context.Context, i
 	cancel()
 	if err != nil {
 		if s.db != nil {
-			_ = insertDeploymentUIEvent(ctx, s.db, pc.workspace.ID, dep.ID, pc.claims.Username, "node.running-config.failed", map[string]any{
+			_ = insertDeploymentUIEvent(ctx, s.db, pc.userContext.ID, dep.ID, pc.claims.Username, "node.running-config.failed", map[string]any{
 				"node":      node,
 				"podName":   podName,
 				"container": container,
 			})
-			_ = notifyDeploymentEventPG(ctx, s.db, pc.workspace.ID, dep.ID)
+			_ = notifyDeploymentEventPG(ctx, s.db, pc.userContext.ID, dep.ID)
 		}
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to fetch running config").Err()
 	}
@@ -157,12 +157,12 @@ func (s *Service) GetWorkspaceDeploymentNodeRunningConfig(ctx context.Context, i
 		Stderr:    strings.TrimSpace(stderr),
 	}
 	if s.db != nil {
-		_ = insertDeploymentUIEvent(ctx, s.db, pc.workspace.ID, dep.ID, pc.claims.Username, "node.running-config", map[string]any{
+		_ = insertDeploymentUIEvent(ctx, s.db, pc.userContext.ID, dep.ID, pc.claims.Username, "node.running-config", map[string]any{
 			"node":      node,
 			"podName":   podName,
 			"container": container,
 		})
-		_ = notifyDeploymentEventPG(ctx, s.db, pc.workspace.ID, dep.ID)
+		_ = notifyDeploymentEventPG(ctx, s.db, pc.userContext.ID, dep.ID)
 	}
 	return resp, nil
 }

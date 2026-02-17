@@ -52,13 +52,13 @@ func (s *Service) RunEvents(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	// RBAC: only allow if the user can access the workspace.
-	_, _, workspace, err := s.loadWorkspaceByKey(task.WorkspaceID)
+	// RBAC: only allow if the user can access the user context.
+	_, _, userContext, err := s.loadUserContextByKey(task.WorkspaceID)
 	if err != nil {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	if workspaceAccessLevelForClaims(s.cfg, workspace, claims) == "none" {
+	if userContextAccessLevelForClaims(s.cfg, userContext, claims) == "none" {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}

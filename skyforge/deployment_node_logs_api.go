@@ -27,7 +27,7 @@ type WorkspaceDeploymentNodeLogsResponse struct {
 //
 // This powers the "View logs" action in the topology UI (similar to the c9s VSCode extension).
 //
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/nodes/:node/logs
+//encore:api auth method=GET path=/api/user-contexts/:id/deployments/:deploymentID/nodes/:node/logs
 func (s *Service) GetWorkspaceDeploymentNodeLogs(
 	ctx context.Context,
 	id, deploymentID, node string,
@@ -37,7 +37,7 @@ func (s *Service) GetWorkspaceDeploymentNodeLogs(
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +64,7 @@ func (s *Service) GetWorkspaceDeploymentNodeLogs(
 		container = strings.TrimSpace(params.Container)
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+	dep, err := s.getUserDeployment(ctx, pc.userContext.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +79,7 @@ func (s *Service) GetWorkspaceDeploymentNodeLogs(
 	k8sNamespace = strings.TrimSpace(k8sNamespace)
 	topologyName = strings.TrimSpace(topologyName)
 	if k8sNamespace == "" {
-		k8sNamespace = clabernetesWorkspaceNamespace(pc.workspace.Slug)
+		k8sNamespace = clabernetesUserContextNamespace(pc.userContext.Slug)
 	}
 	if topologyName == "" {
 		labName, _ := cfgAny["labName"].(string)

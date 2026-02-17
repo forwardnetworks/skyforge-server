@@ -93,7 +93,7 @@ SELECT
 
 // StatusSummary returns a public, safe platform status summary.
 //
-// This is designed for an unauthenticated landing page and must not leak user/workspace identifiers.
+// This is designed for an unauthenticated landing page and must not leak user/user-context identifiers.
 //
 //encore:api public method=GET path=/status/summary
 func (s *Service) StatusSummary(ctx context.Context) (*StatusSummaryResponse, error) {
@@ -240,7 +240,7 @@ func (s *Service) StatusSummary(ctx context.Context) (*StatusSummaryResponse, er
 	}
 
 	if total, err := countWorkspaces(ctx, s.db); err == nil {
-		resp.WorkspacesTotal = total
+		resp.UserContextsTotal = total
 	}
 	if total, active, err := countDeployments(ctx, s.db); err == nil {
 		resp.DeploymentsTotal = total

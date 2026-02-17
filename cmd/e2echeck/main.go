@@ -62,8 +62,16 @@ type createdWorkspaceRecord struct {
 }
 
 type listWorkspacesResponse struct {
-	User       string              `json:"user"`
-	Workspaces []workspaceResponse `json:"workspaces"`
+	User         string              `json:"user"`
+	UserContexts []workspaceResponse `json:"userContexts"`
+	Workspaces   []workspaceResponse `json:"workspaces,omitempty"`
+}
+
+func (r listWorkspacesResponse) contexts() []workspaceResponse {
+	if len(r.UserContexts) > 0 {
+		return r.UserContexts
+	}
+	return r.Workspaces
 }
 
 type netlabValidateRequest struct {
@@ -320,7 +328,7 @@ func deleteWorkspaceByID(client *http.Client, baseURL, cookie, workspaceID, work
 	if baseURL == "" || workspaceID == "" {
 		return fmt.Errorf("missing baseURL/workspaceID")
 	}
-	deleteURL := fmt.Sprintf("%s/api/workspaces/%s?confirm=%s", baseURL, workspaceID, url.QueryEscape(workspaceSlug))
+	deleteURL := fmt.Sprintf("%s/api/user-contexts/%s?confirm=%s", baseURL, workspaceID, url.QueryEscape(workspaceSlug))
 	resp, body, err := doJSON(client, http.MethodDelete, deleteURL, nil, map[string]string{"Cookie": cookie})
 	if err != nil {
 		return err
@@ -668,7 +676,7 @@ func dumpFailureArtifacts(ctx context.Context, statusDir, namespace, topologyOwn
 	}
 }
 
-func ensureWorkspaceNetlabServer(client *http.Client, baseURL, cookie, workspaceID string) (string, error) {
+func ensureWorkspaceNetlabServer(client *http.Client, baseURL, cookie string) (string, error) {
 	apiURL := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_BYOS_NETLAB_API_URL"))
 	if apiURL == "" {
 		return "", fmt.Errorf("SKYFORGE_E2E_BYOS_NETLAB_API_URL is not set")
@@ -686,22 +694,22 @@ func ensureWorkspaceNetlabServer(client *http.Client, baseURL, cookie, workspace
 		APIPassword: apiPassword,
 		APIToken:    apiToken,
 	}
-	url := fmt.Sprintf("%s/api/workspaces/%s/netlab/servers", strings.TrimRight(strings.TrimSpace(baseURL), "/"), strings.TrimSpace(workspaceID))
+	url := fmt.Sprintf("%s/api/user/netlab/servers", strings.TrimRight(strings.TrimSpace(baseURL), "/"))
 	resp, body, err := doJSON(client, http.MethodPut, url, payload, map[string]string{"Cookie": cookie})
 	if err != nil {
 		return "", err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("upsert workspace netlab server failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return "", fmt.Errorf("upsert user netlab server failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	var out workspaceNetlabServerConfig
 	if err := json.Unmarshal(body, &out); err != nil {
-		return "", fmt.Errorf("upsert workspace netlab server parse failed: %w", err)
+		return "", fmt.Errorf("upsert user netlab server parse failed: %w", err)
 	}
 	if strings.TrimSpace(out.ID) == "" {
-		return "", fmt.Errorf("upsert workspace netlab server returned empty id")
+		return "", fmt.Errorf("upsert user netlab server returned empty id")
 	}
-	return "ws:" + strings.TrimSpace(out.ID), nil
+	return "user:" + strings.TrimSpace(out.ID), nil
 }
 
 type e2eTemplate struct {
@@ -2209,7 +2217,7 @@ func run() int {
 	wsReuseID := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_WORKSPACE_ID"))
 	var ws workspaceResponse
 	if wsReuseID != "" {
-		resp, body, err := doJSON(client, http.MethodGet, baseURL+"/api/workspaces", nil, map[string]string{"Cookie": cookie})
+		resp, body, err := doJSON(client, http.MethodGet, baseURL+"/api/user-contexts", nil, map[string]string{"Cookie": cookie})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "workspace list request failed: %v\n", err)
 			return 1
@@ -2224,7 +2232,7 @@ func run() int {
 			return 1
 		}
 		found := false
-		for _, w := range lr.Workspaces {
+		for _, w := range lr.contexts() {
 			if strings.TrimSpace(w.ID) == wsReuseID {
 				ws = w
 				found = true
@@ -2238,7 +2246,7 @@ func run() int {
 		fmt.Printf("OK workspace reuse: %s (%s)\n", ws.Name, ws.ID)
 	} else {
 		wsName := fmt.Sprintf("e2e-%s", time.Now().UTC().Format("20060102-150405"))
-		createURL := baseURL + "/api/workspaces"
+		createURL := baseURL + "/api/user-contexts"
 		resp, body, err = doJSON(client, http.MethodPost, createURL, workspaceCreateRequest{Name: wsName}, map[string]string{"Cookie": cookie})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "workspace create request failed: %v\n", err)
@@ -2480,7 +2488,7 @@ func run() int {
 					wait = parsed
 				}
 			}
-			url := fmt.Sprintf("%s/api/workspaces/%s/netlab/validate", baseURL, ws.ID)
+			url := fmt.Sprintf("%s/api/user-contexts/%s/netlab/validate", baseURL, ws.ID)
 			resp, body, err := doJSON(client, http.MethodPost, url, reqIn, map[string]string{"Cookie": cookie})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "test %q: request failed: %v\n", name, err)
@@ -2614,7 +2622,7 @@ func run() int {
 				depName = "e2e"
 			}
 
-			createDepURL := fmt.Sprintf("%s/api/workspaces/%s/deployments", baseURL, ws.ID)
+			createDepURL := fmt.Sprintf("%s/api/user-contexts/%s/deployments", baseURL, ws.ID)
 			resp, body, err := doJSON(client, http.MethodPost, createDepURL, deploymentCreateRequest{
 				Name:   depName,
 				Type:   deployType,
@@ -2657,7 +2665,7 @@ func run() int {
 
 			// Best-effort: enable Forward on this deployment so we also exercise Forward sync plumbing.
 			if getenvBool("SKYFORGE_E2E_FORWARD", false) && strings.TrimSpace(collectorConfigID) != "" {
-				fwdCfgURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/forward", baseURL, ws.ID, dep.ID)
+				fwdCfgURL := fmt.Sprintf("%s/api/user-contexts/%s/deployments/%s/forward", baseURL, ws.ID, dep.ID)
 				resp, body, err = doJSON(client, http.MethodPut, fwdCfgURL, deploymentForwardConfigRequest{
 					Enabled:           true,
 					CollectorConfigID: collectorConfigID,
@@ -2672,7 +2680,7 @@ func run() int {
 				}
 			}
 
-			startURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/start", baseURL, ws.ID, dep.ID)
+			startURL := fmt.Sprintf("%s/api/user-contexts/%s/deployments/%s/start", baseURL, ws.ID, dep.ID)
 			resp, body, err = doJSON(client, http.MethodPost, startURL, map[string]any{}, map[string]string{"Cookie": cookie})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "test %q: start deployment request failed: %v\n", name, err)
@@ -2740,7 +2748,7 @@ func run() int {
 			}
 
 			if !testFailed && sshWait > 0 && getenvBool("SKYFORGE_E2E_SSH_PROBE", true) {
-				topURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/topology", baseURL, ws.ID, dep.ID)
+				topURL := fmt.Sprintf("%s/api/user-contexts/%s/deployments/%s/topology", baseURL, ws.ID, dep.ID)
 				resp, body, err = doJSON(client, http.MethodGet, topURL, nil, map[string]string{"Cookie": cookie})
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "test %q: topology request failed: %v\n", name, err)
@@ -3030,7 +3038,7 @@ func run() int {
 				cleanup = v
 			}
 			if cleanup {
-				destroyURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/destroy", baseURL, ws.ID, dep.ID)
+				destroyURL := fmt.Sprintf("%s/api/user-contexts/%s/deployments/%s/destroy", baseURL, ws.ID, dep.ID)
 				resp, body, err = doJSON(client, http.MethodPost, destroyURL, map[string]any{}, map[string]string{"Cookie": cookie})
 				if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
 					var destroyed deploymentActionResponse
@@ -3068,7 +3076,7 @@ func run() int {
 				}
 			}
 
-			serverRef, err := ensureWorkspaceNetlabServer(client, baseURL, cookie, ws.ID)
+			serverRef, err := ensureWorkspaceNetlabServer(client, baseURL, cookie)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "test %q: byos netlab server not configured: %v\n", name, err)
 				return 1
@@ -3087,7 +3095,7 @@ func run() int {
 				cfg["environment"] = map[string]string{}
 			}
 
-			createDepURL := fmt.Sprintf("%s/api/workspaces/%s/deployments", baseURL, ws.ID)
+			createDepURL := fmt.Sprintf("%s/api/user-contexts/%s/deployments", baseURL, ws.ID)
 			resp, body, err := doJSON(client, http.MethodPost, createDepURL, deploymentCreateRequest{
 				Name:   strings.TrimSpace(name),
 				Type:   "netlab",
@@ -3111,7 +3119,7 @@ func run() int {
 				return 1
 			}
 
-			startURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/start", baseURL, ws.ID, dep.ID)
+			startURL := fmt.Sprintf("%s/api/user-contexts/%s/deployments/%s/start", baseURL, ws.ID, dep.ID)
 			resp, body, err = doJSON(client, http.MethodPost, startURL, map[string]any{}, map[string]string{"Cookie": cookie})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "test %q: start deployment request failed: %v\n", name, err)
@@ -3160,7 +3168,7 @@ func run() int {
 					wait = parsed
 				}
 			}
-			serverRef, err := ensureWorkspaceNetlabServer(client, baseURL, cookie, ws.ID)
+			serverRef, err := ensureWorkspaceNetlabServer(client, baseURL, cookie)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "test %q: byos netlab server not configured: %v\n", name, err)
 				return 1
@@ -3176,7 +3184,7 @@ func run() int {
 			if cfg["environment"] == nil {
 				cfg["environment"] = map[string]string{}
 			}
-			createDepURL := fmt.Sprintf("%s/api/workspaces/%s/deployments", baseURL, ws.ID)
+			createDepURL := fmt.Sprintf("%s/api/user-contexts/%s/deployments", baseURL, ws.ID)
 			resp, body, err := doJSON(client, http.MethodPost, createDepURL, deploymentCreateRequest{
 				Name:   strings.TrimSpace(name),
 				Type:   "containerlab",
@@ -3199,7 +3207,7 @@ func run() int {
 				fmt.Fprintf(os.Stderr, "test %q: create deployment returned empty id\n", name)
 				return 1
 			}
-			startURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/start", baseURL, ws.ID, dep.ID)
+			startURL := fmt.Sprintf("%s/api/user-contexts/%s/deployments/%s/start", baseURL, ws.ID, dep.ID)
 			resp, body, err = doJSON(client, http.MethodPost, startURL, map[string]any{}, map[string]string{"Cookie": cookie})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "test %q: start deployment request failed: %v\n", name, err)

@@ -30,33 +30,33 @@ type PKIRootResponse struct {
 }
 
 type PKIIssueRequest struct {
-	CommonName  string   `json:"commonName"`
-	SANs        []string `json:"sans,omitempty"`
-	WorkspaceID string   `json:"workspaceId,omitempty"`
-	TTLDays     int      `json:"ttlDays,omitempty"`
+	CommonName    string   `json:"commonName"`
+	SANs          []string `json:"sans,omitempty"`
+	UserContextID string   `json:"userContextId,omitempty"`
+	TTLDays       int      `json:"ttlDays,omitempty"`
 }
 
 type PKIIssueResponse struct {
-	ID          string `json:"id"`
-	CommonName  string `json:"commonName"`
-	PEM         string `json:"pem"`
-	KeyPEM      string `json:"keyPem"`
-	BundlePEM   string `json:"bundlePem"`
-	IssuedAt    string `json:"issuedAt"`
-	ExpiresAt   string `json:"expiresAt"`
-	WorkspaceID string `json:"workspaceId,omitempty"`
-	Fingerprint string `json:"fingerprint"`
+	ID            string `json:"id"`
+	CommonName    string `json:"commonName"`
+	PEM           string `json:"pem"`
+	KeyPEM        string `json:"keyPem"`
+	BundlePEM     string `json:"bundlePem"`
+	IssuedAt      string `json:"issuedAt"`
+	ExpiresAt     string `json:"expiresAt"`
+	UserContextID string `json:"userContextId,omitempty"`
+	Fingerprint   string `json:"fingerprint"`
 }
 
 type PKICertSummary struct {
-	ID          string   `json:"id"`
-	CommonName  string   `json:"commonName"`
-	SANs        []string `json:"sans,omitempty"`
-	WorkspaceID string   `json:"workspaceId,omitempty"`
-	IssuedAt    string   `json:"issuedAt"`
-	ExpiresAt   string   `json:"expiresAt"`
-	RevokedAt   string   `json:"revokedAt,omitempty"`
-	Fingerprint string   `json:"fingerprint"`
+	ID            string   `json:"id"`
+	CommonName    string   `json:"commonName"`
+	SANs          []string `json:"sans,omitempty"`
+	UserContextID string   `json:"userContextId,omitempty"`
+	IssuedAt      string   `json:"issuedAt"`
+	ExpiresAt     string   `json:"expiresAt"`
+	RevokedAt     string   `json:"revokedAt,omitempty"`
+	Fingerprint   string   `json:"fingerprint"`
 }
 
 type PKICertsResponse struct {
@@ -77,31 +77,31 @@ type PKISSHRootResponse struct {
 }
 
 type PKISSHIssueRequest struct {
-	Principals  []string `json:"principals,omitempty"`
-	WorkspaceID string   `json:"workspaceId,omitempty"`
-	TTLDays     int      `json:"ttlDays,omitempty"`
+	Principals    []string `json:"principals,omitempty"`
+	UserContextID string   `json:"userContextId,omitempty"`
+	TTLDays       int      `json:"ttlDays,omitempty"`
 }
 
 type PKISSHIssueResponse struct {
-	ID          string   `json:"id"`
-	Principals  []string `json:"principals"`
-	PublicKey   string   `json:"publicKey"`
-	PrivateKey  string   `json:"privateKey"`
-	Certificate string   `json:"certificate"`
-	IssuedAt    string   `json:"issuedAt"`
-	ExpiresAt   string   `json:"expiresAt"`
-	WorkspaceID string   `json:"workspaceId,omitempty"`
-	Fingerprint string   `json:"fingerprint"`
+	ID            string   `json:"id"`
+	Principals    []string `json:"principals"`
+	PublicKey     string   `json:"publicKey"`
+	PrivateKey    string   `json:"privateKey"`
+	Certificate   string   `json:"certificate"`
+	IssuedAt      string   `json:"issuedAt"`
+	ExpiresAt     string   `json:"expiresAt"`
+	UserContextID string   `json:"userContextId,omitempty"`
+	Fingerprint   string   `json:"fingerprint"`
 }
 
 type PKISSHCertSummary struct {
-	ID          string   `json:"id"`
-	Principals  []string `json:"principals"`
-	WorkspaceID string   `json:"workspaceId,omitempty"`
-	IssuedAt    string   `json:"issuedAt"`
-	ExpiresAt   string   `json:"expiresAt"`
-	RevokedAt   string   `json:"revokedAt,omitempty"`
-	Fingerprint string   `json:"fingerprint"`
+	ID            string   `json:"id"`
+	Principals    []string `json:"principals"`
+	UserContextID string   `json:"userContextId,omitempty"`
+	IssuedAt      string   `json:"issuedAt"`
+	ExpiresAt     string   `json:"expiresAt"`
+	RevokedAt     string   `json:"revokedAt,omitempty"`
+	Fingerprint   string   `json:"fingerprint"`
 }
 
 type PKISSHCertsResponse struct {
@@ -159,9 +159,9 @@ func (s *Service) IssuePKICert(ctx context.Context, req *PKIIssueRequest) (*PKII
 	if commonName == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("commonName is required").Err()
 	}
-	workspaceID := strings.TrimSpace(req.WorkspaceID)
-	if workspaceID != "" {
-		if _, err := s.workspaceContextForUser(user, workspaceID); err != nil {
+	userContextID := strings.TrimSpace(req.UserContextID)
+	if userContextID != "" {
+		if _, err := s.userContextForUser(user, userContextID); err != nil {
 			return nil, err
 		}
 	}
@@ -241,22 +241,22 @@ func (s *Service) IssuePKICert(ctx context.Context, req *PKIIssueRequest) (*PKII
 	_, err = s.db.ExecContext(ctx, `INSERT INTO sf_pki_certs (
   id, username, workspace_id, common_name, sans, cert_pem, key_pem, expires_at
 ) VALUES ($1,$2,NULLIF($3,''),$4,$5,$6,$7,$8)`,
-		certID, strings.ToLower(strings.TrimSpace(user.Username)), workspaceID, commonName, sansJSON, string(certPEM), encKey, notAfter)
+		certID, strings.ToLower(strings.TrimSpace(user.Username)), userContextID, commonName, sansJSON, string(certPEM), encKey, notAfter)
 	if err != nil {
 		log.Printf("pki cert insert: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to store certificate").Err()
 	}
 
 	return &PKIIssueResponse{
-		ID:          certID,
-		CommonName:  commonName,
-		PEM:         string(certPEM),
-		KeyPEM:      string(keyPEM),
-		BundlePEM:   bundle,
-		IssuedAt:    now.Format(time.RFC3339),
-		ExpiresAt:   notAfter.Format(time.RFC3339),
-		WorkspaceID: workspaceID,
-		Fingerprint: base64.StdEncoding.EncodeToString(fingerprint[:]),
+		ID:            certID,
+		CommonName:    commonName,
+		PEM:           string(certPEM),
+		KeyPEM:        string(keyPEM),
+		BundlePEM:     bundle,
+		IssuedAt:      now.Format(time.RFC3339),
+		ExpiresAt:     notAfter.Format(time.RFC3339),
+		UserContextID: userContextID,
+		Fingerprint:   base64.StdEncoding.EncodeToString(fingerprint[:]),
 	}, nil
 }
 
@@ -287,12 +287,12 @@ ORDER BY issued_at DESC`, username)
 		var (
 			id, commonName, certPEM string
 			sansRaw                 []byte
-			workspaceID             sql.NullString
+			userContextID           sql.NullString
 			issuedAt                time.Time
 			expiresAt               time.Time
 			revokedAt               sql.NullTime
 		)
-		if err := rows.Scan(&id, &commonName, &sansRaw, &workspaceID, &issuedAt, &expiresAt, &revokedAt, &certPEM); err != nil {
+		if err := rows.Scan(&id, &commonName, &sansRaw, &userContextID, &issuedAt, &expiresAt, &revokedAt, &certPEM); err != nil {
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to decode certificates").Err()
 		}
 		var sans []string
@@ -303,13 +303,13 @@ ORDER BY issued_at DESC`, username)
 			fingerprint = base64.StdEncoding.EncodeToString(fp[:])
 		}
 		entry := PKICertSummary{
-			ID:          id,
-			CommonName:  commonName,
-			SANs:        sans,
-			WorkspaceID: workspaceID.String,
-			IssuedAt:    issuedAt.UTC().Format(time.RFC3339),
-			ExpiresAt:   expiresAt.UTC().Format(time.RFC3339),
-			Fingerprint: fingerprint,
+			ID:            id,
+			CommonName:    commonName,
+			SANs:          sans,
+			UserContextID: userContextID.String,
+			IssuedAt:      issuedAt.UTC().Format(time.RFC3339),
+			ExpiresAt:     expiresAt.UTC().Format(time.RFC3339),
+			Fingerprint:   fingerprint,
 		}
 		if revokedAt.Valid {
 			entry.RevokedAt = revokedAt.Time.UTC().Format(time.RFC3339)
@@ -379,12 +379,12 @@ func (s *Service) RevokePKICert(ctx context.Context, id string) (*PKICertSummary
 	var (
 		commonName, certPEM, owner string
 		sansRaw                    []byte
-		workspaceID                sql.NullString
+		userContextID              sql.NullString
 		issuedAt                   time.Time
 		expiresAt                  time.Time
 		revokedAt                  sql.NullTime
 	)
-	if err := row.Scan(&commonName, &sansRaw, &workspaceID, &issuedAt, &expiresAt, &revokedAt, &certPEM, &owner); err != nil {
+	if err := row.Scan(&commonName, &sansRaw, &userContextID, &issuedAt, &expiresAt, &revokedAt, &certPEM, &owner); err != nil {
 		return nil, errs.B().Code(errs.NotFound).Msg("certificate not found").Err()
 	}
 	if !isAdminUser(s.cfg, username) && !strings.EqualFold(owner, username) {
@@ -408,13 +408,13 @@ func (s *Service) RevokePKICert(ctx context.Context, id string) (*PKICertSummary
 		fingerprint = base64.StdEncoding.EncodeToString(fp[:])
 	}
 	resp := &PKICertSummary{
-		ID:          id,
-		CommonName:  commonName,
-		SANs:        sans,
-		WorkspaceID: workspaceID.String,
-		IssuedAt:    issuedAt.UTC().Format(time.RFC3339),
-		ExpiresAt:   expiresAt.UTC().Format(time.RFC3339),
-		Fingerprint: fingerprint,
+		ID:            id,
+		CommonName:    commonName,
+		SANs:          sans,
+		UserContextID: userContextID.String,
+		IssuedAt:      issuedAt.UTC().Format(time.RFC3339),
+		ExpiresAt:     expiresAt.UTC().Format(time.RFC3339),
+		Fingerprint:   fingerprint,
 	}
 	if revokedAt.Valid {
 		resp.RevokedAt = revokedAt.Time.UTC().Format(time.RFC3339)
@@ -453,9 +453,9 @@ func (s *Service) IssuePKISSHCert(ctx context.Context, req *PKISSHIssueRequest) 
 	if req == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid payload").Err()
 	}
-	workspaceID := strings.TrimSpace(req.WorkspaceID)
-	if workspaceID != "" {
-		if _, err := s.workspaceContextForUser(user, workspaceID); err != nil {
+	userContextID := strings.TrimSpace(req.UserContextID)
+	if userContextID != "" {
+		if _, err := s.userContextForUser(user, userContextID); err != nil {
 			return nil, err
 		}
 	}
@@ -534,22 +534,22 @@ func (s *Service) IssuePKISSHCert(ctx context.Context, req *PKISSHIssueRequest) 
 	_, err = s.db.ExecContext(ctx, `INSERT INTO sf_pki_ssh_certs (
   id, username, workspace_id, principals, public_key, cert, key_pem, expires_at
 ) VALUES ($1,$2,NULLIF($3,''),$4,$5,$6,$7,$8)`,
-		certID, strings.ToLower(strings.TrimSpace(user.Username)), workspaceID, principalsJSON, publicKey, certText, encKey, notAfter)
+		certID, strings.ToLower(strings.TrimSpace(user.Username)), userContextID, principalsJSON, publicKey, certText, encKey, notAfter)
 	if err != nil {
 		log.Printf("pki ssh cert insert: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to store SSH certificate").Err()
 	}
 
 	return &PKISSHIssueResponse{
-		ID:          certID,
-		Principals:  principals,
-		PublicKey:   publicKey,
-		PrivateKey:  string(privateKey),
-		Certificate: certText,
-		IssuedAt:    now.Format(time.RFC3339),
-		ExpiresAt:   notAfter.Format(time.RFC3339),
-		WorkspaceID: workspaceID,
-		Fingerprint: ssh.FingerprintSHA256(cert),
+		ID:            certID,
+		Principals:    principals,
+		PublicKey:     publicKey,
+		PrivateKey:    string(privateKey),
+		Certificate:   certText,
+		IssuedAt:      now.Format(time.RFC3339),
+		ExpiresAt:     notAfter.Format(time.RFC3339),
+		UserContextID: userContextID,
+		Fingerprint:   ssh.FingerprintSHA256(cert),
 	}, nil
 }
 
@@ -580,12 +580,12 @@ ORDER BY issued_at DESC`, username)
 		var (
 			id, certText  string
 			principalsRaw []byte
-			workspaceID   sql.NullString
+			userContextID sql.NullString
 			issuedAt      time.Time
 			expiresAt     time.Time
 			revokedAt     sql.NullTime
 		)
-		if err := rows.Scan(&id, &principalsRaw, &workspaceID, &issuedAt, &expiresAt, &revokedAt, &certText); err != nil {
+		if err := rows.Scan(&id, &principalsRaw, &userContextID, &issuedAt, &expiresAt, &revokedAt, &certText); err != nil {
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to decode SSH certificates").Err()
 		}
 		var principals []string
@@ -595,12 +595,12 @@ ORDER BY issued_at DESC`, username)
 			fingerprint = ssh.FingerprintSHA256(parsed)
 		}
 		entry := PKISSHCertSummary{
-			ID:          id,
-			Principals:  principals,
-			WorkspaceID: workspaceID.String,
-			IssuedAt:    issuedAt.UTC().Format(time.RFC3339),
-			ExpiresAt:   expiresAt.UTC().Format(time.RFC3339),
-			Fingerprint: fingerprint,
+			ID:            id,
+			Principals:    principals,
+			UserContextID: userContextID.String,
+			IssuedAt:      issuedAt.UTC().Format(time.RFC3339),
+			ExpiresAt:     expiresAt.UTC().Format(time.RFC3339),
+			Fingerprint:   fingerprint,
 		}
 		if revokedAt.Valid {
 			entry.RevokedAt = revokedAt.Time.UTC().Format(time.RFC3339)
@@ -668,14 +668,14 @@ func (s *Service) RevokePKISSHCert(ctx context.Context, id string) (*PKISSHCertS
 	row := s.db.QueryRowContext(ctx, `SELECT principals, workspace_id, issued_at, expires_at, revoked_at, cert, username FROM sf_pki_ssh_certs WHERE id=$1`, id)
 	var (
 		principalsRaw []byte
-		workspaceID   sql.NullString
+		userContextID sql.NullString
 		issuedAt      time.Time
 		expiresAt     time.Time
 		revokedAt     sql.NullTime
 		certText      string
 		owner         string
 	)
-	if err := row.Scan(&principalsRaw, &workspaceID, &issuedAt, &expiresAt, &revokedAt, &certText, &owner); err != nil {
+	if err := row.Scan(&principalsRaw, &userContextID, &issuedAt, &expiresAt, &revokedAt, &certText, &owner); err != nil {
 		return nil, errs.B().Code(errs.NotFound).Msg("SSH certificate not found").Err()
 	}
 	if !isAdminUser(s.cfg, username) && !strings.EqualFold(owner, username) {
@@ -698,12 +698,12 @@ func (s *Service) RevokePKISSHCert(ctx context.Context, id string) (*PKISSHCertS
 		fingerprint = ssh.FingerprintSHA256(parsed)
 	}
 	resp := &PKISSHCertSummary{
-		ID:          id,
-		Principals:  principals,
-		WorkspaceID: workspaceID.String,
-		IssuedAt:    issuedAt.UTC().Format(time.RFC3339),
-		ExpiresAt:   expiresAt.UTC().Format(time.RFC3339),
-		Fingerprint: fingerprint,
+		ID:            id,
+		Principals:    principals,
+		UserContextID: userContextID.String,
+		IssuedAt:      issuedAt.UTC().Format(time.RFC3339),
+		ExpiresAt:     expiresAt.UTC().Format(time.RFC3339),
+		Fingerprint:   fingerprint,
 	}
 	if revokedAt.Valid {
 		resp.RevokedAt = revokedAt.Time.UTC().Format(time.RFC3339)

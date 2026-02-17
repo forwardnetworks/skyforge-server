@@ -126,7 +126,7 @@ INSERT INTO sf_policy_report_runs(
   created_by, started_at, finished_at, request
 )
 VALUES ($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''),$9,$10,$11,$12)
-`, run.ID, run.WorkspaceID, run.ForwardNetworkID, strings.TrimSpace(run.SnapshotID), strings.TrimSpace(run.PackID), strings.TrimSpace(run.Title), strings.TrimSpace(run.Status), strings.TrimSpace(run.Error), run.CreatedBy, run.StartedAt, finishedAt, run.Request)
+`, run.ID, run.UserContextID, run.ForwardNetworkID, strings.TrimSpace(run.SnapshotID), strings.TrimSpace(run.PackID), strings.TrimSpace(run.Title), strings.TrimSpace(run.Status), strings.TrimSpace(run.Error), run.CreatedBy, run.StartedAt, finishedAt, run.Request)
 	if err != nil {
 		return err
 	}
@@ -189,7 +189,7 @@ DO UPDATE SET
   resolved_at=NULL,
   last_run_id=EXCLUDED.last_run_id,
   updated_at=now()
-`, run.WorkspaceID, run.ForwardNetworkID, cid, fid, f.RiskScore, strings.TrimSpace(f.AssetKey), f.Finding, finishedAt, run.ID)
+`, run.UserContextID, run.ForwardNetworkID, cid, fid, f.RiskScore, strings.TrimSpace(f.AssetKey), f.Finding, finishedAt, run.ID)
 		if err != nil {
 			return err
 		}
@@ -233,13 +233,13 @@ SELECT finding_id
   FROM sf_policy_report_findings_agg
  WHERE workspace_id=$1 AND forward_network_id=$2 AND check_id=$3 AND status='ACTIVE'
    AND COALESCE(finding->>'suiteKey','') = $4
-`, run.WorkspaceID, run.ForwardNetworkID, checkID, suiteKey)
+`, run.UserContextID, run.ForwardNetworkID, checkID, suiteKey)
 		} else {
 			rows, err = tx.QueryContext(ctx, `
 SELECT finding_id
   FROM sf_policy_report_findings_agg
  WHERE workspace_id=$1 AND forward_network_id=$2 AND check_id=$3 AND status='ACTIVE'
-`, run.WorkspaceID, run.ForwardNetworkID, checkID)
+`, run.UserContextID, run.ForwardNetworkID, checkID)
 		}
 		if err != nil {
 			return err
@@ -271,7 +271,7 @@ UPDATE sf_policy_report_findings_agg
        updated_at=now()
  WHERE workspace_id=$3 AND forward_network_id=$4 AND check_id=$5 AND finding_id=$6 AND status='ACTIVE'
    AND COALESCE(finding->>'suiteKey','') = $7
-`, finishedAt, run.ID, run.WorkspaceID, run.ForwardNetworkID, checkID, fid, suiteKey)
+`, finishedAt, run.ID, run.UserContextID, run.ForwardNetworkID, checkID, fid, suiteKey)
 				if err != nil {
 					return err
 				}
@@ -285,7 +285,7 @@ UPDATE sf_policy_report_findings_agg
        last_run_id=$2,
        updated_at=now()
  WHERE workspace_id=$3 AND forward_network_id=$4 AND check_id=$5 AND finding_id=$6 AND status='ACTIVE'
-`, finishedAt, run.ID, run.WorkspaceID, run.ForwardNetworkID, checkID, fid)
+`, finishedAt, run.ID, run.UserContextID, run.ForwardNetworkID, checkID, fid)
 			if err != nil {
 				return err
 			}

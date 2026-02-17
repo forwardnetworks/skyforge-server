@@ -136,19 +136,19 @@ func policyReportsApplyResultLimits(order []string, results map[string]*PolicyRe
 	return canResolve
 }
 
-// CreateWorkspacePolicyReportRun executes a pack and persists the run + findings in the Skyforge DB.
+// CreateUserContextPolicyReportRun executes a pack and persists the run + findings in the Skyforge DB.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/runs
-func (s *Service) CreateWorkspacePolicyReportRun(ctx context.Context, id string, req *PolicyReportCreateRunRequest) (*PolicyReportCreateRunResponse, error) {
+//encore:api auth method=POST path=/api/user-contexts/:id/policy-reports/runs
+func (s *Service) CreateUserContextPolicyReportRun(ctx context.Context, id string, req *PolicyReportCreateRunRequest) (*PolicyReportCreateRunResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceEditor(pc); err != nil {
+	if err := requireUserContextEditor(pc); err != nil {
 		return nil, err
 	}
 	if s.db == nil {
@@ -184,7 +184,7 @@ func (s *Service) CreateWorkspacePolicyReportRun(ctx context.Context, id string,
 
 	startedAt := time.Now().UTC()
 
-	fwdClient, err := s.policyReportsForwardClient(ctx, pc.workspace.ID, pc.claims.Username, networkID)
+	fwdClient, err := s.policyReportsForwardClient(ctx, pc.userContext.ID, pc.claims.Username, networkID)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +228,7 @@ func (s *Service) CreateWorkspacePolicyReportRun(ctx context.Context, id string,
 
 	run := PolicyReportRun{
 		ID:               uuid.New().String(),
-		WorkspaceID:      pc.workspace.ID,
+		UserContextID:    pc.userContext.ID,
 		ForwardNetworkID: networkID,
 		SnapshotID:       strings.TrimSpace(req.SnapshotID),
 		PackID:           packID,
@@ -259,7 +259,7 @@ func (s *Service) CreateWorkspacePolicyReportRun(ctx context.Context, id string,
 	if err := persistPolicyReportRun(ctx, s.db, &run, checks, findings, resolveChecks); err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist run").Err()
 	}
-	policyReportAudit(ctx, s.db, pc.workspace.ID, pc.claims.Username, "policy_reports.run.create", map[string]any{
+	policyReportAudit(ctx, s.db, pc.userContext.ID, pc.claims.Username, "policy_reports.run.create", map[string]any{
 		"id":               run.ID,
 		"forwardNetworkId": run.ForwardNetworkID,
 		"packId":           run.PackID,
@@ -273,19 +273,19 @@ func (s *Service) CreateWorkspacePolicyReportRun(ctx context.Context, id string,
 	}, nil
 }
 
-// CreateWorkspacePolicyReportCustomRun executes a list of checks and persists the run + findings.
+// CreateUserContextPolicyReportCustomRun executes a list of checks and persists the run + findings.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/runs/custom
-func (s *Service) CreateWorkspacePolicyReportCustomRun(ctx context.Context, id string, req *PolicyReportCreateCustomRunRequest) (*PolicyReportCreateCustomRunResponse, error) {
+//encore:api auth method=POST path=/api/user-contexts/:id/policy-reports/runs/custom
+func (s *Service) CreateUserContextPolicyReportCustomRun(ctx context.Context, id string, req *PolicyReportCreateCustomRunRequest) (*PolicyReportCreateCustomRunResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceEditor(pc); err != nil {
+	if err := requireUserContextEditor(pc); err != nil {
 		return nil, err
 	}
 	if s.db == nil {
@@ -322,7 +322,7 @@ func (s *Service) CreateWorkspacePolicyReportCustomRun(ctx context.Context, id s
 	}
 
 	startedAt := time.Now().UTC()
-	fwdClient, err := s.policyReportsForwardClient(ctx, pc.workspace.ID, pc.claims.Username, networkID)
+	fwdClient, err := s.policyReportsForwardClient(ctx, pc.userContext.ID, pc.claims.Username, networkID)
 	if err != nil {
 		return nil, err
 	}
@@ -360,7 +360,7 @@ func (s *Service) CreateWorkspacePolicyReportCustomRun(ctx context.Context, id s
 	reqJSON, _ := json.Marshal(req)
 	run := PolicyReportRun{
 		ID:               uuid.New().String(),
-		WorkspaceID:      pc.workspace.ID,
+		UserContextID:    pc.userContext.ID,
 		ForwardNetworkID: networkID,
 		SnapshotID:       strings.TrimSpace(req.SnapshotID),
 		PackID:           packID,
@@ -390,7 +390,7 @@ func (s *Service) CreateWorkspacePolicyReportCustomRun(ctx context.Context, id s
 	if err := persistPolicyReportRun(ctx, s.db, &run, checks, findings, resolveChecks); err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist run").Err()
 	}
-	policyReportAudit(ctx, s.db, pc.workspace.ID, pc.claims.Username, "policy_reports.run.create_custom", map[string]any{
+	policyReportAudit(ctx, s.db, pc.userContext.ID, pc.claims.Username, "policy_reports.run.create_custom", map[string]any{
 		"id":               run.ID,
 		"forwardNetworkId": run.ForwardNetworkID,
 		"packId":           run.PackID,
@@ -404,15 +404,15 @@ func (s *Service) CreateWorkspacePolicyReportCustomRun(ctx context.Context, id s
 	}, nil
 }
 
-// ListWorkspacePolicyReportRuns lists stored Policy Report runs.
+// ListUserContextPolicyReportRuns lists stored Policy Report runs.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/runs
-func (s *Service) ListWorkspacePolicyReportRuns(ctx context.Context, id string, req *PolicyReportListRunsRequest) (*PolicyReportListRunsResponse, error) {
+//encore:api auth method=GET path=/api/user-contexts/:id/policy-reports/runs
+func (s *Service) ListUserContextPolicyReportRuns(ctx context.Context, id string, req *PolicyReportListRunsRequest) (*PolicyReportListRunsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -431,7 +431,7 @@ func (s *Service) ListWorkspacePolicyReportRuns(ctx context.Context, id string, 
 		}
 	}
 
-	runs, err := listPolicyReportRuns(ctx, s.db, pc.workspace.ID, forwardNetworkID, packID, status, limit)
+	runs, err := listPolicyReportRuns(ctx, s.db, pc.userContext.ID, forwardNetworkID, packID, status, limit)
 	if err != nil {
 		if isMissingDBRelation(err) {
 			return &PolicyReportListRunsResponse{Runs: []PolicyReportRun{}}, nil
@@ -441,15 +441,15 @@ func (s *Service) ListWorkspacePolicyReportRuns(ctx context.Context, id string, 
 	return &PolicyReportListRunsResponse{Runs: runs}, nil
 }
 
-// GetWorkspacePolicyReportRun returns a stored run and its per-check totals.
+// GetUserContextPolicyReportRun returns a stored run and its per-check totals.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/runs/:runId
-func (s *Service) GetWorkspacePolicyReportRun(ctx context.Context, id string, runId string) (*PolicyReportGetRunResponse, error) {
+//encore:api auth method=GET path=/api/user-contexts/:id/policy-reports/runs/:runId
+func (s *Service) GetUserContextPolicyReportRun(ctx context.Context, id string, runId string) (*PolicyReportGetRunResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -457,7 +457,7 @@ func (s *Service) GetWorkspacePolicyReportRun(ctx context.Context, id string, ru
 		return nil, errs.B().Code(errs.Unavailable).Msg("db not configured").Err()
 	}
 
-	run, checks, err := getPolicyReportRun(ctx, s.db, pc.workspace.ID, runId)
+	run, checks, err := getPolicyReportRun(ctx, s.db, pc.userContext.ID, runId)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, errs.B().Code(errs.NotFound).Msg("run not found").Err()
@@ -467,15 +467,15 @@ func (s *Service) GetWorkspacePolicyReportRun(ctx context.Context, id string, ru
 	return &PolicyReportGetRunResponse{Run: *run, Checks: checks}, nil
 }
 
-// ListWorkspacePolicyReportRunFindings lists stored violation findings for a run.
+// ListUserContextPolicyReportRunFindings lists stored violation findings for a run.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/runs/:runId/findings
-func (s *Service) ListWorkspacePolicyReportRunFindings(ctx context.Context, id string, runId string, req *PolicyReportListRunFindingsRequest) (*PolicyReportListRunFindingsResponse, error) {
+//encore:api auth method=GET path=/api/user-contexts/:id/policy-reports/runs/:runId/findings
+func (s *Service) ListUserContextPolicyReportRunFindings(ctx context.Context, id string, runId string, req *PolicyReportListRunFindingsRequest) (*PolicyReportListRunFindingsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -492,7 +492,7 @@ func (s *Service) ListWorkspacePolicyReportRunFindings(ctx context.Context, id s
 		}
 	}
 
-	findings, err := listPolicyReportRunFindings(ctx, s.db, pc.workspace.ID, runId, checkID, limit)
+	findings, err := listPolicyReportRunFindings(ctx, s.db, pc.userContext.ID, runId, checkID, limit)
 	if err != nil {
 		if isMissingDBRelation(err) {
 			return &PolicyReportListRunFindingsResponse{Findings: []PolicyReportRunFinding{}}, nil
@@ -502,15 +502,15 @@ func (s *Service) ListWorkspacePolicyReportRunFindings(ctx context.Context, id s
 	return &PolicyReportListRunFindingsResponse{Findings: findings}, nil
 }
 
-// ListWorkspacePolicyReportFindings lists aggregated findings across stored runs.
+// ListUserContextPolicyReportFindings lists aggregated findings across stored runs.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/findings
-func (s *Service) ListWorkspacePolicyReportFindings(ctx context.Context, id string, req *PolicyReportListFindingsRequest) (*PolicyReportListFindingsResponse, error) {
+//encore:api auth method=GET path=/api/user-contexts/:id/policy-reports/findings
+func (s *Service) ListUserContextPolicyReportFindings(ctx context.Context, id string, req *PolicyReportListFindingsRequest) (*PolicyReportListFindingsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -531,7 +531,7 @@ func (s *Service) ListWorkspacePolicyReportFindings(ctx context.Context, id stri
 		}
 	}
 
-	findings, err := listPolicyReportFindingsAgg(ctx, s.db, pc.workspace.ID, forwardNetworkID, checkID, status, limit)
+	findings, err := listPolicyReportFindingsAgg(ctx, s.db, pc.userContext.ID, forwardNetworkID, checkID, status, limit)
 	if err != nil {
 		if isMissingDBRelation(err) {
 			return &PolicyReportListFindingsResponse{Findings: []PolicyReportFindingAgg{}}, nil

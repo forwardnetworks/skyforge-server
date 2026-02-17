@@ -9,15 +9,15 @@ import (
 	"encore.dev/beta/errs"
 )
 
-// GetWorkspacePolicyReportForwardNetworkCredentials returns the current user's credentials status for a Forward network.
+// GetUserContextPolicyReportForwardNetworkCredentials returns the current user's credentials status for a Forward network.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/networks/:forwardNetworkId/credentials
-func (s *Service) GetWorkspacePolicyReportForwardNetworkCredentials(ctx context.Context, id string, forwardNetworkId string) (*PolicyReportForwardCredentialsStatus, error) {
+//encore:api auth method=GET path=/api/user-contexts/:id/policy-reports/networks/:forwardNetworkId/credentials
+func (s *Service) GetUserContextPolicyReportForwardNetworkCredentials(ctx context.Context, id string, forwardNetworkId string) (*PolicyReportForwardCredentialsStatus, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -25,7 +25,7 @@ func (s *Service) GetWorkspacePolicyReportForwardNetworkCredentials(ctx context.
 		return nil, errs.B().Code(errs.Unavailable).Msg("db not configured").Err()
 	}
 
-	rec, err := getPolicyReportForwardCreds(ctx, s.db, newSecretBox(s.cfg.SessionSecret), pc.workspace.ID, pc.claims.Username, forwardNetworkId)
+	rec, err := getPolicyReportForwardCreds(ctx, s.db, newSecretBox(s.cfg.SessionSecret), pc.userContext.ID, pc.claims.Username, forwardNetworkId)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load credentials").Err()
 	}
@@ -42,19 +42,19 @@ func (s *Service) GetWorkspacePolicyReportForwardNetworkCredentials(ctx context.
 	}, nil
 }
 
-// PutWorkspacePolicyReportForwardNetworkCredentials upserts the current user's credentials for a Forward network.
+// PutUserContextPolicyReportForwardNetworkCredentials upserts the current user's credentials for a Forward network.
 //
-//encore:api auth method=PUT path=/api/workspaces/:id/policy-reports/networks/:forwardNetworkId/credentials
-func (s *Service) PutWorkspacePolicyReportForwardNetworkCredentials(ctx context.Context, id string, forwardNetworkId string, req *PolicyReportPutForwardCredentialsRequest) (*PolicyReportForwardCredentialsStatus, error) {
+//encore:api auth method=PUT path=/api/user-contexts/:id/policy-reports/networks/:forwardNetworkId/credentials
+func (s *Service) PutUserContextPolicyReportForwardNetworkCredentials(ctx context.Context, id string, forwardNetworkId string, req *PolicyReportPutForwardCredentialsRequest) (*PolicyReportForwardCredentialsStatus, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceEditor(pc); err != nil {
+	if err := requireUserContextEditor(pc); err != nil {
 		return nil, err
 	}
 	if s.db == nil {
@@ -64,11 +64,11 @@ func (s *Service) PutWorkspacePolicyReportForwardNetworkCredentials(ctx context.
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("request required").Err()
 	}
 
-	out, err := putPolicyReportForwardCreds(ctx, s.db, newSecretBox(s.cfg.SessionSecret), pc.workspace.ID, pc.claims.Username, forwardNetworkId, *req)
+	out, err := putPolicyReportForwardCreds(ctx, s.db, newSecretBox(s.cfg.SessionSecret), pc.userContext.ID, pc.claims.Username, forwardNetworkId, *req)
 	if err != nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 	}
-	policyReportAudit(ctx, s.db, pc.workspace.ID, pc.claims.Username, "policy_reports.forward_credentials.put", map[string]any{
+	policyReportAudit(ctx, s.db, pc.userContext.ID, pc.claims.Username, "policy_reports.forward_credentials.put", map[string]any{
 		"forwardNetworkId": forwardNetworkId,
 		"baseUrl":          out.BaseURL,
 		"skipTlsVerify":    out.SkipTLSVerify,
@@ -84,26 +84,26 @@ func (s *Service) PutWorkspacePolicyReportForwardNetworkCredentials(ctx context.
 	}, nil
 }
 
-// DeleteWorkspacePolicyReportForwardNetworkCredentials clears the current user's credentials for a Forward network.
+// DeleteUserContextPolicyReportForwardNetworkCredentials clears the current user's credentials for a Forward network.
 //
-//encore:api auth method=DELETE path=/api/workspaces/:id/policy-reports/networks/:forwardNetworkId/credentials
-func (s *Service) DeleteWorkspacePolicyReportForwardNetworkCredentials(ctx context.Context, id string, forwardNetworkId string) (*PolicyReportDecisionResponse, error) {
+//encore:api auth method=DELETE path=/api/user-contexts/:id/policy-reports/networks/:forwardNetworkId/credentials
+func (s *Service) DeleteUserContextPolicyReportForwardNetworkCredentials(ctx context.Context, id string, forwardNetworkId string) (*PolicyReportDecisionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceEditor(pc); err != nil {
+	if err := requireUserContextEditor(pc); err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("db not configured").Err()
 	}
 
-	if err := deletePolicyReportForwardCreds(ctx, s.db, pc.workspace.ID, pc.claims.Username, forwardNetworkId); err != nil {
+	if err := deletePolicyReportForwardCreds(ctx, s.db, pc.userContext.ID, pc.claims.Username, forwardNetworkId); err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return nil, errs.B().Code(errs.Unavailable).Msg("request canceled").Err()
 		}
@@ -112,7 +112,7 @@ func (s *Service) DeleteWorkspacePolicyReportForwardNetworkCredentials(ctx conte
 		}
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to delete credentials").Err()
 	}
-	policyReportAudit(ctx, s.db, pc.workspace.ID, pc.claims.Username, "policy_reports.forward_credentials.delete", map[string]any{
+	policyReportAudit(ctx, s.db, pc.userContext.ID, pc.claims.Username, "policy_reports.forward_credentials.delete", map[string]any{
 		"forwardNetworkId": forwardNetworkId,
 	})
 	return &PolicyReportDecisionResponse{Ok: true}, nil

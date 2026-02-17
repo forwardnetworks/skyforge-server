@@ -28,11 +28,11 @@ func giteaClientFor(cfg Config) *gitea.Client {
 	defer giteaClientMu.Unlock()
 
 	next := gitea.Config{
-		APIURL:      cfg.Workspaces.GiteaAPIURL,
-		Username:    cfg.Workspaces.GiteaUsername,
-		Password:    cfg.Workspaces.GiteaPassword,
+		APIURL:      cfg.UserContexts.GiteaAPIURL,
+		Username:    cfg.UserContexts.GiteaUsername,
+		Password:    cfg.UserContexts.GiteaPassword,
 		Timeout:     15 * time.Second,
-		RepoPrivate: cfg.Workspaces.GiteaRepoPrivate,
+		RepoPrivate: cfg.UserContexts.GiteaRepoPrivate,
 	}
 
 	if giteaClient == nil || giteaClientCfg != next {
@@ -44,9 +44,9 @@ func giteaClientFor(cfg Config) *gitea.Client {
 
 func giteaClientForVisibility(cfg Config, repoPrivate bool) *gitea.Client {
 	next := gitea.Config{
-		APIURL:      cfg.Workspaces.GiteaAPIURL,
-		Username:    cfg.Workspaces.GiteaUsername,
-		Password:    cfg.Workspaces.GiteaPassword,
+		APIURL:      cfg.UserContexts.GiteaAPIURL,
+		Username:    cfg.UserContexts.GiteaUsername,
+		Password:    cfg.UserContexts.GiteaPassword,
 		Timeout:     15 * time.Second,
 		RepoPrivate: repoPrivate,
 	}
@@ -78,7 +78,7 @@ func ensureGiteaUserFromProfile(cfg Config, profile *UserProfile) error {
 
 func ensureGiteaUser(cfg Config, username, password string) error {
 	base := cfg.GiteaBaseURL
-	apiURL := strings.TrimRight(cfg.Workspaces.GiteaAPIURL, "/")
+	apiURL := strings.TrimRight(cfg.UserContexts.GiteaAPIURL, "/")
 	if apiURL != "" {
 		if strings.HasSuffix(strings.ToLower(apiURL), "/api/v1") {
 			base = strings.TrimSuffix(apiURL, "/api/v1")
@@ -286,7 +286,7 @@ func getGiteaBranchHeadSHA(cfg Config, owner, repo, branch string) (string, erro
 		return "", err
 	}
 	if resp.StatusCode != http.StatusOK {
-		fullURL := strings.TrimRight(cfg.Workspaces.GiteaAPIURL, "/") + path
+		fullURL := strings.TrimRight(cfg.UserContexts.GiteaAPIURL, "/") + path
 		return "", fmt.Errorf("gitea %s responded %d: %s", fullURL, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	var parsed giteaBranchResponse
@@ -405,7 +405,7 @@ func ensureBlueprintCatalogRepo(cfg Config, blueprint string) error {
 	if err := ensureGiteaRepo(cfg, owner, repo, false); err != nil {
 		return err
 	}
-	readme := "# Skyforge Blueprint Catalog\n\nThis repository contains validated deployment blueprints synced into user workspaces.\n"
+	readme := "# Skyforge Blueprint Catalog\n\nThis repository contains validated deployment blueprints synced into user userContexts.\n"
 	_ = ensureGiteaFile(cfg, owner, repo, "README.md", readme, "docs: add blueprint catalog README", "main", nil)
 
 	// Ensure the catalog always contains at least one Containerlab topology so the
@@ -513,7 +513,7 @@ func syncGiteaRepoFromBlueprintWithSource(sourceCfg, targetCfg Config, targetOwn
 	return syncGiteaDirectoryWithSource(sourceCfg, targetCfg, owner, repo, targetOwner, targetRepo, "", blueprintBranch, targetBranch, claims)
 }
 
-func syncBlueprintCatalogIntoWorkspaceRepo(sourceCfg, targetCfg Config, targetOwner, targetRepo, blueprint, targetBranch string, claims *SessionClaims) error {
+func syncBlueprintCatalogIntoUserContextRepo(sourceCfg, targetCfg Config, targetOwner, targetRepo, blueprint, targetBranch string, claims *SessionClaims) error {
 	sourceOwner, sourceRepo, ok := parseGiteaBlueprintSlug(blueprint)
 	if !ok {
 		return fmt.Errorf("unsupported blueprint repo format")
@@ -527,7 +527,7 @@ func syncBlueprintCatalogIntoWorkspaceRepo(sourceCfg, targetCfg Config, targetOw
 	}
 
 	// Copy the catalog into a subdirectory in the user's repo so it doesn't pollute the root.
-	// The deployment UX expects `blueprints/<type>` (workspace repo), while the catalog repo is
+	// The deployment UX expects `blueprints/<type>` (user-context repo), while the catalog repo is
 	// `<type>` at the repo root.
 	destRoot := "blueprints"
 	expected := []string{"containerlab", "netlab", "terraform"}
@@ -606,7 +606,7 @@ func ensureGiteaRepo(cfg Config, owner, repo string, repoPrivate bool) error {
 }
 
 func ensureGiteaRepoFromBlueprint(cfg Config, owner, repo, blueprint string, repoPrivate bool) error {
-	// For Skyforge MVP we avoid copying blueprint content into each workspace repo.
+	// For Skyforge MVP we avoid copying blueprint content into each user-context repo.
 	// Projects can reference the shared blueprint catalog directly for deployments.
 	// A manual "sync" can be added later if/when users want a forked copy.
 	return ensureGiteaRepo(cfg, owner, repo, repoPrivate)

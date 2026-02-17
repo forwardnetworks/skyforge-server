@@ -4,7 +4,7 @@ import "time"
 
 type PolicyReportForwardNetwork struct {
 	ID                string    `json:"id"`
-	WorkspaceID       string    `json:"workspaceId"`
+	UserContextID     string    `json:"userContextId"`
 	ForwardNetwork    string    `json:"forwardNetworkId"`
 	Name              string    `json:"name"`
 	Description       string    `json:"description,omitempty"`

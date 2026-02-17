@@ -11,24 +11,24 @@ import (
 	"github.com/google/uuid"
 )
 
-const workspaceServerRefPrefix = "ws:"
+const userContextServerRefPrefix = "ws:"
 
-type workspaceNetlabServer struct {
-	ID          string
-	WorkspaceID string
-	Name        string
-	APIURL      string
-	APIInsecure bool
-	APIUser     string
-	APIPassword string
-	APIToken    string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+type userContextNetlabServer struct {
+	ID            string
+	UserContextID string
+	Name          string
+	APIURL        string
+	APIInsecure   bool
+	APIUser       string
+	APIPassword   string
+	APIToken      string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
-type workspaceEveServer struct {
+type userContextEveServer struct {
 	ID            string
-	WorkspaceID   string
+	UserContextID string
 	Name          string
 	APIURL        string
 	WebURL        string
@@ -42,20 +42,20 @@ type workspaceEveServer struct {
 	UpdatedAt     time.Time
 }
 
-func workspaceServerRef(id string) string {
+func userContextServerRef(id string) string {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return ""
 	}
-	return workspaceServerRefPrefix + id
+	return userContextServerRefPrefix + id
 }
 
-func parseWorkspaceServerRef(value string) (string, bool) {
+func parseUserContextServerRef(value string) (string, bool) {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return "", false
 	}
-	if after, ok := strings.CutPrefix(value, workspaceServerRefPrefix); ok {
+	if after, ok := strings.CutPrefix(value, userContextServerRefPrefix); ok {
 		id := after
 		id = strings.TrimSpace(id)
 		if id == "" {
@@ -66,21 +66,21 @@ func parseWorkspaceServerRef(value string) (string, bool) {
 	return "", false
 }
 
-func listWorkspaceNetlabServers(ctx context.Context, db *sql.DB, box *secretBox, workspaceID string) ([]workspaceNetlabServer, error) {
+func listUserContextNetlabServers(ctx context.Context, db *sql.DB, box *secretBox, userContextID string) ([]userContextNetlabServer, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace id is required")
+	userContextID = strings.TrimSpace(userContextID)
+	if userContextID == "" {
+		return nil, fmt.Errorf("userContextId is required")
 	}
 	rows, err := db.QueryContext(ctx, `SELECT id, project_id, name, api_url, api_insecure, COALESCE(api_user,''), COALESCE(api_password,''), COALESCE(api_token,''), created_at, updated_at
-FROM sf_project_netlab_servers WHERE project_id=$1 ORDER BY name ASC`, workspaceID)
+FROM sf_project_netlab_servers WHERE project_id=$1 ORDER BY name ASC`, userContextID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := []workspaceNetlabServer{}
+	out := []userContextNetlabServer{}
 	for rows.Next() {
 		var id, projectID, name, apiURL string
 		var insecure bool
@@ -102,37 +102,37 @@ FROM sf_project_netlab_servers WHERE project_id=$1 ORDER BY name ASC`, workspace
 				token = strings.TrimSpace(decrypted)
 			}
 		}
-		out = append(out, workspaceNetlabServer{
-			ID:          id,
-			WorkspaceID: projectID,
-			Name:        strings.TrimSpace(name),
-			APIURL:      strings.TrimSpace(apiURL),
-			APIInsecure: insecure,
-			APIUser:     strings.TrimSpace(apiUser),
-			APIPassword: apiPassword,
-			APIToken:    token,
-			CreatedAt:   createdAt,
-			UpdatedAt:   updatedAt,
+		out = append(out, userContextNetlabServer{
+			ID:            id,
+			UserContextID: projectID,
+			Name:          strings.TrimSpace(name),
+			APIURL:        strings.TrimSpace(apiURL),
+			APIInsecure:   insecure,
+			APIUser:       strings.TrimSpace(apiUser),
+			APIPassword:   apiPassword,
+			APIToken:      token,
+			CreatedAt:     createdAt,
+			UpdatedAt:     updatedAt,
 		})
 	}
 	return out, nil
 }
 
-func getWorkspaceNetlabServerByID(ctx context.Context, db *sql.DB, box *secretBox, workspaceID, id string) (*workspaceNetlabServer, error) {
+func getUserContextNetlabServerByID(ctx context.Context, db *sql.DB, box *secretBox, userContextID, id string) (*userContextNetlabServer, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userContextID = strings.TrimSpace(userContextID)
 	id = strings.TrimSpace(id)
-	if workspaceID == "" || id == "" {
+	if userContextID == "" || id == "" {
 		return nil, nil
 	}
-	var rec workspaceNetlabServer
+	var rec userContextNetlabServer
 	var apiUser, apiPasswordEnc string
 	var tokenEnc string
 	err := db.QueryRowContext(ctx, `SELECT id, project_id, name, api_url, api_insecure, COALESCE(api_user,''), COALESCE(api_password,''), COALESCE(api_token,''), created_at, updated_at
-FROM sf_project_netlab_servers WHERE project_id=$1 AND id=$2`, workspaceID, id).Scan(
-		&rec.ID, &rec.WorkspaceID, &rec.Name, &rec.APIURL, &rec.APIInsecure, &apiUser, &apiPasswordEnc, &tokenEnc, &rec.CreatedAt, &rec.UpdatedAt,
+FROM sf_project_netlab_servers WHERE project_id=$1 AND id=$2`, userContextID, id).Scan(
+		&rec.ID, &rec.UserContextID, &rec.Name, &rec.APIURL, &rec.APIInsecure, &apiUser, &apiPasswordEnc, &tokenEnc, &rec.CreatedAt, &rec.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -160,18 +160,18 @@ FROM sf_project_netlab_servers WHERE project_id=$1 AND id=$2`, workspaceID, id).
 	return &rec, nil
 }
 
-func upsertWorkspaceNetlabServer(ctx context.Context, db *sql.DB, box *secretBox, rec workspaceNetlabServer) (*workspaceNetlabServer, error) {
+func upsertUserContextNetlabServer(ctx context.Context, db *sql.DB, box *secretBox, rec userContextNetlabServer) (*userContextNetlabServer, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	rec.WorkspaceID = strings.TrimSpace(rec.WorkspaceID)
+	rec.UserContextID = strings.TrimSpace(rec.UserContextID)
 	rec.Name = strings.TrimSpace(rec.Name)
 	rec.APIURL = strings.TrimSpace(rec.APIURL)
 	rec.APIUser = strings.TrimSpace(rec.APIUser)
 	rec.APIPassword = strings.TrimSpace(rec.APIPassword)
 	rec.APIToken = strings.TrimSpace(rec.APIToken)
-	if rec.WorkspaceID == "" {
-		return nil, fmt.Errorf("workspace id is required")
+	if rec.UserContextID == "" {
+		return nil, fmt.Errorf("userContextId is required")
 	}
 	if rec.Name == "" || rec.APIURL == "" {
 		return nil, fmt.Errorf("name and apiUrl are required")
@@ -181,7 +181,7 @@ func upsertWorkspaceNetlabServer(ctx context.Context, db *sql.DB, box *secretBox
 		id = uuid.NewString()
 	}
 	if rec.APIPassword == "" && strings.TrimSpace(rec.ID) != "" {
-		if existing, err := getWorkspaceNetlabServerByID(ctx, db, box, rec.WorkspaceID, rec.ID); err == nil && existing != nil {
+		if existing, err := getUserContextNetlabServerByID(ctx, db, box, rec.UserContextID, rec.ID); err == nil && existing != nil {
 			rec.APIUser = strings.TrimSpace(existing.APIUser)
 			rec.APIPassword = strings.TrimSpace(existing.APIPassword)
 			rec.APIToken = strings.TrimSpace(existing.APIToken)
@@ -214,7 +214,7 @@ ON CONFLICT (id) DO UPDATE SET
   api_password=excluded.api_password,
   api_token=excluded.api_token,
   updated_at=now()`,
-		id, rec.WorkspaceID, rec.Name, rec.APIURL, rec.APIInsecure, rec.APIUser, passwordEnc, tokenEnc,
+		id, rec.UserContextID, rec.Name, rec.APIURL, rec.APIInsecure, rec.APIUser, passwordEnc, tokenEnc,
 	)
 	if err != nil {
 		return nil, err
@@ -226,42 +226,42 @@ ON CONFLICT (id) DO UPDATE SET
 	return &out, nil
 }
 
-func deleteWorkspaceNetlabServer(ctx context.Context, db *sql.DB, workspaceID, id string) error {
+func deleteUserContextNetlabServer(ctx context.Context, db *sql.DB, userContextID, id string) error {
 	if db == nil {
 		return fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userContextID = strings.TrimSpace(userContextID)
 	id = strings.TrimSpace(id)
-	if workspaceID == "" || id == "" {
+	if userContextID == "" || id == "" {
 		return nil
 	}
-	_, err := db.ExecContext(ctx, `DELETE FROM sf_project_netlab_servers WHERE project_id=$1 AND id=$2`, workspaceID, id)
+	_, err := db.ExecContext(ctx, `DELETE FROM sf_project_netlab_servers WHERE project_id=$1 AND id=$2`, userContextID, id)
 	return err
 }
 
-func listWorkspaceEveServers(ctx context.Context, db *sql.DB, box *secretBox, workspaceID string) ([]workspaceEveServer, error) {
+func listUserContextEveServers(ctx context.Context, db *sql.DB, box *secretBox, userContextID string) ([]userContextEveServer, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace id is required")
+	userContextID = strings.TrimSpace(userContextID)
+	if userContextID == "" {
+		return nil, fmt.Errorf("userContextId is required")
 	}
 	rows, err := db.QueryContext(ctx, `SELECT id, project_id, name, api_url, COALESCE(web_url,''), skip_tls_verify,
   COALESCE(api_user,''), COALESCE(api_password,''), COALESCE(ssh_host,''), COALESCE(ssh_user,''), COALESCE(ssh_key,''), created_at, updated_at
-FROM sf_project_eve_servers WHERE project_id=$1 ORDER BY name ASC`, workspaceID)
+FROM sf_project_eve_servers WHERE project_id=$1 ORDER BY name ASC`, userContextID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := []workspaceEveServer{}
+	out := []userContextEveServer{}
 	for rows.Next() {
-		var rec workspaceEveServer
+		var rec userContextEveServer
 		var webURL string
 		var apiUser, apiPasswordEnc, sshHost, sshUser, sshKeyEnc string
 		if err := rows.Scan(
 			&rec.ID,
-			&rec.WorkspaceID,
+			&rec.UserContextID,
 			&rec.Name,
 			&rec.APIURL,
 			&webURL,
@@ -301,21 +301,21 @@ FROM sf_project_eve_servers WHERE project_id=$1 ORDER BY name ASC`, workspaceID)
 	return out, nil
 }
 
-func getWorkspaceEveServerByID(ctx context.Context, db *sql.DB, box *secretBox, workspaceID, id string) (*workspaceEveServer, error) {
+func getUserContextEveServerByID(ctx context.Context, db *sql.DB, box *secretBox, userContextID, id string) (*userContextEveServer, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userContextID = strings.TrimSpace(userContextID)
 	id = strings.TrimSpace(id)
-	if workspaceID == "" || id == "" {
+	if userContextID == "" || id == "" {
 		return nil, nil
 	}
-	var rec workspaceEveServer
+	var rec userContextEveServer
 	var webURL, apiUser, apiPasswordEnc, sshHost, sshUser, sshKeyEnc string
 	err := db.QueryRowContext(ctx, `SELECT id, project_id, name, api_url, COALESCE(web_url,''), skip_tls_verify,
   COALESCE(api_user,''), COALESCE(api_password,''), COALESCE(ssh_host,''), COALESCE(ssh_user,''), COALESCE(ssh_key,''), created_at, updated_at
-FROM sf_project_eve_servers WHERE project_id=$1 AND id=$2`, workspaceID, id).Scan(
-		&rec.ID, &rec.WorkspaceID, &rec.Name, &rec.APIURL, &webURL, &rec.SkipTLSVerify,
+FROM sf_project_eve_servers WHERE project_id=$1 AND id=$2`, userContextID, id).Scan(
+		&rec.ID, &rec.UserContextID, &rec.Name, &rec.APIURL, &webURL, &rec.SkipTLSVerify,
 		&apiUser, &apiPasswordEnc, &sshHost, &sshUser, &sshKeyEnc, &rec.CreatedAt, &rec.UpdatedAt,
 	)
 	if err != nil {
@@ -347,11 +347,11 @@ FROM sf_project_eve_servers WHERE project_id=$1 AND id=$2`, workspaceID, id).Sca
 	return &rec, nil
 }
 
-func upsertWorkspaceEveServer(ctx context.Context, db *sql.DB, box *secretBox, rec workspaceEveServer) (*workspaceEveServer, error) {
+func upsertUserContextEveServer(ctx context.Context, db *sql.DB, box *secretBox, rec userContextEveServer) (*userContextEveServer, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	rec.WorkspaceID = strings.TrimSpace(rec.WorkspaceID)
+	rec.UserContextID = strings.TrimSpace(rec.UserContextID)
 	rec.Name = strings.TrimSpace(rec.Name)
 	rec.APIURL = strings.TrimSpace(rec.APIURL)
 	rec.WebURL = strings.TrimSpace(rec.WebURL)
@@ -360,8 +360,8 @@ func upsertWorkspaceEveServer(ctx context.Context, db *sql.DB, box *secretBox, r
 	rec.SSHHost = strings.TrimSpace(rec.SSHHost)
 	rec.SSHUser = strings.TrimSpace(rec.SSHUser)
 	rec.SSHKey = strings.TrimSpace(rec.SSHKey)
-	if rec.WorkspaceID == "" {
-		return nil, fmt.Errorf("workspace id is required")
+	if rec.UserContextID == "" {
+		return nil, fmt.Errorf("userContextId is required")
 	}
 	if rec.Name == "" || rec.APIURL == "" {
 		return nil, fmt.Errorf("name and apiUrl are required")
@@ -371,7 +371,7 @@ func upsertWorkspaceEveServer(ctx context.Context, db *sql.DB, box *secretBox, r
 		id = uuid.NewString()
 	}
 	if rec.APIPassword == "" && strings.TrimSpace(rec.ID) != "" {
-		if existing, err := getWorkspaceEveServerByID(ctx, db, box, rec.WorkspaceID, rec.ID); err == nil && existing != nil {
+		if existing, err := getUserContextEveServerByID(ctx, db, box, rec.UserContextID, rec.ID); err == nil && existing != nil {
 			rec.APIUser = strings.TrimSpace(existing.APIUser)
 			rec.APIPassword = strings.TrimSpace(existing.APIPassword)
 		}
@@ -406,7 +406,7 @@ ON CONFLICT (id) DO UPDATE SET
   ssh_user=excluded.ssh_user,
   ssh_key=excluded.ssh_key,
   updated_at=now()`,
-		id, rec.WorkspaceID, rec.Name, rec.APIURL, rec.WebURL, rec.SkipTLSVerify, rec.APIUser, passwordEnc, rec.SSHHost, rec.SSHUser, sshKeyEnc,
+		id, rec.UserContextID, rec.Name, rec.APIURL, rec.WebURL, rec.SkipTLSVerify, rec.APIUser, passwordEnc, rec.SSHHost, rec.SSHUser, sshKeyEnc,
 	)
 	if err != nil {
 		return nil, err
@@ -416,15 +416,15 @@ ON CONFLICT (id) DO UPDATE SET
 	return &out, nil
 }
 
-func deleteWorkspaceEveServer(ctx context.Context, db *sql.DB, workspaceID, id string) error {
+func deleteUserContextEveServer(ctx context.Context, db *sql.DB, userContextID, id string) error {
 	if db == nil {
 		return fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userContextID = strings.TrimSpace(userContextID)
 	id = strings.TrimSpace(id)
-	if workspaceID == "" || id == "" {
+	if userContextID == "" || id == "" {
 		return nil
 	}
-	_, err := db.ExecContext(ctx, `DELETE FROM sf_project_eve_servers WHERE project_id=$1 AND id=$2`, workspaceID, id)
+	_, err := db.ExecContext(ctx, `DELETE FROM sf_project_eve_servers WHERE project_id=$1 AND id=$2`, userContextID, id)
 	return err
 }

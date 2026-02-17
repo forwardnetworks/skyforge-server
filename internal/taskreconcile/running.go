@@ -63,18 +63,18 @@ LIMIT $3`, cutoffHard, cutoffIdle, limit)
 	defer rows.Close()
 
 	type row struct {
-		id           int
-		workspaceID  string
-		deploymentID sql.NullString
-		startedAt    time.Time
+		id            int
+		userContextID string
+		deploymentID  sql.NullString
+		startedAt     time.Time
 	}
 	out := make([]RunningTask, 0, 16)
 	for rows.Next() {
 		var r row
-		if err := rows.Scan(&r.id, &r.workspaceID, &r.deploymentID, &r.startedAt); err != nil {
+		if err := rows.Scan(&r.id, &r.userContextID, &r.deploymentID, &r.startedAt); err != nil {
 			return nil, err
 		}
-		if r.id <= 0 || strings.TrimSpace(r.workspaceID) == "" {
+		if r.id <= 0 || strings.TrimSpace(r.userContextID) == "" {
 			continue
 		}
 		dep := ""
@@ -83,7 +83,7 @@ LIMIT $3`, cutoffHard, cutoffIdle, limit)
 		}
 		out = append(out, RunningTask{
 			TaskID:       r.id,
-			WorkspaceID:  strings.TrimSpace(r.workspaceID),
+			WorkspaceID:  strings.TrimSpace(r.userContextID),
 			DeploymentID: dep,
 			StartedAt:    r.startedAt,
 		})

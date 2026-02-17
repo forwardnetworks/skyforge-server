@@ -33,23 +33,23 @@ LIMIT $1`, limit)
 	defer rows.Close()
 
 	type row struct {
-		id           int
-		workspaceID  string
-		deploymentID sql.NullString
-		priority     int
+		id            int
+		userContextID string
+		deploymentID  sql.NullString
+		priority      int
 	}
 	items := make([]QueuedTask, 0, 64)
 	for rows.Next() {
 		var r row
-		if err := rows.Scan(&r.id, &r.workspaceID, &r.deploymentID, &r.priority); err != nil {
+		if err := rows.Scan(&r.id, &r.userContextID, &r.deploymentID, &r.priority); err != nil {
 			return nil, err
 		}
-		if r.id <= 0 || strings.TrimSpace(r.workspaceID) == "" {
+		if r.id <= 0 || strings.TrimSpace(r.userContextID) == "" {
 			continue
 		}
-		key := strings.TrimSpace(r.workspaceID)
+		key := strings.TrimSpace(r.userContextID)
 		if r.deploymentID.Valid && strings.TrimSpace(r.deploymentID.String) != "" {
-			key = fmt.Sprintf("%s:%s", strings.TrimSpace(r.workspaceID), strings.TrimSpace(r.deploymentID.String))
+			key = fmt.Sprintf("%s:%s", strings.TrimSpace(r.userContextID), strings.TrimSpace(r.deploymentID.String))
 		}
 		items = append(items, QueuedTask{
 			TaskID:   r.id,
@@ -81,7 +81,7 @@ func ListStuckQueuedTasksByKey(ctx context.Context, db *sql.DB, limit int, minAg
 
 	ageStr := fmt.Sprintf("%fs", minAge.Seconds())
 	// NOTE: deployment_id is a UUID column. We cast to text before COALESCE to avoid invalid
-	// UUID casts when comparing NULL deployments (workspace-scoped tasks).
+	// UUID casts when comparing NULL deployments (user-context tasks).
 	rows, err := db.QueryContext(ctx, `
 SELECT DISTINCT ON (workspace_id, COALESCE(deployment_id::text, ''))
   id, workspace_id, deployment_id, priority
@@ -96,23 +96,23 @@ LIMIT $1`, limit, ageStr)
 	defer rows.Close()
 
 	type row struct {
-		id           int
-		workspaceID  string
-		deploymentID sql.NullString
-		priority     int
+		id            int
+		userContextID string
+		deploymentID  sql.NullString
+		priority      int
 	}
 	items := make([]QueuedTask, 0, 32)
 	for rows.Next() {
 		var r row
-		if err := rows.Scan(&r.id, &r.workspaceID, &r.deploymentID, &r.priority); err != nil {
+		if err := rows.Scan(&r.id, &r.userContextID, &r.deploymentID, &r.priority); err != nil {
 			return nil, err
 		}
-		if r.id <= 0 || strings.TrimSpace(r.workspaceID) == "" {
+		if r.id <= 0 || strings.TrimSpace(r.userContextID) == "" {
 			continue
 		}
-		key := strings.TrimSpace(r.workspaceID)
+		key := strings.TrimSpace(r.userContextID)
 		if r.deploymentID.Valid && strings.TrimSpace(r.deploymentID.String) != "" {
-			key = fmt.Sprintf("%s:%s", strings.TrimSpace(r.workspaceID), strings.TrimSpace(r.deploymentID.String))
+			key = fmt.Sprintf("%s:%s", strings.TrimSpace(r.userContextID), strings.TrimSpace(r.deploymentID.String))
 		}
 		items = append(items, QueuedTask{
 			TaskID:   r.id,

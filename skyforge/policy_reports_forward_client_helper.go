@@ -9,8 +9,8 @@ import (
 
 // policyReportsForwardClientFor mirrors (*Service).policyReportsForwardClient but can be used
 // from cron jobs and other non-request contexts.
-func policyReportsForwardClientFor(ctx context.Context, db *sql.DB, sessionSecret string, workspaceID, username, forwardNetworkID string) (*forwardClient, error) {
-	rec, err := resolveForwardCredentialsFor(ctx, db, sessionSecret, workspaceID, username, forwardNetworkID, forwardCredResolveOpts{})
+func policyReportsForwardClientFor(ctx context.Context, db *sql.DB, sessionSecret string, userContextID, username, forwardNetworkID string) (*forwardClient, error) {
+	rec, err := resolveForwardCredentialsFor(ctx, db, sessionSecret, userContextID, username, forwardNetworkID, forwardCredResolveOpts{})
 	if err != nil {
 		return nil, err
 	}

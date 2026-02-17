@@ -23,7 +23,7 @@ func TestPolicyReportsResolveAgg_SuiteScoped(t *testing.T) {
 
 	run := &PolicyReportRun{
 		ID:               "run-1",
-		WorkspaceID:      "ws-1",
+		UserContextID:    "ws-1",
 		ForwardNetworkID: "net-1",
 	}
 	finishedAt := time.Date(2026, 2, 10, 0, 0, 0, 0, time.UTC)
@@ -40,11 +40,11 @@ func TestPolicyReportsResolveAgg_SuiteScoped(t *testing.T) {
 	}
 
 	mock.ExpectQuery(`(?s)\s*SELECT finding_id.*FROM sf_policy_report_findings_agg.*COALESCE\(finding->>'suiteKey',''\) = \$4`).
-		WithArgs(run.WorkspaceID, run.ForwardNetworkID, checkID, suiteKey).
+		WithArgs(run.UserContextID, run.ForwardNetworkID, checkID, suiteKey).
 		WillReturnRows(sqlmock.NewRows([]string{"finding_id"}).AddRow("keep").AddRow("resolve-me"))
 
 	mock.ExpectExec(`(?s)\s*UPDATE sf_policy_report_findings_agg.*COALESCE\(finding->>'suiteKey',''\) = \$7`).
-		WithArgs(sqlmock.AnyArg(), run.ID, run.WorkspaceID, run.ForwardNetworkID, checkID, "resolve-me", suiteKey).
+		WithArgs(sqlmock.AnyArg(), run.ID, run.UserContextID, run.ForwardNetworkID, checkID, "resolve-me", suiteKey).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	if err := policyReportsResolveAgg(context.Background(), tx, run, finishedAt, presentByCheck, resolveChecks); err != nil {

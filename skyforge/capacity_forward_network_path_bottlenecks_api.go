@@ -114,7 +114,7 @@ type ForwardNetworkCapacityPathBottlenecksCoverage struct {
 }
 
 type ForwardNetworkCapacityPathBottlenecksResponse struct {
-	WorkspaceID      string `json:"workspaceId"`
+	UserContextID    string `json:"userContextId"`
 	NetworkRef       string `json:"networkRef"`
 	ForwardNetworkID string `json:"forwardNetworkId"`
 	AsOf             string `json:"asOf,omitempty"`
@@ -464,26 +464,24 @@ func snapshotIDFromForwardQueryURL(raw string) string {
 	return strings.TrimSpace(q.Get("snapshotId"))
 }
 
-// PostWorkspaceForwardNetworkCapacityPathBottlenecks uses Forward's /paths-bulk API and projects results into a capacity-only
+// PostUserContextForwardNetworkCapacityPathBottlenecks uses Forward's /paths-bulk API and projects results into a capacity-only
 // "bottleneck interface" view by joining the computed path hops to Skyforge's stored capacity rollups.
 //
 // This intentionally does not replicate Forward path analysis UI/workflows. It is meant for capacity planning showcase and
 // "art of the possible" analysis (e.g., batch pastes of candidate flows).
-//
-//encore:api auth method=POST path=/api/workspaces/:id/forward-networks/:networkRef/capacity/path-bottlenecks
-func (s *Service) PostWorkspaceForwardNetworkCapacityPathBottlenecks(ctx context.Context, id, networkRef string, req *ForwardNetworkCapacityPathBottlenecksRequest) (*ForwardNetworkCapacityPathBottlenecksResponse, error) {
+func (s *Service) PostUserContextForwardNetworkCapacityPathBottlenecks(ctx context.Context, id, networkRef string, req *ForwardNetworkCapacityPathBottlenecksRequest) (*ForwardNetworkCapacityPathBottlenecksResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.userContext.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -522,11 +520,11 @@ func (s *Service) PostWorkspaceForwardNetworkCapacityPathBottlenecks(ctx context
 	}
 
 	// Load rollups and inventory up front so we can do a single join for all queries.
-	asOf, rollups, err := loadLatestCapacityRollupsForForwardNetwork(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID)
+	asOf, rollups, err := loadLatestCapacityRollupsForForwardNetwork(ctx, s.db, pc.claims.Username, pc.userContext.ID, net.ForwardNetworkID)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load capacity rollups").Err()
 	}
-	_, _, _, ifaces, _, _, _, _, invErr := loadLatestCapacityInventoryForForwardNetwork(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID)
+	_, _, _, ifaces, _, _, _, _, invErr := loadLatestCapacityInventoryForForwardNetwork(ctx, s.db, pc.claims.Username, pc.userContext.ID, net.ForwardNetworkID)
 	if invErr != nil {
 		ifaces = []CapacityInterfaceInventoryRow{}
 	}
@@ -575,13 +573,13 @@ func (s *Service) PostWorkspaceForwardNetworkCapacityPathBottlenecks(ctx context
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to decode Forward paths response").Err()
 	}
 
-	return capacityPathBottlenecksFromFwdOut(ctx, client, pc.workspace.ID, net.ID, net.ForwardNetworkID, window, windowDays, req, join, asOf, fwdOut, true)
+	return capacityPathBottlenecksFromFwdOut(ctx, client, pc.userContext.ID, net.ID, net.ForwardNetworkID, window, windowDays, req, join, asOf, fwdOut, true)
 }
 
 func capacityPathBottlenecksFromFwdOut(
 	ctx context.Context,
 	client *forwardClient,
-	workspaceID string,
+	userContextID string,
 	networkRef string,
 	forwardNetworkID string,
 	window string,
@@ -1040,7 +1038,7 @@ func capacityPathBottlenecksFromFwdOut(
 	}
 
 	out := &ForwardNetworkCapacityPathBottlenecksResponse{
-		WorkspaceID:      workspaceID,
+		UserContextID:    userContextID,
 		NetworkRef:       networkRef,
 		ForwardNetworkID: forwardNetworkID,
 		AsOf:             asOfStr,

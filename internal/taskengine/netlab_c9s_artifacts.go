@@ -38,7 +38,7 @@ func storeNetlabC9sArtifacts(ctx context.Context, cfg skyforgecore.Config, spec 
 	spec.LabName = strings.TrimSpace(spec.LabName)
 	spec.Namespace = strings.TrimSpace(spec.Namespace)
 	if spec.WorkspaceID == "" || spec.TopologyName == "" || spec.Namespace == "" {
-		return fmt.Errorf("missing workspace/topology context")
+		return fmt.Errorf("missing user-context/topology context")
 	}
 	if len(spec.ClabYAMLRaw) == 0 && len(spec.TopologyYAML) == 0 && spec.NodeMounts == nil {
 		return nil
@@ -53,7 +53,7 @@ func storeNetlabC9sArtifacts(ctx context.Context, cfg skyforgecore.Config, spec 
 	if len(spec.TopologyYAML) > 0 {
 		files[path.Join("clabernetes", "topology.yaml")] = spec.TopologyYAML
 		// Handy for browsing directly in the S3 UI.
-		_, err := putWorkspaceArtifact(ctx, cfg, spec.WorkspaceID, prefix+path.Join("clabernetes", "topology.yaml"), spec.TopologyYAML, "application/yaml")
+		_, err := putUserContextArtifact(ctx, cfg, spec.WorkspaceID, prefix+path.Join("clabernetes", "topology.yaml"), spec.TopologyYAML, "application/yaml")
 		if err != nil && isObjectStoreNotConfigured(err) {
 			log.Infof("netlab-c9s artifacts skipped: %v", err)
 			return nil
@@ -63,7 +63,7 @@ func storeNetlabC9sArtifacts(ctx context.Context, cfg skyforgecore.Config, spec 
 	}
 	if len(spec.ClabYAMLRaw) > 0 {
 		files[path.Join("netlab", "clab.yml")] = spec.ClabYAMLRaw
-		_, err := putWorkspaceArtifact(ctx, cfg, spec.WorkspaceID, prefix+path.Join("netlab", "clab.yml"), spec.ClabYAMLRaw, "application/yaml")
+		_, err := putUserContextArtifact(ctx, cfg, spec.WorkspaceID, prefix+path.Join("netlab", "clab.yml"), spec.ClabYAMLRaw, "application/yaml")
 		if err != nil && isObjectStoreNotConfigured(err) {
 			log.Infof("netlab-c9s artifacts skipped: %v", err)
 			return nil
@@ -77,7 +77,7 @@ func storeNetlabC9sArtifacts(ctx context.Context, cfg skyforgecore.Config, spec 
 	if data, ok, err := kubeGetConfigMap(ctx, spec.Namespace, manifestCM); err == nil && ok {
 		if raw := strings.TrimSpace(data["manifest.json"]); raw != "" {
 			files[path.Join("netlab", "manifest.json")] = []byte(raw)
-			_, err := putWorkspaceArtifact(ctx, cfg, spec.WorkspaceID, prefix+path.Join("netlab", "manifest.json"), []byte(raw), "application/json")
+			_, err := putUserContextArtifact(ctx, cfg, spec.WorkspaceID, prefix+path.Join("netlab", "manifest.json"), []byte(raw), "application/json")
 			if err != nil && isObjectStoreNotConfigured(err) {
 				log.Infof("netlab-c9s artifacts skipped: %v", err)
 				return nil
@@ -90,7 +90,7 @@ func storeNetlabC9sArtifacts(ctx context.Context, cfg skyforgecore.Config, spec 
 	if spec.TopologyGraph != nil {
 		if graphBytes, err := json.Marshal(spec.TopologyGraph); err == nil && len(graphBytes) > 0 {
 			files[path.Join("clabernetes", "topology.json")] = graphBytes
-			_, err := putWorkspaceArtifact(ctx, cfg, spec.WorkspaceID, prefix+path.Join("clabernetes", "topology.json"), graphBytes, "application/json")
+			_, err := putUserContextArtifact(ctx, cfg, spec.WorkspaceID, prefix+path.Join("clabernetes", "topology.json"), graphBytes, "application/json")
 			if err != nil && isObjectStoreNotConfigured(err) {
 				log.Infof("netlab-c9s artifacts skipped: %v", err)
 				return nil
@@ -152,7 +152,7 @@ func storeNetlabC9sArtifacts(ctx context.Context, cfg skyforgecore.Config, spec 
 	}
 	ctxPut, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	if _, err := putWorkspaceArtifact(ctxPut, cfg, spec.WorkspaceID, prefix+"bundle.tar.gz", tarGz, "application/gzip"); err != nil {
+	if _, err := putUserContextArtifact(ctxPut, cfg, spec.WorkspaceID, prefix+"bundle.tar.gz", tarGz, "application/gzip"); err != nil {
 		if isObjectStoreNotConfigured(err) {
 			log.Infof("netlab-c9s artifacts skipped: %v", err)
 			return nil

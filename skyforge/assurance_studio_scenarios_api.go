@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// ---- Assurance Studio: Saved Scenarios (workspace + forward-network scoped) ----
+// ---- Assurance Studio: Saved Scenarios (user + forward-network scoped) ----
 
 type AssuranceStudioScenarioSpec struct {
 	SnapshotID    string                   `json:"snapshotId,omitempty"`
@@ -31,7 +31,7 @@ type AssuranceStudioScenarioSpec struct {
 type AssuranceStudioScenario struct {
 	ID string `json:"id"`
 
-	WorkspaceID      string `json:"workspaceId"`
+	UserContextID    string `json:"userContextId"`
 	NetworkRef       string `json:"networkRef"` // sf_policy_report_forward_networks.id
 	ForwardNetworkID string `json:"forwardNetworkId"`
 
@@ -45,9 +45,9 @@ type AssuranceStudioScenario struct {
 }
 
 type AssuranceStudioListScenariosResponse struct {
-	WorkspaceID string                    `json:"workspaceId"`
-	NetworkRef  string                    `json:"networkRef"`
-	Scenarios   []AssuranceStudioScenario `json:"scenarios"`
+	UserContextID string                    `json:"userContextId"`
+	NetworkRef    string                    `json:"networkRef"`
+	Scenarios     []AssuranceStudioScenario `json:"scenarios"`
 }
 
 type AssuranceStudioCreateScenarioRequest struct {
@@ -123,7 +123,7 @@ func scanScenarioRow(rows *sql.Rows) (AssuranceStudioScenario, error) {
 	var specJSON []byte
 	if err := rows.Scan(
 		&id,
-		&out.WorkspaceID,
+		&out.UserContextID,
 		&netRef,
 		&out.ForwardNetworkID,
 		&out.Name,
@@ -145,15 +145,13 @@ func scanScenarioRow(rows *sql.Rows) (AssuranceStudioScenario, error) {
 	return out, nil
 }
 
-// ListWorkspaceForwardNetworkAssuranceStudioScenarios lists saved scenarios for a Forward network.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/forward-networks/:networkRef/assurance/studio/scenarios
-func (s *Service) ListWorkspaceForwardNetworkAssuranceStudioScenarios(ctx context.Context, id, networkRef string) (*AssuranceStudioListScenariosResponse, error) {
+// ListUserContextForwardNetworkAssuranceStudioScenarios lists saved scenarios for a Forward network.
+func (s *Service) ListUserContextForwardNetworkAssuranceStudioScenarios(ctx context.Context, id, networkRef string) (*AssuranceStudioListScenariosResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +159,7 @@ func (s *Service) ListWorkspaceForwardNetworkAssuranceStudioScenarios(ctx contex
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.userContext.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -170,14 +168,31 @@ func (s *Service) ListWorkspaceForwardNetworkAssuranceStudioScenarios(ctx contex
 	defer cancel()
 
 	rows, err := s.db.QueryContext(ctxReq, `
-SELECT id, workspace_id, network_ref, forward_network_id, name, COALESCE(description,''), spec, created_by, created_at, updated_at
-  FROM sf_assurance_studio_scenarios
- WHERE workspace_id=$1 AND network_ref=$2
- ORDER BY updated_at DESC
-`, pc.workspace.ID, net.ID)
+WITH me AS (
+  SELECT id FROM sf_users WHERE username=$1 LIMIT 1
+)
+SELECT s.id,
+       COALESCE(s.user_id::text, s.workspace_id, ''),
+       s.network_ref,
+       s.forward_network_id,
+       s.name,
+       COALESCE(s.description,''),
+       s.spec,
+       s.created_by,
+       s.created_at,
+       s.updated_at
+  FROM sf_assurance_studio_scenarios s
+  LEFT JOIN me ON true
+ WHERE s.network_ref=$3
+   AND (
+     (me.id IS NOT NULL AND s.user_id=me.id) OR
+     ($2 <> '' AND s.workspace_id=$2)
+   )
+ ORDER BY s.updated_at DESC
+`, strings.ToLower(strings.TrimSpace(pc.claims.Username)), pc.userContext.ID, net.ID)
 	if err != nil {
 		if isMissingDBRelation(err) {
-			return &AssuranceStudioListScenariosResponse{WorkspaceID: pc.workspace.ID, NetworkRef: net.ID, Scenarios: []AssuranceStudioScenario{}}, nil
+			return &AssuranceStudioListScenariosResponse{UserContextID: pc.userContext.ID, NetworkRef: net.ID, Scenarios: []AssuranceStudioScenario{}}, nil
 		}
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to list scenarios").Err()
 	}
@@ -201,21 +216,19 @@ SELECT id, workspace_id, network_ref, forward_network_id, name, COALESCE(descrip
 	})
 
 	return &AssuranceStudioListScenariosResponse{
-		WorkspaceID: pc.workspace.ID,
-		NetworkRef:  net.ID,
-		Scenarios:   out,
+		UserContextID: pc.userContext.ID,
+		NetworkRef:    net.ID,
+		Scenarios:     out,
 	}, nil
 }
 
-// CreateWorkspaceForwardNetworkAssuranceStudioScenario creates a saved scenario.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/forward-networks/:networkRef/assurance/studio/scenarios
-func (s *Service) CreateWorkspaceForwardNetworkAssuranceStudioScenario(ctx context.Context, id, networkRef string, req *AssuranceStudioCreateScenarioRequest) (*AssuranceStudioScenario, error) {
+// CreateUserContextForwardNetworkAssuranceStudioScenario creates a saved scenario.
+func (s *Service) CreateUserContextForwardNetworkAssuranceStudioScenario(ctx context.Context, id, networkRef string, req *AssuranceStudioCreateScenarioRequest) (*AssuranceStudioScenario, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +242,7 @@ func (s *Service) CreateWorkspaceForwardNetworkAssuranceStudioScenario(ctx conte
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("request required").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.userContext.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -251,17 +264,21 @@ func (s *Service) CreateWorkspaceForwardNetworkAssuranceStudioScenario(ctx conte
 
 	_, err = s.db.ExecContext(ctxReq, `
 INSERT INTO sf_assurance_studio_scenarios(
-  id, workspace_id, network_ref, forward_network_id, name, description, spec, created_by, created_at, updated_at
+  id, user_id, workspace_id, network_ref, forward_network_id, name, description, spec, created_by, created_at, updated_at
 )
-VALUES ($1,$2,$3,$4,$5,NULLIF($6,''),$7,$8,$9,$9)
-`, idUUID, pc.workspace.ID, net.ID, net.ForwardNetworkID, name, strings.TrimSpace(req.Description), specJSON, strings.ToLower(strings.TrimSpace(pc.claims.Username)), now)
+VALUES (
+  $1,
+  (SELECT id FROM sf_users WHERE username=$8 LIMIT 1),
+  $2,$3,$4,$5,NULLIF($6,''),$7,$8,$9,$9
+)
+`, idUUID, pc.userContext.ID, net.ID, net.ForwardNetworkID, name, strings.TrimSpace(req.Description), specJSON, strings.ToLower(strings.TrimSpace(pc.claims.Username)), now)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to create scenario").Err()
 	}
 
 	out := &AssuranceStudioScenario{
 		ID:               idUUID.String(),
-		WorkspaceID:      pc.workspace.ID,
+		UserContextID:    pc.userContext.ID,
 		NetworkRef:       net.ID,
 		ForwardNetworkID: net.ForwardNetworkID,
 		Name:             name,
@@ -274,15 +291,13 @@ VALUES ($1,$2,$3,$4,$5,NULLIF($6,''),$7,$8,$9,$9)
 	return out, nil
 }
 
-// GetWorkspaceForwardNetworkAssuranceStudioScenario loads a scenario.
-//
-//encore:api auth method=GET path=/api/workspaces/:id/forward-networks/:networkRef/assurance/studio/scenarios/:scenarioId
-func (s *Service) GetWorkspaceForwardNetworkAssuranceStudioScenario(ctx context.Context, id, networkRef, scenarioId string) (*AssuranceStudioScenario, error) {
+// GetUserContextForwardNetworkAssuranceStudioScenario loads a scenario.
+func (s *Service) GetUserContextForwardNetworkAssuranceStudioScenario(ctx context.Context, id, networkRef, scenarioId string) (*AssuranceStudioScenario, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -290,7 +305,7 @@ func (s *Service) GetWorkspaceForwardNetworkAssuranceStudioScenario(ctx context.
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.userContext.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -304,11 +319,29 @@ func (s *Service) GetWorkspaceForwardNetworkAssuranceStudioScenario(ctx context.
 	defer cancel()
 
 	rows, err := s.db.QueryContext(ctxReq, `
-SELECT id, workspace_id, network_ref, forward_network_id, name, COALESCE(description,''), spec, created_by, created_at, updated_at
-  FROM sf_assurance_studio_scenarios
- WHERE workspace_id=$1 AND network_ref=$2 AND id=$3
+WITH me AS (
+  SELECT id FROM sf_users WHERE username=$1 LIMIT 1
+)
+SELECT s.id,
+       COALESCE(s.user_id::text, s.workspace_id, ''),
+       s.network_ref,
+       s.forward_network_id,
+       s.name,
+       COALESCE(s.description,''),
+       s.spec,
+       s.created_by,
+       s.created_at,
+       s.updated_at
+  FROM sf_assurance_studio_scenarios s
+  LEFT JOIN me ON true
+ WHERE s.network_ref=$3
+   AND s.id=$4
+   AND (
+     (me.id IS NOT NULL AND s.user_id=me.id) OR
+     ($2 <> '' AND s.workspace_id=$2)
+   )
  LIMIT 1
-`, pc.workspace.ID, net.ID, scID)
+`, strings.ToLower(strings.TrimSpace(pc.claims.Username)), pc.userContext.ID, net.ID, scID)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load scenario").Err()
 	}
@@ -324,15 +357,13 @@ SELECT id, workspace_id, network_ref, forward_network_id, name, COALESCE(descrip
 	return &sc, nil
 }
 
-// UpdateWorkspaceForwardNetworkAssuranceStudioScenario updates scenario name/description/spec.
-//
-//encore:api auth method=PUT path=/api/workspaces/:id/forward-networks/:networkRef/assurance/studio/scenarios/:scenarioId
-func (s *Service) UpdateWorkspaceForwardNetworkAssuranceStudioScenario(ctx context.Context, id, networkRef, scenarioId string, req *AssuranceStudioUpdateScenarioRequest) (*AssuranceStudioScenario, error) {
+// UpdateUserContextForwardNetworkAssuranceStudioScenario updates scenario name/description/spec.
+func (s *Service) UpdateUserContextForwardNetworkAssuranceStudioScenario(ctx context.Context, id, networkRef, scenarioId string, req *AssuranceStudioUpdateScenarioRequest) (*AssuranceStudioScenario, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -346,7 +377,7 @@ func (s *Service) UpdateWorkspaceForwardNetworkAssuranceStudioScenario(ctx conte
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("request required").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.userContext.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -357,7 +388,7 @@ func (s *Service) UpdateWorkspaceForwardNetworkAssuranceStudioScenario(ctx conte
 	}
 
 	// Load current row for merge.
-	cur, err := s.GetWorkspaceForwardNetworkAssuranceStudioScenario(ctx, id, net.ID, scID.String())
+	cur, err := s.GetUserContextForwardNetworkAssuranceStudioScenario(ctx, id, net.ID, scID.String())
 	if err != nil {
 		return nil, err
 	}
@@ -392,8 +423,13 @@ UPDATE sf_assurance_studio_scenarios
        description=NULLIF($2,''),
        spec=$3,
        updated_at=$4
- WHERE workspace_id=$5 AND network_ref=$6 AND id=$7
-`, strings.TrimSpace(cur.Name), strings.TrimSpace(cur.Description), specJSON, now, pc.workspace.ID, net.ID, scID)
+ WHERE id=$7
+   AND network_ref=$6
+   AND (
+     (user_id=(SELECT id FROM sf_users WHERE username=$5 LIMIT 1)) OR
+     ($8 <> '' AND workspace_id=$8)
+   )
+`, strings.TrimSpace(cur.Name), strings.TrimSpace(cur.Description), specJSON, now, strings.ToLower(strings.TrimSpace(pc.claims.Username)), net.ID, scID, pc.userContext.ID)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to update scenario").Err()
 	}
@@ -401,15 +437,13 @@ UPDATE sf_assurance_studio_scenarios
 	return cur, nil
 }
 
-// DeleteWorkspaceForwardNetworkAssuranceStudioScenario deletes a scenario.
-//
-//encore:api auth method=DELETE path=/api/workspaces/:id/forward-networks/:networkRef/assurance/studio/scenarios/:scenarioId
-func (s *Service) DeleteWorkspaceForwardNetworkAssuranceStudioScenario(ctx context.Context, id, networkRef, scenarioId string) (*PolicyReportDecisionResponse, error) {
+// DeleteUserContextForwardNetworkAssuranceStudioScenario deletes a scenario.
+func (s *Service) DeleteUserContextForwardNetworkAssuranceStudioScenario(ctx context.Context, id, networkRef, scenarioId string) (*PolicyReportDecisionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -420,7 +454,7 @@ func (s *Service) DeleteWorkspaceForwardNetworkAssuranceStudioScenario(ctx conte
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.userContext.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -435,8 +469,13 @@ func (s *Service) DeleteWorkspaceForwardNetworkAssuranceStudioScenario(ctx conte
 
 	res, err := s.db.ExecContext(ctxReq, `
 DELETE FROM sf_assurance_studio_scenarios
- WHERE workspace_id=$1 AND network_ref=$2 AND id=$3
-`, pc.workspace.ID, net.ID, scID)
+ WHERE id=$3
+   AND network_ref=$2
+   AND (
+     (user_id=(SELECT id FROM sf_users WHERE username=$1 LIMIT 1)) OR
+     ($4 <> '' AND workspace_id=$4)
+   )
+`, strings.ToLower(strings.TrimSpace(pc.claims.Username)), net.ID, scID, pc.userContext.ID)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to delete scenario").Err()
 	}

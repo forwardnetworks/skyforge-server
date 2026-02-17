@@ -12,47 +12,47 @@ import (
 	"encore.dev/beta/errs"
 )
 
-type WorkspaceContainerlabTemplatesResponse struct {
-	WorkspaceID string   `json:"workspaceId"`
-	Repo        string   `json:"repo"`
-	Branch      string   `json:"branch"`
-	Dir         string   `json:"dir"`
-	Templates   []string `json:"templates"`
+type UserContextContainerlabTemplatesResponse struct {
+	UserContextID string   `json:"userContextId"`
+	Repo          string   `json:"repo"`
+	Branch        string   `json:"branch"`
+	Dir           string   `json:"dir"`
+	Templates     []string `json:"templates"`
 }
 
-type WorkspaceContainerlabTemplatesRequest struct {
+type UserContextContainerlabTemplatesRequest struct {
 	Dir    string `query:"dir" encore:"optional"`
-	Source string `query:"source" encore:"optional"` // "workspace" (default), "blueprints", or "custom"
+	Source string `query:"source" encore:"optional"` // "user" (default), "blueprints", or "custom"
 	Repo   string `query:"repo" encore:"optional"`   // owner/repo or URL (custom only)
 }
 
-// GetWorkspaceContainerlabTemplates lists Containerlab templates for a workspace.
+// GetUserContextContainerlabTemplates lists Containerlab templates for a user context.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/containerlab/templates
-func (s *Service) GetWorkspaceContainerlabTemplates(ctx context.Context, id string, req *WorkspaceContainerlabTemplatesRequest) (*WorkspaceContainerlabTemplatesResponse, error) {
+//encore:api auth method=GET path=/api/user-contexts/:id/containerlab/templates
+func (s *Service) GetUserContextContainerlabTemplates(ctx context.Context, id string, req *UserContextContainerlabTemplatesRequest) (*UserContextContainerlabTemplatesResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
-	source := "workspace"
+	source := "user"
 	if req != nil {
 		if v := strings.ToLower(strings.TrimSpace(req.Source)); v != "" {
 			source = v
 		}
 	}
 
-	owner := pc.workspace.GiteaOwner
-	repo := pc.workspace.GiteaRepo
-	branch := strings.TrimSpace(pc.workspace.DefaultBranch)
+	owner := pc.userContext.GiteaOwner
+	repo := pc.userContext.GiteaRepo
+	branch := strings.TrimSpace(pc.userContext.DefaultBranch)
 	policy, _ := loadGovernancePolicy(ctx, s.db)
 
 	switch source {
 	case "blueprints", "blueprint":
-		ref := strings.TrimSpace(pc.workspace.Blueprint)
+		ref := strings.TrimSpace(pc.userContext.Blueprint)
 		if ref == "" {
 			ref = "skyforge/blueprints"
 		}
@@ -102,7 +102,7 @@ func (s *Service) GetWorkspaceContainerlabTemplates(ctx context.Context, id stri
 			return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 		}
 		owner, repo, branch = ref.Owner, ref.Repo, ref.Branch
-	case "workspace":
+	case "user":
 		// default already set
 	default:
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown template source").Err()
@@ -181,8 +181,8 @@ func (s *Service) GetWorkspaceContainerlabTemplates(ctx context.Context, id stri
 	}
 	sort.Strings(templates)
 	_ = ctx
-	return &WorkspaceContainerlabTemplatesResponse{
-		WorkspaceID: pc.workspace.ID,
+	return &UserContextContainerlabTemplatesResponse{
+		UserContextID: pc.userContext.ID,
 		Repo: func() string {
 			if owner == "url" {
 				return repo

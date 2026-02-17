@@ -152,10 +152,10 @@ func normalizeNetlabTemplateSelectionWithSource(source, templatesDir, templateFi
 }
 
 func normalizeNetlabTemplateSelection(templatesDir, templateFile string) (string, string, string, string) {
-	return normalizeNetlabTemplateSelectionWithSource("workspace", templatesDir, templateFile)
+	return normalizeNetlabTemplateSelectionWithSource("user", templatesDir, templateFile)
 }
 
-func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceContext, server *NetlabServerConfig, templateSource, templateRepo, templatesDir, templateFile, workdir, owner string) (string, error) {
+func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *userContext, server *NetlabServerConfig, templateSource, templateRepo, templatesDir, templateFile, workdir, owner string) (string, error) {
 	if server == nil {
 		return "", fmt.Errorf("netlab runner not configured")
 	}
@@ -293,9 +293,9 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 		// Fast path: download the repo archive once and extract only the needed subtree.
 		// This avoids a large number of per-file API calls + SSH round-trips which can add 30-60s.
 		{
-			apiURL := strings.TrimRight(strings.TrimSpace(s.cfg.Workspaces.GiteaAPIURL), "/")
-			user := strings.TrimSpace(s.cfg.Workspaces.GiteaUsername)
-			pass := strings.TrimSpace(s.cfg.Workspaces.GiteaPassword)
+			apiURL := strings.TrimRight(strings.TrimSpace(s.cfg.UserContexts.GiteaAPIURL), "/")
+			user := strings.TrimSpace(s.cfg.UserContexts.GiteaUsername)
+			pass := strings.TrimSpace(s.cfg.UserContexts.GiteaPassword)
 			if apiURL != "" && user != "" && pass != "" && ref.Owner != "" && ref.Repo != "" && ref.Branch != "" {
 				archiveURL := fmt.Sprintf(
 					"%s/repos/%s/%s/archive/%s.tar.gz",
@@ -377,12 +377,12 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 	return topologyPath, nil
 }
 
-func (s *Service) buildNetlabTopologyBundleB64(ctx context.Context, pc *workspaceContext, templateSource, templateRepo, templatesDir, templateFile string) (string, error) {
+func (s *Service) buildNetlabTopologyBundleB64(ctx context.Context, pc *userContext, templateSource, templateRepo, templatesDir, templateFile string) (string, error) {
 	if s == nil {
 		return "", fmt.Errorf("service unavailable")
 	}
 	if pc == nil {
-		return "", fmt.Errorf("workspace context unavailable")
+		return "", fmt.Errorf("user context unavailable")
 	}
 	templatesDir, templateFile, rootPath, _ := normalizeNetlabTemplateSelectionWithSource(templateSource, templatesDir, templateFile)
 	if templateFile == "" {
@@ -498,17 +498,17 @@ func (s *Service) buildNetlabTopologyBundleB64(ctx context.Context, pc *workspac
 	return out, nil
 }
 
-func resolveTemplateRepoForProject(cfg Config, pc *workspaceContext, policy GovernancePolicy, source string, customRepo string) (templateRepoRef, error) {
-	owner := pc.workspace.GiteaOwner
-	repo := pc.workspace.GiteaRepo
-	branch := strings.TrimSpace(pc.workspace.DefaultBranch)
+func resolveTemplateRepoForProject(cfg Config, pc *userContext, policy GovernancePolicy, source string, customRepo string) (templateRepoRef, error) {
+	owner := pc.userContext.GiteaOwner
+	repo := pc.userContext.GiteaRepo
+	branch := strings.TrimSpace(pc.userContext.DefaultBranch)
 	isAdmin := isAdminUser(cfg, pc.claims.Username)
 
 	switch strings.ToLower(strings.TrimSpace(source)) {
-	case "", "workspace":
+	case "", "user":
 		// default
 	case "blueprints", "blueprint":
-		ref := strings.TrimSpace(pc.workspace.Blueprint)
+		ref := strings.TrimSpace(pc.userContext.Blueprint)
 		if ref == "" {
 			ref = "skyforge/blueprints"
 		}
@@ -549,7 +549,7 @@ func resolveTemplateRepoForProject(cfg Config, pc *workspaceContext, policy Gove
 		if err != nil {
 			return templateRepoRef{}, err
 		}
-		if !isAdmin && customOwner != pc.workspace.GiteaOwner && customOwner != "skyforge" {
+		if !isAdmin && customOwner != pc.userContext.GiteaOwner && customOwner != "skyforge" {
 			return templateRepoRef{}, fmt.Errorf("custom repo not allowed")
 		}
 		owner, repo = customOwner, customName

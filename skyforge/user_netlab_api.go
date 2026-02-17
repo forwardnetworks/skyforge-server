@@ -15,25 +15,25 @@ import (
 	"encore.dev/beta/errs"
 )
 
-type WorkspaceNetlabTemplatesResponse struct {
-	WorkspaceID string   `json:"workspaceId"`
-	Repo        string   `json:"repo"`
-	Branch      string   `json:"branch"`
-	Dir         string   `json:"dir"`
-	Templates   []string `json:"templates"`
-	HeadSHA     string   `json:"headSha,omitempty"`
-	Cached      bool     `json:"cached"`
-	UpdatedAt   string   `json:"updatedAt,omitempty"`
+type UserContextNetlabTemplatesResponse struct {
+	UserContextID string   `json:"userContextId"`
+	Repo          string   `json:"repo"`
+	Branch        string   `json:"branch"`
+	Dir           string   `json:"dir"`
+	Templates     []string `json:"templates"`
+	HeadSHA       string   `json:"headSha,omitempty"`
+	Cached        bool     `json:"cached"`
+	UpdatedAt     string   `json:"updatedAt,omitempty"`
 }
 
-type WorkspaceNetlabTemplatesRequest struct {
+type UserContextNetlabTemplatesRequest struct {
 	Dir    string `query:"dir" encore:"optional"`
-	Source string `query:"source" encore:"optional"` // "workspace" (default), "blueprints", or "custom"
+	Source string `query:"source" encore:"optional"` // "user" (default), "blueprints", or "custom"
 	Repo   string `query:"repo" encore:"optional"`   // owner/repo or URL (custom only)
 }
 
-type WorkspaceNetlabValidateRequest struct {
-	Source      string  `json:"source,omitempty"` // workspace|blueprints|external|custom
+type UserContextNetlabValidateRequest struct {
+	Source      string  `json:"source,omitempty"` // user|blueprints|external|custom
 	Repo        string  `json:"repo,omitempty"`   // owner/repo or URL (custom only)
 	Dir         string  `json:"dir,omitempty"`    // repo-relative dir
 	Template    string  `json:"template"`         // repo-relative file within Dir (may include subdirs)
@@ -43,33 +43,33 @@ type WorkspaceNetlabValidateRequest struct {
 	SetOverrides []string `json:"setOverrides,omitempty"`
 }
 
-// GetWorkspaceNetlabTemplates lists Netlab templates for a workspace.
+// GetUserContextNetlabTemplates lists Netlab templates for a user context.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/netlab/templates
-func (s *Service) GetWorkspaceNetlabTemplates(ctx context.Context, id string, req *WorkspaceNetlabTemplatesRequest) (*WorkspaceNetlabTemplatesResponse, error) {
+//encore:api auth method=GET path=/api/user-contexts/:id/netlab/templates
+func (s *Service) GetUserContextNetlabTemplates(ctx context.Context, id string, req *UserContextNetlabTemplatesRequest) (*UserContextNetlabTemplatesResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
-	source := "workspace"
+	source := "user"
 	if req != nil {
 		if v := strings.ToLower(strings.TrimSpace(req.Source)); v != "" {
 			source = v
 		}
 	}
 
-	owner := pc.workspace.GiteaOwner
-	repo := pc.workspace.GiteaRepo
-	branch := strings.TrimSpace(pc.workspace.DefaultBranch)
+	owner := pc.userContext.GiteaOwner
+	repo := pc.userContext.GiteaRepo
+	branch := strings.TrimSpace(pc.userContext.DefaultBranch)
 	policy, _ := loadGovernancePolicy(ctx, s.db)
 
 	switch source {
 	case "blueprints", "blueprint":
-		ref := strings.TrimSpace(pc.workspace.Blueprint)
+		ref := strings.TrimSpace(pc.userContext.Blueprint)
 		if ref == "" {
 			ref = "skyforge/blueprints"
 		}
@@ -109,7 +109,7 @@ func (s *Service) GetWorkspaceNetlabTemplates(ctx context.Context, id string, re
 			return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 		}
 		owner, repo, branch = ref.Owner, ref.Repo, ref.Branch
-	case "workspace":
+	case "user":
 		// default already set
 	default:
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown template source").Err()
@@ -149,30 +149,30 @@ func (s *Service) GetWorkspaceNetlabTemplates(ctx context.Context, id string, re
 	if cached, err := loadTemplateIndex(ctx, s.db, "netlab", owner, repo, branch, dir); err == nil && cached != nil {
 		if headSHA != "" && strings.TrimSpace(cached.HeadSHA) != "" && cached.HeadSHA == headSHA {
 			sort.Strings(cached.Templates)
-			return &WorkspaceNetlabTemplatesResponse{
-				WorkspaceID: pc.workspace.ID,
-				Repo:        fmt.Sprintf("%s/%s", owner, repo),
-				Branch:      branch,
-				Dir:         dir,
-				Templates:   cached.Templates,
-				HeadSHA:     cached.HeadSHA,
-				Cached:      true,
-				UpdatedAt:   cached.UpdatedAt.UTC().Format(time.RFC3339),
+			return &UserContextNetlabTemplatesResponse{
+				UserContextID: pc.userContext.ID,
+				Repo:          fmt.Sprintf("%s/%s", owner, repo),
+				Branch:        branch,
+				Dir:           dir,
+				Templates:     cached.Templates,
+				HeadSHA:       cached.HeadSHA,
+				Cached:        true,
+				UpdatedAt:     cached.UpdatedAt.UTC().Format(time.RFC3339),
 			}, nil
 		}
 		// If we can't resolve the branch head SHA (temporary Gitea error),
 		// serve a reasonably fresh cached value to avoid re-scanning huge dirs.
 		if headSHA == "" && strings.TrimSpace(cached.HeadSHA) == "" && time.Since(cached.UpdatedAt) < 10*time.Minute {
 			sort.Strings(cached.Templates)
-			return &WorkspaceNetlabTemplatesResponse{
-				WorkspaceID: pc.workspace.ID,
-				Repo:        fmt.Sprintf("%s/%s", owner, repo),
-				Branch:      branch,
-				Dir:         dir,
-				Templates:   cached.Templates,
-				HeadSHA:     cached.HeadSHA,
-				Cached:      true,
-				UpdatedAt:   cached.UpdatedAt.UTC().Format(time.RFC3339),
+			return &UserContextNetlabTemplatesResponse{
+				UserContextID: pc.userContext.ID,
+				Repo:          fmt.Sprintf("%s/%s", owner, repo),
+				Branch:        branch,
+				Dir:           dir,
+				Templates:     cached.Templates,
+				HeadSHA:       cached.HeadSHA,
+				Cached:        true,
+				UpdatedAt:     cached.UpdatedAt.UTC().Format(time.RFC3339),
 			}, nil
 		}
 	}
@@ -204,28 +204,28 @@ func (s *Service) GetWorkspaceNetlabTemplates(ctx context.Context, id string, re
 		_ = notifyDashboardUpdatePG(ctx, s.db)
 	}
 
-	return &WorkspaceNetlabTemplatesResponse{
-		WorkspaceID: pc.workspace.ID,
-		Repo:        fmt.Sprintf("%s/%s", owner, repo),
-		Branch:      branch,
-		Dir:         dir,
-		Templates:   templates,
-		HeadSHA:     headSHA,
-		Cached:      false,
-		UpdatedAt:   time.Now().UTC().Format(time.RFC3339),
+	return &UserContextNetlabTemplatesResponse{
+		UserContextID: pc.userContext.ID,
+		Repo:          fmt.Sprintf("%s/%s", owner, repo),
+		Branch:        branch,
+		Dir:           dir,
+		Templates:     templates,
+		HeadSHA:       headSHA,
+		Cached:        false,
+		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
 	}, nil
 }
 
-// ValidateWorkspaceNetlabTemplate runs `netlab create` against a selected template bundle without deploying it.
+// ValidateUserContextNetlabTemplate runs `netlab create` against a selected template bundle without deploying it.
 // This catches missing images, invalid attributes, and missing required plugins/templates.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/netlab/validate
-func (s *Service) ValidateWorkspaceNetlabTemplate(ctx context.Context, id string, req *WorkspaceNetlabValidateRequest) (*WorkspaceRunResponse, error) {
+//encore:api auth method=POST path=/api/user-contexts/:id/netlab/validate
+func (s *Service) ValidateUserContextNetlabTemplate(ctx context.Context, id string, req *UserContextNetlabValidateRequest) (*UserContextRunResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +236,7 @@ func (s *Service) ValidateWorkspaceNetlabTemplate(ctx context.Context, id string
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("template is required").Err()
 	}
 
-	source := "workspace"
+	source := "user"
 	if v := strings.ToLower(strings.TrimSpace(req.Source)); v != "" {
 		source = v
 	}
@@ -268,7 +268,7 @@ func (s *Service) ValidateWorkspaceNetlabTemplate(ctx context.Context, id string
 		"setOverrides": setOverrides,
 		"dedupeKey": fmt.Sprintf(
 			"netlab-validate:%s:%s:%s:%s:%s:%s",
-			pc.workspace.ID,
+			pc.userContext.ID,
 			source,
 			dir,
 			template,
@@ -289,7 +289,7 @@ func (s *Service) ValidateWorkspaceNetlabTemplate(ctx context.Context, id string
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode metadata").Err()
 	}
 
-	task, err := createTask(ctx, s.db, pc.workspace.ID, nil, "netlab-validate", "Skyforge netlab validate", pc.claims.Username, meta)
+	task, err := createTask(ctx, s.db, pc.userContext.ID, nil, "netlab-validate", "Skyforge netlab validate", pc.claims.Username, meta)
 	if err != nil {
 		return nil, err
 	}
@@ -300,10 +300,10 @@ func (s *Service) ValidateWorkspaceNetlabTemplate(ctx context.Context, id string
 		log.Printf("netlab validate task encode: %v", err)
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode run").Err()
 	}
-	return &WorkspaceRunResponse{
-		WorkspaceID: pc.workspace.ID,
-		Task:        taskJSON,
-		User:        pc.claims.Username,
+	return &UserContextRunResponse{
+		UserContextID: pc.userContext.ID,
+		Task:          taskJSON,
+		User:          pc.claims.Username,
 	}, nil
 }
 
@@ -318,7 +318,7 @@ func isNetlabTemplatePathExcluded(rel string) bool {
 	// Exclude Netlab inventory/output folders that sometimes contain nested topology.yml files
 	// but are not actually user-selectable templates.
 	//
-	// These commonly appear when a folder is synced from a runner workspace rather than a
+	// These commonly appear when a folder is synced from a runner user-context rather than a
 	// clean example template checkout.
 	rel = strings.TrimPrefix(strings.TrimSpace(rel), "/")
 	if rel == "" {
@@ -356,7 +356,7 @@ func listNetlabTemplatesViaGitTree(cfg Config, owner, repo, headSHA, dir string,
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		fullURL := strings.TrimRight(cfg.Workspaces.GiteaAPIURL, "/") + apiPath
+		fullURL := strings.TrimRight(cfg.UserContexts.GiteaAPIURL, "/") + apiPath
 		return nil, fmt.Errorf("gitea %s responded %d: %s", fullURL, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 

@@ -70,9 +70,9 @@ func (w Workspace) primaryOwner() string {
 	return ""
 }
 
-type workspaceContext struct {
-	workspace Workspace
-	claims    SessionClaims
+type userContext struct {
+	userContext Workspace
+	claims      SessionClaims
 }
 
 type SessionClaims struct {
@@ -119,7 +119,7 @@ func normalizeNetlabServer(s NetlabServerConfig, fallback NetlabConfig) NetlabSe
 	return s
 }
 
-type WorkspaceDeployment struct {
+type UserDeployment struct {
 	ID          string
 	WorkspaceID string
 	Name        string
@@ -144,5 +144,5 @@ func nullIfEmpty(value string) any {
 	return value
 }
 
-// sqlNullString helper used when scanning workspace rows.
+// sqlNullString helper used when scanning user-context rows.
 type sqlNullString = sql.NullString

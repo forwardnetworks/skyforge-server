@@ -108,42 +108,42 @@ func snapshotClusterLoadUsage(ctx context.Context, db *sql.DB) error {
 
 	if len(cpuVals) > 0 {
 		_, _ = insertGovernanceUsage(ctx, db, GovernanceUsageInput{
-			Provider:    governanceUsageProvider,
-			ScopeType:   "cluster",
-			Metric:      "node.cpu_active.p95",
-			Value:       governanceutil.Percentile(cpuVals, 0.95),
-			Unit:        "percent",
-			WorkspaceID: "",
+			Provider:      governanceUsageProvider,
+			ScopeType:     "cluster",
+			Metric:        "node.cpu_active.p95",
+			Value:         governanceutil.Percentile(cpuVals, 0.95),
+			Unit:          "percent",
+			UserContextID: "",
 		})
 	}
 	if len(memVals) > 0 {
 		_, _ = insertGovernanceUsage(ctx, db, GovernanceUsageInput{
-			Provider:    governanceUsageProvider,
-			ScopeType:   "cluster",
-			Metric:      "node.mem_used.p95",
-			Value:       governanceutil.Percentile(memVals, 0.95),
-			Unit:        "percent",
-			WorkspaceID: "",
+			Provider:      governanceUsageProvider,
+			ScopeType:     "cluster",
+			Metric:        "node.mem_used.p95",
+			Value:         governanceutil.Percentile(memVals, 0.95),
+			Unit:          "percent",
+			UserContextID: "",
 		})
 	}
 	if len(diskVals) > 0 {
 		_, _ = insertGovernanceUsage(ctx, db, GovernanceUsageInput{
-			Provider:    governanceUsageProvider,
-			ScopeType:   "cluster",
-			Metric:      "node.disk_used.p95",
-			Value:       governanceutil.Percentile(diskVals, 0.95),
-			Unit:        "percent",
-			WorkspaceID: "",
+			Provider:      governanceUsageProvider,
+			ScopeType:     "cluster",
+			Metric:        "node.disk_used.p95",
+			Value:         governanceutil.Percentile(diskVals, 0.95),
+			Unit:          "percent",
+			UserContextID: "",
 		})
 	}
 
 	_, _ = insertGovernanceUsage(ctx, db, GovernanceUsageInput{
-		Provider:    governanceUsageProvider,
-		ScopeType:   "cluster",
-		Metric:      "node.count",
-		Value:       float64(len(uniqueKeys(latest))),
-		Unit:        "count",
-		WorkspaceID: "",
+		Provider:      governanceUsageProvider,
+		ScopeType:     "cluster",
+		Metric:        "node.count",
+		Value:         float64(len(uniqueKeys(latest))),
+		Unit:          "count",
+		UserContextID: "",
 	})
 
 	return nil

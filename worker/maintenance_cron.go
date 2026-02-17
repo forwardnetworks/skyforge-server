@@ -7,8 +7,8 @@ import (
 	"encore.dev/cron"
 )
 
-//encore:api private method=POST path=/internal/cron/workspaces/sync
-func CronWorkspaceSync(ctx context.Context) error {
+//encore:api private method=POST path=/internal/cron/user-contexts/sync
+func CronUserContextSync(ctx context.Context) error {
 	_, err := maintenance.Topic.Publish(ctx, &maintenance.MaintenanceEvent{Kind: "workspace_sync"})
 	return err
 }
@@ -20,9 +20,9 @@ func CronCloudCredentialChecks(ctx context.Context) error {
 }
 
 var (
-	_ = cron.NewJob("worker-workspace-sync", cron.JobConfig{
-		Title:    "Sync workspaces",
-		Endpoint: CronWorkspaceSync,
+	_ = cron.NewJob("worker-user-context-sync", cron.JobConfig{
+		Title:    "Sync user contexts",
+		Endpoint: CronUserContextSync,
 		Every:    5 * cron.Minute,
 	})
 	_ = cron.NewJob("worker-cloud-credential-checks", cron.JobConfig{

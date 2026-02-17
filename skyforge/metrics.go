@@ -33,11 +33,11 @@ var (
 	labsRunningRequests = metrics.NewCounter[uint64]("skyforge_labs_running_requests_total", metrics.CounterConfig{})
 	labsErrors          = metrics.NewCounter[uint64]("skyforge_labs_errors_total", metrics.CounterConfig{})
 
-	workspaceSyncManualRequests = metrics.NewCounter[uint64]("skyforge_workspace_sync_manual_requests_total", metrics.CounterConfig{})
-	workspaceSyncAdminRequests  = metrics.NewCounter[uint64]("skyforge_workspace_sync_admin_requests_total", metrics.CounterConfig{})
-	workspaceSyncFailures       = metrics.NewCounter[uint64]("skyforge_workspace_sync_failures_total", metrics.CounterConfig{})
-	workspaceSyncErrors         = metrics.NewCounter[uint64]("skyforge_workspace_sync_errors_total", metrics.CounterConfig{})
-	workspaceSyncBackgroundRuns = metrics.NewCounter[uint64]("skyforge_workspace_sync_background_runs_total", metrics.CounterConfig{})
+	userContextSyncManualRequests = metrics.NewCounter[uint64]("skyforge_user_context_sync_manual_requests_total", metrics.CounterConfig{})
+	userContextSyncAdminRequests  = metrics.NewCounter[uint64]("skyforge_user_context_sync_admin_requests_total", metrics.CounterConfig{})
+	userContextSyncFailures       = metrics.NewCounter[uint64]("skyforge_user_context_sync_failures_total", metrics.CounterConfig{})
+	userContextSyncErrors         = metrics.NewCounter[uint64]("skyforge_user_context_sync_errors_total", metrics.CounterConfig{})
+	userContextSyncBackgroundRuns = metrics.NewCounter[uint64]("skyforge_user_context_sync_background_runs_total", metrics.CounterConfig{})
 )
 
 var (

@@ -45,29 +45,29 @@ import (
 )
 
 type RunRequest struct {
-	TemplateID  int     `json:"templateId"`
-	WorkspaceID *string `json:"workspaceId,omitempty"`
-	Debug       bool    `json:"debug,omitempty"`
-	DryRun      bool    `json:"dryRun,omitempty"`
-	Diff        bool    `json:"diff,omitempty"`
-	Playbook    string  `json:"playbook,omitempty"`
-	Environment JSONMap `json:"environment,omitempty"`
-	Limit       string  `json:"limit,omitempty"`
-	GitBranch   string  `json:"gitBranch,omitempty"`
-	Message     string  `json:"message,omitempty"`
-	Arguments   string  `json:"arguments,omitempty"`
-	InventoryID *int    `json:"inventoryId,omitempty"`
-	Extra       JSONMap `json:"extra,omitempty"`
+	TemplateID    int     `json:"templateId"`
+	UserContextID *string `json:"userContextId,omitempty"`
+	Debug         bool    `json:"debug,omitempty"`
+	DryRun        bool    `json:"dryRun,omitempty"`
+	Diff          bool    `json:"diff,omitempty"`
+	Playbook      string  `json:"playbook,omitempty"`
+	Environment   JSONMap `json:"environment,omitempty"`
+	Limit         string  `json:"limit,omitempty"`
+	GitBranch     string  `json:"gitBranch,omitempty"`
+	Message       string  `json:"message,omitempty"`
+	Arguments     string  `json:"arguments,omitempty"`
+	InventoryID   *int    `json:"inventoryId,omitempty"`
+	Extra         JSONMap `json:"extra,omitempty"`
 }
 
 type TemplateSummary struct {
-	ID          int    `json:"id"`
-	Name        string `json:"name"`
-	WorkspaceID string `json:"workspaceId"`
-	Repository  string `json:"repository,omitempty"`
-	Playbook    string `json:"playbook,omitempty"`
-	Description string `json:"description,omitempty"`
-	InventoryID int    `json:"inventoryId,omitempty"`
+	ID            int    `json:"id"`
+	Name          string `json:"name"`
+	UserContextID string `json:"userContextId"`
+	Repository    string `json:"repository,omitempty"`
+	Playbook      string `json:"playbook,omitempty"`
+	Description   string `json:"description,omitempty"`
+	InventoryID   int    `json:"inventoryId,omitempty"`
 }
 
 type NotificationSettings struct {
@@ -105,7 +105,7 @@ func externalTemplateRepoByID(ws *SkyforgeWorkspace, id string) *ExternalTemplat
 	return nil
 }
 
-func externalTemplateRepoByIDForContext(pc *workspaceContext, id string) *ExternalTemplateRepo {
+func externalTemplateRepoByIDForContext(pc *userContext, id string) *ExternalTemplateRepo {
 	if pc == nil {
 		return nil
 	}
@@ -120,7 +120,7 @@ func externalTemplateRepoByIDForContext(pc *workspaceContext, id string) *Extern
 			}
 		}
 	}
-	return externalTemplateRepoByID(&pc.workspace, id)
+	return externalTemplateRepoByID(&pc.userContext, id)
 }
 
 type LabSummary struct {
@@ -163,7 +163,7 @@ func isSafeRelativePath(path string) bool {
 	return true
 }
 
-func workspacePrimaryOwner(p SkyforgeWorkspace) string {
+func userContextPrimaryOwner(p SkyforgeWorkspace) string {
 	if strings.TrimSpace(p.CreatedBy) != "" {
 		return strings.TrimSpace(p.CreatedBy)
 	}
@@ -209,10 +209,10 @@ func normalizeNetlabServer(s NetlabServerConfig, fallback NetlabConfig) NetlabSe
 	return s
 }
 
-type workspacesStore interface {
+type userContextStore interface {
 	load() ([]SkyforgeWorkspace, error)
-	upsert(workspace SkyforgeWorkspace) error
-	delete(workspaceID string) error
+	upsert(userContext SkyforgeWorkspace) error
+	delete(userContextID string) error
 }
 
 type usersStore interface {
@@ -507,12 +507,12 @@ func (s *pgAWSStore) clear(username string) error {
 	return err
 }
 
-type pgWorkspacesStore struct {
+type pgUserContextStore struct {
 	db *sql.DB
 }
 
-func newPGWorkspacesStore(db *sql.DB) *pgWorkspacesStore {
-	return &pgWorkspacesStore{db: db}
+func newPGUserContextStore(db *sql.DB) *pgUserContextStore {
+	return &pgUserContextStore{db: db}
 }
 
 type awsStaticCredentials struct {
@@ -543,7 +543,7 @@ type AuditEvent struct {
 	ActorIsAdmin     bool      `json:"actorIsAdmin"`
 	ImpersonatedUser string    `json:"impersonatedUsername,omitempty"`
 	Action           string    `json:"action"`
-	WorkspaceID      string    `json:"workspaceId,omitempty"`
+	UserContextID    string    `json:"userContextId,omitempty"`
 	Details          string    `json:"details,omitempty"`
 }
 
@@ -590,14 +590,14 @@ func ensureAuditActor(ctx context.Context, db *sql.DB, username string) {
 	_, _ = db.ExecContext(ctx, `INSERT INTO sf_users (username, created_at) VALUES ($1, now()) ON CONFLICT (username) DO NOTHING`, username)
 }
 
-func writeAuditEvent(ctx context.Context, db *sql.DB, actor string, actorIsAdmin bool, impersonated string, action string, workspaceID string, details string) {
+func writeAuditEvent(ctx context.Context, db *sql.DB, actor string, actorIsAdmin bool, impersonated string, action string, userContextID string, details string) {
 	if db == nil {
 		return
 	}
 	actor = strings.ToLower(strings.TrimSpace(actor))
 	impersonated = strings.ToLower(strings.TrimSpace(impersonated))
 	action = strings.TrimSpace(action)
-	workspaceID = strings.TrimSpace(workspaceID)
+	userContextID = strings.TrimSpace(userContextID)
 	details = strings.TrimSpace(details)
 	if actor == "" || action == "" {
 		return
@@ -612,25 +612,25 @@ func writeAuditEvent(ctx context.Context, db *sql.DB, actor string, actorIsAdmin
 	_, err := db.ExecContext(ctx, `INSERT INTO sf_audit_log (
   actor_username, actor_is_admin, impersonated_username, action, workspace_id, details
 ) VALUES ($1,$2,NULLIF($3,''),$4,NULLIF($5,''),NULLIF($6,''))`,
-		actor, actorIsAdmin, impersonated, action, workspaceID, details,
+		actor, actorIsAdmin, impersonated, action, userContextID, details,
 	)
 	if err != nil {
 		log.Printf("audit log insert failed: %v", err)
 	}
 }
 
-func getWorkspaceAWSStaticCredentials(ctx context.Context, db *sql.DB, box *secretBox, workspaceID string) (*awsStaticCredentials, error) {
+func getUserContextAWSStaticCredentials(ctx context.Context, db *sql.DB, box *secretBox, userContextID string) (*awsStaticCredentials, error) {
 	if db == nil || box == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace id is required")
+	userContextID = strings.TrimSpace(userContextID)
+	if userContextID == "" {
+		return nil, fmt.Errorf("userContextId is required")
 	}
 	var akid, sak, st sql.NullString
 	var updatedAt sql.NullTime
 	err := db.QueryRowContext(ctx, `SELECT access_key_id, secret_access_key, session_token, updated_at
-FROM sf_workspace_aws_static_credentials WHERE workspace_id=$1`, workspaceID).Scan(&akid, &sak, &st, &updatedAt)
+FROM sf_workspace_aws_static_credentials WHERE workspace_id=$1`, userContextID).Scan(&akid, &sak, &st, &updatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -660,16 +660,16 @@ FROM sf_workspace_aws_static_credentials WHERE workspace_id=$1`, workspaceID).Sc
 	return rec, nil
 }
 
-func putWorkspaceAWSStaticCredentials(ctx context.Context, db *sql.DB, box *secretBox, workspaceID string, accessKeyID string, secretAccessKey string, sessionToken string) error {
+func putUserContextAWSStaticCredentials(ctx context.Context, db *sql.DB, box *secretBox, userContextID string, accessKeyID string, secretAccessKey string, sessionToken string) error {
 	if db == nil || box == nil {
 		return fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userContextID = strings.TrimSpace(userContextID)
 	accessKeyID = strings.TrimSpace(accessKeyID)
 	secretAccessKey = strings.TrimSpace(secretAccessKey)
 	sessionToken = strings.TrimSpace(sessionToken)
-	if workspaceID == "" {
-		return fmt.Errorf("workspace id is required")
+	if userContextID == "" {
+		return fmt.Errorf("userContextId is required")
 	}
 	if accessKeyID == "" || secretAccessKey == "" {
 		return fmt.Errorf("accessKeyId and secretAccessKey are required")
@@ -692,19 +692,19 @@ ON CONFLICT (workspace_id) DO UPDATE SET
   access_key_id=excluded.access_key_id,
   secret_access_key=excluded.secret_access_key,
   session_token=excluded.session_token,
-  updated_at=now()`, workspaceID, encAKID, encSAK, encST)
+  updated_at=now()`, userContextID, encAKID, encSAK, encST)
 	return err
 }
 
-func deleteWorkspaceAWSStaticCredentials(ctx context.Context, db *sql.DB, workspaceID string) error {
+func deleteUserContextAWSStaticCredentials(ctx context.Context, db *sql.DB, userContextID string) error {
 	if db == nil {
 		return fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
+	userContextID = strings.TrimSpace(userContextID)
+	if userContextID == "" {
 		return nil
 	}
-	_, err := db.ExecContext(ctx, `DELETE FROM sf_workspace_aws_static_credentials WHERE workspace_id=$1`, workspaceID)
+	_, err := db.ExecContext(ctx, `DELETE FROM sf_workspace_aws_static_credentials WHERE workspace_id=$1`, userContextID)
 	return err
 }
 
@@ -724,13 +724,13 @@ type forwardCredentials struct {
 	UpdatedAt      time.Time
 }
 
-func getWorkspaceForwardCredentials(ctx context.Context, db *sql.DB, box *secretBox, workspaceID string) (*forwardCredentials, error) {
+func getUserContextForwardCredentials(ctx context.Context, db *sql.DB, box *secretBox, userContextID string) (*forwardCredentials, error) {
 	if db == nil || box == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace id is required")
+	userContextID = strings.TrimSpace(userContextID)
+	if userContextID == "" {
+		return nil, fmt.Errorf("userContextId is required")
 	}
 	var credID sql.NullString
 	var baseURL, username, password sql.NullString
@@ -744,7 +744,7 @@ func getWorkspaceForwardCredentials(ctx context.Context, db *sql.DB, box *secret
   COALESCE(device_username, ''), COALESCE(device_password, ''),
   COALESCE(jump_host, ''), COALESCE(jump_username, ''), COALESCE(jump_private_key, ''), COALESCE(jump_cert, ''),
   updated_at
-FROM sf_workspace_forward_credentials WHERE workspace_id=$1`, workspaceID).Scan(
+FROM sf_workspace_forward_credentials WHERE workspace_id=$1`, userContextID).Scan(
 		&credID,
 		&baseURL,
 		&username,
@@ -767,7 +767,7 @@ FROM sf_workspace_forward_credentials WHERE workspace_id=$1`, workspaceID).Scan(
 	}
 
 	if strings.TrimSpace(credID.String) != "" {
-		if set, err := getWorkspaceForwardCredentialSet(ctx, db, box, workspaceID, strings.TrimSpace(credID.String)); err == nil && set != nil {
+		if set, err := getWorkspaceForwardCredentialSet(ctx, db, box, userContextID, strings.TrimSpace(credID.String)); err == nil && set != nil {
 			rec := &forwardCredentials{
 				BaseURL:        strings.TrimSpace(set.BaseURL),
 				SkipTLSVerify:  set.SkipTLSVerify,
@@ -855,13 +855,13 @@ FROM sf_workspace_forward_credentials WHERE workspace_id=$1`, workspaceID).Scan(
 	return rec, nil
 }
 
-func putWorkspaceForwardCredentials(ctx context.Context, db *sql.DB, box *secretBox, workspaceID string, rec forwardCredentials) error {
+func putUserContextForwardCredentials(ctx context.Context, db *sql.DB, box *secretBox, userContextID string, rec forwardCredentials) error {
 	if db == nil || box == nil {
 		return fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
-		return fmt.Errorf("workspace id is required")
+	userContextID = strings.TrimSpace(userContextID)
+	if userContextID == "" {
+		return fmt.Errorf("userContextId is required")
 	}
 	baseURL := strings.TrimSpace(rec.BaseURL)
 	username := strings.TrimSpace(rec.Username)
@@ -880,13 +880,13 @@ func putWorkspaceForwardCredentials(ctx context.Context, db *sql.DB, box *secret
 	defer func() { _ = tx.Rollback() }()
 
 	var existingCredID sql.NullString
-	_ = tx.QueryRowContext(ctxReq, `SELECT COALESCE(credential_id,'') FROM sf_workspace_forward_credentials WHERE workspace_id=$1`, workspaceID).Scan(&existingCredID)
+	_ = tx.QueryRowContext(ctxReq, `SELECT COALESCE(credential_id,'') FROM sf_workspace_forward_credentials WHERE workspace_id=$1`, userContextID).Scan(&existingCredID)
 	credID := strings.TrimSpace(existingCredID.String)
 	if credID == "" {
 		credID = uuid.NewString()
 	}
 
-	if err := upsertWorkspaceForwardCredentialSet(ctxReq, tx, box, credID, workspaceID, "workspace forward", rec); err != nil {
+	if err := upsertWorkspaceForwardCredentialSet(ctxReq, tx, box, credID, userContextID, "user-context forward", rec); err != nil {
 		return err
 	}
 
@@ -901,7 +901,7 @@ func putWorkspaceForwardCredentials(ctx context.Context, db *sql.DB, box *secret
 ON CONFLICT (workspace_id) DO UPDATE SET
   credential_id=excluded.credential_id,
   updated_at=now()`,
-		workspaceID,
+		userContextID,
 		credID,
 	)
 	if err != nil {
@@ -910,12 +910,12 @@ ON CONFLICT (workspace_id) DO UPDATE SET
 	return tx.Commit()
 }
 
-func deleteWorkspaceForwardCredentials(ctx context.Context, db *sql.DB, workspaceID string) error {
+func deleteUserContextForwardCredentials(ctx context.Context, db *sql.DB, userContextID string) error {
 	if db == nil {
 		return fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
+	userContextID = strings.TrimSpace(userContextID)
+	if userContextID == "" {
 		return nil
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -928,14 +928,14 @@ func deleteWorkspaceForwardCredentials(ctx context.Context, db *sql.DB, workspac
 	defer func() { _ = tx.Rollback() }()
 
 	var credID sql.NullString
-	_ = tx.QueryRowContext(ctxReq, `SELECT COALESCE(credential_id,'') FROM sf_workspace_forward_credentials WHERE workspace_id=$1`, workspaceID).Scan(&credID)
+	_ = tx.QueryRowContext(ctxReq, `SELECT COALESCE(credential_id,'') FROM sf_workspace_forward_credentials WHERE workspace_id=$1`, userContextID).Scan(&credID)
 
-	if _, err := tx.ExecContext(ctxReq, `DELETE FROM sf_workspace_forward_credentials WHERE workspace_id=$1`, workspaceID); err != nil {
+	if _, err := tx.ExecContext(ctxReq, `DELETE FROM sf_workspace_forward_credentials WHERE workspace_id=$1`, userContextID); err != nil {
 		return err
 	}
-	// Best-effort cleanup of the workspace-scoped credential set.
+	// Best-effort cleanup of the user-context credential set.
 	if strings.TrimSpace(credID.String) != "" {
-		if _, err := tx.ExecContext(ctxReq, `DELETE FROM sf_credentials WHERE id=$1 AND workspace_id=$2 AND provider='forward' AND owner_username IS NULL`, strings.TrimSpace(credID.String), workspaceID); err != nil {
+		if _, err := tx.ExecContext(ctxReq, `DELETE FROM sf_credentials WHERE id=$1 AND workspace_id=$2 AND provider='forward' AND owner_username IS NULL`, strings.TrimSpace(credID.String), userContextID); err != nil {
 			// Ignore (may be referenced elsewhere or table missing).
 			_ = err
 		}
@@ -943,18 +943,18 @@ func deleteWorkspaceForwardCredentials(ctx context.Context, db *sql.DB, workspac
 	return tx.Commit()
 }
 
-func getWorkspaceAzureCredentials(ctx context.Context, db *sql.DB, box *secretBox, workspaceID string) (*azureServicePrincipal, error) {
+func getUserContextAzureCredentials(ctx context.Context, db *sql.DB, box *secretBox, userContextID string) (*azureServicePrincipal, error) {
 	if db == nil || box == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace id is required")
+	userContextID = strings.TrimSpace(userContextID)
+	if userContextID == "" {
+		return nil, fmt.Errorf("userContextId is required")
 	}
 	var tenantID, clientID, clientSecret, subscriptionID sql.NullString
 	var updatedAt sql.NullTime
 	err := db.QueryRowContext(ctx, `SELECT tenant_id, client_id, client_secret, COALESCE(subscription_id, ''), updated_at
-FROM sf_workspace_azure_credentials WHERE workspace_id=$1`, workspaceID).Scan(&tenantID, &clientID, &clientSecret, &subscriptionID, &updatedAt)
+FROM sf_workspace_azure_credentials WHERE workspace_id=$1`, userContextID).Scan(&tenantID, &clientID, &clientSecret, &subscriptionID, &updatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -991,13 +991,13 @@ FROM sf_workspace_azure_credentials WHERE workspace_id=$1`, workspaceID).Scan(&t
 	return rec, nil
 }
 
-func putWorkspaceAzureCredentials(ctx context.Context, db *sql.DB, box *secretBox, workspaceID string, cred azureServicePrincipal) error {
+func putUserContextAzureCredentials(ctx context.Context, db *sql.DB, box *secretBox, userContextID string, cred azureServicePrincipal) error {
 	if db == nil || box == nil {
 		return fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
-		return fmt.Errorf("workspace id is required")
+	userContextID = strings.TrimSpace(userContextID)
+	if userContextID == "" {
+		return fmt.Errorf("userContextId is required")
 	}
 	cred.TenantID = strings.TrimSpace(cred.TenantID)
 	cred.ClientID = strings.TrimSpace(cred.ClientID)
@@ -1033,35 +1033,35 @@ ON CONFLICT (workspace_id) DO UPDATE SET
   client_id=excluded.client_id,
   client_secret=excluded.client_secret,
   subscription_id=excluded.subscription_id,
-  updated_at=now()`, workspaceID, encTenant, encClient, encSecret, encSubscription)
+  updated_at=now()`, userContextID, encTenant, encClient, encSecret, encSubscription)
 	return err
 }
 
-func deleteWorkspaceAzureCredentials(ctx context.Context, db *sql.DB, workspaceID string) error {
+func deleteUserContextAzureCredentials(ctx context.Context, db *sql.DB, userContextID string) error {
 	if db == nil {
 		return fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
+	userContextID = strings.TrimSpace(userContextID)
+	if userContextID == "" {
 		return nil
 	}
-	_, err := db.ExecContext(ctx, `DELETE FROM sf_workspace_azure_credentials WHERE workspace_id=$1`, workspaceID)
+	_, err := db.ExecContext(ctx, `DELETE FROM sf_workspace_azure_credentials WHERE workspace_id=$1`, userContextID)
 	return err
 }
 
-func getWorkspaceGCPCredentials(ctx context.Context, db *sql.DB, box *secretBox, workspaceID string) (*gcpServiceAccount, error) {
+func getUserContextGCPCredentials(ctx context.Context, db *sql.DB, box *secretBox, userContextID string) (*gcpServiceAccount, error) {
 	if db == nil || box == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace id is required")
+	userContextID = strings.TrimSpace(userContextID)
+	if userContextID == "" {
+		return nil, fmt.Errorf("userContextId is required")
 	}
 	var raw sql.NullString
 	var projectOverride sql.NullString
 	var updatedAt sql.NullTime
 	err := db.QueryRowContext(ctx, `SELECT service_account_json, COALESCE(project_id_override, ''), updated_at
-FROM sf_workspace_gcp_credentials WHERE workspace_id=$1`, workspaceID).Scan(&raw, &projectOverride, &updatedAt)
+FROM sf_workspace_gcp_credentials WHERE workspace_id=$1`, userContextID).Scan(&raw, &projectOverride, &updatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -1079,15 +1079,15 @@ FROM sf_workspace_gcp_credentials WHERE workspace_id=$1`, workspaceID).Scan(&raw
 	return rec, nil
 }
 
-func putWorkspaceGCPCredentials(ctx context.Context, db *sql.DB, box *secretBox, workspaceID string, jsonBlob string, projectOverride string) error {
+func putUserContextGCPCredentials(ctx context.Context, db *sql.DB, box *secretBox, userContextID string, jsonBlob string, projectOverride string) error {
 	if db == nil || box == nil {
 		return fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userContextID = strings.TrimSpace(userContextID)
 	jsonBlob = strings.TrimSpace(jsonBlob)
 	projectOverride = strings.TrimSpace(projectOverride)
-	if workspaceID == "" {
-		return fmt.Errorf("workspace id is required")
+	if userContextID == "" {
+		return fmt.Errorf("userContextId is required")
 	}
 	if jsonBlob == "" {
 		return fmt.Errorf("service account json is required")
@@ -1102,23 +1102,23 @@ func putWorkspaceGCPCredentials(ctx context.Context, db *sql.DB, box *secretBox,
 ON CONFLICT (workspace_id) DO UPDATE SET
   service_account_json=excluded.service_account_json,
   project_id_override=excluded.project_id_override,
-  updated_at=now()`, workspaceID, encJSON, projectOverride)
+  updated_at=now()`, userContextID, encJSON, projectOverride)
 	return err
 }
 
-func deleteWorkspaceGCPCredentials(ctx context.Context, db *sql.DB, workspaceID string) error {
+func deleteUserContextGCPCredentials(ctx context.Context, db *sql.DB, userContextID string) error {
 	if db == nil {
 		return fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
+	userContextID = strings.TrimSpace(userContextID)
+	if userContextID == "" {
 		return nil
 	}
-	_, err := db.ExecContext(ctx, `DELETE FROM sf_workspace_gcp_credentials WHERE workspace_id=$1`, workspaceID)
+	_, err := db.ExecContext(ctx, `DELETE FROM sf_workspace_gcp_credentials WHERE workspace_id=$1`, userContextID)
 	return err
 }
 
-func (s *pgWorkspacesStore) load() ([]SkyforgeWorkspace, error) {
+func (s *pgUserContextStore) load() ([]SkyforgeWorkspace, error) {
 	rows, err := s.db.Query(`SELECT id, slug, name, description, created_at, created_by,
 		blueprint, default_branch, terraform_state_key, terraform_init_template_id, terraform_plan_template_id, terraform_apply_template_id, ansible_run_template_id, netlab_run_template_id, eve_ng_run_template_id, containerlab_run_template_id,
 		aws_account_id, aws_role_name, aws_region, aws_auth_method, artifacts_bucket, is_public,
@@ -1129,8 +1129,8 @@ func (s *pgWorkspacesStore) load() ([]SkyforgeWorkspace, error) {
 	}
 	defer rows.Close()
 
-	workspaces := []SkyforgeWorkspace{}
-	workspaceByID := map[string]*SkyforgeWorkspace{}
+	userContexts := []SkyforgeWorkspace{}
+	userContextByID := map[string]*SkyforgeWorkspace{}
 	for rows.Next() {
 		var (
 			id, slug, name, createdBy                                                                      string
@@ -1194,8 +1194,8 @@ func (s *pgWorkspacesStore) load() ([]SkyforgeWorkspace, error) {
 			GiteaOwner:                     giteaOwner,
 			GiteaRepo:                      giteaRepo,
 		}
-		workspaces = append(workspaces, p)
-		workspaceByID[id] = &workspaces[len(workspaces)-1]
+		userContexts = append(userContexts, p)
+		userContextByID[id] = &userContexts[len(userContexts)-1]
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1207,11 +1207,11 @@ func (s *pgWorkspacesStore) load() ([]SkyforgeWorkspace, error) {
 	}
 	defer memberRows.Close()
 	for memberRows.Next() {
-		var workspaceID, username, role string
-		if err := memberRows.Scan(&workspaceID, &username, &role); err != nil {
+		var userContextID, username, role string
+		if err := memberRows.Scan(&userContextID, &username, &role); err != nil {
 			return nil, err
 		}
-		p := workspaceByID[workspaceID]
+		p := userContextByID[userContextID]
 		if p == nil {
 			continue
 		}
@@ -1234,11 +1234,11 @@ func (s *pgWorkspacesStore) load() ([]SkyforgeWorkspace, error) {
 	}
 	defer groupRows.Close()
 	for groupRows.Next() {
-		var workspaceID, groupName, role string
-		if err := groupRows.Scan(&workspaceID, &groupName, &role); err != nil {
+		var userContextID, groupName, role string
+		if err := groupRows.Scan(&userContextID, &groupName, &role); err != nil {
 			return nil, err
 		}
-		p := workspaceByID[workspaceID]
+		p := userContextByID[userContextID]
 		if p == nil {
 			continue
 		}
@@ -1254,19 +1254,19 @@ func (s *pgWorkspacesStore) load() ([]SkyforgeWorkspace, error) {
 	if err := groupRows.Err(); err != nil {
 		return nil, err
 	}
-	return workspaces, nil
+	return userContexts, nil
 }
 
-func (s *pgWorkspacesStore) upsert(workspace SkyforgeWorkspace) error {
+func (s *pgUserContextStore) upsert(userContext SkyforgeWorkspace) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	id := strings.TrimSpace(workspace.ID)
+	id := strings.TrimSpace(userContext.ID)
 	if id == "" {
-		return fmt.Errorf("workspace id is required")
+		return fmt.Errorf("userContextId is required")
 	}
 	if _, err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext($1))`, id); err != nil {
 		return err
@@ -1281,24 +1281,24 @@ func (s *pgWorkspacesStore) upsert(workspace SkyforgeWorkspace) error {
 		return err
 	}
 
-	if err := ensureUser(workspace.CreatedBy); err != nil {
+	if err := ensureUser(userContext.CreatedBy); err != nil {
 		return err
 	}
-	for _, u := range append(append([]string{}, workspace.Owners...), append(workspace.Editors, workspace.Viewers...)...) {
+	for _, u := range append(append([]string{}, userContext.Owners...), append(userContext.Editors, userContext.Viewers...)...) {
 		if err := ensureUser(u); err != nil {
 			return err
 		}
 	}
 
-	slug := strings.TrimSpace(workspace.Slug)
+	slug := strings.TrimSpace(userContext.Slug)
 	if slug == "" {
-		slug = slugify(workspace.Name)
+		slug = slugify(userContext.Name)
 	}
-	createdBy := strings.ToLower(strings.TrimSpace(workspace.CreatedBy))
+	createdBy := strings.ToLower(strings.TrimSpace(userContext.CreatedBy))
 	if createdBy == "" {
-		return fmt.Errorf("workspace createdBy is required")
+		return fmt.Errorf("user context createdBy is required")
 	}
-	externalTemplateReposJSON, err := json.Marshal(workspace.ExternalTemplateRepos)
+	externalTemplateReposJSON, err := json.Marshal(userContext.ExternalTemplateRepos)
 	if err != nil {
 		return err
 	}
@@ -1339,14 +1339,14 @@ func (s *pgWorkspacesStore) upsert(workspace SkyforgeWorkspace) error {
 		  gitea_owner=excluded.gitea_owner,
 		  gitea_repo=excluded.gitea_repo,
 		  updated_at=now()`,
-		id, slug, strings.TrimSpace(workspace.Name), nullIfEmpty(strings.TrimSpace(workspace.Description)), workspace.CreatedAt.UTC(), createdBy,
-		workspace.AllowExternalTemplateRepos, workspace.AllowCustomEveServers, workspace.AllowCustomNetlabServers, workspace.AllowCustomContainerlabServers, string(externalTemplateReposJSON),
-		nullIfEmpty(strings.TrimSpace(workspace.Blueprint)), nullIfEmpty(strings.TrimSpace(workspace.DefaultBranch)),
-		nullIfEmpty(strings.TrimSpace(workspace.TerraformStateKey)), workspace.TerraformInitTemplateID, workspace.TerraformPlanTemplateID, workspace.TerraformApplyTemplateID, workspace.AnsibleRunTemplateID, workspace.NetlabRunTemplateID, workspace.EveNgRunTemplateID, workspace.ContainerlabRunTemplateID,
-		nullIfEmpty(strings.TrimSpace(workspace.AWSAccountID)), nullIfEmpty(strings.TrimSpace(workspace.AWSRoleName)), nullIfEmpty(strings.TrimSpace(workspace.AWSRegion)),
-		nullIfEmpty(strings.TrimSpace(workspace.AWSAuthMethod)), nullIfEmpty(strings.TrimSpace(workspace.ArtifactsBucket)), workspace.IsPublic,
-		nullIfEmpty(strings.TrimSpace(workspace.EveServer)), nullIfEmpty(strings.TrimSpace(workspace.NetlabServer)),
-		strings.TrimSpace(workspace.GiteaOwner), strings.TrimSpace(workspace.GiteaRepo),
+		id, slug, strings.TrimSpace(userContext.Name), nullIfEmpty(strings.TrimSpace(userContext.Description)), userContext.CreatedAt.UTC(), createdBy,
+		userContext.AllowExternalTemplateRepos, userContext.AllowCustomEveServers, userContext.AllowCustomNetlabServers, userContext.AllowCustomContainerlabServers, string(externalTemplateReposJSON),
+		nullIfEmpty(strings.TrimSpace(userContext.Blueprint)), nullIfEmpty(strings.TrimSpace(userContext.DefaultBranch)),
+		nullIfEmpty(strings.TrimSpace(userContext.TerraformStateKey)), userContext.TerraformInitTemplateID, userContext.TerraformPlanTemplateID, userContext.TerraformApplyTemplateID, userContext.AnsibleRunTemplateID, userContext.NetlabRunTemplateID, userContext.EveNgRunTemplateID, userContext.ContainerlabRunTemplateID,
+		nullIfEmpty(strings.TrimSpace(userContext.AWSAccountID)), nullIfEmpty(strings.TrimSpace(userContext.AWSRoleName)), nullIfEmpty(strings.TrimSpace(userContext.AWSRegion)),
+		nullIfEmpty(strings.TrimSpace(userContext.AWSAuthMethod)), nullIfEmpty(strings.TrimSpace(userContext.ArtifactsBucket)), userContext.IsPublic,
+		nullIfEmpty(strings.TrimSpace(userContext.EveServer)), nullIfEmpty(strings.TrimSpace(userContext.NetlabServer)),
+		strings.TrimSpace(userContext.GiteaOwner), strings.TrimSpace(userContext.GiteaRepo),
 	); err != nil {
 		return err
 	}
@@ -1358,12 +1358,12 @@ func (s *pgWorkspacesStore) upsert(workspace SkyforgeWorkspace) error {
 		return err
 	}
 
-	owners := normalizeUsernameList(workspace.Owners)
-	ownerGroups := normalizeGroupList(workspace.OwnerGroups)
-	editors := normalizeUsernameList(workspace.Editors)
-	editorGroups := normalizeGroupList(workspace.EditorGroups)
-	viewers := normalizeUsernameList(workspace.Viewers)
-	viewerGroups := normalizeGroupList(workspace.ViewerGroups)
+	owners := normalizeUsernameList(userContext.Owners)
+	ownerGroups := normalizeGroupList(userContext.OwnerGroups)
+	editors := normalizeUsernameList(userContext.Editors)
+	editorGroups := normalizeGroupList(userContext.EditorGroups)
+	viewers := normalizeUsernameList(userContext.Viewers)
+	viewerGroups := normalizeGroupList(userContext.ViewerGroups)
 	if len(owners) == 0 && createdBy != "" {
 		owners = []string{createdBy}
 	}
@@ -1421,9 +1421,9 @@ ON CONFLICT (workspace_id, group_name) DO UPDATE SET role=excluded.role`, id, gr
 	return tx.Commit()
 }
 
-func (s *pgWorkspacesStore) delete(workspaceID string) error {
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
+func (s *pgUserContextStore) delete(userContextID string) error {
+	userContextID = strings.TrimSpace(userContextID)
+	if userContextID == "" {
 		return nil
 	}
 	tx, err := s.db.Begin()
@@ -1431,16 +1431,16 @@ func (s *pgWorkspacesStore) delete(workspaceID string) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext($1))`, workspaceID); err != nil {
+	if _, err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext($1))`, userContextID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM sf_workspaces WHERE id=$1`, workspaceID); err != nil {
+	if _, err := tx.Exec(`DELETE FROM sf_workspaces WHERE id=$1`, userContextID); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func (s *pgWorkspacesStore) replaceAll(workspaces []SkyforgeWorkspace) error {
+func (s *pgUserContextStore) replaceAll(userContexts []SkyforgeWorkspace) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -1460,7 +1460,7 @@ func (s *pgWorkspacesStore) replaceAll(workspaces []SkyforgeWorkspace) error {
 		return err
 	}
 
-	for _, p := range workspaces {
+	for _, p := range userContexts {
 		if err := ensureUser(p.CreatedBy); err != nil {
 			return err
 		}
@@ -1471,11 +1471,11 @@ func (s *pgWorkspacesStore) replaceAll(workspaces []SkyforgeWorkspace) error {
 		}
 	}
 
-	workspaceIDs := make([]string, 0, len(workspaces))
-	for _, p := range workspaces {
+	workspaceIDs := make([]string, 0, len(userContexts))
+	for _, p := range userContexts {
 		id := strings.TrimSpace(p.ID)
 		if id == "" {
-			return fmt.Errorf("workspace id is required")
+			return fmt.Errorf("userContextId is required")
 		}
 		workspaceIDs = append(workspaceIDs, id)
 		slug := strings.TrimSpace(p.Slug)
@@ -1484,7 +1484,7 @@ func (s *pgWorkspacesStore) replaceAll(workspaces []SkyforgeWorkspace) error {
 		}
 		createdBy := strings.ToLower(strings.TrimSpace(p.CreatedBy))
 		if createdBy == "" {
-			return fmt.Errorf("workspace createdBy is required")
+			return fmt.Errorf("user context createdBy is required")
 		}
 		externalTemplateReposJSON, err := json.Marshal(p.ExternalTemplateRepos)
 		if err != nil {
@@ -1653,7 +1653,7 @@ func slugify(input string) string {
 	}
 	out := strings.Trim(b.String(), "-")
 	if out == "" {
-		return "workspace"
+		return "user"
 	}
 	return out
 }
@@ -1793,7 +1793,7 @@ func isValidUsername(username string) bool {
 	return true
 }
 
-func workspaceAccessLevel(cfg Config, p SkyforgeWorkspace, username string) string {
+func userContextAccessLevel(cfg Config, p SkyforgeWorkspace, username string) string {
 	if isAdminUser(cfg, username) {
 		return "admin"
 	}
@@ -1812,7 +1812,7 @@ func workspaceAccessLevel(cfg Config, p SkyforgeWorkspace, username string) stri
 	return "none"
 }
 
-func workspaceAccessLevelForClaims(cfg Config, p SkyforgeWorkspace, claims *SessionClaims) string {
+func userContextAccessLevelForClaims(cfg Config, p SkyforgeWorkspace, claims *SessionClaims) string {
 	if claims == nil {
 		return "none"
 	}
@@ -1864,22 +1864,22 @@ func syncGroupMembershipForUser(p *SkyforgeWorkspace, claims *SessionClaims) (st
 	return "", false
 }
 
-func findWorkspaceByKey(workspaces []SkyforgeWorkspace, key string) *SkyforgeWorkspace {
+func findUserContextByKey(userContexts []SkyforgeWorkspace, key string) *SkyforgeWorkspace {
 	key = strings.TrimSpace(key)
 	if key == "" {
 		return nil
 	}
-	for i := range workspaces {
-		if workspaces[i].ID == key || strings.EqualFold(workspaces[i].Slug, key) {
-			return &workspaces[i]
+	for i := range userContexts {
+		if userContexts[i].ID == key || strings.EqualFold(userContexts[i].Slug, key) {
+			return &userContexts[i]
 		}
 	}
 	return nil
 }
 
-func syncGiteaCollaboratorsForWorkspace(cfg Config, workspace SkyforgeWorkspace) {
-	owner := strings.TrimSpace(workspace.GiteaOwner)
-	repo := strings.TrimSpace(workspace.GiteaRepo)
+func syncGiteaCollaboratorsForUserContext(cfg Config, userContext SkyforgeWorkspace) {
+	owner := strings.TrimSpace(userContext.GiteaOwner)
+	repo := strings.TrimSpace(userContext.GiteaRepo)
 	if owner == "" || repo == "" {
 		return
 	}
@@ -1890,7 +1890,7 @@ func syncGiteaCollaboratorsForWorkspace(cfg Config, workspace SkyforgeWorkspace)
 		if !isValidUsername(user) {
 			return
 		}
-		if strings.EqualFold(user, cfg.Workspaces.GiteaUsername) {
+		if strings.EqualFold(user, cfg.UserContexts.GiteaUsername) {
 			return
 		}
 		if existing, ok := desired[user]; ok {
@@ -1913,14 +1913,14 @@ func syncGiteaCollaboratorsForWorkspace(cfg Config, workspace SkyforgeWorkspace)
 		desired[user] = perm
 	}
 
-	add(workspace.CreatedBy, "admin")
-	for _, u := range workspace.Owners {
+	add(userContext.CreatedBy, "admin")
+	for _, u := range userContext.Owners {
 		add(u, "admin")
 	}
-	for _, u := range workspace.Editors {
+	for _, u := range userContext.Editors {
 		add(u, "write")
 	}
-	for _, u := range workspace.Viewers {
+	for _, u := range userContext.Viewers {
 		add(u, "read")
 	}
 
@@ -1937,7 +1937,7 @@ func syncGiteaCollaboratorsForWorkspace(cfg Config, workspace SkyforgeWorkspace)
 	}
 	for _, user := range current {
 		u := strings.ToLower(strings.TrimSpace(user))
-		if u == "" || strings.EqualFold(u, cfg.Workspaces.GiteaUsername) {
+		if u == "" || strings.EqualFold(u, cfg.UserContexts.GiteaUsername) {
 			continue
 		}
 		if _, ok := desired[u]; ok {
@@ -2225,18 +2225,18 @@ func getAWSRoleCredentials(ctx context.Context, cfg Config, store awsSSOTokenSto
 	})
 }
 
-type workspaceSyncReport struct {
-	WorkspaceID string   `json:"workspaceId"`
-	Slug        string   `json:"slug"`
-	Updated     bool     `json:"updated"`
-	Steps       []string `json:"steps,omitempty"`
-	Errors      []string `json:"errors,omitempty"`
+type userContextSyncReport struct {
+	UserContextID string   `json:"userContextId"`
+	Slug          string   `json:"slug"`
+	Updated       bool     `json:"updated"`
+	Steps         []string `json:"steps,omitempty"`
+	Errors        []string `json:"errors,omitempty"`
 }
 
-func workspaceTerraformEnv(cfg Config, workspace SkyforgeWorkspace) map[string]string {
+func userContextTerraformEnv(cfg Config, userContext SkyforgeWorkspace) map[string]string {
 	region := "us-east-1"
-	if strings.TrimSpace(workspace.AWSRegion) != "" {
-		region = strings.TrimSpace(workspace.AWSRegion)
+	if strings.TrimSpace(userContext.AWSRegion) != "" {
+		region = strings.TrimSpace(userContext.AWSRegion)
 	}
 	env := map[string]string{
 		"TF_IN_AUTOMATION":          "true",
@@ -2246,17 +2246,17 @@ func workspaceTerraformEnv(cfg Config, workspace SkyforgeWorkspace) map[string]s
 		"TF_VAR_ssh_key_name":       "REPLACE_ME",
 		"TF_VAR_artifacts_bucket":   "REPLACE_ME",
 	}
-	if cfg.Workspaces.ObjectStorageAccessKey != "" && cfg.Workspaces.ObjectStorageSecretKey != "" {
-		env["AWS_ACCESS_KEY_ID"] = cfg.Workspaces.ObjectStorageAccessKey
-		env["AWS_SECRET_ACCESS_KEY"] = cfg.Workspaces.ObjectStorageSecretKey
+	if cfg.UserContexts.ObjectStorageAccessKey != "" && cfg.UserContexts.ObjectStorageSecretKey != "" {
+		env["AWS_ACCESS_KEY_ID"] = cfg.UserContexts.ObjectStorageAccessKey
+		env["AWS_SECRET_ACCESS_KEY"] = cfg.UserContexts.ObjectStorageSecretKey
 	}
 	return env
 }
 
-func syncWorkspaceResources(ctx context.Context, cfg Config, workspace *SkyforgeWorkspace) workspaceSyncReport {
-	report := workspaceSyncReport{
-		WorkspaceID: workspace.ID,
-		Slug:        workspace.Slug,
+func syncUserContextResources(ctx context.Context, cfg Config, userContext *SkyforgeWorkspace) userContextSyncReport {
+	report := userContextSyncReport{
+		UserContextID: userContext.ID,
+		Slug:          userContext.Slug,
 	}
 	addStep := func(msg string) {
 		report.Steps = append(report.Steps, msg)
@@ -2269,63 +2269,63 @@ func syncWorkspaceResources(ctx context.Context, cfg Config, workspace *Skyforge
 		}
 	}
 
-	if strings.TrimSpace(workspace.GiteaOwner) == "" {
-		workspace.GiteaOwner = strings.TrimSpace(cfg.Workspaces.GiteaUsername)
+	if strings.TrimSpace(userContext.GiteaOwner) == "" {
+		userContext.GiteaOwner = strings.TrimSpace(cfg.UserContexts.GiteaUsername)
 		report.Updated = true
 		addStep("set gitea owner")
 	}
-	if strings.TrimSpace(workspace.GiteaRepo) == "" {
-		workspace.GiteaRepo = strings.TrimSpace(workspace.Slug)
+	if strings.TrimSpace(userContext.GiteaRepo) == "" {
+		userContext.GiteaRepo = strings.TrimSpace(userContext.Slug)
 		report.Updated = true
 		addStep("set gitea repo")
 	}
-	if strings.TrimSpace(workspace.ArtifactsBucket) != storage.StorageBucketName {
-		workspace.ArtifactsBucket = storage.StorageBucketName
+	if strings.TrimSpace(userContext.ArtifactsBucket) != storage.StorageBucketName {
+		userContext.ArtifactsBucket = storage.StorageBucketName
 		report.Updated = true
 		addStep("set artifacts bucket")
 	}
 
-	if strings.TrimSpace(workspace.GiteaOwner) != "" && strings.TrimSpace(workspace.GiteaRepo) != "" {
-		repoPrivate := !workspace.IsPublic
-		if err := ensureGiteaRepoFromBlueprint(cfg, workspace.GiteaOwner, workspace.GiteaRepo, workspace.Blueprint, repoPrivate); err != nil {
+	if strings.TrimSpace(userContext.GiteaOwner) != "" && strings.TrimSpace(userContext.GiteaRepo) != "" {
+		repoPrivate := !userContext.IsPublic
+		if err := ensureGiteaRepoFromBlueprint(cfg, userContext.GiteaOwner, userContext.GiteaRepo, userContext.Blueprint, repoPrivate); err != nil {
 			addErr("gitea repo ensure", err)
 		} else {
 			addStep("gitea repo ok")
-			if branch, err := getGiteaRepoDefaultBranch(cfg, workspace.GiteaOwner, workspace.GiteaRepo); err != nil {
+			if branch, err := getGiteaRepoDefaultBranch(cfg, userContext.GiteaOwner, userContext.GiteaRepo); err != nil {
 				addErr("gitea default branch", err)
-			} else if strings.TrimSpace(branch) != "" && branch != workspace.DefaultBranch {
-				workspace.DefaultBranch = branch
+			} else if strings.TrimSpace(branch) != "" && branch != userContext.DefaultBranch {
+				userContext.DefaultBranch = branch
 				report.Updated = true
 				addStep("updated default branch")
 			}
 		}
 	}
 
-	if strings.TrimSpace(workspace.GiteaOwner) != "" && strings.TrimSpace(workspace.GiteaRepo) != "" {
-		syncGiteaCollaboratorsForWorkspace(cfg, *workspace)
+	if strings.TrimSpace(userContext.GiteaOwner) != "" && strings.TrimSpace(userContext.GiteaRepo) != "" {
+		syncGiteaCollaboratorsForUserContext(cfg, *userContext)
 		addStep("gitea collaborators synced")
 	}
 
 	return report
 }
 
-func syncWorkspaces(ctx context.Context, cfg Config, store workspacesStore, db *sql.DB) ([]workspaceSyncReport, error) {
-	workspaces, err := store.load()
+func syncUserContexts(ctx context.Context, cfg Config, store userContextStore, db *sql.DB) ([]userContextSyncReport, error) {
+	userContexts, err := store.load()
 	if err != nil {
 		return nil, err
 	}
-	reports := make([]workspaceSyncReport, 0, len(workspaces))
-	changedWorkspaces := make([]SkyforgeWorkspace, 0, 4)
-	for i := range workspaces {
-		workspaceCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-		report := syncWorkspaceResources(workspaceCtx, cfg, &workspaces[i])
+	reports := make([]userContextSyncReport, 0, len(userContexts))
+	changedUserContexts := make([]SkyforgeWorkspace, 0, 4)
+	for i := range userContexts {
+		userContextCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		report := syncUserContextResources(userContextCtx, cfg, &userContexts[i])
 		cancel()
 		if report.Updated {
-			changedWorkspaces = append(changedWorkspaces, workspaces[i])
+			changedUserContexts = append(changedUserContexts, userContexts[i])
 		}
 		reports = append(reports, report)
 	}
-	for _, ws := range changedWorkspaces {
+	for _, ws := range changedUserContexts {
 		if err := store.upsert(ws); err != nil {
 			return reports, err
 		}
@@ -2337,7 +2337,7 @@ func syncWorkspaces(ctx context.Context, cfg Config, store workspacesStore, db *
 			}
 			details := fmt.Sprintf("updated=true errors=%d", len(report.Errors))
 			auditCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
-			writeAuditEvent(auditCtx, db, "system", true, "", "workspace.sync", report.WorkspaceID, details)
+			writeAuditEvent(auditCtx, db, "system", true, "", "userContext.sync", report.UserContextID, details)
 			cancel()
 		}
 	}
@@ -2378,10 +2378,10 @@ func initService() (*Service, error) {
 		return nil, fmt.Errorf("oidc init failed: %w", err)
 	}
 	var (
-		workspaceStore workspacesStore
-		awsStore       awsSSOTokenStore
-		userStore      usersStore
-		db             *sql.DB
+		userContextStore userContextStore
+		awsStore         awsSSOTokenStore
+		userStore        usersStore
+		db               *sql.DB
 	)
 
 	db, err = openSkyforgeDB(context.Background())
@@ -2395,31 +2395,31 @@ func initService() (*Service, error) {
 		return nil, fmt.Errorf("postgres ping failed: %w", err)
 	}
 
-	pgWorkspaces := newPGWorkspacesStore(db)
+	pgWorkspaces := newPGUserContextStore(db)
 	pgUsers := newPGUsersStore(db)
 	pgAWS := newPGAWSStore(db, box)
 
-	workspaceStore = pgWorkspaces
+	userContextStore = pgWorkspaces
 	awsStore = pgAWS
 	userStore = pgUsers
 
 	// Background loops are scheduled externally (e.g. Kubernetes CronJobs) and enqueued for worker execution.
 
 	svc := &Service{
-		cfg:            cfg,
-		auth:           auth,
-		oidc:           oidcClient,
-		sessionManager: sessionManager,
-		workspaceStore: workspaceStore,
-		awsStore:       awsStore,
-		userStore:      userStore,
-		box:            box,
-		db:             db,
+		cfg:              cfg,
+		auth:             auth,
+		oidc:             oidcClient,
+		sessionManager:   sessionManager,
+		userContextStore: userContextStore,
+		awsStore:         awsStore,
+		userStore:        userStore,
+		box:              box,
+		db:               db,
 	}
 	ensurePGNotifyHub(db)
 	// Ensure the shared blueprint catalog exists for Gitea Explore even before any
-	// user/workspace bootstrap tasks run.
-	if strings.TrimSpace(cfg.Workspaces.GiteaAPIURL) != "" && strings.TrimSpace(cfg.Workspaces.GiteaUsername) != "" {
+	// user/user-context bootstrap tasks run.
+	if strings.TrimSpace(cfg.UserContexts.GiteaAPIURL) != "" && strings.TrimSpace(cfg.UserContexts.GiteaUsername) != "" {
 		if err := ensureBlueprintCatalogRepo(cfg, defaultBlueprintCatalog); err != nil {
 			rlog.Warn("ensureBlueprintCatalogRepo failed", "err", err)
 		}
@@ -2465,15 +2465,15 @@ type SessionManager struct {
 
 //encore:service
 type Service struct {
-	cfg            Config
-	auth           *LDAPAuthenticator
-	oidc           *OIDCClient
-	sessionManager *SessionManager
-	workspaceStore workspacesStore
-	awsStore       awsSSOTokenStore
-	userStore      usersStore
-	box            *secretBox
-	db             *sql.DB
+	cfg              Config
+	auth             *LDAPAuthenticator
+	oidc             *OIDCClient
+	sessionManager   *SessionManager
+	userContextStore userContextStore
+	awsStore         awsSSOTokenStore
+	userStore        usersStore
+	box              *secretBox
+	db               *sql.DB
 
 	elasticOnce    sync.Once
 	elasticClient  *elasticint.Client
@@ -3248,7 +3248,7 @@ func shouldNotifyCloudCredential(ctx context.Context, db *sql.DB, key string, ok
 	return prev && !ok
 }
 
-func workspaceNotificationRecipients(workspace SkyforgeWorkspace) []string {
+func userContextNotificationRecipients(userContext SkyforgeWorkspace) []string {
 	recipients := map[string]struct{}{}
 	add := func(value string) {
 		value = strings.ToLower(strings.TrimSpace(value))
@@ -3257,8 +3257,8 @@ func workspaceNotificationRecipients(workspace SkyforgeWorkspace) []string {
 		}
 		recipients[value] = struct{}{}
 	}
-	add(workspace.CreatedBy)
-	for _, owner := range workspace.Owners {
+	add(userContext.CreatedBy)
+	for _, owner := range userContext.Owners {
 		add(owner)
 	}
 	out := make([]string, 0, len(recipients))

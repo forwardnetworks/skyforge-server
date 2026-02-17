@@ -125,4 +125,3 @@ func (s *Service) ListForwardNetworks(ctx context.Context, req *ListForwardNetwo
 
 	return &ListForwardNetworksResponse{Networks: out}, nil
 }
-

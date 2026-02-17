@@ -27,7 +27,7 @@ type containerlabTaskSpec struct {
 
 type containerlabRunSpec struct {
 	TaskID       int
-	WorkspaceCtx *workspaceContext
+	UserCtx      *userContext
 	WorkspaceID  string
 	DeploymentID string
 	APIURL       string
@@ -48,7 +48,7 @@ func (e *Engine) dispatchContainerlabTask(ctx context.Context, task *taskstore.T
 	if err := decodeTaskSpec(task, &specIn); err != nil {
 		return err
 	}
-	ws, err := e.loadWorkspaceByKey(ctx, task.WorkspaceID)
+	ws, err := e.loadUserContextByKey(ctx, task.WorkspaceID)
 	if err != nil {
 		return err
 	}
@@ -56,8 +56,8 @@ func (e *Engine) dispatchContainerlabTask(ctx context.Context, task *taskstore.T
 	if username == "" {
 		username = ws.primaryOwner()
 	}
-	pc := &workspaceContext{
-		workspace: *ws,
+	pc := &userContext{
+		userContext: *ws,
 		claims: SessionClaims{
 			Username: username,
 		},
@@ -71,9 +71,9 @@ func (e *Engine) dispatchContainerlabTask(ctx context.Context, task *taskstore.T
 	if apiURL == "" || token == "" {
 		serverRef := strings.TrimSpace(specIn.NetlabServer)
 		if serverRef == "" {
-			serverRef = strings.TrimSpace(pc.workspace.NetlabServer)
+			serverRef = strings.TrimSpace(pc.userContext.NetlabServer)
 		}
-		server, err := e.resolveWorkspaceNetlabServer(ctx, pc.workspace.ID, serverRef)
+		server, err := e.resolveUserContextNetlabServer(ctx, pc.userContext.ID, serverRef)
 		if err != nil {
 			return err
 		}
@@ -90,9 +90,9 @@ func (e *Engine) dispatchContainerlabTask(ctx context.Context, task *taskstore.T
 	}
 
 	runSpec := containerlabRunSpec{
-		TaskID:       task.ID,
-		WorkspaceCtx: pc,
-		WorkspaceID:  strings.TrimSpace(task.WorkspaceID),
+		TaskID:      task.ID,
+		UserCtx:     pc,
+		WorkspaceID: strings.TrimSpace(task.WorkspaceID),
 		DeploymentID: func() string {
 			if task.DeploymentID.Valid {
 				return strings.TrimSpace(task.DeploymentID.String)
@@ -154,14 +154,14 @@ func (e *Engine) runContainerlabTask(ctx context.Context, spec containerlabRunSp
 			graph, err := e.captureContainerlabTopologyArtifact(ctx, spec, labName)
 			if err != nil {
 				log.Infof("Containerlab topology capture skipped: %v", err)
-			} else if graph != nil && spec.WorkspaceCtx != nil && strings.TrimSpace(spec.DeploymentID) != "" {
+			} else if graph != nil && spec.UserCtx != nil && strings.TrimSpace(spec.DeploymentID) != "" {
 				dep, depErr := e.loadDeployment(ctx, spec.WorkspaceID, strings.TrimSpace(spec.DeploymentID))
 				if depErr != nil {
 					log.Infof("Forward sync skipped: failed to load deployment: %v", depErr)
 				} else if dep == nil {
 					log.Infof("Forward sync skipped: deployment not found")
 				} else {
-					_, _ = e.syncForwardTopologyGraphDevices(ctx, spec.TaskID, spec.WorkspaceCtx, dep, graph, forwardSyncOptions{
+					_, _ = e.syncForwardTopologyGraphDevices(ctx, spec.TaskID, spec.UserCtx, dep, graph, forwardSyncOptions{
 						StartConnectivity: false,
 						StartCollection:   true,
 					})
@@ -222,7 +222,7 @@ func (e *Engine) captureContainerlabTopologyArtifact(ctx context.Context, spec c
 	key := fmt.Sprintf("topology/containerlab/%s.json", sanitizeArtifactKeySegment(labName))
 	ctxPut, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	putKey, err := putWorkspaceArtifact(ctxPut, e.cfg, spec.WorkspaceID, key, graphBytes, "application/json")
+	putKey, err := putUserContextArtifact(ctxPut, e.cfg, spec.WorkspaceID, key, graphBytes, "application/json")
 	if err != nil {
 		return nil, err
 	}

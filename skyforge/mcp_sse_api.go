@@ -17,7 +17,7 @@ import (
 type mcpSSESession struct {
 	ID             string
 	Username       string
-	WorkspaceID    string
+	UserContextID  string
 	ForwardNetwork string
 	CreatedAt      time.Time
 	LastMessageAt  time.Time
@@ -32,14 +32,14 @@ type mcpSSEHub struct {
 
 var globalMCPSSEHub = &mcpSSEHub{sessions: map[string]*mcpSSESession{}}
 
-func (h *mcpSSEHub) create(username, workspaceID, forwardNetworkID string) *mcpSSESession {
+func (h *mcpSSEHub) create(username, userContextID, forwardNetworkID string) *mcpSSESession {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	id := uuid.NewString()
 	s := &mcpSSESession{
 		ID:             id,
 		Username:       strings.ToLower(strings.TrimSpace(username)),
-		WorkspaceID:    strings.TrimSpace(workspaceID),
+		UserContextID:  strings.TrimSpace(userContextID),
 		ForwardNetwork: strings.TrimSpace(forwardNetworkID),
 		CreatedAt:      time.Now().UTC(),
 		LastMessageAt:  time.Now().UTC(),
@@ -113,7 +113,7 @@ func sseWrite(w http.ResponseWriter, event string, data []byte) error {
 	return err
 }
 
-func (s *Service) mcpHandleBody(ctx context.Context, user *AuthUser, workspaceID, forwardNetworkID string, body []byte) ([]byte, bool, error) {
+func (s *Service) mcpHandleBody(ctx context.Context, user *AuthUser, userContextID, forwardNetworkID string, body []byte) ([]byte, bool, error) {
 	if s == nil {
 		return nil, false, errs.B().Code(errs.Unavailable).Msg("server unavailable").Err()
 	}
@@ -129,7 +129,7 @@ func (s *Service) mcpHandleBody(ctx context.Context, user *AuthUser, workspaceID
 		}
 		resps := make([]mcpJSONRPCResponse, 0, len(reqs))
 		for _, req := range reqs {
-			resp := s.handleMCPJSONRPC(ctx, user, workspaceID, forwardNetworkID, req)
+			resp := s.handleMCPJSONRPC(ctx, user, userContextID, forwardNetworkID, req)
 			if req.ID != nil {
 				resps = append(resps, resp)
 			}
@@ -145,7 +145,7 @@ func (s *Service) mcpHandleBody(ctx context.Context, user *AuthUser, workspaceID
 	if err := json.Unmarshal(body, &req); err != nil {
 		return nil, false, errs.B().Code(errs.InvalidArgument).Msg("invalid json").Err()
 	}
-	resp := s.handleMCPJSONRPC(ctx, user, workspaceID, forwardNetworkID, req)
+	resp := s.handleMCPJSONRPC(ctx, user, userContextID, forwardNetworkID, req)
 	if req.ID == nil {
 		return nil, false, nil
 	}
@@ -153,7 +153,7 @@ func (s *Service) mcpHandleBody(ctx context.Context, user *AuthUser, workspaceID
 	return b, true, nil
 }
 
-func (s *Service) mcpSSE(w http.ResponseWriter, r *http.Request, user *AuthUser, workspaceID, forwardNetworkID string) {
+func (s *Service) mcpSSE(w http.ResponseWriter, r *http.Request, user *AuthUser, userContextID, forwardNetworkID string) {
 	if s == nil || !s.cfg.MCP.Enabled {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -172,7 +172,7 @@ func (s *Service) mcpSSE(w http.ResponseWriter, r *http.Request, user *AuthUser,
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	sess := globalMCPSSEHub.create(user.Username, workspaceID, forwardNetworkID)
+	sess := globalMCPSSEHub.create(user.Username, userContextID, forwardNetworkID)
 	defer globalMCPSSEHub.close(sess.ID)
 
 	first, _ := json.Marshal(map[string]any{"session_id": sess.ID})
@@ -198,7 +198,7 @@ func (s *Service) mcpSSE(w http.ResponseWriter, r *http.Request, user *AuthUser,
 	}
 }
 
-func (s *Service) mcpMessage(w http.ResponseWriter, r *http.Request, user *AuthUser, workspaceID, forwardNetworkID string) {
+func (s *Service) mcpMessage(w http.ResponseWriter, r *http.Request, user *AuthUser, userContextID, forwardNetworkID string) {
 	if s == nil || !s.cfg.MCP.Enabled {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -222,7 +222,7 @@ func (s *Service) mcpMessage(w http.ResponseWriter, r *http.Request, user *AuthU
 		return
 	}
 	if strings.ToLower(strings.TrimSpace(sess.Username)) != strings.ToLower(strings.TrimSpace(user.Username)) ||
-		strings.TrimSpace(sess.WorkspaceID) != strings.TrimSpace(workspaceID) ||
+		strings.TrimSpace(sess.UserContextID) != strings.TrimSpace(userContextID) ||
 		strings.TrimSpace(sess.ForwardNetwork) != strings.TrimSpace(forwardNetworkID) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
@@ -240,7 +240,7 @@ func (s *Service) mcpMessage(w http.ResponseWriter, r *http.Request, user *AuthU
 		ctx = context.WithValue(ctx, ctxKeyMCPForwardCredentialID, credID)
 	}
 
-	respBody, shouldSend, err := s.mcpHandleBody(ctx, user, workspaceID, forwardNetworkID, body)
+	respBody, shouldSend, err := s.mcpHandleBody(ctx, user, userContextID, forwardNetworkID, body)
 	if err != nil {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
@@ -287,7 +287,7 @@ func (s *Service) MCPMessage(w http.ResponseWriter, r *http.Request) {
 
 // MCPForwardSSE exposes an SSE-based transport for Forward-scoped MCP calls.
 //
-//encore:api auth raw method=GET path=/api/workspaces/:id/mcp/forward/:forwardNetworkId/sse
+//encore:api auth raw method=GET path=/api/user-contexts/:id/mcp/forward/:forwardNetworkId/sse
 func (s *Service) MCPForwardSSE(w http.ResponseWriter, r *http.Request) {
 	user, err := s.mcpAuthFromRequest(r)
 	if err != nil {
@@ -300,7 +300,7 @@ func (s *Service) MCPForwardSSE(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid path", http.StatusBadRequest)
 		return
 	}
-	if _, err := s.workspaceContextForUser(user, id); err != nil {
+	if _, err := s.userContextForUser(user, id); err != nil {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -309,7 +309,7 @@ func (s *Service) MCPForwardSSE(w http.ResponseWriter, r *http.Request) {
 
 // MCPForwardMessage receives JSON-RPC messages for a Forward-scoped SSE session.
 //
-//encore:api auth raw method=POST path=/api/workspaces/:id/mcp/forward/:forwardNetworkId/message
+//encore:api auth raw method=POST path=/api/user-contexts/:id/mcp/forward/:forwardNetworkId/message
 func (s *Service) MCPForwardMessage(w http.ResponseWriter, r *http.Request) {
 	user, err := s.mcpAuthFromRequest(r)
 	if err != nil {
@@ -322,14 +322,14 @@ func (s *Service) MCPForwardMessage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid path", http.StatusBadRequest)
 		return
 	}
-	if _, err := s.workspaceContextForUser(user, id); err != nil {
+	if _, err := s.userContextForUser(user, id); err != nil {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	s.mcpMessage(w, r, user, id, netID)
 }
 
-// MCPForwardNetworkSSE exposes an SSE-based transport for Forward-scoped MCP calls without a workspace context.
+// MCPForwardNetworkSSE exposes an SSE-based transport for Forward-scoped MCP calls without a user context.
 //
 //encore:api auth raw method=GET path=/api/mcp/forward/:forwardNetworkId/sse
 func (s *Service) MCPForwardNetworkSSE(w http.ResponseWriter, r *http.Request) {

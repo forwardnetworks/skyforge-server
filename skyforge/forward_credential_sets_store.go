@@ -16,7 +16,7 @@ import (
 type forwardCredentialSet struct {
 	ID            string
 	OwnerUsername string
-	WorkspaceID   string
+	UserContextID string
 	Name          string
 
 	BaseURL       string
@@ -54,7 +54,7 @@ func (c forwardCredentialSet) toForwardClientCreds() forwardCredentials {
 type forwardCredentialSetCipherRow struct {
 	ID            string
 	OwnerUsername string
-	WorkspaceID   string
+	UserContextID string
 	Name          string
 
 	BaseURLEnc       sql.NullString
@@ -96,7 +96,7 @@ func decodeForwardCredentialSet(box *secretBox, row forwardCredentialSetCipherRo
 	out := &forwardCredentialSet{
 		ID:            strings.TrimSpace(row.ID),
 		OwnerUsername: strings.ToLower(strings.TrimSpace(row.OwnerUsername)),
-		WorkspaceID:   strings.TrimSpace(row.WorkspaceID),
+		UserContextID: strings.TrimSpace(row.UserContextID),
 		Name:          strings.TrimSpace(row.Name),
 		SkipTLSVerify: row.SkipTLSVerify.Valid && row.SkipTLSVerify.Bool,
 	}
@@ -167,7 +167,7 @@ SELECT id, owner_username, COALESCE(workspace_id, ''), name,
   FROM sf_credentials
  WHERE id=$1 AND provider='forward' AND owner_username=$2 AND workspace_id IS NULL
 `, id, ownerUsername).Scan(
-		&row.ID, &row.OwnerUsername, &row.WorkspaceID, &row.Name,
+		&row.ID, &row.OwnerUsername, &row.UserContextID, &row.Name,
 		&row.BaseURLEnc, &row.SkipTLSVerify,
 		&row.UsernameEnc, &row.PasswordEnc,
 		&row.CollectorIDEnc, &row.CollectorUserEnc, &row.AuthKeyEnc,
@@ -197,13 +197,13 @@ func getUserForwardCredentialSet(ctx context.Context, db *sql.DB, box *secretBox
 	return dec, nil
 }
 
-func getWorkspaceForwardCredentialSetCipherRow(ctx context.Context, db *sql.DB, workspaceID, id string) (*forwardCredentialSetCipherRow, error) {
+func getWorkspaceForwardCredentialSetCipherRow(ctx context.Context, db *sql.DB, userContextID, id string) (*forwardCredentialSetCipherRow, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userContextID = strings.TrimSpace(userContextID)
 	id = strings.TrimSpace(id)
-	if workspaceID == "" || id == "" {
+	if userContextID == "" || id == "" {
 		return nil, fmt.Errorf("invalid input")
 	}
 	var row forwardCredentialSetCipherRow
@@ -217,8 +217,8 @@ SELECT id, COALESCE(owner_username, ''), workspace_id, name,
        created_at, updated_at
   FROM sf_credentials
  WHERE id=$1 AND provider='forward' AND workspace_id=$2 AND owner_username IS NULL
-`, id, workspaceID).Scan(
-		&row.ID, &row.OwnerUsername, &row.WorkspaceID, &row.Name,
+`, id, userContextID).Scan(
+		&row.ID, &row.OwnerUsername, &row.UserContextID, &row.Name,
 		&row.BaseURLEnc, &row.SkipTLSVerify,
 		&row.UsernameEnc, &row.PasswordEnc,
 		&row.CollectorIDEnc, &row.CollectorUserEnc, &row.AuthKeyEnc,
@@ -235,14 +235,14 @@ SELECT id, COALESCE(owner_username, ''), workspace_id, name,
 	return &row, nil
 }
 
-func getWorkspaceForwardCredentialSet(ctx context.Context, db *sql.DB, box *secretBox, workspaceID, id string) (*forwardCredentialSet, error) {
-	row, err := getWorkspaceForwardCredentialSetCipherRow(ctx, db, workspaceID, id)
+func getWorkspaceForwardCredentialSet(ctx context.Context, db *sql.DB, box *secretBox, userContextID, id string) (*forwardCredentialSet, error) {
+	row, err := getWorkspaceForwardCredentialSetCipherRow(ctx, db, userContextID, id)
 	if err != nil || row == nil {
 		return nil, err
 	}
 	dec, err := decodeForwardCredentialSet(box, *row)
 	if err != nil {
-		log.Printf("workspace forward credential set decrypt (%s/%s): %v", workspaceID, id, err)
+		log.Printf("user-context forward credential set decrypt (%s/%s): %v", userContextID, id, err)
 		return nil, nil
 	}
 	return dec, nil
@@ -403,14 +403,14 @@ WHERE sf_credentials.owner_username=excluded.owner_username AND sf_credentials.p
 	return err
 }
 
-func upsertWorkspaceForwardCredentialSet(ctx context.Context, tx *sql.Tx, box *secretBox, id, workspaceID, name string, cfg forwardCredentials) error {
+func upsertWorkspaceForwardCredentialSet(ctx context.Context, tx *sql.Tx, box *secretBox, id, userContextID, name string, cfg forwardCredentials) error {
 	if tx == nil || box == nil {
 		return fmt.Errorf("db is not configured")
 	}
 	id = strings.TrimSpace(id)
-	workspaceID = strings.TrimSpace(workspaceID)
+	userContextID = strings.TrimSpace(userContextID)
 	name = strings.TrimSpace(name)
-	if id == "" || workspaceID == "" || name == "" {
+	if id == "" || userContextID == "" || name == "" {
 		return fmt.Errorf("invalid input")
 	}
 
@@ -488,6 +488,6 @@ ON CONFLICT (id) DO UPDATE SET
   jump_private_key_enc=excluded.jump_private_key_enc,
   jump_cert_enc=excluded.jump_cert_enc,
   updated_at=now()
-`, id, workspaceID, name, encBase, cfg.SkipTLSVerify, encUser, encPass, encCollectorID, encCollectorUser, encDevUser, encDevPass, encJumpHost, encJumpUser, encJumpKey, encJumpCert)
+`, id, userContextID, name, encBase, cfg.SkipTLSVerify, encUser, encPass, encCollectorID, encCollectorUser, encDevUser, encDevPass, encJumpHost, encJumpUser, encJumpKey, encJumpCert)
 	return err
 }

@@ -15,7 +15,7 @@ const (
 	WebhooksChannel      = "skyforge_webhook_updates"
 	SyslogChannel        = "skyforge_syslog_updates"
 	SnmpChannel          = "skyforge_snmp_updates"
-	WorkspacesChannel    = "skyforge_workspaces_updates"
+	UserContextsChannel  = "skyforge_user_contexts_updates"
 	DeploymentEventsChan = "skyforge_deployment_events"
 )
 
@@ -83,7 +83,7 @@ func NotifySnmpUpdate(ctx context.Context, db *sql.DB, username string) error {
 	return err
 }
 
-func NotifyWorkspacesUpdate(ctx context.Context, db *sql.DB, payload string) error {
+func NotifyUserContextsUpdate(ctx context.Context, db *sql.DB, payload string) error {
 	payload = strings.ToLower(strings.TrimSpace(payload))
 	if payload == "" {
 		payload = "*"
@@ -93,7 +93,7 @@ func NotifyWorkspacesUpdate(ctx context.Context, db *sql.DB, payload string) err
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
-	_, err := db.ExecContext(ctxReq, "SELECT pg_notify($1, $2)", WorkspacesChannel, payload)
+	_, err := db.ExecContext(ctxReq, "SELECT pg_notify($1, $2)", UserContextsChannel, payload)
 	return err
 }
 

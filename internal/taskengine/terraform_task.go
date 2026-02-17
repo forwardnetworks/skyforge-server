@@ -32,17 +32,17 @@ type terraformTaskSpec struct {
 }
 
 type terraformRunSpec struct {
-	TaskID         int
-	WorkspaceCtx   *workspaceContext
-	WorkspaceSlug  string
-	Username       string
-	Cloud          string
-	Action         string
-	TemplateSource string
-	TemplateRepo   string
-	TemplatesDir   string
-	Template       string
-	Environment    map[string]any
+	TaskID          int
+	UserCtx         *userContext
+	UserContextSlug string
+	Username        string
+	Cloud           string
+	Action          string
+	TemplateSource  string
+	TemplateRepo    string
+	TemplatesDir    string
+	Template        string
+	Environment     map[string]any
 }
 
 func (e *Engine) dispatchTerraformTask(ctx context.Context, task *taskstore.TaskRecord, log Logger) error {
@@ -53,7 +53,7 @@ func (e *Engine) dispatchTerraformTask(ctx context.Context, task *taskstore.Task
 	if err := decodeTaskSpec(task, &specIn); err != nil {
 		return err
 	}
-	ws, err := e.loadWorkspaceByKey(ctx, task.WorkspaceID)
+	ws, err := e.loadUserContextByKey(ctx, task.WorkspaceID)
 	if err != nil {
 		return err
 	}
@@ -61,8 +61,8 @@ func (e *Engine) dispatchTerraformTask(ctx context.Context, task *taskstore.Task
 	if username == "" {
 		username = ws.primaryOwner()
 	}
-	pc := &workspaceContext{
-		workspace: *ws,
+	pc := &userContext{
+		userContext: *ws,
 		claims: SessionClaims{
 			Username: username,
 		},
@@ -84,17 +84,17 @@ func (e *Engine) dispatchTerraformTask(ctx context.Context, task *taskstore.Task
 	}
 
 	runSpec := terraformRunSpec{
-		TaskID:         task.ID,
-		WorkspaceCtx:   pc,
-		WorkspaceSlug:  strings.TrimSpace(pc.workspace.Slug),
-		Username:       username,
-		Cloud:          cloud,
-		Action:         action,
-		TemplateSource: strings.TrimSpace(specIn.TemplateSource),
-		TemplateRepo:   strings.TrimSpace(specIn.TemplateRepo),
-		TemplatesDir:   strings.TrimSpace(specIn.TemplatesDir),
-		Template:       strings.TrimSpace(specIn.Template),
-		Environment:    specIn.Environment,
+		TaskID:          task.ID,
+		UserCtx:         pc,
+		UserContextSlug: strings.TrimSpace(pc.userContext.Slug),
+		Username:        username,
+		Cloud:           cloud,
+		Action:          action,
+		TemplateSource:  strings.TrimSpace(specIn.TemplateSource),
+		TemplateRepo:    strings.TrimSpace(specIn.TemplateRepo),
+		TemplatesDir:    strings.TrimSpace(specIn.TemplatesDir),
+		Template:        strings.TrimSpace(specIn.Template),
+		Environment:     specIn.Environment,
 	}
 	actionStep := strings.ToLower(strings.TrimSpace(runSpec.Action))
 	if actionStep == "" {
@@ -118,10 +118,10 @@ func (e *Engine) runTerraformTask(ctx context.Context, spec terraformRunSpec, lo
 	if spec.Template == "" {
 		return fmt.Errorf("template is required")
 	}
-	if spec.WorkspaceCtx == nil {
-		return fmt.Errorf("workspace context unavailable")
+	if spec.UserCtx == nil {
+		return fmt.Errorf("user context unavailable")
 	}
-	ref, err := e.resolveTemplateRepoForWorkspace(spec.WorkspaceCtx, spec.TemplateSource, spec.TemplateRepo)
+	ref, err := e.resolveTemplateRepoForUserContext(spec.UserCtx, spec.TemplateSource, spec.TemplateRepo)
 	if err != nil {
 		return err
 	}
@@ -188,10 +188,10 @@ func (e *Engine) syncTerraformState(ctx context.Context, spec terraformRunSpec, 
 	if log == nil {
 		log = noopLogger{}
 	}
-	if spec.WorkspaceCtx == nil {
+	if spec.UserCtx == nil {
 		return
 	}
-	stateKey := strings.TrimSpace(spec.WorkspaceCtx.workspace.TerraformStateKey)
+	stateKey := strings.TrimSpace(spec.UserCtx.userContext.TerraformStateKey)
 	if stateKey == "" {
 		log.Infof("Terraform state key not configured; skipping state upload.")
 		return

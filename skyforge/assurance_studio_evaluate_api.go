@@ -110,7 +110,7 @@ type AssuranceStudioRoutingDiffResponse struct {
 }
 
 type AssuranceStudioEvaluateResponse struct {
-	WorkspaceID      string `json:"workspaceId"`
+	UserContextID    string `json:"userContextId"`
 	NetworkRef       string `json:"networkRef"`
 	ForwardNetworkID string `json:"forwardNetworkId"`
 
@@ -136,12 +136,12 @@ func boolOr(v *bool, def bool) bool {
 	return *v
 }
 
-func (s *Service) assuranceStudioForwardClient(ctx context.Context, workspaceID, username, forwardNetworkID, collectorConfigID string) (*forwardClient, error) {
+func (s *Service) assuranceStudioForwardClient(ctx context.Context, userContextID, username, forwardNetworkID, collectorConfigID string) (*forwardClient, error) {
 	if s == nil || s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("server unavailable").Err()
 	}
 	username = strings.TrimSpace(username)
-	workspaceID = strings.TrimSpace(workspaceID)
+	userContextID = strings.TrimSpace(userContextID)
 	forwardNetworkID = strings.TrimSpace(forwardNetworkID)
 	collectorConfigID = strings.TrimSpace(collectorConfigID)
 	if username == "" {
@@ -152,7 +152,7 @@ func (s *Service) assuranceStudioForwardClient(ctx context.Context, workspaceID,
 
 	// Preferred: per-user per-network override creds (reuses Policy Reports credentials table).
 	if forwardNetworkID != "" {
-		if pr, err := getPolicyReportForwardCreds(ctx, s.db, box, workspaceID, username, forwardNetworkID); err == nil && pr != nil {
+		if pr, err := getPolicyReportForwardCreds(ctx, s.db, box, userContextID, username, forwardNetworkID); err == nil && pr != nil {
 			return newForwardClient(forwardCredentials{
 				BaseURL:       pr.BaseURL,
 				SkipTLSVerify: pr.SkipTLSVerify,
@@ -178,15 +178,15 @@ func (s *Service) assuranceStudioForwardClient(ctx context.Context, workspaceID,
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward credentials").Err()
 		}
 	}
-	// Final: workspace-level Forward credentials.
+	// Final: user-level Forward credentials.
 	if fwdCfg == nil {
-		fwdCfg, err = s.forwardConfigForWorkspace(ctx, workspaceID)
+		fwdCfg, err = s.forwardConfigForUserContext(ctx, userContextID)
 		if err != nil {
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward credentials").Err()
 		}
 	}
 	if fwdCfg == nil {
-		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward is not configured for this user/network or workspace").Err()
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward is not configured for this user/network").Err()
 	}
 	client, err := newForwardClient(*fwdCfg)
 	if err != nil {
@@ -376,7 +376,7 @@ func routingDiff(baseline, compare *AssuranceTrafficEvaluateResponse) *Assurance
 func assuranceStudioEvaluateWithClient(
 	ctx context.Context,
 	client *forwardClient,
-	workspaceID, networkRef, forwardNetworkID string,
+	userContextID, networkRef, forwardNetworkID string,
 	req *AssuranceStudioEvaluateRequest,
 	pre assuranceStudioPreload,
 ) (*AssuranceStudioEvaluateResponse, error) {
@@ -544,7 +544,7 @@ func assuranceStudioEvaluateWithClient(
 	}
 
 	out := &AssuranceStudioEvaluateResponse{
-		WorkspaceID:        workspaceID,
+		UserContextID:      userContextID,
 		NetworkRef:         networkRef,
 		ForwardNetworkID:   forwardNetworkID,
 		SnapshotID:         strings.TrimSpace(req.SnapshotID),
@@ -620,7 +620,7 @@ func assuranceStudioEvaluateWithClient(
 			}
 
 			out.Routing = assuranceTrafficEvaluateFromFwdOut(
-				workspaceID,
+				userContextID,
 				networkRef,
 				forwardNetworkID,
 				rt,
@@ -751,7 +751,7 @@ func assuranceStudioEvaluateWithClient(
 				}
 
 				out.RoutingBaseline = assuranceTrafficEvaluateFromFwdOut(
-					workspaceID,
+					userContextID,
 					networkRef,
 					forwardNetworkID,
 					rtBase,
@@ -803,7 +803,7 @@ func assuranceStudioEvaluateWithClient(
 				DstPort: strings.TrimSpace(d.DstPort),
 			})
 		}
-		resp, err := capacityPathBottlenecksFromFwdOut(ctx, client, workspaceID, networkRef, forwardNetworkID, window, windowDays, capReq, join, pre.asOf, fwdOut, perfFallback)
+		resp, err := capacityPathBottlenecksFromFwdOut(ctx, client, userContextID, networkRef, forwardNetworkID, window, windowDays, capReq, join, pre.asOf, fwdOut, perfFallback)
 		if err != nil {
 			out.Errors["capacity"] = err.Error()
 		} else {
@@ -813,7 +813,7 @@ func assuranceStudioEvaluateWithClient(
 		if includeUpgrades {
 			items := capacityUpgradeCandidatesFromRollups(window, pre.rollups, pre.ifaces)
 			up := &ForwardNetworkCapacityUpgradeCandidatesResponse{
-				WorkspaceID:      workspaceID,
+				UserContextID:    userContextID,
 				NetworkRef:       networkRef,
 				ForwardNetworkID: forwardNetworkID,
 				Items:            items,
@@ -921,16 +921,14 @@ func strconvQuote(s string) string {
 	return string(b)
 }
 
-// PostWorkspaceForwardNetworkAssuranceStudioEvaluate runs the Assurance Studio "shared backend" evaluation.
+// PostUserContextForwardNetworkAssuranceStudioEvaluate runs the Assurance Studio "shared backend" evaluation.
 // It performs a single Forward paths-bulk call and then projects results into routing/capacity/security views.
-//
-//encore:api auth method=POST path=/api/workspaces/:id/forward-networks/:networkRef/assurance/studio/evaluate
-func (s *Service) PostWorkspaceForwardNetworkAssuranceStudioEvaluate(ctx context.Context, id, networkRef string, req *AssuranceStudioEvaluateRequest) (*AssuranceStudioEvaluateResponse, error) {
+func (s *Service) PostUserContextForwardNetworkAssuranceStudioEvaluate(ctx context.Context, id, networkRef string, req *AssuranceStudioEvaluateRequest) (*AssuranceStudioEvaluateResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -941,12 +939,12 @@ func (s *Service) PostWorkspaceForwardNetworkAssuranceStudioEvaluate(ctx context
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("request required").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, networkRef)
+	net, err := resolveUserForwardNetwork(ctx, s.db, pc.userContext.ID, pc.claims.Username, networkRef)
 	if err != nil {
 		return nil, err
 	}
 
-	client, err := s.assuranceStudioForwardClient(ctx, pc.workspace.ID, pc.claims.Username, net.ForwardNetworkID, net.CollectorConfigID)
+	client, err := s.assuranceStudioForwardClient(ctx, pc.userContext.ID, pc.claims.Username, net.ForwardNetworkID, net.CollectorConfigID)
 	if err != nil {
 		return nil, err
 	}
@@ -961,14 +959,14 @@ func (s *Service) PostWorkspaceForwardNetworkAssuranceStudioEvaluate(ctx context
 		needAny = needRouting || needCap
 	}
 	if needAny {
-		asOf, rollups, rollErr := loadLatestCapacityRollupsForForwardNetwork(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID)
+		asOf, rollups, rollErr := loadLatestCapacityRollupsForForwardNetwork(ctx, s.db, pc.claims.Username, pc.userContext.ID, net.ForwardNetworkID)
 		if rollErr == nil {
 			pre.asOf = asOf
 			pre.rollups = rollups
 		} else {
 			pre.rollups = []CapacityRollupRow{}
 		}
-		_, _, _, ifaces, _, _, _, _, invErr := loadLatestCapacityInventoryForForwardNetwork(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID)
+		_, _, _, ifaces, _, _, _, _, invErr := loadLatestCapacityInventoryForForwardNetwork(ctx, s.db, pc.claims.Username, pc.userContext.ID, net.ForwardNetworkID)
 		if invErr == nil {
 			pre.ifaces = ifaces
 		} else {
@@ -976,5 +974,5 @@ func (s *Service) PostWorkspaceForwardNetworkAssuranceStudioEvaluate(ctx context
 		}
 	}
 
-	return assuranceStudioEvaluateWithClient(ctx, client, pc.workspace.ID, net.ID, net.ForwardNetworkID, req, pre)
+	return assuranceStudioEvaluateWithClient(ctx, client, pc.userContext.ID, net.ID, net.ForwardNetworkID, req, pre)
 }

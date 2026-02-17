@@ -2,7 +2,7 @@ package skyforge
 
 import "time"
 
-// SkyforgeWorkspace is the user-facing workspace object stored in Postgres and returned by the API.
+// SkyforgeWorkspace is the user-facing user-context object stored in Postgres and returned by the API.
 //
 // NOTE: This type must live in the service package (not a type alias to an internal package)
 // to satisfy Encore's API schema rules.
@@ -23,7 +23,7 @@ type SkyforgeWorkspace struct {
 	Blueprint                  string    `json:"blueprint,omitempty"`
 	DefaultBranch              string    `json:"defaultBranch,omitempty"`
 	AllowExternalTemplateRepos bool      `json:"allowExternalTemplateRepos,omitempty"`
-	// EVE-NG deployments require an endpoint. This flag enables configuring a per-workspace EVE server.
+	// EVE-NG deployments require an endpoint. This flag enables configuring a per-user-context EVE server.
 	AllowCustomEveServers          bool                   `json:"allowCustomEveServers,omitempty"`
 	AllowCustomNetlabServers       bool                   `json:"allowCustomNetlabServers,omitempty"`
 	AllowCustomContainerlabServers bool                   `json:"allowCustomContainerlabServers,omitempty"`
