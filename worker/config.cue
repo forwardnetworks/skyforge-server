@@ -21,7 +21,7 @@ Netlab: {
 	StateRoot:  "/var/lib/skyforge/netlab"
 }
 
-Workspaces: {
+Projects: {
 	DataDir: "/var/lib/skyforge"
 	GiteaAPIURL: ""
 	GiteaUsername: "skyforge"
@@ -30,7 +30,7 @@ Workspaces: {
 }
 
 ObjectStorage: {
-	Endpoint: "minio:9000"
+	Endpoint: "s3gw:7480"
 	UseSSL: false
 }
 
@@ -54,7 +54,7 @@ ForwardCollector: {
 
 Features: {
 	GiteaEnabled: true
-	MinioEnabled: true
+	ObjectStorageEnabled: true
 	DexEnabled: true
 	CoderEnabled: true
 	YaadeEnabled: true
@@ -63,12 +63,6 @@ Features: {
 	NetboxEnabled: false
 	NautobotEnabled: false
 	DNSEnabled: false
-	ElasticEnabled: false
-}
-
-Elastic: {
-	URL: ""
-	IndexPrefix: "skyforge"
 }
 
 Kubernetes: {

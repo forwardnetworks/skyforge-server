@@ -9,11 +9,10 @@ import "encore.app/internal/skyforgecore"
 // service does not import the skyforge service package at all.
 type (
 	Config             = skyforgecore.Config
-	ElasticConfig      = skyforgecore.ElasticConfig
 	OIDCConfig         = skyforgecore.OIDCConfig
 	LDAPConfig         = skyforgecore.LDAPConfig
 	UIConfig           = skyforgecore.UIConfig
 	NetlabConfig       = skyforgecore.NetlabConfig
 	NetlabServerConfig = skyforgecore.NetlabServerConfig
-	WorkspacesConfig   = skyforgecore.WorkspacesConfig
+	ProjectsConfig     = skyforgecore.ProjectsConfig
 )

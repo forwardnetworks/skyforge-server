@@ -150,10 +150,9 @@
       <section class="card">
         <h2>RBAC model</h2>
         <ul>
-          <li><strong>Owners</strong>: can edit membership and run templates (and are synced to Git as repo admins).</li>
-          <li><strong>Editors</strong>: can run templates and are synced to Git with write access.</li>
-          <li><strong>Viewers</strong>: read-only in Skyforge and are synced to Git with read access.</li>
-          <li>Optionally, map directory groups into <strong>Owner groups</strong>/<strong>Editor groups</strong>/<strong>Viewer groups</strong> for automatic access.</li>
+          <li><strong>Owners</strong>: workspace creators and admins can run templates and manage workspace settings.</li>
+          <li><strong>Viewers</strong>: any authenticated user can access public workspaces.</li>
+          <li>There is no per-workspace user/team membership list in Skyforge UI. Access is controlled by workspace ownership and public visibility.</li>
         </ul>
       </section>
 

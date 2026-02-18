@@ -39,14 +39,12 @@ type Config struct {
 	NautobotInternalBaseURL   string
 	YaadeBaseURL              string
 	YaadeInternalBaseURL      string
-	ElasticURL                string
-	ElasticIndexPrefix        string
 	Netlab                    NetlabConfig
 	OIDC                      OIDCConfig
 	LDAP                      LDAPConfig
 	LDAPLookupBindDN          string
 	LDAPLookupBindPassword    string
-	Workspaces                WorkspacesConfig
+	Projects                  ProjectsConfig
 	TerraformBinaryPath       string
 	TerraformVersion          string
 	TerraformURL              string
@@ -95,54 +93,23 @@ type Config struct {
 	ForwardCollectorHeapSizeGB int
 	Forward                    ForwardConfig
 	Features                   FeaturesConfig
-	Elastic                    ElasticConfig
 }
 
 type ForwardConfig struct {
 	SNMPPlaceholderEnabled bool
 }
 
-type ElasticConfig struct {
-	// URL is the Elasticsearch base URL (e.g. http://elasticsearch:9200).
-	//
-	// When empty, Skyforge treats Elasticsearch indexing as disabled even if the
-	// feature flag is enabled.
-	URL string
-	// IndexPrefix is the prefix used for Skyforge-managed indices.
-	// Example indices:
-	//   <prefix>-syslog-YYYY.MM.DD
-	//   <prefix>-snmp-trap-YYYY.MM.DD
-	//   <prefix>-webhook-YYYY.MM.DD
-	IndexPrefix string
-	// IndexingMode controls how Skyforge names indices.
-	//
-	// Allowed values:
-	// - "instance": legacy instance-scoped indices (<IndexPrefix>-<category>-YYYY.MM.DD)
-	// - "per_user": per-user indices (<IndexPrefix>-u-<username>-<category>-YYYY.MM.DD)
-	//
-	// Empty is treated as "instance" for backwards compatibility.
-	IndexingMode string
-
-	// ToolsAutosleepEnabled enables demo-friendly autosleep for in-cluster Elastic tools
-	// (Elasticsearch StatefulSet + Kibana Deployment).
-	ToolsAutosleepEnabled bool
-	// ToolsAutosleepIdleMinutes is the idle timeout (minutes) before autosleep scales
-	// Elastic tools to 0 replicas.
-	ToolsAutosleepIdleMinutes int
-}
-
 type FeaturesConfig struct {
-	GiteaEnabled     bool `json:"giteaEnabled"`
-	MinioEnabled     bool `json:"minioEnabled"`
-	DexEnabled       bool `json:"dexEnabled"`
-	CoderEnabled     bool `json:"coderEnabled"`
-	YaadeEnabled     bool `json:"yaadeEnabled"`
-	SwaggerUIEnabled bool `json:"swaggerUIEnabled"`
-	ForwardEnabled   bool `json:"forwardEnabled"`
-	NetboxEnabled    bool `json:"netboxEnabled"`
-	NautobotEnabled  bool `json:"nautobotEnabled"`
-	DNSEnabled       bool `json:"dnsEnabled"`
-	ElasticEnabled   bool `json:"elasticEnabled"`
+	GiteaEnabled         bool `json:"giteaEnabled"`
+	ObjectStorageEnabled bool `json:"objectStorageEnabled"`
+	DexEnabled           bool `json:"dexEnabled"`
+	CoderEnabled         bool `json:"coderEnabled"`
+	YaadeEnabled         bool `json:"yaadeEnabled"`
+	SwaggerUIEnabled     bool `json:"swaggerUIEnabled"`
+	ForwardEnabled       bool `json:"forwardEnabled"`
+	NetboxEnabled        bool `json:"netboxEnabled"`
+	NautobotEnabled      bool `json:"nautobotEnabled"`
+	DNSEnabled           bool `json:"dnsEnabled"`
 }
 
 type OIDCConfig struct {
@@ -203,7 +170,7 @@ type NetlabServerConfig struct {
 	ContainerlabSkipTLSVerify bool   `json:"containerlabSkipTlsVerify,omitempty"`
 }
 
-type WorkspacesConfig struct {
+type ProjectsConfig struct {
 	DataDir                string
 	GiteaAPIURL            string
 	GiteaUsername          string
@@ -216,9 +183,9 @@ type WorkspacesConfig struct {
 	ObjectStorageSecretKey string
 }
 
-// SkyforgeWorkspace is the user-facing workspace object stored in Postgres and
+// SkyforgeProject is the user-facing account object stored in Postgres and
 // returned by the API.
-type SkyforgeWorkspace struct {
+type SkyforgeProject struct {
 	ID                         string                 `json:"id"`
 	Slug                       string                 `json:"slug"`
 	Name                       string                 `json:"name"`
@@ -226,12 +193,6 @@ type SkyforgeWorkspace struct {
 	CreatedAt                  time.Time              `json:"createdAt"`
 	CreatedBy                  string                 `json:"createdBy"`
 	IsPublic                   bool                   `json:"isPublic"`
-	Owners                     []string               `json:"owners,omitempty"`
-	OwnerGroups                []string               `json:"ownerGroups,omitempty"`
-	Editors                    []string               `json:"editors,omitempty"`
-	EditorGroups               []string               `json:"editorGroups,omitempty"`
-	Viewers                    []string               `json:"viewers,omitempty"`
-	ViewerGroups               []string               `json:"viewerGroups,omitempty"`
 	Blueprint                  string                 `json:"blueprint,omitempty"`
 	DefaultBranch              string                 `json:"defaultBranch,omitempty"`
 	AllowExternalTemplateRepos bool                   `json:"allowExternalTemplateRepos,omitempty"`

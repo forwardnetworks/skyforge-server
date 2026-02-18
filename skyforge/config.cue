@@ -82,7 +82,7 @@ DNS: {
 		// Model name for Vertex AI (publisher "google").
 		Model: "gemini-3.0-pro"
 		// Fallback model used when Model isn't available in the configured
-		// project/location (common with preview rollouts).
+		// target/location (common with preview rollouts).
 		FallbackModel: "gemini-3.0-flash"
 	}
 
@@ -110,7 +110,7 @@ Containerlab: {
 	SkipTLSVerify: false
 }
 
-Workspaces: {
+Projects: {
 	DataDir: "/var/lib/skyforge"
 	GiteaAPIURL: ""
 	GiteaUsername: "skyforge"
@@ -119,7 +119,7 @@ Workspaces: {
 }
 
 ObjectStorage: {
-	Endpoint: "minio:9000"
+	Endpoint: "s3gw:7480"
 	UseSSL: false
 }
 
@@ -151,7 +151,7 @@ ForwardCollector: {
 
 Features: {
 	GiteaEnabled: true
-	MinioEnabled: true
+	ObjectStorageEnabled: true
 	DexEnabled: true
 	CoderEnabled: true
 	YaadeEnabled: true
@@ -160,20 +160,12 @@ Features: {
 	NetboxEnabled: false
 	NautobotEnabled: false
 	DNSEnabled: false
-	ElasticEnabled: false
-}
-
-Elastic: {
-	// When empty, Skyforge uses a provider default when ElasticEnabled=true.
-	// For in-cluster (Helm): http://elasticsearch:9200
-	URL: ""
-	IndexPrefix: "skyforge"
 }
 
 Kubernetes: {
 	// ImagePullSecretName is the name of a docker registry secret that allows
 	// pulling images (e.g. from GHCR). When set, Skyforge can mirror it into
-	// per-workspace namespaces used by clabernetes/netlab-c9s.
+	// per-account namespaces used by clabernetes/netlab-c9s.
 	ImagePullSecretName: "ghcr-pull"
 	// ImagePullSecretNamespace is the namespace where ImagePullSecretName exists.
 	ImagePullSecretNamespace: "skyforge"

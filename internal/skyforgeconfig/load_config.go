@@ -115,29 +115,6 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 	nautobotInternalBaseURL := strings.TrimRight(strings.TrimSpace(enc.Integrations.NautobotInternalBaseURL), "/")
 	yaadeInternalBaseURL := strings.TrimRight(strings.TrimSpace(enc.Integrations.YaadeInternalBaseURL), "/")
 
-	elasticURL := strings.TrimRight(strings.TrimSpace(enc.Elastic.URL), "/")
-	elasticIndexPrefix := strings.TrimSpace(enc.Elastic.IndexPrefix)
-	elasticIndexingMode := strings.ToLower(strings.TrimSpace(enc.Elastic.IndexingMode))
-	switch elasticIndexingMode {
-	case "", "instance":
-		elasticIndexingMode = "instance"
-	case "per_user", "per-user", "peruser":
-		elasticIndexingMode = "per_user"
-	default:
-		elasticIndexingMode = "instance"
-	}
-	elasticToolsAutosleepEnabled := enc.Elastic.ToolsAutosleepEnabled
-	elasticToolsAutosleepIdleMinutes := enc.Elastic.ToolsAutosleepIdleMinutes
-	if elasticToolsAutosleepIdleMinutes <= 0 {
-		elasticToolsAutosleepIdleMinutes = 30
-	}
-	if elasticURL == "" && enc.Features.ElasticEnabled {
-		elasticURL = "http://elasticsearch:9200"
-	}
-	if elasticIndexPrefix == "" {
-		elasticIndexPrefix = "skyforge"
-	}
-
 	publicURL := strings.TrimRight(strings.TrimSpace(enc.PublicURL), "/")
 
 	oidcIssuerURL := strings.TrimSpace(enc.OIDC.IssuerURL)
@@ -248,37 +225,16 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 	}
 
 	featuresCfg := skyforgecore.FeaturesConfig{
-		GiteaEnabled:     enc.Features.GiteaEnabled,
-		MinioEnabled:     enc.Features.MinioEnabled,
-		DexEnabled:       enc.Features.DexEnabled,
-		CoderEnabled:     enc.Features.CoderEnabled,
-		YaadeEnabled:     enc.Features.YaadeEnabled,
-		SwaggerUIEnabled: enc.Features.SwaggerUIEnabled,
-		ForwardEnabled:   enc.Features.ForwardEnabled,
-		NetboxEnabled:    enc.Features.NetboxEnabled,
-		NautobotEnabled:  enc.Features.NautobotEnabled,
-		DNSEnabled:       enc.Features.DNSEnabled,
-		ElasticEnabled:   enc.Features.ElasticEnabled,
-	}
-	// "Forward Networks integrations" umbrella: keep Forward-specific integrations/tools
-	// (e.g. Forward Collector, ServiceNow demo, Elastic indexing) behind a single switch.
-	//
-	// NOTE: AI is intentionally not gated by this flag.
-	if !featuresCfg.ForwardEnabled {
-		featuresCfg.ElasticEnabled = false
-	}
-
-	// For the common "in-cluster Elastic" case, allow the feature flag to
-	// implicitly enable the default service name.
-	if elasticURL == "" && featuresCfg.ElasticEnabled {
-		elasticURL = "http://elasticsearch:9200"
-	}
-	elasticCfg := skyforgecore.ElasticConfig{
-		URL:                       elasticURL,
-		IndexPrefix:               elasticIndexPrefix,
-		IndexingMode:              elasticIndexingMode,
-		ToolsAutosleepEnabled:     elasticToolsAutosleepEnabled,
-		ToolsAutosleepIdleMinutes: elasticToolsAutosleepIdleMinutes,
+		GiteaEnabled:         enc.Features.GiteaEnabled,
+		ObjectStorageEnabled: enc.Features.ObjectStorageEnabled,
+		DexEnabled:           enc.Features.DexEnabled,
+		CoderEnabled:         enc.Features.CoderEnabled,
+		YaadeEnabled:         enc.Features.YaadeEnabled,
+		SwaggerUIEnabled:     enc.Features.SwaggerUIEnabled,
+		ForwardEnabled:       enc.Features.ForwardEnabled,
+		NetboxEnabled:        enc.Features.NetboxEnabled,
+		NautobotEnabled:      enc.Features.NautobotEnabled,
+		DNSEnabled:           enc.Features.DNSEnabled,
 	}
 
 	uiCfg := skyforgecore.UIConfig{
@@ -316,47 +272,34 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		cloudCredentialChecks = time.Duration(enc.CloudCheckIntervalMinutes) * time.Minute
 	}
 
-	workspacesCfg := skyforgecore.WorkspacesConfig{
-		DataDir:                strings.TrimSpace(enc.Workspaces.DataDir),
-		GiteaAPIURL:            strings.TrimRight(strings.TrimSpace(enc.Workspaces.GiteaAPIURL), "/"),
-		GiteaUsername:          strings.TrimSpace(enc.Workspaces.GiteaUsername),
+	projectsCfg := skyforgecore.ProjectsConfig{
+		DataDir:                strings.TrimSpace(enc.Projects.DataDir),
+		GiteaAPIURL:            strings.TrimRight(strings.TrimSpace(enc.Projects.GiteaAPIURL), "/"),
+		GiteaUsername:          strings.TrimSpace(enc.Projects.GiteaUsername),
 		GiteaPassword:          strings.TrimSpace(sec.GiteaPassword),
-		GiteaRepoPrivate:       enc.Workspaces.GiteaRepoPrivate,
-		DeleteMode:             strings.TrimSpace(enc.Workspaces.DeleteMode),
+		GiteaRepoPrivate:       enc.Projects.GiteaRepoPrivate,
+		DeleteMode:             strings.TrimSpace(enc.Projects.DeleteMode),
 		ObjectStorageEndpoint:  strings.TrimRight(strings.TrimSpace(enc.ObjectStorage.Endpoint), "/"),
 		ObjectStorageUseSSL:    enc.ObjectStorage.UseSSL,
 		ObjectStorageAccessKey: strings.TrimSpace(sec.ObjectStorageAccessKey),
 		ObjectStorageSecretKey: strings.TrimSpace(sec.ObjectStorageSecretKey),
 	}
-	if strings.TrimSpace(workspacesCfg.DataDir) == "" {
-		workspacesCfg.DataDir = "/var/lib/skyforge"
+	if strings.TrimSpace(projectsCfg.DataDir) == "" {
+		projectsCfg.DataDir = "/var/lib/skyforge"
 	}
-	// Back-compat + robustness: allow the older SKYFORGE_* env vars (injected by Helm configmaps)
-	// to fill gaps if ENCORE_CFG is missing or partially configured.
-	if strings.TrimSpace(workspacesCfg.GiteaAPIURL) == "" {
-		if v := strings.TrimRight(strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_API_URL")), "/"); v != "" {
-			workspacesCfg.GiteaAPIURL = v
-		} else if giteaBaseURL != "" {
-			workspacesCfg.GiteaAPIURL = giteaBaseURL + "/api/v1"
+	if strings.TrimSpace(projectsCfg.GiteaAPIURL) == "" {
+		if giteaBaseURL != "" {
+			projectsCfg.GiteaAPIURL = giteaBaseURL + "/api/v1"
 		}
 	}
-	if strings.TrimSpace(workspacesCfg.GiteaUsername) == "" {
-		if v := strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_USERNAME")); v != "" {
-			workspacesCfg.GiteaUsername = v
-		} else {
-			workspacesCfg.GiteaUsername = "skyforge"
-		}
+	if strings.TrimSpace(projectsCfg.GiteaUsername) == "" {
+		projectsCfg.GiteaUsername = "skyforge"
 	}
-	if strings.TrimSpace(workspacesCfg.GiteaPassword) == "" {
-		if v := strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_PASSWORD")); v != "" {
-			workspacesCfg.GiteaPassword = v
-		}
+	if strings.TrimSpace(projectsCfg.DeleteMode) == "" {
+		projectsCfg.DeleteMode = "live"
 	}
-	if strings.TrimSpace(workspacesCfg.DeleteMode) == "" {
-		workspacesCfg.DeleteMode = "live"
-	}
-	if strings.TrimSpace(workspacesCfg.ObjectStorageEndpoint) == "" {
-		workspacesCfg.ObjectStorageEndpoint = "minio:9000"
+	if strings.TrimSpace(projectsCfg.ObjectStorageEndpoint) == "" {
+		projectsCfg.ObjectStorageEndpoint = "s3gw:7480"
 	}
 
 	terraformBinaryPath := strings.TrimSpace(enc.Terraform.BinaryPath)
@@ -415,8 +358,6 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		NautobotInternalBaseURL: nautobotInternalBaseURL,
 		YaadeBaseURL:            yaadeBaseURL,
 		YaadeInternalBaseURL:    yaadeInternalBaseURL,
-		ElasticURL:              elasticURL,
-		ElasticIndexPrefix:      elasticIndexPrefix,
 		OIDC: skyforgecore.OIDCConfig{
 			IssuerURL:    oidcIssuerURL,
 			DiscoveryURL: oidcDiscoveryURL,
@@ -428,7 +369,7 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		LDAP:                      ldapCfg,
 		LDAPLookupBindDN:          ldapLookupBindDN,
 		LDAPLookupBindPassword:    ldapLookupBindPassword,
-		Workspaces:                workspacesCfg,
+		Projects:                  projectsCfg,
 		TerraformBinaryPath:       terraformBinaryPath,
 		TerraformVersion:          terraformVersion,
 		TerraformURL:              terraformURL,
@@ -482,7 +423,6 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		NetlabApplierImage:                       netlabApplierImage,
 		NetlabApplierPullPolicy:                  netlabApplierPullPolicy,
 		Features:                                 featuresCfg,
-		Elastic:                                  elasticCfg,
 	}
 }
 
@@ -495,47 +435,29 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		StateRoot:  strings.TrimSpace(enc.Netlab.StateRoot),
 	}
 
-	workspacesCfg := skyforgecore.WorkspacesConfig{
-		DataDir:                strings.TrimSpace(enc.Workspaces.DataDir),
-		GiteaAPIURL:            strings.TrimRight(strings.TrimSpace(enc.Workspaces.GiteaAPIURL), "/"),
-		GiteaUsername:          strings.TrimSpace(enc.Workspaces.GiteaUsername),
+	projectsCfg := skyforgecore.ProjectsConfig{
+		DataDir:                strings.TrimSpace(enc.Projects.DataDir),
+		GiteaAPIURL:            strings.TrimRight(strings.TrimSpace(enc.Projects.GiteaAPIURL), "/"),
+		GiteaUsername:          strings.TrimSpace(enc.Projects.GiteaUsername),
 		GiteaPassword:          strings.TrimSpace(sec.GiteaPassword),
-		GiteaRepoPrivate:       enc.Workspaces.GiteaRepoPrivate,
-		DeleteMode:             strings.TrimSpace(enc.Workspaces.DeleteMode),
+		GiteaRepoPrivate:       enc.Projects.GiteaRepoPrivate,
+		DeleteMode:             strings.TrimSpace(enc.Projects.DeleteMode),
 		ObjectStorageEndpoint:  strings.TrimRight(strings.TrimSpace(enc.ObjectStorage.Endpoint), "/"),
 		ObjectStorageUseSSL:    enc.ObjectStorage.UseSSL,
 		ObjectStorageAccessKey: strings.TrimSpace(sec.ObjectStorageAccessKey),
 		ObjectStorageSecretKey: strings.TrimSpace(sec.ObjectStorageSecretKey),
 	}
-	if strings.TrimSpace(workspacesCfg.DataDir) == "" {
-		workspacesCfg.DataDir = "/var/lib/skyforge"
+	if strings.TrimSpace(projectsCfg.DataDir) == "" {
+		projectsCfg.DataDir = "/var/lib/skyforge"
 	}
-	// Back-compat + robustness: allow the SKYFORGE_* env vars (injected by Helm configmaps)
-	// to fill gaps if ENCORE_CFG is missing or partially configured.
-	if strings.TrimSpace(workspacesCfg.GiteaAPIURL) == "" {
-		if v := strings.TrimRight(strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_API_URL")), "/"); v != "" {
-			workspacesCfg.GiteaAPIURL = v
-		} else if base := strings.TrimRight(strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_URL")), "/"); base != "" {
-			workspacesCfg.GiteaAPIURL = base + "/api/v1"
-		}
+	if strings.TrimSpace(projectsCfg.GiteaUsername) == "" {
+		projectsCfg.GiteaUsername = "skyforge"
 	}
-	if strings.TrimSpace(workspacesCfg.GiteaUsername) == "" {
-		if v := strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_USERNAME")); v != "" {
-			workspacesCfg.GiteaUsername = v
-		} else {
-			workspacesCfg.GiteaUsername = "skyforge"
-		}
+	if strings.TrimSpace(projectsCfg.DeleteMode) == "" {
+		projectsCfg.DeleteMode = "live"
 	}
-	if strings.TrimSpace(workspacesCfg.GiteaPassword) == "" {
-		if v := strings.TrimSpace(os.Getenv("SKYFORGE_GITEA_PASSWORD")); v != "" {
-			workspacesCfg.GiteaPassword = v
-		}
-	}
-	if strings.TrimSpace(workspacesCfg.DeleteMode) == "" {
-		workspacesCfg.DeleteMode = "live"
-	}
-	if strings.TrimSpace(workspacesCfg.ObjectStorageEndpoint) == "" {
-		workspacesCfg.ObjectStorageEndpoint = "minio:9000"
+	if strings.TrimSpace(projectsCfg.ObjectStorageEndpoint) == "" {
+		projectsCfg.ObjectStorageEndpoint = "s3gw:7480"
 	}
 
 	terraformBinaryPath := strings.TrimSpace(enc.Terraform.BinaryPath)
@@ -582,54 +504,16 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 	}
 
 	featuresCfg := skyforgecore.FeaturesConfig{
-		GiteaEnabled:     enc.Features.GiteaEnabled,
-		MinioEnabled:     enc.Features.MinioEnabled,
-		DexEnabled:       enc.Features.DexEnabled,
-		CoderEnabled:     enc.Features.CoderEnabled,
-		YaadeEnabled:     enc.Features.YaadeEnabled,
-		SwaggerUIEnabled: enc.Features.SwaggerUIEnabled,
-		ForwardEnabled:   enc.Features.ForwardEnabled,
-		NetboxEnabled:    enc.Features.NetboxEnabled,
-		NautobotEnabled:  enc.Features.NautobotEnabled,
-		DNSEnabled:       enc.Features.DNSEnabled,
-		ElasticEnabled:   enc.Features.ElasticEnabled,
-	}
-	// "Forward Networks integrations" umbrella: keep Forward-specific integrations/tools
-	// (e.g. Forward Collector, ServiceNow demo, Elastic indexing) behind a single switch.
-	//
-	// NOTE: AI is intentionally not gated by this flag.
-	if !featuresCfg.ForwardEnabled {
-		featuresCfg.ElasticEnabled = false
-	}
-
-	elasticURL := strings.TrimRight(strings.TrimSpace(enc.Elastic.URL), "/")
-	elasticIndexPrefix := strings.TrimSpace(enc.Elastic.IndexPrefix)
-	elasticIndexingMode := strings.ToLower(strings.TrimSpace(enc.Elastic.IndexingMode))
-	switch elasticIndexingMode {
-	case "", "instance":
-		elasticIndexingMode = "instance"
-	case "per_user", "per-user", "peruser":
-		elasticIndexingMode = "per_user"
-	default:
-		elasticIndexingMode = "instance"
-	}
-	elasticToolsAutosleepEnabled := enc.Elastic.ToolsAutosleepEnabled
-	elasticToolsAutosleepIdleMinutes := enc.Elastic.ToolsAutosleepIdleMinutes
-	if elasticToolsAutosleepIdleMinutes <= 0 {
-		elasticToolsAutosleepIdleMinutes = 30
-	}
-	if elasticIndexPrefix == "" {
-		elasticIndexPrefix = "skyforge"
-	}
-	if elasticURL == "" && featuresCfg.ElasticEnabled {
-		elasticURL = "http://elasticsearch:9200"
-	}
-	elasticCfg := skyforgecore.ElasticConfig{
-		URL:                       elasticURL,
-		IndexPrefix:               elasticIndexPrefix,
-		IndexingMode:              elasticIndexingMode,
-		ToolsAutosleepEnabled:     elasticToolsAutosleepEnabled,
-		ToolsAutosleepIdleMinutes: elasticToolsAutosleepIdleMinutes,
+		GiteaEnabled:         enc.Features.GiteaEnabled,
+		ObjectStorageEnabled: enc.Features.ObjectStorageEnabled,
+		DexEnabled:           enc.Features.DexEnabled,
+		CoderEnabled:         enc.Features.CoderEnabled,
+		YaadeEnabled:         enc.Features.YaadeEnabled,
+		SwaggerUIEnabled:     enc.Features.SwaggerUIEnabled,
+		ForwardEnabled:       enc.Features.ForwardEnabled,
+		NetboxEnabled:        enc.Features.NetboxEnabled,
+		NautobotEnabled:      enc.Features.NautobotEnabled,
+		DNSEnabled:           enc.Features.DNSEnabled,
 	}
 
 	// Note: Worker does not need OIDC, LDAP, DNS, UI, or admin users.
@@ -639,7 +523,7 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		TaskWorkerEnabled:                        enc.TaskWorkerEnabled,
 		SessionSecret:                            sec.SessionSecret,
 		Netlab:                                   netlabCfg,
-		Workspaces:                               workspacesCfg,
+		Projects:                                 projectsCfg,
 		TerraformBinaryPath:                      terraformBinaryPath,
 		TerraformVersion:                         terraformVersion,
 		TerraformURL:                             terraformURL,
@@ -656,8 +540,6 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		NetlabGeneratorPullPolicy:                netlabGeneratorPullPolicy,
 		NetlabApplierImage:                       netlabApplierImage,
 		NetlabApplierPullPolicy:                  netlabApplierPullPolicy,
-		ElasticURL:                               elasticURL,
-		ElasticIndexPrefix:                       elasticIndexPrefix,
 		Forward: skyforgecore.ForwardConfig{
 			SNMPPlaceholderEnabled: enc.Forward.SNMPPlaceholderEnabled,
 		},
@@ -665,6 +547,5 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		PKICAKey:  strings.TrimSpace(sec.PKICAKey),
 		SSHCAKey:  strings.TrimSpace(sec.SSHCAKey),
 		Features:  featuresCfg,
-		Elastic:   elasticCfg,
 	}
 }

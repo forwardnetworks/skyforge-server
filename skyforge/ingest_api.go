@@ -105,19 +105,6 @@ VALUES ($1, $2::inet, NULLIF($3,''), NULLIF($4,''), NULLIF($5,''), NULLIF($6,'')
 		_ = notifySyslogUpdatePG(ctx, s.db, owner)
 	}
 
-	s.indexElasticAsync(owner, "syslog", receivedAt, map[string]any{
-		"received_at": receivedAt.Format(time.RFC3339Nano),
-		"owner":       owner,
-		"source_ip":   sourceIP,
-		"hostname":    strings.TrimSpace(params.Hostname),
-		"app_name":    strings.TrimSpace(params.AppName),
-		"proc_id":     strings.TrimSpace(params.ProcID),
-		"msg_id":      strings.TrimSpace(params.MsgID),
-		"facility":    params.Facility,
-		"severity":    params.Severity,
-		"message":     strings.TrimSpace(params.Message),
-		"raw":         rawLine,
-	})
 	return nil
 }
 
@@ -223,16 +210,6 @@ VALUES ($1, NULLIF($2,''), NULLIF($3,'')::inet, NULLIF($4,''), NULLIF($5,''), $6
 		_ = notifySnmpUpdatePG(ctx, s.db, username)
 	}
 
-	s.indexElasticAsync(username, "snmp-trap", receivedAt, map[string]any{
-		"received_at": receivedAt.Format(time.RFC3339Nano),
-		"username":    username,
-		"source_ip":   sourceIP,
-		"community":   community,
-		"oid":         oid,
-		"metric_name": strings.TrimSpace(params.Name),
-		"tags":        params.Tags,
-		"fields":      json.RawMessage(varsJSON),
-	})
 	return nil
 }
 
