@@ -112,12 +112,13 @@ func ensureCollectorDeployedForName(ctx context.Context, cfg Config, username, d
 	if name == "" {
 		name = collectorResourceNameForUser(username)
 	}
+	usernameLabel := sanitizeKubeDNSLabelPart(username, 63)
 	dataPVCName := name + "-data"
 	labels := map[string]string{
 		"app.kubernetes.io/name":      "skyforge",
 		"app.kubernetes.io/component": "collector",
 		"skyforge-managed":            "true",
-		"skyforge-username":           strings.TrimSpace(username),
+		"skyforge-username":           usernameLabel,
 		"skyforge-collector-name":     name,
 	}
 
@@ -393,7 +394,7 @@ func ensureCollectorDeployedForName(ctx context.Context, cfg Config, username, d
 							// Used by server/internal/taskengine to co-locate lab pods with the
 							// user's collector (best-effort). Keep on the Pod template (not just
 							// the Deployment) so it can be selected via the Pod list API.
-							"skyforge-username": strings.TrimSpace(username),
+							"skyforge-username": usernameLabel,
 						},
 						"annotations": map[string]string{
 							"skyforge/restartedAt": time.Now().UTC().Format(time.RFC3339Nano),
@@ -621,7 +622,7 @@ func ensureCollectorDeployedForName(ctx context.Context, cfg Config, username, d
 				},
 			}
 			patchBody, _ := json.Marshal(patchObj)
-			patchURL := fmt.Sprintf("https://kubernetes.default.svc/apis/apps/v1/namespaces/%s/deployments/%s", url.PathEscape(ns), url.PathEscape(name))
+			patchURL := fmt.Sprintf("https://kubernetes.default.svc/apis/apps/v1/namespaces/%s/deploy/%s", url.PathEscape(ns), url.PathEscape(name))
 			patchReq, err := kubeRequest(ctx, http.MethodPatch, patchURL, bytes.NewReader(patchBody))
 			if err != nil {
 				return nil, err
@@ -908,7 +909,7 @@ func deleteCollectorResourcesByName(ctx context.Context, deploymentName string) 
 
 	// Deployment
 	{
-		u := fmt.Sprintf("https://kubernetes.default.svc/apis/apps/v1/namespaces/%s/deployments/%s?propagationPolicy=Background",
+		u := fmt.Sprintf("https://kubernetes.default.svc/apis/apps/v1/namespaces/%s/deploy/%s?propagationPolicy=Background",
 			url.PathEscape(ns), url.PathEscape(name))
 		req, err := kubeRequest(ctx, http.MethodDelete, u, nil)
 		if err != nil {
@@ -989,7 +990,7 @@ func restartCollectorDeploymentByName(ctx context.Context, deploymentName string
 			},
 		},
 	})
-	patchURL := fmt.Sprintf("https://kubernetes.default.svc/apis/apps/v1/namespaces/%s/deployments/%s", url.PathEscape(ns), url.PathEscape(name))
+	patchURL := fmt.Sprintf("https://kubernetes.default.svc/apis/apps/v1/namespaces/%s/deploy/%s", url.PathEscape(ns), url.PathEscape(name))
 	patchReq, err := kubeRequest(ctx, http.MethodPatch, patchURL, bytes.NewReader(patchBody))
 	if err != nil {
 		return err
