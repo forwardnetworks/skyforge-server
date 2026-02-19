@@ -34,16 +34,33 @@ type ListUserForwardCollectorConfigsResponse struct {
 }
 
 type CreateUserForwardCollectorConfigRequest struct {
-	Name          string `json:"name"`
-	BaseURL       string `json:"baseUrl"`
-	SkipTLSVerify bool   `json:"skipTlsVerify"`
-	Username      string `json:"username"`
-	Password      string `json:"password"`
-	SetDefault    bool   `json:"setDefault"`
+	Name                  string `json:"name"`
+	BaseURL               string `json:"baseUrl"`
+	SkipTLSVerify         bool   `json:"skipTlsVerify"`
+	Username              string `json:"username"`
+	Password              string `json:"password"`
+	CredentialProfileName string `json:"credentialProfileName,omitempty"`
+	SetDefault            bool   `json:"setDefault"`
 }
 
 type DeleteUserForwardCollectorConfigResponse struct {
 	Deleted bool `json:"deleted"`
+}
+
+type ForwardCollectorInfo struct {
+	ID              string   `json:"id,omitempty"`
+	Name            string   `json:"name,omitempty"`
+	Username        string   `json:"username,omitempty"`
+	Status          string   `json:"status,omitempty"`
+	Connected       *bool    `json:"connected,omitempty"`
+	ConnectedAt     string   `json:"connectedAt,omitempty"`
+	LastConnectedAt string   `json:"lastConnectedAt,omitempty"`
+	LastSeenAt      string   `json:"lastSeenAt,omitempty"`
+	UpdatedAt       string   `json:"updatedAt,omitempty"`
+	Version         string   `json:"version,omitempty"`
+	UpdateStatus    string   `json:"updateStatus,omitempty"`
+	ExternalIP      string   `json:"externalIp,omitempty"`
+	InternalIPs     []string `json:"internalIps,omitempty"`
 }
 
 type userForwardCollectorConfigRow struct {
@@ -166,79 +183,6 @@ ORDER BY is_default DESC, name ASC`, username)
 	return out, nil
 }
 
-func migrateLegacyUserForwardCollectorIfNeeded(ctx context.Context, db *sql.DB, username string) error {
-	username = strings.TrimSpace(username)
-	if username == "" {
-		return fmt.Errorf("username is required")
-	}
-	var count int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sf_user_forward_collectors WHERE username=$1`, username).Scan(&count); err != nil {
-		if isMissingDBRelation(err) {
-			return nil
-		}
-		return err
-	}
-	if count > 0 {
-		return nil
-	}
-
-	// Copy ciphertext from the legacy per-user table into the new per-collector table.
-	var baseURL, fwdUser, fwdPass sql.NullString
-	var collectorID, collectorUser, authKey sql.NullString
-	var skipTLSVerify sql.NullBool
-	var updatedAt sql.NullTime
-	err := db.QueryRowContext(ctx, `SELECT base_url, forward_username, forward_password,
-  COALESCE(collector_id, ''), COALESCE(collector_username, ''), COALESCE(authorization_key, ''),
-  COALESCE(skip_tls_verify, false),
-  updated_at
-FROM sf_user_forward_credentials WHERE username=$1`, username).Scan(&baseURL, &fwdUser, &fwdPass, &collectorID, &collectorUser, &authKey, &skipTLSVerify, &updatedAt)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) || isMissingDBRelation(err) {
-			return nil
-		}
-		return err
-	}
-
-	id := uuid.NewString()
-	now := time.Now().UTC()
-	createdAt := now
-	if updatedAt.Valid {
-		createdAt = updatedAt.Time
-	}
-	_, err = db.ExecContext(ctx, `INSERT INTO sf_user_forward_collectors (
-  id, username, name,
-  base_url, skip_tls_verify, forward_username, forward_password,
-  collector_id, collector_username, authorization_key,
-  created_at, updated_at, is_default
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true)`,
-		id, username, "default",
-		baseURL.String, (skipTLSVerify.Valid && skipTLSVerify.Bool), fwdUser.String, fwdPass.String,
-		collectorID.String, collectorUser.String, authKey.String,
-		createdAt, createdAt,
-	)
-	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
-			return nil
-		}
-		return err
-	}
-
-	// Prevent "phantom re-creation" if a user later deletes all configured collectors:
-	// ListUserForwardCollectorConfigs calls migrateLegacyUserForwardCollectorIfNeeded when no collector
-	// configs exist. If we keep the legacy row around, a delete would appear to "succeed" but the next
-	// list would immediately re-import it, making it look like the UI delete didn't work.
-	//
-	// The multi-collector endpoints are the source of truth going forward; delete the legacy row
-	// best-effort (it's safe to ignore missing-table errors on fresh installs).
-	if _, delErr := db.ExecContext(ctx, `DELETE FROM sf_user_forward_credentials WHERE username=$1`, username); delErr != nil {
-		if !isMissingDBRelation(delErr) {
-			log.Printf("user forward collectors migrate: failed to delete legacy row: %v", delErr)
-		}
-	}
-
-	return nil
-}
-
 // ListUserForwardCollectorConfigs lists Forward collector configurations managed by Skyforge for the current user.
 //
 //encore:api auth method=GET path=/api/forward/collector-configs
@@ -253,7 +197,6 @@ func (s *Service) ListUserForwardCollectorConfigs(ctx context.Context) (*ListUse
 
 	ctxReq, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	_ = migrateLegacyUserForwardCollectorIfNeeded(ctxReq, s.db, user.Username)
 	rows, err := listUserForwardCollectorConfigRows(ctxReq, s.db, newSecretBox(s.cfg.SessionSecret), user.Username)
 	if err != nil {
 		log.Printf("user forward collectors list: %v", err)
@@ -262,6 +205,9 @@ func (s *Service) ListUserForwardCollectorConfigs(ctx context.Context) (*ListUse
 
 	out := make([]UserForwardCollectorConfigSummary, 0, len(rows))
 	for _, r := range rows {
+		if isHiddenForwardCollectorConfigName(r.Name) {
+			continue
+		}
 		baseURL := strings.TrimSpace(r.BaseURL)
 		if baseURL == "" {
 			baseURL = defaultForwardBaseURL
@@ -367,16 +313,72 @@ func (s *Service) CreateUserForwardCollectorConfig(ctx context.Context, req *Cre
 	if name == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("name is required").Err()
 	}
+	if isHiddenForwardCollectorConfigName(name) {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("name is reserved").Err()
+	}
 	baseURL := strings.TrimSpace(req.BaseURL)
 	if baseURL == "" {
 		baseURL = defaultForwardBaseURL
 	}
+	skipTLSVerify := req.SkipTLSVerify
 	fwdUser := strings.TrimSpace(req.Username)
 	fwdPass := strings.TrimSpace(req.Password)
-	if fwdUser == "" || fwdPass == "" {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("username and password are required").Err()
+	if profName := strings.TrimSpace(req.CredentialProfileName); profName != "" {
+		recordName := forwardProfileRecordName(profName)
+		ctxLookup, cancelLookup := context.WithTimeout(ctx, 2*time.Second)
+		profile, _ := getUserForwardProfileByName(ctxLookup, s.db, newSecretBox(s.cfg.SessionSecret), user.Username, recordName)
+		cancelLookup()
+		if profile == nil {
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("Forward credential profile not found").Err()
+		}
+		baseURL = strings.TrimSpace(profile.BaseURL)
+		if baseURL == "" {
+			baseURL = defaultForwardBaseURL
+		}
+		skipTLSVerify = profile.SkipTLSVerify
+		fwdUser = strings.TrimSpace(profile.Username)
+		var encPass sql.NullString
+		ctxPass, cancelPass := context.WithTimeout(ctx, 2*time.Second)
+		_ = s.db.QueryRowContext(ctxPass, `
+SELECT forward_password FROM sf_user_forward_collectors WHERE username=$1 AND name=$2
+`, user.Username, recordName).Scan(&encPass)
+		cancelPass()
+		if strings.TrimSpace(encPass.String) != "" {
+			if plain, err := newSecretBox(s.cfg.SessionSecret).decrypt(encPass.String); err == nil {
+				fwdPass = strings.TrimSpace(plain)
+			}
+		}
 	}
-	skipTLSVerify := req.SkipTLSVerify
+	if fwdUser == "" || fwdPass == "" {
+		profileName := forwardProfileOnPremName
+		if strings.EqualFold(strings.TrimRight(baseURL, "/"), strings.TrimRight(defaultForwardBaseURL, "/")) {
+			profileName = forwardProfileSaaSName
+		}
+		ctxLookup, cancelLookup := context.WithTimeout(ctx, 2*time.Second)
+		profile, _ := getUserForwardProfileByName(ctxLookup, s.db, newSecretBox(s.cfg.SessionSecret), user.Username, profileName)
+		cancelLookup()
+		if profile != nil {
+			if fwdUser == "" {
+				fwdUser = strings.TrimSpace(profile.Username)
+			}
+			if fwdPass == "" && profile.HasPassword {
+				var encPass sql.NullString
+				ctxPass, cancelPass := context.WithTimeout(ctx, 2*time.Second)
+				_ = s.db.QueryRowContext(ctxPass, `
+SELECT forward_password FROM sf_user_forward_collectors WHERE username=$1 AND name=$2
+`, user.Username, profileName).Scan(&encPass)
+				cancelPass()
+				if strings.TrimSpace(encPass.String) != "" {
+					if plain, err := newSecretBox(s.cfg.SessionSecret).decrypt(encPass.String); err == nil {
+						fwdPass = strings.TrimSpace(plain)
+					}
+				}
+			}
+		}
+	}
+	if fwdUser == "" || fwdPass == "" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("username and password are required (or choose a Forward credential set)").Err()
+	}
 
 	box := newSecretBox(s.cfg.SessionSecret)
 	// Keep request-scoped work bounded, but do NOT let a short timeout abort the
@@ -557,7 +559,6 @@ func (s *Service) DeleteUserForwardCollectorConfig(ctx context.Context, id strin
 
 	ctxReq, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	_ = migrateLegacyUserForwardCollectorIfNeeded(ctxReq, s.db, user.Username)
 
 	var isDefault bool
 	err = s.db.QueryRowContext(ctxReq, `SELECT COALESCE(is_default, false) FROM sf_user_forward_collectors WHERE id=$1 AND username=$2`, id, user.Username).Scan(&isDefault)
@@ -580,16 +581,6 @@ func (s *Service) DeleteUserForwardCollectorConfig(ctx context.Context, id strin
 	_, err = s.db.ExecContext(ctxReq, `DELETE FROM sf_user_forward_collectors WHERE id=$1 AND username=$2`, id, user.Username)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to delete collector").Err()
-	}
-
-	// Best-effort cleanup of the legacy single-collector table (used for historical migrations).
-	// This avoids deleted collectors reappearing via migrateLegacyUserForwardCollectorIfNeeded.
-	if isDefault {
-		if _, delErr := s.db.ExecContext(ctxReq, `DELETE FROM sf_user_forward_credentials WHERE username=$1`, user.Username); delErr != nil {
-			if !isMissingDBRelation(delErr) {
-				log.Printf("collector delete legacy row: %v", delErr)
-			}
-		}
 	}
 
 	return &DeleteUserForwardCollectorConfigResponse{Deleted: true}, nil
