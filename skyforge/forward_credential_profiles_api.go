@@ -3,6 +3,7 @@ package skyforge
 import (
 	"context"
 	"log"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -25,7 +26,7 @@ type ListUserForwardCredentialProfilesResponse struct {
 }
 
 type UpsertUserForwardCredentialProfileRequest struct {
-	Name          string `json:"name"`
+	Name          string `json:"name,omitempty"`
 	BaseURL       string `json:"baseUrl"`
 	SkipTLSVerify bool   `json:"skipTlsVerify"`
 	Username      string `json:"username"`
@@ -34,6 +35,33 @@ type UpsertUserForwardCredentialProfileRequest struct {
 
 type DeleteUserForwardCredentialProfileResponse struct {
 	Deleted bool `json:"deleted"`
+}
+
+func normalizeForwardProfileBaseURL(raw string) string {
+	base := strings.TrimSpace(raw)
+	if base == "" {
+		return defaultForwardBaseURL
+	}
+	if strings.HasPrefix(strings.ToLower(base), "http://") || strings.HasPrefix(strings.ToLower(base), "https://") {
+		return base
+	}
+	return "https://" + base
+}
+
+func forwardProfileHostLabel(baseURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(baseURL))
+	if err == nil && strings.TrimSpace(parsed.Host) != "" {
+		return strings.ToLower(strings.TrimSpace(parsed.Host))
+	}
+	clean := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(strings.ToLower(baseURL), "https://"), "http://"))
+	if idx := strings.Index(clean, "/"); idx >= 0 {
+		clean = clean[:idx]
+	}
+	return clean
+}
+
+func deriveForwardProfileDisplayName(username, baseURL string) string {
+	return strings.ToLower(strings.TrimSpace(username)) + "@" + forwardProfileHostLabel(baseURL)
 }
 
 // ListUserForwardCredentialProfiles lists named Forward credential sets for the current user.
@@ -93,13 +121,37 @@ func (s *Service) UpsertUserForwardCredentialProfile(ctx context.Context, req *U
 	if req == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid payload").Err()
 	}
+	baseURL := normalizeForwardProfileBaseURL(req.BaseURL)
+	username := strings.TrimSpace(req.Username)
+	password := strings.TrimSpace(req.Password)
+	if username == "" || password == "" {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("username and password are required").Err()
+	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("name is required").Err()
+		name = deriveForwardProfileDisplayName(username, baseURL)
 	}
 	recordName := forwardProfileRecordName(name)
 	if recordName == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("name is required").Err()
+	}
+	client, err := newForwardClient(forwardCredentials{
+		BaseURL:       baseURL,
+		SkipTLSVerify: req.SkipTLSVerify,
+		Username:      username,
+		Password:      password,
+	})
+	if err != nil {
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid Forward config").Err()
+	}
+	ctxVerify, cancelVerify := context.WithTimeout(ctx, 10*time.Second)
+	defer cancelVerify()
+	if _, err := forwardListCollectors(ctxVerify, client); err != nil {
+		msg := strings.ToLower(err.Error())
+		if strings.Contains(msg, "401") || strings.Contains(msg, "403") || strings.Contains(msg, "unauthorized") || strings.Contains(msg, "forbidden") {
+			return nil, errs.B().Code(errs.Unauthenticated).Msg("Forward authentication failed").Err()
+		}
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to reach Forward").Err()
 	}
 
 	ctxReq, cancel := context.WithTimeout(ctx, 15*time.Second)
@@ -110,10 +162,10 @@ func (s *Service) UpsertUserForwardCredentialProfile(ctx context.Context, req *U
 		newSecretBox(s.cfg.SessionSecret),
 		user.Username,
 		recordName,
-		strings.TrimSpace(req.BaseURL),
+		baseURL,
 		req.SkipTLSVerify,
-		strings.TrimSpace(req.Username),
-		strings.TrimSpace(req.Password),
+		username,
+		password,
 	)
 	if err != nil {
 		log.Printf("forward credential profile upsert: %v", err)

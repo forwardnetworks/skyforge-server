@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -42,6 +43,18 @@ type registryEnvConfig struct {
 	Password      string
 	SkipTLSVerify bool
 	RepoPrefixes  []string
+}
+
+type registryHTTPError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *registryHTTPError) Error() string {
+	if e == nil {
+		return "registry request failed"
+	}
+	return fmt.Sprintf("registry request failed: %s", e.Message)
 }
 
 func registryConfigFromEnv() registryEnvConfig {
@@ -101,7 +114,7 @@ func registryDoJSON(ctx context.Context, cfg registryEnvConfig, method, path str
 		if msg == "" {
 			msg = resp.Status
 		}
-		return fmt.Errorf("registry request failed: %s", msg)
+		return &registryHTTPError{StatusCode: resp.StatusCode, Message: msg}
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
 }
@@ -170,6 +183,18 @@ func (s *Service) ListRegistryRepos(w http.ResponseWriter, req *http.Request) {
 	var payload registryRepoListResponse
 	path := fmt.Sprintf("/v2/_catalog?n=%d", n)
 	if err := registryDoJSON(req.Context(), cfg, http.MethodGet, path, &payload); err != nil {
+		var httpErr *registryHTTPError
+		if strings.Contains(strings.ToLower(err.Error()), "unauthorized") ||
+			(strings.Contains(strings.ToLower(err.Error()), "forbidden")) ||
+			(errors.As(err, &httpErr) && (httpErr.StatusCode == http.StatusUnauthorized || httpErr.StatusCode == http.StatusForbidden)) {
+			writeJSON(w, http.StatusOK, RegistryReposResponse{
+				BaseURL:       cfg.BaseURL,
+				Repositories:  []string{},
+				FilteredCount: 0,
+				TotalCount:    0,
+			})
+			return
+		}
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -232,6 +257,16 @@ func (s *Service) ListRegistryTags(w http.ResponseWriter, req *http.Request) {
 	var payload registryTagsResponse
 	path := fmt.Sprintf("/v2/%s/tags/list", url.PathEscape(repo))
 	if err := registryDoJSON(req.Context(), cfg, http.MethodGet, path, &payload); err != nil {
+		var httpErr *registryHTTPError
+		if strings.Contains(strings.ToLower(err.Error()), "unauthorized") ||
+			(strings.Contains(strings.ToLower(err.Error()), "forbidden")) ||
+			(errors.As(err, &httpErr) && (httpErr.StatusCode == http.StatusUnauthorized || httpErr.StatusCode == http.StatusForbidden)) {
+			writeJSON(w, http.StatusOK, RegistryTagsListResponse{
+				Repository: repo,
+				Tags:       []string{},
+			})
+			return
+		}
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
