@@ -142,8 +142,8 @@ func (e *Engine) loadDeployment(ctx context.Context, workspaceID, deploymentID s
 
 	var dep WorkspaceDeployment
 	var cfgBytes []byte
-	err = db.QueryRowContext(ctxReq, `SELECT id, user_id, name, type, config
-FROM sf_deployments WHERE user_id=$1 AND id=$2`, workspaceID, deploymentID).Scan(&dep.ID, &dep.WorkspaceID, &dep.Name, &dep.Type, &cfgBytes)
+	err = db.QueryRowContext(ctxReq, `SELECT id, username, name, type, config
+FROM sf_deployments WHERE username=$1 AND id=$2`, workspaceID, deploymentID).Scan(&dep.ID, &dep.WorkspaceID, &dep.Name, &dep.Type, &cfgBytes)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil

@@ -22,7 +22,7 @@ func ListQueuedTasks(ctx context.Context, db *sql.DB, limit int) ([]QueuedTask, 
 		limit = 200
 	}
 
-	rows, err := db.QueryContext(ctx, `SELECT id, user_id, deployment_id, priority
+	rows, err := db.QueryContext(ctx, `SELECT id, username, deployment_id, priority
 FROM sf_tasks
 WHERE status='queued'
 ORDER BY priority DESC, id ASC
@@ -63,7 +63,7 @@ LIMIT $1`, limit)
 	return items, nil
 }
 
-// ListStuckQueuedTasksByKey returns at most one queued task per (user_id, deployment_id),
+// ListStuckQueuedTasksByKey returns at most one queued task per (username, deployment_id),
 // selecting the oldest (highest priority, then lowest id) for each key.
 //
 // This is used as a DB-backed fallback for environments where Pub/Sub delivery might be delayed
@@ -83,12 +83,12 @@ func ListStuckQueuedTasksByKey(ctx context.Context, db *sql.DB, limit int, minAg
 	// NOTE: deployment_id is a UUID column. We cast to text before COALESCE to avoid invalid
 	// UUID casts when comparing NULL deployments (workspace-scoped tasks).
 	rows, err := db.QueryContext(ctx, `
-SELECT DISTINCT ON (user_id, COALESCE(deployment_id::text, ''))
-  id, user_id, deployment_id, priority
+SELECT DISTINCT ON (username, COALESCE(deployment_id::text, ''))
+  id, username, deployment_id, priority
 FROM sf_tasks
 WHERE status='queued'
   AND created_at <= now() - $2::interval
-ORDER BY user_id, COALESCE(deployment_id::text, ''), priority DESC, id ASC
+ORDER BY username, COALESCE(deployment_id::text, ''), priority DESC, id ASC
 LIMIT $1`, limit, ageStr)
 	if err != nil {
 		return nil, err

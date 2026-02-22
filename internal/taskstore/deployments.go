@@ -31,7 +31,7 @@ func UpdateDeploymentStatus(ctx context.Context, db *sql.DB, workspaceID, deploy
   last_status=$1,
   last_finished_at=$2,
   updated_at=now()
-WHERE id=$3 AND user_id=$4`,
+WHERE id=$3 AND username=$4`,
 		status, finished, deploymentID, workspaceID)
 	if err == nil {
 		_ = tasknotify.NotifyDeploymentEvent(ctx, db, workspaceID, deploymentID)

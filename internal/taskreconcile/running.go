@@ -42,7 +42,7 @@ func FindStuckRunningTasks(ctx context.Context, db *sql.DB, opts RunningReconcil
 	cutoffHard := time.Now().Add(-hardMaxRuntime).UTC()
 	cutoffIdle := time.Now().Add(-maxIdle).UTC()
 
-	rows, err := db.QueryContext(ctx, `SELECT id, user_id, deployment_id, started_at
+	rows, err := db.QueryContext(ctx, `SELECT id, username, deployment_id, started_at
 FROM sf_tasks
 WHERE status='running'
   AND started_at IS NOT NULL
