@@ -161,28 +161,6 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 
 	taskWorkerEnabled := enc.TaskWorkerEnabled
 
-	aiEnabled := enc.AI.Enabled
-
-	geminiEnabled := enc.Gemini.Enabled
-	geminiClientID := strings.TrimSpace(enc.Gemini.ClientID)
-	geminiRedirectURL := strings.TrimSpace(enc.Gemini.RedirectURL)
-	if geminiRedirectURL == "" && strings.TrimSpace(enc.PublicURL) != "" {
-		geminiRedirectURL = strings.TrimRight(strings.TrimSpace(enc.PublicURL), "/") + "/api/user/integrations/gemini/callback"
-	}
-	geminiProjectID := strings.TrimSpace(enc.Gemini.ProjectID)
-	geminiLocation := strings.TrimSpace(enc.Gemini.Location)
-	if geminiLocation == "" {
-		geminiLocation = "us-central1"
-	}
-	geminiModel := strings.TrimSpace(enc.Gemini.Model)
-	geminiFallbackModel := strings.TrimSpace(enc.Gemini.FallbackModel)
-	if geminiModel == "" {
-		geminiModel = "gemini-3.0-pro"
-	}
-	if geminiFallbackModel == "" {
-		geminiFallbackModel = "gemini-3.0-flash"
-	}
-
 	imagePullSecretName := strings.TrimSpace(enc.Kubernetes.ImagePullSecretName)
 	imagePullSecretNamespace := strings.TrimSpace(enc.Kubernetes.ImagePullSecretNamespace)
 	if imagePullSecretName == "" {
@@ -381,33 +359,9 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		Forward: skyforgecore.ForwardConfig{
 			SNMPPlaceholderEnabled: enc.Forward.SNMPPlaceholderEnabled,
 		},
-		PKICACert: strings.TrimSpace(sec.PKICACert),
-		PKICAKey:  strings.TrimSpace(sec.PKICAKey),
-		SSHCAKey:  strings.TrimSpace(sec.SSHCAKey),
-		PKIDefaultDays: func() int {
-			if enc.PKIDefaultDays > 0 {
-				return enc.PKIDefaultDays
-			}
-			return 365
-		}(),
-		SSHCADefaultDays: func() int {
-			if enc.SSHCADefaultDays > 0 {
-				return enc.SSHCADefaultDays
-			}
-			return 30
-		}(),
 		DNSURL:                                   dnsURL,
 		DNSAdminUsername:                         dnsAdminUsername,
 		DNSUserZoneSuffix:                        dnsUserZoneSuffix,
-		AIEnabled:                                aiEnabled,
-		GeminiEnabled:                            geminiEnabled,
-		GeminiClientID:                           geminiClientID,
-		GeminiClientSecret:                       strings.TrimSpace(sec.GeminiClientSecret),
-		GeminiRedirectURL:                        geminiRedirectURL,
-		GeminiProjectID:                          geminiProjectID,
-		GeminiLocation:                           geminiLocation,
-		GeminiModel:                              geminiModel,
-		GeminiFallbackModel:                      geminiFallbackModel,
 		TaskWorkerEnabled:                        taskWorkerEnabled,
 		ImagePullSecretName:                      imagePullSecretName,
 		ImagePullSecretNamespace:                 imagePullSecretNamespace,
@@ -543,9 +497,6 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		Forward: skyforgecore.ForwardConfig{
 			SNMPPlaceholderEnabled: enc.Forward.SNMPPlaceholderEnabled,
 		},
-		PKICACert: strings.TrimSpace(sec.PKICACert),
-		PKICAKey:  strings.TrimSpace(sec.PKICAKey),
-		SSHCAKey:  strings.TrimSpace(sec.SSHCAKey),
 		Features:  featuresCfg,
 	}
 }

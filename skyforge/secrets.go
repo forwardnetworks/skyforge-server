@@ -13,7 +13,6 @@ var secrets struct {
 	SKYFORGE_E2E_ADMIN_TOKEN            string `secret:"SKYFORGE_E2E_ADMIN_TOKEN"`
 	SKYFORGE_OIDC_CLIENT_ID             string `secret:"SKYFORGE_OIDC_CLIENT_ID"`
 	SKYFORGE_OIDC_CLIENT_SECRET         string `secret:"SKYFORGE_OIDC_CLIENT_SECRET"`
-	SKYFORGE_GEMINI_OAUTH_CLIENT_SECRET string `secret:"SKYFORGE_GEMINI_OAUTH_CLIENT_SECRET"`
 	SKYFORGE_LDAP_URL                   string `secret:"SKYFORGE_LDAP_URL"`
 	SKYFORGE_LDAP_BIND_TEMPLATE         string `secret:"SKYFORGE_LDAP_BIND_TEMPLATE"`
 	SKYFORGE_LDAP_LOOKUP_BINDDN         string `secret:"SKYFORGE_LDAP_LOOKUP_BINDDN"`
@@ -24,9 +23,6 @@ var secrets struct {
 	SKYFORGE_OBJECT_STORAGE_SECRET_KEY  string `secret:"SKYFORGE_OBJECT_STORAGE_SECRET_KEY"`
 	SKYFORGE_INTERNAL_TOKEN             string `secret:"SKYFORGE_INTERNAL_TOKEN"`
 	SKYFORGE_CONTAINERLAB_JWT_SECRET    string `secret:"SKYFORGE_CONTAINERLAB_JWT_SECRET"`
-	SKYFORGE_PKI_CA_CERT                string `secret:"SKYFORGE_PKI_CA_CERT"`
-	SKYFORGE_PKI_CA_KEY                 string `secret:"SKYFORGE_PKI_CA_KEY"`
-	SKYFORGE_SSH_CA_KEY                 string `secret:"SKYFORGE_SSH_CA_KEY"`
 	YAADE_ADMIN_PASSWORD                string `secret:"YAADE_ADMIN_PASSWORD"`
 }
 
@@ -37,7 +33,6 @@ func getSecrets() skyforgecore.Secrets {
 		E2EAdminToken:          coalesceSecret(secrets.SKYFORGE_E2E_ADMIN_TOKEN, "SKYFORGE_E2E_ADMIN_TOKEN"),
 		OIDCClientID:           secrets.SKYFORGE_OIDC_CLIENT_ID,
 		OIDCClientSecret:       secrets.SKYFORGE_OIDC_CLIENT_SECRET,
-		GeminiClientSecret:     secrets.SKYFORGE_GEMINI_OAUTH_CLIENT_SECRET,
 		LDAPURL:                secrets.SKYFORGE_LDAP_URL,
 		LDAPBindTemplate:       secrets.SKYFORGE_LDAP_BIND_TEMPLATE,
 		LDAPLookupBindDN:       secrets.SKYFORGE_LDAP_LOOKUP_BINDDN,
@@ -48,9 +43,6 @@ func getSecrets() skyforgecore.Secrets {
 		ObjectStorageSecretKey: secrets.SKYFORGE_OBJECT_STORAGE_SECRET_KEY,
 		InternalToken:          secrets.SKYFORGE_INTERNAL_TOKEN,
 		ContainerlabJWTSecret:  secrets.SKYFORGE_CONTAINERLAB_JWT_SECRET,
-		PKICACert:              secrets.SKYFORGE_PKI_CA_CERT,
-		PKICAKey:               secrets.SKYFORGE_PKI_CA_KEY,
-		SSHCAKey:               secrets.SKYFORGE_SSH_CA_KEY,
 		YaadeAdminPassword:     secrets.YAADE_ADMIN_PASSWORD,
 	}
 }

@@ -16,8 +16,6 @@ SessionTTL: "8h"
 CookieSecure: "auto"
 CookieDomain: ""
 MaxGroups: 50
-PKIDefaultDays: 365
-SSHCADefaultDays: 30
 
 // Default polling interval for notifications (server-side).
 NotificationsIntervalSeconds: 30
@@ -70,26 +68,6 @@ DNS: {
 	UserZoneSuffix: "skyforge"
 }
 
-	Gemini: {
-		Enabled: false
-		ClientID: ""
-		// When empty, Skyforge derives the callback URL from PublicURL:
-		//   {PublicURL}/api/user/integrations/gemini/callback
-		RedirectURL: ""
-		// Vertex AI settings for Gemini calls (non-secret).
-		ProjectID: ""
-		Location: "us-central1"
-		// Model name for Vertex AI (publisher "google").
-		Model: "gemini-3.0-pro"
-		// Fallback model used when Model isn't available in the configured
-		// target/location (common with preview rollouts).
-		FallbackModel: "gemini-3.0-flash"
-	}
-
-AI: {
-	Enabled: false
-}
-
 OIDC: {
 	IssuerURL: ""
 	DiscoveryURL: ""
@@ -110,7 +88,7 @@ Containerlab: {
 	SkipTLSVerify: false
 }
 
-Projects: {
+Workspaces: {
 	DataDir: "/var/lib/skyforge"
 	GiteaAPIURL: ""
 	GiteaUsername: "skyforge"
@@ -119,7 +97,7 @@ Projects: {
 }
 
 ObjectStorage: {
-	Endpoint: "s3gw:7480"
+	Endpoint: "minio:9000"
 	UseSSL: false
 }
 
@@ -151,7 +129,7 @@ ForwardCollector: {
 
 Features: {
 	GiteaEnabled: true
-	ObjectStorageEnabled: true
+	MinioEnabled: true
 	DexEnabled: true
 	CoderEnabled: true
 	YaadeEnabled: true
@@ -160,12 +138,20 @@ Features: {
 	NetboxEnabled: false
 	NautobotEnabled: false
 	DNSEnabled: false
+	ElasticEnabled: false
+}
+
+Elastic: {
+	// When empty, Skyforge uses a provider default when ElasticEnabled=true.
+	// For in-cluster (Helm): http://elasticsearch:9200
+	URL: ""
+	IndexPrefix: "skyforge"
 }
 
 Kubernetes: {
 	// ImagePullSecretName is the name of a docker registry secret that allows
 	// pulling images (e.g. from GHCR). When set, Skyforge can mirror it into
-	// per-account namespaces used by clabernetes/netlab-c9s.
+	// per-workspace namespaces used by clabernetes/netlab-c9s.
 	ImagePullSecretName: "ghcr-pull"
 	// ImagePullSecretNamespace is the namespace where ImagePullSecretName exists.
 	ImagePullSecretNamespace: "skyforge"

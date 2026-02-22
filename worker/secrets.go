@@ -20,9 +20,6 @@ var secrets struct {
 	SKYFORGE_OBJECT_STORAGE_SECRET_KEY string `secret:"SKYFORGE_OBJECT_STORAGE_SECRET_KEY"`
 	SKYFORGE_INTERNAL_TOKEN            string `secret:"SKYFORGE_INTERNAL_TOKEN"`
 	SKYFORGE_CONTAINERLAB_JWT_SECRET   string `secret:"SKYFORGE_CONTAINERLAB_JWT_SECRET"`
-	SKYFORGE_PKI_CA_CERT               string `secret:"SKYFORGE_PKI_CA_CERT"`
-	SKYFORGE_PKI_CA_KEY                string `secret:"SKYFORGE_PKI_CA_KEY"`
-	SKYFORGE_SSH_CA_KEY                string `secret:"SKYFORGE_SSH_CA_KEY"`
 	YAADE_ADMIN_PASSWORD               string `secret:"YAADE_ADMIN_PASSWORD"`
 }
 
@@ -42,9 +39,6 @@ func getSecrets() skyforgecore.Secrets {
 		ObjectStorageSecretKey: secrets.SKYFORGE_OBJECT_STORAGE_SECRET_KEY,
 		InternalToken:          secrets.SKYFORGE_INTERNAL_TOKEN,
 		ContainerlabJWTSecret:  secrets.SKYFORGE_CONTAINERLAB_JWT_SECRET,
-		PKICACert:              secrets.SKYFORGE_PKI_CA_CERT,
-		PKICAKey:               secrets.SKYFORGE_PKI_CA_KEY,
-		SSHCAKey:               secrets.SKYFORGE_SSH_CA_KEY,
 		YaadeAdminPassword:     secrets.YAADE_ADMIN_PASSWORD,
 	}
 }

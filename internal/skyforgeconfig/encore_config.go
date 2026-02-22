@@ -17,6 +17,20 @@ type IntegrationDefaultsConfig struct {
 	YaadeInternalBaseURL    string
 }
 
+type ElasticDefaultsConfig struct {
+	// URL is the base URL for the in-cluster Elasticsearch endpoint (no trailing slash).
+	URL string
+	// IndexPrefix is the prefix used for Skyforge-managed indices.
+	IndexPrefix string
+	// IndexingMode controls how Skyforge names indices (instance vs per-user).
+	IndexingMode string
+
+	// ToolsAutosleepEnabled enables demo-friendly autosleep for in-cluster Elastic tools.
+	ToolsAutosleepEnabled bool
+	// ToolsAutosleepIdleMinutes is the idle timeout (minutes) before autosleep scales to 0.
+	ToolsAutosleepIdleMinutes int
+}
+
 type OIDCDefaultsConfig struct {
 	IssuerURL    string
 	DiscoveryURL string
@@ -36,22 +50,6 @@ type DNSDefaultsConfig struct {
 	URL            string
 	AdminUsername  string
 	UserZoneSuffix string
-}
-
-type GeminiDefaultsConfig struct {
-	Enabled     bool
-	ClientID    string
-	RedirectURL string
-	ProjectID   string
-	Location    string
-	Model       string
-	// FallbackModel is used when Model is unavailable in the configured
-	// account/location (e.g. preview model not enabled).
-	FallbackModel string
-}
-
-type AIDefaultsConfig struct {
-	Enabled bool
 }
 
 type ContainerlabDefaultsConfig struct {
@@ -86,7 +84,7 @@ type UIDefaultsConfig struct {
 	ThemeDefault     string
 }
 
-type ProjectsDefaultsConfig struct {
+type WorkspacesDefaultsConfig struct {
 	DataDir          string
 	GiteaAPIURL      string
 	GiteaUsername    string
@@ -129,16 +127,17 @@ type ForwardCollectorDefaultsConfig struct {
 }
 
 type FeaturesDefaultsConfig struct {
-	GiteaEnabled         bool
-	ObjectStorageEnabled bool
-	DexEnabled           bool
-	CoderEnabled         bool
-	YaadeEnabled         bool
-	SwaggerUIEnabled     bool
-	ForwardEnabled       bool
-	NetboxEnabled        bool
-	NautobotEnabled      bool
-	DNSEnabled           bool
+	GiteaEnabled     bool
+	MinioEnabled     bool
+	DexEnabled       bool
+	CoderEnabled     bool
+	YaadeEnabled     bool
+	SwaggerUIEnabled bool
+	ForwardEnabled   bool
+	NetboxEnabled    bool
+	NautobotEnabled  bool
+	DNSEnabled       bool
+	ElasticEnabled   bool
 }
 
 type EncoreConfig struct {
@@ -163,9 +162,6 @@ type EncoreConfig struct {
 	CookieDomain  string
 	MaxGroups     int
 
-	PKIDefaultDays   int
-	SSHCADefaultDays int
-
 	NotificationsIntervalSeconds int
 	CloudCheckIntervalMinutes    int
 
@@ -177,14 +173,13 @@ type EncoreConfig struct {
 
 	Netlab           NetlabDefaultsConfig
 	Integrations     IntegrationDefaultsConfig
+	Elastic          ElasticDefaultsConfig
 	UI               UIDefaultsConfig
 	OIDC             OIDCDefaultsConfig
 	LDAP             LDAPDefaultsConfig
 	DNS              DNSDefaultsConfig
-	Gemini           GeminiDefaultsConfig
-	AI               AIDefaultsConfig
 	Containerlab     ContainerlabDefaultsConfig
-	Projects         ProjectsDefaultsConfig
+	Workspaces       WorkspacesDefaultsConfig
 	ObjectStorage    ObjectStorageDefaultsConfig
 	Terraform        TerraformDefaultsConfig
 	Forward          ForwardDefaultsConfig
@@ -209,12 +204,13 @@ type WorkerConfig struct {
 	TaskWorkerPollMaxConcurrency int
 
 	Netlab           NetlabDefaultsConfig
-	Projects         ProjectsDefaultsConfig
+	Workspaces       WorkspacesDefaultsConfig
 	ObjectStorage    ObjectStorageDefaultsConfig
 	Terraform        TerraformDefaultsConfig
 	Forward          ForwardDefaultsConfig
 	ForwardCollector ForwardCollectorDefaultsConfig
 	Features         FeaturesDefaultsConfig
+	Elastic          ElasticDefaultsConfig
 	NetlabGenerator  NetlabGeneratorDefaultsConfig
 	Kubernetes       KubernetesDefaultsConfig
 }

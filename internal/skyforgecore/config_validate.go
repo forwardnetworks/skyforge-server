@@ -65,17 +65,5 @@ func ValidateConfig(cfg Config) ConfigValidation {
 		v.addError("E2E admin API is enabled but E2E admin token is empty")
 	}
 
-	if cfg.AIEnabled && cfg.GeminiEnabled {
-		if strings.TrimSpace(cfg.GeminiProjectID) == "" {
-			v.addWarning("Gemini is enabled but ProjectID is empty (user auth may still work, but Vertex calls will fail)")
-		}
-		if strings.TrimSpace(cfg.GeminiModel) == "" {
-			v.addWarning("Gemini is enabled but Model is empty")
-		}
-		if strings.TrimSpace(cfg.GeminiFallbackModel) == "" {
-			v.addWarning("Gemini is enabled but FallbackModel is empty")
-		}
-	}
-
 	return v
 }
