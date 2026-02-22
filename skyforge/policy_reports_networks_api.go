@@ -10,13 +10,12 @@ import (
 
 // CreateWorkspacePolicyReportForwardNetwork stores a Forward network id for Policy Reports.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/networks
 func (s *Service) CreateWorkspacePolicyReportForwardNetwork(ctx context.Context, id string, req *PolicyReportCreateForwardNetworkRequest) (*PolicyReportForwardNetwork, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -43,13 +42,12 @@ func (s *Service) CreateWorkspacePolicyReportForwardNetwork(ctx context.Context,
 
 // ListWorkspacePolicyReportForwardNetworks lists saved Forward networks for Policy Reports.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/networks
 func (s *Service) ListWorkspacePolicyReportForwardNetworks(ctx context.Context, id string) (*PolicyReportListForwardNetworksResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -68,13 +66,12 @@ func (s *Service) ListWorkspacePolicyReportForwardNetworks(ctx context.Context, 
 
 // DeleteWorkspacePolicyReportForwardNetwork deletes a saved Forward network (by uuid id or by forwardNetworkId).
 //
-//encore:api auth method=DELETE path=/api/workspaces/:id/policy-reports/networks/:networkRef
 func (s *Service) DeleteWorkspacePolicyReportForwardNetwork(ctx context.Context, id string, networkRef string) (*PolicyReportDecisionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

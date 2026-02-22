@@ -27,20 +27,20 @@ type ListDeploymentUIEventsParams struct {
 }
 
 type ListDeploymentUIEventsResponse struct {
-	WorkspaceID  string              `json:"workspaceId"`
+	WorkspaceID  string              `json:"userId"`
 	DeploymentID string              `json:"deploymentId"`
 	Events       []DeploymentUIEvent `json:"events"`
 }
 
 // ListWorkspaceDeploymentUIEvents returns recent UI/graph events for a deployment.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/ui-events
+//encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/ui-events
 func (s *Service) ListWorkspaceDeploymentUIEvents(ctx context.Context, id, deploymentID string, params *ListDeploymentUIEventsParams) (*ListDeploymentUIEventsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ type UIEventsSSEPayload struct {
 
 // DeploymentUIEventsStream streams deployment UI events as SSE.
 //
-//encore:api auth raw method=GET path=/api/workspaces/:id/deployments/:deploymentID/ui-events/events
+//encore:api auth raw method=GET path=/api/users/:id/deployments/:deploymentID/ui-events/events
 func (s *Service) DeploymentUIEventsStream(w http.ResponseWriter, req *http.Request) {
 	if s == nil || s.db == nil || s.sessionManager == nil {
 		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
@@ -200,7 +200,7 @@ func insertDeploymentUIEvent(ctx context.Context, db *sql.DB, workspaceID, deplo
 	ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	_, err := db.ExecContext(ctxReq, `
-		INSERT INTO sf_deployment_ui_events (workspace_id, deployment_id, created_by, event_type, payload)
+		INSERT INTO sf_deployment_ui_events (user_id, deployment_id, created_by, event_type, payload)
 		VALUES ($1, $2, $3, $4, $5::jsonb)
 	`, workspaceID, deploymentID, createdBy, eventType, string(raw))
 	return err
@@ -218,7 +218,7 @@ func listDeploymentUIEventsAfter(ctx context.Context, db *sql.DB, workspaceID, d
 	rows, err := db.QueryContext(ctxReq, `
 		SELECT id, created_at, created_by, event_type, payload
 		FROM sf_deployment_ui_events
-		WHERE workspace_id=$1 AND deployment_id=$2 AND id > $3
+		WHERE user_id=$1 AND deployment_id=$2 AND id > $3
 		ORDER BY id ASC
 		LIMIT $4
 	`, workspaceID, deploymentID, afterID, limit)

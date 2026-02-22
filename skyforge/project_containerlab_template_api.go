@@ -18,7 +18,7 @@ type WorkspaceContainerlabTemplateRequest struct {
 }
 
 type WorkspaceContainerlabTemplateResponse struct {
-	WorkspaceID string `json:"workspaceId"`
+	WorkspaceID string `json:"userId"`
 	Source      string `json:"source"`
 	Repo        string `json:"repo,omitempty"`
 	Branch      string `json:"branch,omitempty"`
@@ -32,13 +32,13 @@ type WorkspaceContainerlabTemplateResponse struct {
 //
 // This is used by the Lab Designer "Import from templates" feature.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/containerlab/template
+//encore:api auth method=GET path=/api/users/:id/containerlab/template
 func (s *Service) GetWorkspaceContainerlabTemplate(ctx context.Context, id string, req *WorkspaceContainerlabTemplateRequest) (*WorkspaceContainerlabTemplateResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

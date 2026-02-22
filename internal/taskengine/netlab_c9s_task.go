@@ -40,7 +40,7 @@ type netlabC9sTaskSpec struct {
 
 type netlabC9sRunSpec struct {
 	TaskID          int
-	WorkspaceCtx    *workspaceContext
+	WorkspaceCtx    *userContext
 	WorkspaceSlug   string
 	Username        string
 	Environment     map[string]string
@@ -104,7 +104,7 @@ func (e *Engine) dispatchNetlabC9sTask(ctx context.Context, task *taskstore.Task
 	if username == "" {
 		username = ws.primaryOwner()
 	}
-	pc := &workspaceContext{
+	pc := &userContext{
 		workspace: *ws,
 		claims: SessionClaims{
 			Username: username,
@@ -774,7 +774,7 @@ func startForwardConnectivityAsNodesSSHReady(
 	ctx context.Context,
 	taskID int,
 	e *Engine,
-	pc *workspaceContext,
+	pc *userContext,
 	dep *WorkspaceDeployment,
 	graph *TopologyGraph,
 	concurrency int,

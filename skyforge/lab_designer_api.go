@@ -36,7 +36,7 @@ type CreateContainerlabDeploymentFromYAMLRequest struct {
 }
 
 type CreateContainerlabDeploymentFromYAMLResponse struct {
-	WorkspaceID string               `json:"workspaceId"`
+	WorkspaceID string               `json:"userId"`
 	Deployment  *WorkspaceDeployment `json:"deployment,omitempty"`
 	Run         JSONMap              `json:"run,omitempty"`
 	Note        string               `json:"note,omitempty"`
@@ -63,7 +63,7 @@ type CreateClabernetesDeploymentFromYAMLRequest struct {
 }
 
 type CreateClabernetesDeploymentFromYAMLResponse struct {
-	WorkspaceID string               `json:"workspaceId"`
+	WorkspaceID string               `json:"userId"`
 	Deployment  *WorkspaceDeployment `json:"deployment,omitempty"`
 	Run         JSONMap              `json:"run,omitempty"`
 	Note        string               `json:"note,omitempty"`
@@ -88,7 +88,7 @@ type SaveContainerlabTopologyYAMLRequest struct {
 }
 
 type SaveContainerlabTopologyYAMLResponse struct {
-	WorkspaceID  string `json:"workspaceId"`
+	WorkspaceID  string `json:"userId"`
 	Branch       string `json:"branch"`
 	TemplatesDir string `json:"templatesDir"`
 	Template     string `json:"template"`
@@ -116,7 +116,7 @@ type CreateDeploymentFromTemplateRequest struct {
 }
 
 type CreateDeploymentFromTemplateResponse struct {
-	WorkspaceID string               `json:"workspaceId"`
+	WorkspaceID string               `json:"userId"`
 	Deployment  *WorkspaceDeployment `json:"deployment,omitempty"`
 	Run         JSONMap              `json:"run,omitempty"`
 	Note        string               `json:"note,omitempty"`
@@ -135,13 +135,13 @@ type CreateContainerlabDeploymentFromTemplateRequest struct {
 //
 // NOTE: containerlab is BYOS mode (requires a workspace netlabServer selection).
 //
-//encore:api auth method=POST path=/api/workspaces/:id/deployments-designer/containerlab/from-yaml
+//encore:api auth method=POST path=/api/users/:id/deployments-designer/containerlab/from-yaml
 func (s *Service) CreateContainerlabDeploymentFromYAML(ctx context.Context, id string, req *CreateContainerlabDeploymentFromYAMLRequest) (*CreateContainerlabDeploymentFromYAMLResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -271,13 +271,13 @@ func (s *Service) CreateContainerlabDeploymentFromYAML(ctx context.Context, id s
 //
 // This is the first-class in-cluster mode (no netlab server required).
 //
-//encore:api auth method=POST path=/api/workspaces/:id/deployments-designer/clabernetes/from-yaml
+//encore:api auth method=POST path=/api/users/:id/deployments-designer/clabernetes/from-yaml
 func (s *Service) CreateClabernetesDeploymentFromYAML(ctx context.Context, id string, req *CreateClabernetesDeploymentFromYAMLRequest) (*CreateClabernetesDeploymentFromYAMLResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -396,13 +396,13 @@ func (s *Service) CreateClabernetesDeploymentFromYAML(ctx context.Context, id st
 // SaveContainerlabTopologyYAML writes a containerlab topology YAML into the user's workspace repo so it can be
 // deployed later (e.g. by creating a deployment referencing the file).
 //
-//encore:api auth method=POST path=/api/workspaces/:id/containerlab/topologies
+//encore:api auth method=POST path=/api/users/:id/containerlab/topologies
 func (s *Service) SaveContainerlabTopologyYAML(ctx context.Context, id string, req *SaveContainerlabTopologyYAMLRequest) (*SaveContainerlabTopologyYAMLResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -489,13 +489,13 @@ func (s *Service) SaveContainerlabTopologyYAML(ctx context.Context, id string, r
 // CreateClabernetesDeploymentFromTemplate creates a clabernetes deployment pointing at an existing workspace template YAML
 // (no YAML commit step).
 //
-//encore:api auth method=POST path=/api/workspaces/:id/deployments-designer/clabernetes/from-template
+//encore:api auth method=POST path=/api/users/:id/deployments-designer/clabernetes/from-template
 func (s *Service) CreateClabernetesDeploymentFromTemplate(ctx context.Context, id string, req *CreateDeploymentFromTemplateRequest) (*CreateDeploymentFromTemplateResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -603,13 +603,13 @@ func (s *Service) CreateClabernetesDeploymentFromTemplate(ctx context.Context, i
 // CreateContainerlabDeploymentFromTemplate creates a containerlab (BYOS) deployment pointing at an existing workspace template YAML
 // (no YAML commit step).
 //
-//encore:api auth method=POST path=/api/workspaces/:id/deployments-designer/containerlab/from-template
+//encore:api auth method=POST path=/api/users/:id/deployments-designer/containerlab/from-template
 func (s *Service) CreateContainerlabDeploymentFromTemplate(ctx context.Context, id string, req *CreateContainerlabDeploymentFromTemplateRequest) (*CreateDeploymentFromTemplateResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

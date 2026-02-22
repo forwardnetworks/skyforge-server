@@ -39,7 +39,7 @@ func createPolicyReportForwardNetwork(ctx context.Context, db *sql.DB, workspace
 
 	_, err := db.ExecContext(ctx, `
 INSERT INTO sf_policy_report_forward_networks (
-  id, workspace_id, forward_network_id, name, description, collector_config_id, created_by
+  id, user_id, forward_network_id, name, description, collector_config_id, created_by
 ) VALUES ($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),$7)
 `, id, workspaceID, forwardID, name, desc, collectorConfigID, actor)
 	if err != nil {
@@ -72,9 +72,9 @@ func listPolicyReportForwardNetworks(ctx context.Context, db *sql.DB, workspaceI
 	}
 
 	rows, err := db.QueryContext(ctx, `
-SELECT id, workspace_id, forward_network_id, name, COALESCE(description,''), COALESCE(collector_config_id,''), created_by, created_at, updated_at
+SELECT id, user_id, forward_network_id, name, COALESCE(description,''), COALESCE(collector_config_id,''), created_by, created_at, updated_at
   FROM sf_policy_report_forward_networks
- WHERE workspace_id=$1
+ WHERE user_id=$1
  ORDER BY created_at DESC`, workspaceID)
 	if err != nil {
 		if isMissingDBRelation(err) {
@@ -115,7 +115,7 @@ func deletePolicyReportForwardNetwork(ctx context.Context, db *sql.DB, workspace
 	// Support deleting by uuid id (preferred) or by the Forward network id value.
 	res, err := db.ExecContext(ctx, `
 DELETE FROM sf_policy_report_forward_networks
- WHERE workspace_id=$1 AND (id::text=$2 OR forward_network_id=$2)
+ WHERE user_id=$1 AND (id::text=$2 OR forward_network_id=$2)
 `, workspaceID, forwardNetworkRef)
 	if err != nil {
 		return err

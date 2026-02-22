@@ -18,7 +18,7 @@ type WorkspaceNetlabTemplateRequest struct {
 }
 
 type WorkspaceNetlabTemplateResponse struct {
-	WorkspaceID string `json:"workspaceId"`
+	WorkspaceID string `json:"userId"`
 	Source      string `json:"source"`
 	Repo        string `json:"repo,omitempty"`
 	Branch      string `json:"branch,omitempty"`
@@ -32,13 +32,13 @@ type WorkspaceNetlabTemplateResponse struct {
 //
 // This powers "View template" in the deployment creation flow.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/netlab/template
+//encore:api auth method=GET path=/api/users/:id/netlab/template
 func (s *Service) GetWorkspaceNetlabTemplate(ctx context.Context, id string, req *WorkspaceNetlabTemplateRequest) (*WorkspaceNetlabTemplateResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

@@ -54,19 +54,6 @@ func CronReconcileQueuedTasksBridge(ctx context.Context, params *InternalCronAut
 	return CronReconcileQueuedTasks(ctx)
 }
 
-// CronProcessQueuedTasksFallbackBridge triggers DB-backed fallback processing for queued tasks.
-//
-//encore:api public method=POST path=/internal/bridge/worker/tasks/poll
-func CronProcessQueuedTasksFallbackBridge(ctx context.Context, params *InternalCronAuth) error {
-	if params == nil {
-		return errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
-	}
-	if err := requireInternalCron(params.Token); err != nil {
-		return err
-	}
-	return CronProcessQueuedTasksFallback(ctx)
-}
-
 // CronReconcileRunningTasksBridge triggers reconciliation for running tasks.
 //
 //encore:api public method=POST path=/internal/bridge/worker/tasks/reconcile-running

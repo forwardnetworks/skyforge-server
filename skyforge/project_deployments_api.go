@@ -29,7 +29,7 @@ var deploymentNameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,62}$`)
 
 type WorkspaceDeployment struct {
 	ID                  string  `json:"id"`
-	WorkspaceID         string  `json:"workspaceId"`
+	WorkspaceID         string  `json:"userId"`
 	Name                string  `json:"name"`
 	Type                string  `json:"type"`
 	Config              JSONMap `json:"config"`
@@ -47,7 +47,7 @@ type WorkspaceDeployment struct {
 }
 
 type WorkspaceDeploymentListResponse struct {
-	WorkspaceID string                 `json:"workspaceId"`
+	WorkspaceID string                 `json:"userId"`
 	Deployments []*WorkspaceDeployment `json:"deployments"`
 }
 
@@ -63,7 +63,7 @@ type WorkspaceDeploymentUpdateRequest struct {
 }
 
 type WorkspaceDeploymentActionResponse struct {
-	WorkspaceID string               `json:"workspaceId"`
+	WorkspaceID string               `json:"userId"`
 	Deployment  *WorkspaceDeployment `json:"deployment"`
 	Run         JSONMap              `json:"run,omitempty"`
 }
@@ -75,7 +75,7 @@ type WorkspaceDeploymentDeleteRequest struct {
 }
 
 type WorkspaceDeploymentInfoResponse struct {
-	WorkspaceID  string               `json:"workspaceId"`
+	WorkspaceID  string               `json:"userId"`
 	Deployment   *WorkspaceDeployment `json:"deployment"`
 	Provider     string               `json:"provider"`
 	RetrievedAt  string               `json:"retrievedAt"`
@@ -154,13 +154,13 @@ func normalizeDeploymentType(raw string) (string, error) {
 
 // ListWorkspaceDeployments lists deployment definitions for a workspace.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/deployments
+//encore:api auth method=GET path=/api/users/:id/deployments
 func (s *Service) ListWorkspaceDeployments(ctx context.Context, id string) (*WorkspaceDeploymentListResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -171,9 +171,9 @@ func (s *Service) ListWorkspaceDeployments(ctx context.Context, id string) (*Wor
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	rows, err := s.db.QueryContext(ctx, `SELECT id, name, type, config, created_by, created_at, updated_at,
-  last_task_workspace_id, last_task_id, last_status, last_started_at, last_finished_at
+  last_task_user_id, last_task_id, last_status, last_started_at, last_finished_at
 FROM sf_deployments
-WHERE workspace_id=$1
+WHERE user_id=$1
 ORDER BY updated_at DESC`, pc.workspace.ID)
 	if err != nil {
 		log.Printf("deployments list: %v", err)
@@ -313,13 +313,13 @@ ORDER BY updated_at DESC`, pc.workspace.ID)
 
 // CreateWorkspaceDeployment creates a deployment definition for a workspace.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/deployments
+//encore:api auth method=POST path=/api/users/:id/deployments
 func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req *WorkspaceDeploymentCreateRequest) (*WorkspaceDeployment, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -594,7 +594,7 @@ func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req 
 	defer cancel()
 	initialStatus := "created"
 	_, err = s.db.ExecContext(ctx, `INSERT INTO sf_deployments (
-  id, workspace_id, name, type, config, created_by, last_status
+  id, user_id, name, type, config, created_by, last_status
 ) VALUES ($1,$2,$3,$4,$5,$6,$7)`, deploymentID, pc.workspace.ID, name, typ, cfgBytes, pc.claims.Username, initialStatus)
 	if err != nil {
 		log.Printf("deployments insert: %v", err)
@@ -636,13 +636,13 @@ func (s *Service) CreateWorkspaceDeployment(ctx context.Context, id string, req 
 
 // UpdateWorkspaceDeployment updates an existing deployment definition.
 //
-//encore:api auth method=PUT path=/api/workspaces/:id/deployments/:deploymentID
+//encore:api auth method=PUT path=/api/users/:id/deployments/:deploymentID
 func (s *Service) UpdateWorkspaceDeployment(ctx context.Context, id, deploymentID string, req *WorkspaceDeploymentUpdateRequest) (*WorkspaceDeployment, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -681,7 +681,7 @@ func (s *Service) UpdateWorkspaceDeployment(ctx context.Context, id, deploymentI
 	}
 
 	args = append(args, pc.workspace.ID, deploymentID)
-	query := fmt.Sprintf("UPDATE sf_deployments SET %s WHERE workspace_id=$%d AND id=$%d", strings.Join(fields, ", "), len(args)-1, len(args))
+	query := fmt.Sprintf("UPDATE sf_deployments SET %s WHERE user_id=$%d AND id=$%d", strings.Join(fields, ", "), len(args)-1, len(args))
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	res, err := s.db.ExecContext(ctx, query, args...)
@@ -700,13 +700,13 @@ func (s *Service) UpdateWorkspaceDeployment(ctx context.Context, id, deploymentI
 
 // DeleteWorkspaceDeployment removes a deployment definition from Skyforge.
 //
-//encore:api auth method=DELETE path=/api/workspaces/:id/deployments/:deploymentID
+//encore:api auth method=DELETE path=/api/users/:id/deployments/:deploymentID
 func (s *Service) DeleteWorkspaceDeployment(ctx context.Context, id, deploymentID string, req *WorkspaceDeploymentDeleteRequest) (*WorkspaceDeploymentActionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -729,7 +729,7 @@ func (s *Service) DeleteWorkspaceDeployment(ctx context.Context, id, deploymentI
 		defer cancel()
 		var n int
 		_ = s.db.QueryRowContext(ctxReq, `SELECT count(*) FROM sf_tasks
-WHERE workspace_id=$1 AND deployment_id=$2 AND status IN ('queued','running')`, pc.workspace.ID, existing.ID).Scan(&n)
+WHERE user_id=$1 AND deployment_id=$2 AND status IN ('queued','running')`, pc.workspace.ID, existing.ID).Scan(&n)
 		if n > 0 {
 			return nil, errs.B().Code(errs.FailedPrecondition).Msg("deployment has an active run; cancel/stop it before deleting").Err()
 		}
@@ -772,19 +772,15 @@ WHERE workspace_id=$1 AND deployment_id=$2 AND status IN ('queued','running')`, 
 		if raw, ok := cfgAny[forwardNetworkIDKey]; ok {
 			networkID := strings.TrimSpace(fmt.Sprintf("%v", raw))
 			if networkID != "" {
-				// Forward config is user-scoped (Collector sidebar), not workspace-scoped.
-				// Prefer the per-deployment collector selection (forwardCollectorId) and fall back
-				// to legacy single-collector credentials when missing.
+				// Forward config is user-scoped (Collector sidebar) and must come from the
+				// deployment-selected credential profile.
 				collectorConfigID := strings.TrimSpace(fmt.Sprintf("%v", cfgAny["forwardCollectorId"]))
 				forwardCfg := (*forwardCredentials)(nil)
 				if collectorConfigID != "" {
 					forwardCfg, _ = s.forwardConfigForUserCollectorConfigID(ctx, pc.claims.Username, collectorConfigID)
 				}
 				if forwardCfg == nil {
-					forwardCfg, _ = s.forwardConfigForUser(ctx, pc.claims.Username)
-				}
-				if forwardCfg == nil {
-					return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward credentials are not configured (cannot delete Forward network)").Err()
+					return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward collector credential profile is required (cannot delete Forward network)").Err()
 				}
 				client, err := newForwardClient(*forwardCfg)
 				if err != nil {
@@ -800,7 +796,7 @@ WHERE workspace_id=$1 AND deployment_id=$2 AND status IN ('queued','running')`, 
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	res, err := s.db.ExecContext(ctx, `DELETE FROM sf_deployments WHERE workspace_id=$1 AND id=$2`, pc.workspace.ID, deploymentID)
+	res, err := s.db.ExecContext(ctx, `DELETE FROM sf_deployments WHERE user_id=$1 AND id=$2`, pc.workspace.ID, deploymentID)
 	if err != nil {
 		log.Printf("deployments delete: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to delete deployment").Err()
@@ -821,13 +817,13 @@ type WorkspaceDeploymentOpRequest struct {
 
 // RunWorkspaceDeploymentAction runs a deployment operation with consistent UX verbs.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/deployments/:deploymentID/action
+//encore:api auth method=POST path=/api/users/:id/deployments/:deploymentID/action
 func (s *Service) RunWorkspaceDeploymentAction(ctx context.Context, id, deploymentID string, req *WorkspaceDeploymentOpRequest) (*WorkspaceDeploymentActionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -1290,13 +1286,13 @@ func netlabAPIGet(ctx context.Context, url string, insecure bool, auth netlabAPI
 // GetWorkspaceDeploymentInfo returns provider-specific info for a deployment.
 // For Netlab deployments, this executes `netlab status` against the associated Netlab API and returns the output.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/info
+//encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/info
 func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deploymentID string) (*WorkspaceDeploymentInfoResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -1575,13 +1571,13 @@ func (s *Service) GetWorkspaceDeploymentInfo(ctx context.Context, id, deployment
 //
 // This is an alternative to local SSH ProxyJump when clients can't reach the lab network.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/deployments/:deploymentID/netlab/connect
+//encore:api auth method=POST path=/api/users/:id/deployments/:deploymentID/netlab/connect
 func (s *Service) NetlabConnect(ctx context.Context, id, deploymentID string, req *NetlabConnectRequest) (*NetlabConnectResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -1690,13 +1686,13 @@ func (s *Service) NetlabConnect(ctx context.Context, id, deploymentID string, re
 
 // GetWorkspaceDeploymentNetlabGraph returns a rendered netlab topology graph for a deployment.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/netlab-graph
+//encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/netlab-graph
 func (s *Service) GetWorkspaceDeploymentNetlabGraph(ctx context.Context, id, deploymentID string) (*NetlabGraphResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -1843,27 +1839,27 @@ func formatTerraformOutputs(outputs map[string]terraformStateOutput) string {
 
 // StartWorkspaceDeployment starts a deployment run.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/deployments/:deploymentID/start
+//encore:api auth method=POST path=/api/users/:id/deployments/:deploymentID/start
 func (s *Service) StartWorkspaceDeployment(ctx context.Context, id, deploymentID string, req *WorkspaceDeploymentStartRequest) (*WorkspaceDeploymentActionResponse, error) {
 	return s.runDeployment(ctx, id, deploymentID, req, "start")
 }
 
 // DestroyWorkspaceDeployment triggers a destructive run (destroy) for a deployment.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/deployments/:deploymentID/destroy
+//encore:api auth method=POST path=/api/users/:id/deployments/:deploymentID/destroy
 func (s *Service) DestroyWorkspaceDeployment(ctx context.Context, id, deploymentID string) (*WorkspaceDeploymentActionResponse, error) {
 	return s.runDeployment(ctx, id, deploymentID, &WorkspaceDeploymentStartRequest{Action: "destroy"}, "destroy")
 }
 
 // StopWorkspaceDeployment attempts to stop the most recent task for this deployment.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/deployments/:deploymentID/stop
+//encore:api auth method=POST path=/api/users/:id/deployments/:deploymentID/stop
 func (s *Service) StopWorkspaceDeployment(ctx context.Context, id, deploymentID string) (*WorkspaceDeploymentActionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -1905,7 +1901,7 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -2224,12 +2220,12 @@ func (s *Service) touchDeploymentFromRun(ctx context.Context, workspaceID, deplo
 	defer cancel()
 	_, err := s.db.ExecContext(ctx, `UPDATE sf_deployments SET
   config=$1,
-  last_task_workspace_id=$2,
+  last_task_user_id=$2,
   last_task_id=$3,
   last_status=$4,
   last_started_at=now(),
   updated_at=now()
-WHERE workspace_id=$5 AND id=$6`, cfgBytes, nullIfZeroInt(taskWorkspaceID), nullIfZeroInt(taskID), nullIfEmpty(status), workspaceID, deploymentID)
+WHERE user_id=$5 AND id=$6`, cfgBytes, nullIfZeroInt(taskWorkspaceID), nullIfZeroInt(taskID), nullIfEmpty(status), workspaceID, deploymentID)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to update deployment").Err()
 	}
@@ -2247,7 +2243,7 @@ func (s *Service) getLatestDeploymentByType(ctx context.Context, workspaceID, de
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	var deploymentID string
-	err := s.db.QueryRowContext(ctx, `SELECT id FROM sf_deployments WHERE workspace_id=$1 AND type=$2 ORDER BY updated_at DESC LIMIT 1`, workspaceID, depType).Scan(&deploymentID)
+	err := s.db.QueryRowContext(ctx, `SELECT id FROM sf_deployments WHERE user_id=$1 AND type=$2 ORDER BY updated_at DESC LIMIT 1`, workspaceID, depType).Scan(&deploymentID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -2283,9 +2279,9 @@ func (s *Service) getWorkspaceDeployment(ctx context.Context, workspaceID, deplo
 		updatedAt           time.Time
 	)
 	err := s.db.QueryRowContext(ctx, `SELECT id, name, type, config, created_by, created_at, updated_at,
-  last_task_workspace_id, last_task_id, last_status, last_started_at, last_finished_at
+  last_task_user_id, last_task_id, last_status, last_started_at, last_finished_at
 FROM sf_deployments
-WHERE workspace_id=$1 AND id=$2`, workspaceID, deploymentID).Scan(
+WHERE user_id=$1 AND id=$2`, workspaceID, deploymentID).Scan(
 		&rec.ID,
 		&rec.Name,
 		&rec.Type,

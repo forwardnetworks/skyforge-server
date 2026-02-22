@@ -10,7 +10,7 @@ import (
 	"encore.dev/beta/errs"
 )
 
-func requireWorkspaceEditor(pc *workspaceContext) error {
+func requireWorkspaceEditor(pc *userContext) error {
 	if pc == nil {
 		return errs.B().Code(errs.Unavailable).Msg("workspace unavailable").Err()
 	}
@@ -24,7 +24,7 @@ func requireWorkspaceEditor(pc *workspaceContext) error {
 	}
 }
 
-func requireWorkspaceOwnerRole(pc *workspaceContext) error {
+func requireWorkspaceOwnerRole(pc *userContext) error {
 	if pc == nil {
 		return errs.B().Code(errs.Unavailable).Msg("workspace unavailable").Err()
 	}
@@ -38,13 +38,12 @@ func requireWorkspaceOwnerRole(pc *workspaceContext) error {
 
 // CreateWorkspacePolicyReportRecertCampaign creates a recertification campaign for a given Forward network/snapshot/pack.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/governance/campaigns
 func (s *Service) CreateWorkspacePolicyReportRecertCampaign(ctx context.Context, id string, req *PolicyReportCreateRecertCampaignRequest) (*PolicyReportRecertCampaignWithCounts, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -85,20 +84,19 @@ func (s *Service) CreateWorkspacePolicyReportRecertCampaign(ctx context.Context,
 		"networkId":   c.ForwardNetwork,
 		"snapshotId":  c.SnapshotID,
 		"name":        c.Name,
-		"workspaceId": pc.workspace.ID,
+		"userId": pc.workspace.ID,
 	})
 	return &PolicyReportRecertCampaignWithCounts{Campaign: *c, Counts: PolicyReportRecertCampaignCounts{}}, nil
 }
 
 // ListWorkspacePolicyReportRecertCampaigns lists recertification campaigns.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/governance/campaigns
 func (s *Service) ListWorkspacePolicyReportRecertCampaigns(ctx context.Context, id string, req *PolicyReportListRecertCampaignsRequest) (*PolicyReportListRecertCampaignsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -117,13 +115,12 @@ func (s *Service) ListWorkspacePolicyReportRecertCampaigns(ctx context.Context, 
 
 // GetWorkspacePolicyReportRecertCampaign gets one campaign plus assignment counts.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/governance/campaigns/:campaignId
 func (s *Service) GetWorkspacePolicyReportRecertCampaign(ctx context.Context, id string, campaignId string) (*PolicyReportRecertCampaignWithCounts, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -139,13 +136,12 @@ func (s *Service) GetWorkspacePolicyReportRecertCampaign(ctx context.Context, id
 
 // GenerateWorkspacePolicyReportRecertAssignments runs the campaign pack and stores resulting findings as assignments.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/governance/campaigns/:campaignId/generate
 func (s *Service) GenerateWorkspacePolicyReportRecertAssignments(ctx context.Context, id string, campaignId string, req *PolicyReportGenerateRecertAssignmentsRequest) (*PolicyReportGenerateRecertAssignmentsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -290,13 +286,12 @@ func (s *Service) GenerateWorkspacePolicyReportRecertAssignments(ctx context.Con
 
 // ListWorkspacePolicyReportRecertAssignments lists assignments.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/governance/assignments
 func (s *Service) ListWorkspacePolicyReportRecertAssignments(ctx context.Context, id string, req *PolicyReportListRecertAssignmentsRequest) (*PolicyReportListRecertAssignmentsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -315,13 +310,12 @@ func (s *Service) ListWorkspacePolicyReportRecertAssignments(ctx context.Context
 
 // AttestWorkspacePolicyReportRecertAssignment marks an assignment as attested.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/governance/assignments/:assignmentId/attest
 func (s *Service) AttestWorkspacePolicyReportRecertAssignment(ctx context.Context, id string, assignmentId string, req *PolicyReportAttestAssignmentRequest) (*PolicyReportDecisionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -346,13 +340,12 @@ func (s *Service) AttestWorkspacePolicyReportRecertAssignment(ctx context.Contex
 
 // WaiveWorkspacePolicyReportRecertAssignment marks an assignment as waived.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/governance/assignments/:assignmentId/waive
 func (s *Service) WaiveWorkspacePolicyReportRecertAssignment(ctx context.Context, id string, assignmentId string, req *PolicyReportAttestAssignmentRequest) (*PolicyReportDecisionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -377,13 +370,12 @@ func (s *Service) WaiveWorkspacePolicyReportRecertAssignment(ctx context.Context
 
 // CreateWorkspacePolicyReportException proposes an exception for a finding.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/governance/exceptions
 func (s *Service) CreateWorkspacePolicyReportException(ctx context.Context, id string, req *PolicyReportCreateExceptionRequest) (*PolicyReportException, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -411,13 +403,12 @@ func (s *Service) CreateWorkspacePolicyReportException(ctx context.Context, id s
 
 // ListWorkspacePolicyReportExceptions lists exceptions.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/governance/exceptions
 func (s *Service) ListWorkspacePolicyReportExceptions(ctx context.Context, id string, req *PolicyReportListExceptionsRequest) (*PolicyReportListExceptionsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -436,13 +427,12 @@ func (s *Service) ListWorkspacePolicyReportExceptions(ctx context.Context, id st
 
 // ApproveWorkspacePolicyReportException approves an exception (owner/admin only).
 //
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/governance/exceptions/:exceptionId/approve
 func (s *Service) ApproveWorkspacePolicyReportException(ctx context.Context, id string, exceptionId string) (*PolicyReportDecisionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -463,13 +453,12 @@ func (s *Service) ApproveWorkspacePolicyReportException(ctx context.Context, id 
 
 // RejectWorkspacePolicyReportException rejects an exception (owner/admin only).
 //
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/governance/exceptions/:exceptionId/reject
 func (s *Service) RejectWorkspacePolicyReportException(ctx context.Context, id string, exceptionId string) (*PolicyReportDecisionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

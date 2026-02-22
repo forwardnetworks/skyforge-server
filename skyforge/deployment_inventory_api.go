@@ -19,7 +19,7 @@ type DeploymentInventoryNode struct {
 
 type DeploymentInventoryResponse struct {
 	GeneratedAt  string                    `json:"generatedAt"`
-	WorkspaceID  string                    `json:"workspaceId"`
+	WorkspaceID  string                    `json:"userId"`
 	DeploymentID string                    `json:"deploymentId"`
 	Format       string                    `json:"format"`
 	Nodes        []DeploymentInventoryNode `json:"nodes,omitempty"`
@@ -32,13 +32,13 @@ type DeploymentInventoryParams struct {
 
 // GetWorkspaceDeploymentInventory returns a simple inventory of nodes and management IPs.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/inventory
+//encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/inventory
 func (s *Service) GetWorkspaceDeploymentInventory(ctx context.Context, id, deploymentID string, params *DeploymentInventoryParams) (*DeploymentInventoryResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

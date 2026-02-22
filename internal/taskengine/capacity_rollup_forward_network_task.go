@@ -34,7 +34,7 @@ func (e *Engine) dispatchCapacityRollupForwardNetworkTask(ctx context.Context, t
 	if username == "" {
 		username = ws.primaryOwner()
 	}
-	pc := &workspaceContext{
+	pc := &userContext{
 		workspace: *ws,
 		claims: SessionClaims{
 			Username: username,
@@ -52,7 +52,7 @@ func (e *Engine) dispatchCapacityRollupForwardNetworkTask(ctx context.Context, t
 	})
 }
 
-func (e *Engine) runCapacityRollupForwardNetwork(ctx context.Context, pc *workspaceContext, forwardNetworkID string, collectorConfigID string, taskID int, log Logger) error {
+func (e *Engine) runCapacityRollupForwardNetwork(ctx context.Context, pc *userContext, forwardNetworkID string, collectorConfigID string, taskID int, log Logger) error {
 	if e == nil || e.db == nil {
 		return fmt.Errorf("engine unavailable")
 	}

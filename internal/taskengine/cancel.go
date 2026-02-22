@@ -47,7 +47,7 @@ func (e *Engine) cancelNetlabTask(ctx context.Context, task *taskstore.TaskRecor
 	if username == "" {
 		username = ws.primaryOwner()
 	}
-	pc := &workspaceContext{
+	pc := &userContext{
 		workspace: *ws,
 		claims: SessionClaims{
 			Username: username,

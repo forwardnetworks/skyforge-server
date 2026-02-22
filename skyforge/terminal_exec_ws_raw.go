@@ -295,7 +295,7 @@ func resolveClabernetesNodePod(ctx context.Context, ns, topologyName, node strin
 // - container: optional
 // - command: optional (defaults to "sh"; for EOS nodes use "Cli")
 //
-//encore:api auth raw method=GET path=/api/workspaces/:id/deployments/:deploymentID/terminal/ws
+//encore:api auth raw method=GET path=/api/users/:id/deployments/:deploymentID/terminal/ws
 func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 	if s == nil || s.db == nil || s.sessionManager == nil {
 		http.Error(w, "service unavailable", http.StatusServiceUnavailable)

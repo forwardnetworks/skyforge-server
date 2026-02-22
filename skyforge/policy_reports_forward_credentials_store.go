@@ -39,7 +39,7 @@ SELECT base_url_enc, forward_username_enc, forward_password_enc,
        COALESCE(skip_tls_verify, false),
        updated_at
   FROM sf_policy_report_forward_network_credentials
- WHERE workspace_id=$1 AND username=$2 AND forward_network_id=$3
+ WHERE user_id=$1 AND username=$2 AND forward_network_id=$3
 `, workspaceID, username, forwardNetworkID).Scan(&baseEnc, &userEnc, &passEnc, &skipTLS, &updatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) || isMissingDBRelation(err) {
@@ -127,11 +127,11 @@ func putPolicyReportForwardCreds(ctx context.Context, db *sql.DB, box *secretBox
 
 	_, err = db.ExecContext(ctx, `
 INSERT INTO sf_policy_report_forward_network_credentials (
-  workspace_id, username, forward_network_id,
+  user_id, username, forward_network_id,
   base_url_enc, forward_username_enc, forward_password_enc,
   skip_tls_verify, updated_at
 ) VALUES ($1,$2,$3,$4,$5,$6,$7,now())
-ON CONFLICT (workspace_id, username, forward_network_id) DO UPDATE SET
+ON CONFLICT (user_id, username, forward_network_id) DO UPDATE SET
   base_url_enc=excluded.base_url_enc,
   forward_username_enc=excluded.forward_username_enc,
   forward_password_enc=excluded.forward_password_enc,
@@ -151,7 +151,7 @@ ON CONFLICT (workspace_id, username, forward_network_id) DO UPDATE SET
 	_ = db.QueryRowContext(ctx, `
 SELECT updated_at
   FROM sf_policy_report_forward_network_credentials
- WHERE workspace_id=$1 AND username=$2 AND forward_network_id=$3
+ WHERE user_id=$1 AND username=$2 AND forward_network_id=$3
 `, workspaceID, actor, forwardNetworkID).Scan(&out.UpdatedAt)
 	return out, nil
 }
@@ -171,7 +171,7 @@ func deletePolicyReportForwardCreds(ctx context.Context, db *sql.DB, workspaceID
 
 	res, err := db.ExecContext(ctx, `
 DELETE FROM sf_policy_report_forward_network_credentials
- WHERE workspace_id=$1 AND username=$2 AND forward_network_id=$3
+ WHERE user_id=$1 AND username=$2 AND forward_network_id=$3
 `, workspaceID, username, forwardNetworkID)
 	if err != nil {
 		return err

@@ -34,7 +34,7 @@ func (e *Engine) dispatchForwardSyncTask(ctx context.Context, task *taskstore.Ta
 	if username == "" {
 		username = ws.primaryOwner()
 	}
-	pc := &workspaceContext{
+	pc := &userContext{
 		workspace: *ws,
 		claims: SessionClaims{
 			Username: username,
@@ -54,7 +54,7 @@ func (e *Engine) dispatchForwardSyncTask(ctx context.Context, task *taskstore.Ta
 	})
 }
 
-func (e *Engine) runForwardSyncTask(ctx context.Context, pc *workspaceContext, deploymentID string, taskID int, log Logger) error {
+func (e *Engine) runForwardSyncTask(ctx context.Context, pc *userContext, deploymentID string, taskID int, log Logger) error {
 	if e == nil || e.db == nil {
 		return fmt.Errorf("engine unavailable")
 	}

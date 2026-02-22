@@ -39,8 +39,6 @@ type Config struct {
 	NautobotInternalBaseURL   string
 	YaadeBaseURL              string
 	YaadeInternalBaseURL      string
-	ElasticURL                string
-	ElasticIndexPrefix        string
 	Netlab                    NetlabConfig
 	OIDC                      OIDCConfig
 	LDAP                      LDAPConfig
@@ -81,40 +79,10 @@ type Config struct {
 	ForwardCollectorHeapSizeGB int
 	Forward                    ForwardConfig
 	Features                   FeaturesConfig
-	Elastic                    ElasticConfig
 }
 
 type ForwardConfig struct {
 	SNMPPlaceholderEnabled bool
-}
-
-type ElasticConfig struct {
-	// URL is the Elasticsearch base URL (e.g. http://elasticsearch:9200).
-	//
-	// When empty, Skyforge treats Elasticsearch indexing as disabled even if the
-	// feature flag is enabled.
-	URL string
-	// IndexPrefix is the prefix used for Skyforge-managed indices.
-	// Example indices:
-	//   <prefix>-syslog-YYYY.MM.DD
-	//   <prefix>-snmp-trap-YYYY.MM.DD
-	//   <prefix>-webhook-YYYY.MM.DD
-	IndexPrefix string
-	// IndexingMode controls how Skyforge names indices.
-	//
-	// Allowed values:
-	// - "instance": legacy instance-scoped indices (<IndexPrefix>-<category>-YYYY.MM.DD)
-	// - "per_user": per-user indices (<IndexPrefix>-u-<username>-<category>-YYYY.MM.DD)
-	//
-	// Empty is treated as "instance" for backwards compatibility.
-	IndexingMode string
-
-	// ToolsAutosleepEnabled enables demo-friendly autosleep for in-cluster Elastic tools
-	// (Elasticsearch StatefulSet + Kibana Deployment).
-	ToolsAutosleepEnabled bool
-	// ToolsAutosleepIdleMinutes is the idle timeout (minutes) before autosleep scales
-	// Elastic tools to 0 replicas.
-	ToolsAutosleepIdleMinutes int
 }
 
 type FeaturesConfig struct {
@@ -128,7 +96,6 @@ type FeaturesConfig struct {
 	NetboxEnabled    bool `json:"netboxEnabled"`
 	NautobotEnabled  bool `json:"nautobotEnabled"`
 	DNSEnabled       bool `json:"dnsEnabled"`
-	ElasticEnabled   bool `json:"elasticEnabled"`
 }
 
 type OIDCConfig struct {

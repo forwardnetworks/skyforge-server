@@ -56,9 +56,9 @@ func listDeploymentsForDashboard(ctx context.Context, db *sql.DB, workspaceID st
 	defer cancel()
 
 	rows, err := db.QueryContext(ctx, `SELECT id, name, type, config, created_by, created_at, updated_at,
-  last_task_workspace_id, last_task_id, last_status, last_started_at, last_finished_at
+  last_task_user_id, last_task_id, last_status, last_started_at, last_finished_at
 FROM sf_deployments
-WHERE workspace_id=$1
+WHERE user_id=$1
 ORDER BY updated_at DESC`, workspaceID)
 	if err != nil {
 		return nil, err
@@ -227,7 +227,7 @@ func loadDashboardSnapshot(ctx context.Context, svc *Service, claims *SessionCla
 						continue
 					}
 					run := taskToRunInfo(task)
-					run["workspaceId"] = w.ID
+					run["userId"] = w.ID
 					runItems = append(runItems, run)
 				}
 				items, err := toJSONMapSlice(runItems)

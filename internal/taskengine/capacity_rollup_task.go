@@ -44,7 +44,7 @@ func (e *Engine) dispatchCapacityRollupTask(ctx context.Context, task *taskstore
 	if username == "" {
 		username = ws.primaryOwner()
 	}
-	pc := &workspaceContext{
+	pc := &userContext{
 		workspace: *ws,
 		claims: SessionClaims{
 			Username: username,
@@ -113,7 +113,7 @@ type fwdDeviceMetricHistoryResponse struct {
 	Metrics []fwdDeviceMetricHistory `json:"metrics"`
 }
 
-func (e *Engine) runCapacityRollup(ctx context.Context, pc *workspaceContext, deploymentID string, taskID int, log Logger) error {
+func (e *Engine) runCapacityRollup(ctx context.Context, pc *userContext, deploymentID string, taskID int, log Logger) error {
 	if e == nil || e.db == nil {
 		return fmt.Errorf("engine unavailable")
 	}
@@ -651,12 +651,12 @@ func insertCapacityRollup(ctx context.Context, db *sql.DB, row capacityRollupIns
 	var err error
 	if depVal != nil {
 		_, err = db.ExecContext(ctxReq, `INSERT INTO sf_capacity_rollups (
-	  workspace_id, deployment_id, forward_network_id,
+	  user_id, deployment_id, forward_network_id,
 	  object_type, object_id, metric, window_label,
 	  period_end, samples, avg, p95, p99, max,
 	  slope_per_day, forecast_crossing_ts, threshold, details
 	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
-	ON CONFLICT (workspace_id, deployment_id, object_type, object_id, metric, window_label, period_end)
+	ON CONFLICT (user_id, deployment_id, object_type, object_id, metric, window_label, period_end)
 	DO UPDATE SET
 	  forward_network_id = EXCLUDED.forward_network_id,
 	  samples = EXCLUDED.samples,
@@ -679,12 +679,12 @@ func insertCapacityRollup(ctx context.Context, db *sql.DB, row capacityRollupIns
 
 	// Network-scoped rollup row (deployment_id IS NULL).
 	_, err = db.ExecContext(ctxReq, `INSERT INTO sf_capacity_rollups (
-  workspace_id, deployment_id, forward_network_id,
+  user_id, deployment_id, forward_network_id,
   object_type, object_id, metric, window_label,
   period_end, samples, avg, p95, p99, max,
   slope_per_day, forecast_crossing_ts, threshold, details
 ) VALUES ($1,NULL,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-ON CONFLICT (workspace_id, forward_network_id, object_type, object_id, metric, window_label, period_end) WHERE deployment_id IS NULL
+ON CONFLICT (user_id, forward_network_id, object_type, object_id, metric, window_label, period_end) WHERE deployment_id IS NULL
 DO UPDATE SET
   samples = EXCLUDED.samples,
   avg = EXCLUDED.avg,

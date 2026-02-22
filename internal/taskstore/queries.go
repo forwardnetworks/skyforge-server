@@ -61,7 +61,7 @@ func GetActiveDeploymentTask(ctx context.Context, db *sql.DB, workspaceID string
 	var id int
 	err := db.QueryRowContext(ctx, `SELECT id
 FROM sf_tasks
-WHERE workspace_id=$1
+WHERE user_id=$1
   AND deployment_id=$2
   AND status='running'
 ORDER BY id DESC
@@ -87,7 +87,7 @@ func GetOldestQueuedDeploymentTaskID(ctx context.Context, db *sql.DB, workspaceI
 	var id int
 	err := db.QueryRowContext(ctx, `SELECT id
 FROM sf_tasks
-WHERE workspace_id=$1
+WHERE user_id=$1
   AND deployment_id=$2
   AND status='queued'
 ORDER BY priority DESC, id ASC
@@ -112,7 +112,7 @@ func GetOldestQueuedWorkspaceTaskID(ctx context.Context, db *sql.DB, workspaceID
 	var id int
 	err := db.QueryRowContext(ctx, `SELECT id
 FROM sf_tasks
-WHERE workspace_id=$1
+WHERE user_id=$1
   AND deployment_id IS NULL
   AND status='queued'
 ORDER BY priority DESC, id ASC
@@ -148,7 +148,7 @@ func GetDeploymentQueueSummary(ctx context.Context, db *sql.DB, workspaceID stri
   MIN(id) FILTER (WHERE status='queued') AS oldest_queued_id,
   MAX(id) FILTER (WHERE status='running') AS running_id
 FROM sf_tasks
-WHERE workspace_id=$1
+WHERE user_id=$1
   AND deployment_id=$2
   AND status IN ('queued','running')`, workspaceID, deploymentID).Scan(&queuedCount, &runningCount, &oldestQueued, &runningID)
 	if err != nil {
@@ -186,9 +186,9 @@ func ListTasks(ctx context.Context, db *sql.DB, workspaceID string, limit int) (
 	if limit <= 0 {
 		limit = 5
 	}
-	rows, err := db.QueryContext(ctx, `SELECT id, workspace_id, deployment_id, task_type, priority, status, message, metadata, created_by, created_at, started_at, finished_at, error
+	rows, err := db.QueryContext(ctx, `SELECT id, user_id, deployment_id, task_type, priority, status, message, metadata, created_by, created_at, started_at, finished_at, error
 FROM sf_tasks
-WHERE workspace_id=$1
+WHERE user_id=$1
 ORDER BY created_at DESC
 LIMIT $2`, workspaceID, limit)
 	if err != nil {
@@ -224,7 +224,7 @@ func GetLatestDeploymentTask(ctx context.Context, db *sql.DB, workspaceID string
 	var id int
 	query := `SELECT id
 FROM sf_tasks
-WHERE workspace_id=$1
+WHERE user_id=$1
   AND deployment_id=$2`
 	args := []any{workspaceID, deploymentID}
 	if taskType != "" {
@@ -456,7 +456,7 @@ func TaskToRunInfo(task TaskRecord) map[string]any {
 		"created":   task.CreatedAt.UTC().Format(time.RFC3339),
 	}
 	if strings.TrimSpace(task.WorkspaceID) != "" {
-		run["workspaceId"] = strings.TrimSpace(task.WorkspaceID)
+		run["userId"] = strings.TrimSpace(task.WorkspaceID)
 	}
 	if task.DeploymentID.Valid {
 		dep := strings.TrimSpace(task.DeploymentID.String)

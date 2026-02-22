@@ -17,20 +17,6 @@ type IntegrationDefaultsConfig struct {
 	YaadeInternalBaseURL    string
 }
 
-type ElasticDefaultsConfig struct {
-	// URL is the base URL for the in-cluster Elasticsearch endpoint (no trailing slash).
-	URL string
-	// IndexPrefix is the prefix used for Skyforge-managed indices.
-	IndexPrefix string
-	// IndexingMode controls how Skyforge names indices (instance vs per-user).
-	IndexingMode string
-
-	// ToolsAutosleepEnabled enables demo-friendly autosleep for in-cluster Elastic tools.
-	ToolsAutosleepEnabled bool
-	// ToolsAutosleepIdleMinutes is the idle timeout (minutes) before autosleep scales to 0.
-	ToolsAutosleepIdleMinutes int
-}
-
 type OIDCDefaultsConfig struct {
 	IssuerURL    string
 	DiscoveryURL string
@@ -137,7 +123,6 @@ type FeaturesDefaultsConfig struct {
 	NetboxEnabled    bool
 	NautobotEnabled  bool
 	DNSEnabled       bool
-	ElasticEnabled   bool
 }
 
 type EncoreConfig struct {
@@ -173,7 +158,6 @@ type EncoreConfig struct {
 
 	Netlab           NetlabDefaultsConfig
 	Integrations     IntegrationDefaultsConfig
-	Elastic          ElasticDefaultsConfig
 	UI               UIDefaultsConfig
 	OIDC             OIDCDefaultsConfig
 	LDAP             LDAPDefaultsConfig
@@ -191,17 +175,6 @@ type EncoreConfig struct {
 
 type WorkerConfig struct {
 	TaskWorkerEnabled bool
-	// TaskWorkerPollEnabled enables a DB-backed fallback loop for processing queued tasks
-	// when Pub/Sub delivery is delayed or unavailable.
-	TaskWorkerPollEnabled bool
-	// TaskWorkerPollMinQueuedSeconds is the minimum queued age before the fallback poller
-	// will attempt to start tasks directly (to avoid racing normal Pub/Sub delivery).
-	TaskWorkerPollMinQueuedSeconds int
-	// TaskWorkerPollMaxTasksPerTick caps how many queued tasks the poller will attempt to start
-	// per tick.
-	TaskWorkerPollMaxTasksPerTick int
-	// TaskWorkerPollMaxConcurrency caps how many poller-started tasks may run concurrently.
-	TaskWorkerPollMaxConcurrency int
 
 	Netlab           NetlabDefaultsConfig
 	Workspaces       WorkspacesDefaultsConfig
@@ -210,7 +183,6 @@ type WorkerConfig struct {
 	Forward          ForwardDefaultsConfig
 	ForwardCollector ForwardCollectorDefaultsConfig
 	Features         FeaturesDefaultsConfig
-	Elastic          ElasticDefaultsConfig
 	NetlabGenerator  NetlabGeneratorDefaultsConfig
 	Kubernetes       KubernetesDefaultsConfig
 }

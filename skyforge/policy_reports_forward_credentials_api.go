@@ -11,13 +11,12 @@ import (
 
 // GetWorkspacePolicyReportForwardNetworkCredentials returns the current user's credentials status for a Forward network.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/networks/:forwardNetworkId/credentials
 func (s *Service) GetWorkspacePolicyReportForwardNetworkCredentials(ctx context.Context, id string, forwardNetworkId string) (*PolicyReportForwardCredentialsStatus, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -44,13 +43,12 @@ func (s *Service) GetWorkspacePolicyReportForwardNetworkCredentials(ctx context.
 
 // PutWorkspacePolicyReportForwardNetworkCredentials upserts the current user's credentials for a Forward network.
 //
-//encore:api auth method=PUT path=/api/workspaces/:id/policy-reports/networks/:forwardNetworkId/credentials
 func (s *Service) PutWorkspacePolicyReportForwardNetworkCredentials(ctx context.Context, id string, forwardNetworkId string, req *PolicyReportPutForwardCredentialsRequest) (*PolicyReportForwardCredentialsStatus, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -86,13 +84,12 @@ func (s *Service) PutWorkspacePolicyReportForwardNetworkCredentials(ctx context.
 
 // DeleteWorkspacePolicyReportForwardNetworkCredentials clears the current user's credentials for a Forward network.
 //
-//encore:api auth method=DELETE path=/api/workspaces/:id/policy-reports/networks/:forwardNetworkId/credentials
 func (s *Service) DeleteWorkspacePolicyReportForwardNetworkCredentials(ctx context.Context, id string, forwardNetworkId string) (*PolicyReportDecisionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

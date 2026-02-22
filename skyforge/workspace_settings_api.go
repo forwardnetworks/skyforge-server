@@ -84,7 +84,7 @@ func validateExternalTemplateRepos(repos []ExternalTemplateRepo) ([]ExternalTemp
 
 // UpdateWorkspaceSettings updates workspace-level feature flags and template repo sources.
 //
-//encore:api auth method=PUT path=/api/workspaces/:id/settings
+//encore:api auth method=PUT path=/api/users/:id/settings
 func (s *Service) UpdateWorkspaceSettings(ctx context.Context, id string, req *WorkspaceSettingsRequest) (*WorkspaceSettingsResponse, error) {
 	pc, err := requireWorkspaceOwner(ctx, s, id)
 	if err != nil {

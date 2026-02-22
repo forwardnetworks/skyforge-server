@@ -42,13 +42,13 @@ type DeploymentLinkAdminResponse struct {
 
 // UpdateWorkspaceDeploymentLinkAdmin performs administrative link operations (up/down) on a topology edge.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/deployments/:deploymentID/links/admin
+//encore:api auth method=POST path=/api/users/:id/deployments/:deploymentID/links/admin
 func (s *Service) UpdateWorkspaceDeploymentLinkAdmin(ctx context.Context, id, deploymentID string, req *DeploymentLinkAdminRequest) (*DeploymentLinkAdminResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -216,13 +216,13 @@ type DeploymentLinkCaptureResponse struct {
 
 // CaptureWorkspaceDeploymentLinkPcap captures a short pcap on a topology link and uploads it as a workspace artifact.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/deployments/:deploymentID/links/capture
+//encore:api auth method=POST path=/api/users/:id/deployments/:deploymentID/links/capture
 func (s *Service) CaptureWorkspaceDeploymentLinkPcap(ctx context.Context, id, deploymentID string, req *DeploymentLinkCaptureRequest) (*DeploymentLinkCaptureResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

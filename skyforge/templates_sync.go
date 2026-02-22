@@ -155,7 +155,7 @@ func normalizeNetlabTemplateSelection(templatesDir, templateFile string) (string
 	return normalizeNetlabTemplateSelectionWithSource("workspace", templatesDir, templateFile)
 }
 
-func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceContext, server *NetlabServerConfig, templateSource, templateRepo, templatesDir, templateFile, workdir, owner string) (string, error) {
+func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *userContext, server *NetlabServerConfig, templateSource, templateRepo, templatesDir, templateFile, workdir, owner string) (string, error) {
 	if server == nil {
 		return "", fmt.Errorf("netlab runner not configured")
 	}
@@ -377,7 +377,7 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *workspaceConte
 	return topologyPath, nil
 }
 
-func (s *Service) buildNetlabTopologyBundleB64(ctx context.Context, pc *workspaceContext, templateSource, templateRepo, templatesDir, templateFile string) (string, error) {
+func (s *Service) buildNetlabTopologyBundleB64(ctx context.Context, pc *userContext, templateSource, templateRepo, templatesDir, templateFile string) (string, error) {
 	if s == nil {
 		return "", fmt.Errorf("service unavailable")
 	}
@@ -498,7 +498,7 @@ func (s *Service) buildNetlabTopologyBundleB64(ctx context.Context, pc *workspac
 	return out, nil
 }
 
-func resolveTemplateRepoForProject(cfg Config, pc *workspaceContext, policy GovernancePolicy, source string, customRepo string) (templateRepoRef, error) {
+func resolveTemplateRepoForProject(cfg Config, pc *userContext, policy GovernancePolicy, source string, customRepo string) (templateRepoRef, error) {
 	owner := pc.workspace.GiteaOwner
 	repo := pc.workspace.GiteaRepo
 	branch := strings.TrimSpace(pc.workspace.DefaultBranch)

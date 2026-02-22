@@ -18,7 +18,6 @@ func (s *Service) policyReportsForwardClient(ctx context.Context, workspaceID, u
 	}
 	box := newSecretBox(s.cfg.SessionSecret)
 
-	// Preferred: per-user per-network credentials (Policy Reports specific).
 	if strings.TrimSpace(username) != "" && strings.TrimSpace(forwardNetworkID) != "" {
 		if pr, err := getPolicyReportForwardCreds(ctx, s.db, box, workspaceID, username, forwardNetworkID); err == nil && pr != nil {
 			return newForwardClient(forwardCredentials{
@@ -30,31 +29,7 @@ func (s *Service) policyReportsForwardClient(ctx context.Context, workspaceID, u
 		}
 	}
 
-	// Fallback: legacy per-user Forward credentials.
-	if strings.TrimSpace(username) != "" {
-		if urec, err := getUserForwardCredentials(ctx, s.db, box, strings.ToLower(strings.TrimSpace(username))); err == nil && urec != nil {
-			return newForwardClient(forwardCredentials{
-				BaseURL:       urec.BaseURL,
-				SkipTLSVerify: urec.SkipTLSVerify,
-				Username:      urec.ForwardUsername,
-				Password:      urec.ForwardPassword,
-			})
-		}
-	}
-
-	// Final fallback: workspace-level Forward credentials.
-	rec, err := getWorkspaceForwardCredentials(ctx, s.db, box, workspaceID)
-	if err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward credentials").Err()
-	}
-	if rec == nil {
-		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward is not configured for this user/network or workspace").Err()
-	}
-	client, err := newForwardClient(*rec)
-	if err != nil {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
-	}
-	return client, nil
+	return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward credential profile is required for this network").Err()
 }
 
 type PolicyReportChecksResponse struct {
@@ -70,13 +45,12 @@ type PolicyReportCheckResponse struct {
 
 // GetWorkspacePolicyReportCatalog returns the embedded Policy Reports check catalog.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/catalog
 func (s *Service) GetWorkspacePolicyReportCatalog(ctx context.Context, id string) (*PolicyReportCatalog, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -91,13 +65,12 @@ func (s *Service) GetWorkspacePolicyReportCatalog(ctx context.Context, id string
 
 // GetWorkspacePolicyReportPacks returns the embedded Policy Reports packs definition.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/packs
 func (s *Service) GetWorkspacePolicyReportPacks(ctx context.Context, id string) (*PolicyReportPacks, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -112,13 +85,12 @@ func (s *Service) GetWorkspacePolicyReportPacks(ctx context.Context, id string) 
 
 // GetWorkspacePolicyReportChecks lists known checks (catalog + embedded .nqe files).
 //
-//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/checks
 func (s *Service) GetWorkspacePolicyReportChecks(ctx context.Context, id string) (*PolicyReportChecksResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -160,13 +132,12 @@ func (s *Service) GetWorkspacePolicyReportChecks(ctx context.Context, id string)
 
 // GetWorkspacePolicyReportCheck returns the .nqe file content for a given check.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/checks/:checkId
 func (s *Service) GetWorkspacePolicyReportCheck(ctx context.Context, id string, checkId string) (*PolicyReportCheckResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -199,13 +170,12 @@ func (s *Service) GetWorkspacePolicyReportCheck(ctx context.Context, id string, 
 
 // GetWorkspacePolicyReportSnapshots lists snapshots for a Forward network.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/policy-reports/snapshots
 func (s *Service) GetWorkspacePolicyReportSnapshots(ctx context.Context, id string, req *PolicyReportSnapshotsRequest) (*PolicyReportSnapshotsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -237,13 +207,12 @@ func (s *Service) GetWorkspacePolicyReportSnapshots(ctx context.Context, id stri
 
 // RunWorkspacePolicyReportNQE executes an NQE query and returns a normalized response.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/nqe
 func (s *Service) RunWorkspacePolicyReportNQE(ctx context.Context, id string, req *PolicyReportNQERequest) (*PolicyReportNQEResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -293,13 +262,12 @@ func (s *Service) RunWorkspacePolicyReportNQE(ctx context.Context, id string, re
 
 // RunWorkspacePolicyReportCheck executes an embedded check (.nqe) and returns a normalized response.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/checks/run
 func (s *Service) RunWorkspacePolicyReportCheck(ctx context.Context, id string, req *PolicyReportRunCheckRequest) (*PolicyReportNQEResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -361,13 +329,12 @@ func (s *Service) RunWorkspacePolicyReportCheck(ctx context.Context, id string, 
 
 // RunWorkspacePolicyReportPack executes all checks in a pack (serially) and returns per-check results.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/packs/run
 func (s *Service) RunWorkspacePolicyReportPack(ctx context.Context, id string, req *PolicyReportRunPackRequest) (*PolicyReportRunPackResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -461,13 +428,12 @@ func (s *Service) RunWorkspacePolicyReportPack(ctx context.Context, id string, r
 
 // RunWorkspacePolicyReportPackDelta runs a pack on two snapshots and returns a per-check delta summary.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/packs/delta
 func (s *Service) RunWorkspacePolicyReportPackDelta(ctx context.Context, id string, req *PolicyReportPackDeltaRequest) (*PolicyReportPackDeltaResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

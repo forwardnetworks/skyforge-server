@@ -78,7 +78,10 @@ func getUserForwardCredentials(ctx context.Context, db *sql.DB, box *secretBox, 
   COALESCE(collector_id, ''), COALESCE(collector_username, ''), COALESCE(authorization_key, ''),
   COALESCE(skip_tls_verify, false),
   updated_at
-FROM sf_user_forward_credentials WHERE username=$1`, username).Scan(
+FROM sf_user_forward_collectors
+WHERE username=$1
+ORDER BY is_default DESC, updated_at DESC
+LIMIT 1`, username).Scan(
 		&baseURL,
 		&forwardUser,
 		&forwardPass,
@@ -95,31 +98,7 @@ FROM sf_user_forward_credentials WHERE username=$1`, username).Scan(
 		if isMissingDBRelation(err) {
 			return nil, nil
 		}
-		if isMissingDBColumn(err, "skip_tls_verify") {
-			// Backward-compat: older clusters might not have the skip_tls_verify column yet.
-			skipTLSVerify = sql.NullBool{Valid: true, Bool: false}
-			err2 := db.QueryRowContext(ctx, `SELECT base_url, forward_username, forward_password,
-  COALESCE(collector_id, ''), COALESCE(collector_username, ''), COALESCE(authorization_key, ''),
-  updated_at
-FROM sf_user_forward_credentials WHERE username=$1`, username).Scan(
-				&baseURL,
-				&forwardUser,
-				&forwardPass,
-				&collectorID,
-				&collectorUser,
-				&authKey,
-				&updatedAt,
-			)
-			if err2 != nil {
-				if errors.Is(err2, sql.ErrNoRows) || isMissingDBRelation(err2) {
-					return nil, nil
-				}
-				return nil, err2
-			}
-			err = nil
-		} else {
-			return nil, err
-		}
+		return nil, err
 	}
 	baseURLValue, err := box.decrypt(baseURL.String)
 	if err != nil {
@@ -162,8 +141,6 @@ FROM sf_user_forward_credentials WHERE username=$1`, username).Scan(
 		AuthorizationKey:  strings.TrimSpace(authKeyValue),
 	}
 	if rec.CollectorUsername == "" && rec.AuthorizationKey != "" {
-		// Backward-compat / resiliency: some collectors only persist the auth key
-		// which encodes the collector username as "<username>:<token>".
 		if before, _, ok := strings.Cut(rec.AuthorizationKey, ":"); ok {
 			rec.CollectorUsername = strings.TrimSpace(before)
 		}
@@ -220,60 +197,71 @@ func putUserForwardCredentials(ctx context.Context, db *sql.DB, box *secretBox, 
 	if err != nil {
 		return err
 	}
-	_, err = db.ExecContext(ctx, `INSERT INTO sf_user_forward_credentials (
-  username, base_url, forward_username, forward_password,
-  skip_tls_verify,
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	if _, err = tx.ExecContext(ctx, `UPDATE sf_user_forward_collectors SET is_default=false WHERE username=$1`, username); err != nil {
+		if isMissingDBRelation(err) {
+			return fmt.Errorf("forward credentials store not initialized")
+		}
+		return err
+	}
+
+	var existingID string
+	err = tx.QueryRowContext(ctx, `SELECT id
+FROM sf_user_forward_collectors
+WHERE username=$1
+ORDER BY updated_at DESC
+LIMIT 1`, username).Scan(&existingID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+
+	name := defaultCollectorNameForUser(username)
+	if strings.TrimSpace(existingID) == "" {
+		existingID = fmt.Sprintf("%s-%d", name, time.Now().UTC().Unix())
+	}
+
+	_, err = tx.ExecContext(ctx, `INSERT INTO sf_user_forward_collectors (
+  id, username, name,
+  base_url, skip_tls_verify, forward_username, forward_password,
   collector_id, collector_username, authorization_key,
-  updated_at
-) VALUES ($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),now())
-ON CONFLICT (username) DO UPDATE SET
+  updated_at, is_default
+) VALUES ($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),now(),true)
+ON CONFLICT (id) DO UPDATE SET
+  name=excluded.name,
   base_url=excluded.base_url,
+  skip_tls_verify=excluded.skip_tls_verify,
   forward_username=excluded.forward_username,
   forward_password=excluded.forward_password,
-  skip_tls_verify=excluded.skip_tls_verify,
   collector_id=excluded.collector_id,
   collector_username=excluded.collector_username,
   authorization_key=excluded.authorization_key,
-  updated_at=now()`,
+  updated_at=now(),
+  is_default=true`,
+		existingID,
 		username,
+		name,
 		encBaseURL,
+		rec.SkipTLSVerify,
 		encFwdUser,
 		encFwdPass,
-		rec.SkipTLSVerify,
 		encCollectorID,
 		encCollectorUser,
 		encAuthKey,
 	)
-	if isMissingDBRelation(err) {
-		return fmt.Errorf("forward credentials store not initialized")
+	if err != nil {
+		return err
 	}
-	if isMissingDBColumn(err, "skip_tls_verify") {
-		_, err2 := db.ExecContext(ctx, `INSERT INTO sf_user_forward_credentials (
-  username, base_url, forward_username, forward_password,
-  collector_id, collector_username, authorization_key,
-  updated_at
-) VALUES ($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),now())
-ON CONFLICT (username) DO UPDATE SET
-  base_url=excluded.base_url,
-  forward_username=excluded.forward_username,
-  forward_password=excluded.forward_password,
-  collector_id=excluded.collector_id,
-  collector_username=excluded.collector_username,
-  authorization_key=excluded.authorization_key,
-  updated_at=now()`,
-			username,
-			encBaseURL,
-			encFwdUser,
-			encFwdPass,
-			encCollectorID,
-			encCollectorUser,
-			encAuthKey,
-		)
-		if isMissingDBRelation(err2) {
-			return fmt.Errorf("forward credentials store not initialized")
-		}
-		return err2
-	}
+
+	err = tx.Commit()
 	return err
 }
 
@@ -285,7 +273,7 @@ func deleteUserForwardCredentials(ctx context.Context, db *sql.DB, username stri
 	if username == "" {
 		return nil
 	}
-	_, err := db.ExecContext(ctx, `DELETE FROM sf_user_forward_credentials WHERE username=$1`, username)
+	_, err := db.ExecContext(ctx, `DELETE FROM sf_user_forward_collectors WHERE username=$1`, username)
 	if isMissingDBRelation(err) {
 		return nil
 	}
@@ -312,7 +300,6 @@ func defaultCollectorNameForUser(username string) string {
 
 // GetUserForwardCollector returns the authenticated user's Forward collector settings.
 //
-//encore:api auth method=GET path=/api/forward/collector
 func (s *Service) GetUserForwardCollector(ctx context.Context) (*UserForwardCollectorResponse, error) {
 	if !s.cfg.Features.ForwardEnabled {
 		return nil, errs.B().Code(errs.NotFound).Msg("Forward integration is disabled").Err()
@@ -433,7 +420,6 @@ func (s *Service) GetUserForwardCollector(ctx context.Context) (*UserForwardColl
 
 // PutUserForwardCollector stores Forward credentials and ensures a per-user collector exists.
 //
-//encore:api auth method=PUT path=/api/forward/collector
 func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwardCollectorRequest) (*UserForwardCollectorResponse, error) {
 	if !s.cfg.Features.ForwardEnabled {
 		return nil, errs.B().Code(errs.NotFound).Msg("Forward integration is disabled").Err()
@@ -596,7 +582,6 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 //
 // NOTE: This does not delete any existing collector in Forward; it only updates the Skyforge profile.
 //
-//encore:api auth method=POST path=/api/forward/collector/reset
 func (s *Service) ResetUserForwardCollector(ctx context.Context) (*UserForwardCollectorResponse, error) {
 	if !s.cfg.Features.ForwardEnabled {
 		return nil, errs.B().Code(errs.NotFound).Msg("Forward integration is disabled").Err()
@@ -716,7 +701,6 @@ type RestartUserCollectorResponse struct {
 // RestartUserCollector triggers a rolling restart of the user's in-cluster collector Deployment.
 // This is used to pull down a newer image when using `:latest`.
 //
-//encore:api auth method=POST path=/api/forward/collector/restart
 func (s *Service) RestartUserCollector(ctx context.Context) (*RestartUserCollectorResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -735,7 +719,6 @@ func (s *Service) RestartUserCollector(ctx context.Context) (*RestartUserCollect
 
 // GetUserCollectorRuntime returns the in-cluster runtime status for the user's collector.
 //
-//encore:api auth method=GET path=/api/forward/collector/runtime
 func (s *Service) GetUserCollectorRuntime(ctx context.Context) (*UserCollectorRuntimeResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -752,7 +735,6 @@ func (s *Service) GetUserCollectorRuntime(ctx context.Context) (*UserCollectorRu
 
 // GetUserCollectorLogs returns recent log lines from the user's in-cluster collector pod.
 //
-//encore:api auth method=GET path=/api/forward/collector/logs
 func (s *Service) GetUserCollectorLogs(ctx context.Context, params *UserCollectorLogsParams) (*UserCollectorLogsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -796,7 +778,6 @@ func (s *Service) GetUserCollectorLogs(ctx context.Context, params *UserCollecto
 
 // ClearUserForwardCollector deletes the stored user Forward collector settings.
 //
-//encore:api auth method=DELETE path=/api/forward/collector
 func (s *Service) ClearUserForwardCollector(ctx context.Context) (*UserForwardCollectorResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {

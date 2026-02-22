@@ -138,14 +138,6 @@ Features: {
 	NetboxEnabled: false
 	NautobotEnabled: false
 	DNSEnabled: false
-	ElasticEnabled: false
-}
-
-Elastic: {
-	// When empty, Skyforge uses a provider default when ElasticEnabled=true.
-	// For in-cluster (Helm): http://elasticsearch:9200
-	URL: ""
-	IndexPrefix: "skyforge"
 }
 
 Kubernetes: {

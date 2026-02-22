@@ -48,13 +48,13 @@ type LinkEdgeStats struct {
 //
 // This is used to render live link utilization on the topology graph (similar to c9s VSCode extension).
 //
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/links/stats
+//encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/links/stats
 func (s *Service) GetWorkspaceDeploymentLinkStats(ctx context.Context, id, deploymentID string) (*LinkStatsSnapshot, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -266,7 +266,7 @@ type LinkStatsSSEEvent struct {
 
 // GetWorkspaceDeploymentLinkStatsEvents streams link stats snapshots as SSE.
 //
-//encore:api auth raw method=GET path=/api/workspaces/:id/deployments/:deploymentID/links/stats/events
+//encore:api auth raw method=GET path=/api/users/:id/deployments/:deploymentID/links/stats/events
 func (s *Service) GetWorkspaceDeploymentLinkStatsEvents(w http.ResponseWriter, req *http.Request) {
 	if s == nil || s.db == nil || s.sessionManager == nil {
 		http.Error(w, "service unavailable", http.StatusServiceUnavailable)

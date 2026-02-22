@@ -4,14 +4,6 @@
 
 // Enable worker-side cron and task processing by default.
 TaskWorkerEnabled: true
-// Enable DB-backed fallback polling of queued tasks (in case Pub/Sub is delayed/unavailable).
-TaskWorkerPollEnabled: true
-// Only start tasks directly via the poller when they've been queued for at least this long.
-TaskWorkerPollMinQueuedSeconds: 60
-// Per tick, attempt to start up to this many queued tasks.
-TaskWorkerPollMaxTasksPerTick: 10
-// Cap poller-started tasks concurrently (separate from Pub/Sub subscription concurrency).
-TaskWorkerPollMaxConcurrency: 4
 
 // Netlab defaults.
 Netlab: {
@@ -63,12 +55,6 @@ Features: {
 	NetboxEnabled: false
 	NautobotEnabled: false
 	DNSEnabled: false
-	ElasticEnabled: false
-}
-
-Elastic: {
-	URL: ""
-	IndexPrefix: "skyforge"
 }
 
 Kubernetes: {

@@ -14,7 +14,6 @@ import (
 	"encore.app/internal/taskengine"
 	"encore.app/internal/taskexec"
 	"encore.app/internal/taskqueue"
-	"encore.app/internal/taskreconcile"
 	"encore.app/internal/taskstore"
 	"encore.app/worker/taskrunner"
 	"encore.dev/config"
@@ -53,14 +52,6 @@ var taskQueueBackgroundSubscription = pubsub.NewSubscription(taskqueue.Backgroun
 	MaxConcurrency: 2,
 	AckDeadline:    30 * time.Second,
 })
-
-func init() {
-	go func() {
-		// Give the process a moment to start up (config, DB, etc.) before polling.
-		time.Sleep(10 * time.Second)
-		runQueuedTaskFallbackLoop()
-	}()
-}
 
 var (
 	interactiveRunner *taskrunner.Runner
@@ -114,79 +105,6 @@ func init() {
 
 	interactiveRunner = taskrunner.New("interactive", 8, 64, exec)
 	backgroundRunner = taskrunner.New("background", 2, 16, exec)
-}
-
-func runQueuedTaskFallbackLoop() {
-	// This process-level fallback loop exists for self-hosted deployments where Encore cron
-	// jobs are not wired up. Without this, a missed Pub/Sub enqueue event can leave tasks
-	// stuck in "queued" indefinitely.
-	//
-	// The loop is intentionally conservative:
-	// - only considers tasks that have been queued for at least minAge
-	// - at most one queued task per (workspace, deployment) key
-	// - low concurrency so we don't stampede the DB / task locks
-	if role := strings.ToLower(strings.TrimSpace(os.Getenv("SKYFORGE_ROLE"))); role != "" && role != "worker" {
-		return
-	}
-	if !workerEncoreCfg.TaskWorkerEnabled {
-		return
-	}
-
-	sem := make(chan struct{}, 2)
-	ticker := time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
-
-	const limit = 50
-	minAge := 20 * time.Second
-
-	for range ticker.C {
-		if role := strings.ToLower(strings.TrimSpace(os.Getenv("SKYFORGE_ROLE"))); role != "" && role != "worker" {
-			return
-		}
-		if !workerEncoreCfg.TaskWorkerEnabled {
-			continue
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		stdlib, err := getWorkerDB(ctx)
-		cancel()
-		if err != nil {
-			rlog.Error("queued task fallback: db unavailable", "err", err)
-			continue
-		}
-
-		ctxList, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		items, err := taskreconcile.ListStuckQueuedTasksByKey(ctxList, stdlib, limit, minAge)
-		cancel()
-		if err != nil {
-			rlog.Error("queued task fallback: list failed", "err", err)
-			continue
-		}
-		if len(items) == 0 {
-			continue
-		}
-
-		rlog.Info("queued task fallback: found queued tasks", "count", len(items))
-
-		for _, item := range items {
-			if item.TaskID <= 0 || strings.TrimSpace(item.Key) == "" {
-				continue
-			}
-			select {
-			case sem <- struct{}{}:
-				go func(taskID int, key string) {
-					defer func() { <-sem }()
-					// Prefer interactive runner for fallback, it handles both task types via DB priority.
-					if err := interactiveRunner.Submit(taskID); err != nil {
-						rlog.Error("queued task fallback: submit failed", "task_id", taskID, "err", err)
-					}
-				}(item.TaskID, item.Key)
-			default:
-				// At concurrency limit; remaining items will be retried on the next tick.
-				break
-			}
-		}
-	}
 }
 
 func (s *Service) handleInteractiveTaskEnqueued(ctx context.Context, msg *taskqueue.TaskEnqueuedEvent) error {

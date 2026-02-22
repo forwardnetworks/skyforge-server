@@ -46,7 +46,7 @@ type workspaceResponse struct {
 
 type createdWorkspaceRecord struct {
 	BaseURL       string `json:"baseUrl"`
-	WorkspaceID   string `json:"workspaceId"`
+	WorkspaceID   string `json:"userId"`
 	WorkspaceSlug string `json:"workspaceSlug"`
 	WorkspaceName string `json:"workspaceName"`
 	CreatedAt     string `json:"createdAt"`
@@ -67,7 +67,7 @@ type netlabValidateRequest struct {
 }
 
 type netlabValidateResponse struct {
-	WorkspaceID string         `json:"workspaceId"`
+	WorkspaceID string         `json:"userId"`
 	User        string         `json:"user"`
 	Task        map[string]any `json:"task"`
 }
@@ -80,14 +80,14 @@ type deploymentCreateRequest struct {
 
 type deploymentResponse struct {
 	ID          string         `json:"id"`
-	WorkspaceID string         `json:"workspaceId"`
+	WorkspaceID string         `json:"userId"`
 	Name        string         `json:"name"`
 	Type        string         `json:"type"`
 	Config      map[string]any `json:"config,omitempty"`
 }
 
 type deploymentActionResponse struct {
-	WorkspaceID string             `json:"workspaceId"`
+	WorkspaceID string             `json:"userId"`
 	Deployment  deploymentResponse `json:"deployment"`
 	Run         map[string]any     `json:"run,omitempty"`
 }
@@ -312,7 +312,7 @@ func deleteWorkspaceByID(client *http.Client, baseURL, cookie, workspaceID, work
 	if baseURL == "" || workspaceID == "" {
 		return fmt.Errorf("missing baseURL/workspaceID")
 	}
-	deleteURL := fmt.Sprintf("%s/api/workspaces/%s?confirm=%s", baseURL, workspaceID, url.QueryEscape(workspaceSlug))
+	deleteURL := fmt.Sprintf("%s/api/users/%s?confirm=%s", baseURL, workspaceID, url.QueryEscape(workspaceSlug))
 	resp, body, err := doJSON(client, http.MethodDelete, deleteURL, nil, map[string]string{"Cookie": cookie})
 	if err != nil {
 		return err
@@ -417,7 +417,7 @@ func ensureWorkspaceNetlabServer(client *http.Client, baseURL, cookie, workspace
 		APIPassword: apiPassword,
 		APIToken:    apiToken,
 	}
-	url := fmt.Sprintf("%s/api/workspaces/%s/netlab/servers", strings.TrimRight(strings.TrimSpace(baseURL), "/"), strings.TrimSpace(workspaceID))
+	url := fmt.Sprintf("%s/api/users/%s/netlab/servers", strings.TrimRight(strings.TrimSpace(baseURL), "/"), strings.TrimSpace(workspaceID))
 	resp, body, err := doJSON(client, http.MethodPut, url, payload, map[string]string{"Cookie": cookie})
 	if err != nil {
 		return "", err
@@ -1356,7 +1356,7 @@ func pollTaskStatus(client *http.Client, baseURL string, cookie string, workspac
 	if workspaceID == "" || taskID <= 0 {
 		return "", "", pollMissing
 	}
-	url := fmt.Sprintf("%s/api/runs?workspace_id=%s&limit=25", strings.TrimRight(baseURL, "/"), workspaceID)
+	url := fmt.Sprintf("%s/api/runs?user_id=%s&limit=25", strings.TrimRight(baseURL, "/"), workspaceID)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return "", "", pollMissing
@@ -1409,7 +1409,7 @@ func fetchRunOutput(client *http.Client, baseURL string, cookie string, workspac
 	if taskID <= 0 {
 		return "", fmt.Errorf("invalid task id")
 	}
-	url := fmt.Sprintf("%s/api/runs/%d/output?workspace_id=%s", strings.TrimRight(baseURL, "/"), taskID, strings.TrimSpace(workspaceID))
+	url := fmt.Sprintf("%s/api/runs/%d/output?user_id=%s", strings.TrimRight(baseURL, "/"), taskID, strings.TrimSpace(workspaceID))
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return "", err
@@ -1785,7 +1785,7 @@ func run() int {
 	wsReuseID := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_WORKSPACE_ID"))
 	var ws workspaceResponse
 	if wsReuseID != "" {
-		resp, body, err := doJSON(client, http.MethodGet, baseURL+"/api/workspaces", nil, map[string]string{"Cookie": cookie})
+		resp, body, err := doJSON(client, http.MethodGet, baseURL+"/api/users", nil, map[string]string{"Cookie": cookie})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "workspace list request failed: %v\n", err)
 			return 1
@@ -1814,7 +1814,7 @@ func run() int {
 		fmt.Printf("OK workspace reuse: %s (%s)\n", ws.Name, ws.ID)
 	} else {
 		wsName := fmt.Sprintf("e2e-%s", time.Now().UTC().Format("20060102-150405"))
-		createURL := baseURL + "/api/workspaces"
+		createURL := baseURL + "/api/users"
 		resp, body, err = doJSON(client, http.MethodPost, createURL, workspaceCreateRequest{Name: wsName}, map[string]string{"Cookie": cookie})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "workspace create request failed: %v\n", err)
@@ -1919,7 +1919,7 @@ func run() int {
 			cleanup("defer")
 		}()
 	} else if wsReuseID == "" && !workspaceCleanup {
-		fmt.Printf("SKIP workspace delete: SKYFORGE_E2E_WORKSPACE_CLEANUP=false (workspaceId=%s)\n", ws.ID)
+		fmt.Printf("SKIP user delete: SKYFORGE_E2E_WORKSPACE_CLEANUP=false (userId=%s)\n", ws.ID)
 	}
 
 	var m matrixFile
@@ -2047,7 +2047,7 @@ func run() int {
 					wait = parsed
 				}
 			}
-			url := fmt.Sprintf("%s/api/workspaces/%s/netlab/validate", baseURL, ws.ID)
+			url := fmt.Sprintf("%s/api/users/%s/netlab/validate", baseURL, ws.ID)
 			resp, body, err := doJSON(client, http.MethodPost, url, reqIn, map[string]string{"Cookie": cookie})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "test %q: request failed: %v\n", name, err)
@@ -2166,7 +2166,7 @@ func run() int {
 				depName = "e2e"
 			}
 
-			createDepURL := fmt.Sprintf("%s/api/workspaces/%s/deployments", baseURL, ws.ID)
+			createDepURL := fmt.Sprintf("%s/api/users/%s/deployments", baseURL, ws.ID)
 			resp, body, err := doJSON(client, http.MethodPost, createDepURL, deploymentCreateRequest{
 				Name:   depName,
 				Type:   deployType,
@@ -2229,7 +2229,7 @@ func run() int {
 				}
 			}
 
-			startURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/start", baseURL, ws.ID, dep.ID)
+			startURL := fmt.Sprintf("%s/api/users/%s/deployments/%s/start", baseURL, ws.ID, dep.ID)
 			resp, body, err = doJSON(client, http.MethodPost, startURL, map[string]any{}, map[string]string{"Cookie": cookie})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "test %q: start deployment request failed: %v\n", name, err)
@@ -2289,7 +2289,7 @@ func run() int {
 			}
 
 			if !testFailed && sshWait > 0 && getenvBool("SKYFORGE_E2E_SSH_PROBE", true) {
-				topURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/topology", baseURL, ws.ID, dep.ID)
+				topURL := fmt.Sprintf("%s/api/users/%s/deployments/%s/topology", baseURL, ws.ID, dep.ID)
 				resp, body, err = doJSON(client, http.MethodGet, topURL, nil, map[string]string{"Cookie": cookie})
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "test %q: topology request failed: %v\n", name, err)
@@ -2474,7 +2474,7 @@ func run() int {
 				cleanup = v
 			}
 			if cleanup {
-				destroyURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/destroy", baseURL, ws.ID, dep.ID)
+				destroyURL := fmt.Sprintf("%s/api/users/%s/deployments/%s/destroy", baseURL, ws.ID, dep.ID)
 				resp, body, err = doJSON(client, http.MethodPost, destroyURL, map[string]any{}, map[string]string{"Cookie": cookie})
 				if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
 					var destroyed deploymentActionResponse
@@ -2531,7 +2531,7 @@ func run() int {
 				cfg["environment"] = map[string]string{}
 			}
 
-			createDepURL := fmt.Sprintf("%s/api/workspaces/%s/deployments", baseURL, ws.ID)
+			createDepURL := fmt.Sprintf("%s/api/users/%s/deployments", baseURL, ws.ID)
 			resp, body, err := doJSON(client, http.MethodPost, createDepURL, deploymentCreateRequest{
 				Name:   strings.TrimSpace(name),
 				Type:   "netlab",
@@ -2555,7 +2555,7 @@ func run() int {
 				return 1
 			}
 
-			startURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/start", baseURL, ws.ID, dep.ID)
+			startURL := fmt.Sprintf("%s/api/users/%s/deployments/%s/start", baseURL, ws.ID, dep.ID)
 			resp, body, err = doJSON(client, http.MethodPost, startURL, map[string]any{}, map[string]string{"Cookie": cookie})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "test %q: start deployment request failed: %v\n", name, err)
@@ -2620,7 +2620,7 @@ func run() int {
 			if cfg["environment"] == nil {
 				cfg["environment"] = map[string]string{}
 			}
-			createDepURL := fmt.Sprintf("%s/api/workspaces/%s/deployments", baseURL, ws.ID)
+			createDepURL := fmt.Sprintf("%s/api/users/%s/deployments", baseURL, ws.ID)
 			resp, body, err := doJSON(client, http.MethodPost, createDepURL, deploymentCreateRequest{
 				Name:   strings.TrimSpace(name),
 				Type:   "containerlab",
@@ -2643,7 +2643,7 @@ func run() int {
 				fmt.Fprintf(os.Stderr, "test %q: create deployment returned empty id\n", name)
 				return 1
 			}
-			startURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/start", baseURL, ws.ID, dep.ID)
+			startURL := fmt.Sprintf("%s/api/users/%s/deployments/%s/start", baseURL, ws.ID, dep.ID)
 			resp, body, err = doJSON(client, http.MethodPost, startURL, map[string]any{}, map[string]string{"Cookie": cookie})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "test %q: start deployment request failed: %v\n", name, err)

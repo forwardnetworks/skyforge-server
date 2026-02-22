@@ -139,7 +139,7 @@ func loadWorkspaceVariableGroupsByID(ctx context.Context, db *sql.DB, workspaceI
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i+2))
 		args = append(args, id)
 	}
-	query := fmt.Sprintf(`SELECT id, variables FROM sf_workspace_variable_groups WHERE workspace_id=$1 AND id IN (%s)`, strings.Join(placeholders, ","))
+	query := fmt.Sprintf(`SELECT id, variables FROM sf_workspace_variable_groups WHERE user_id=$1 AND id IN (%s)`, strings.Join(placeholders, ","))
 
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()

@@ -12,7 +12,7 @@ import (
 )
 
 type WorkspaceTerraformTemplatesResponse struct {
-	WorkspaceID string   `json:"workspaceId"`
+	WorkspaceID string   `json:"userId"`
 	Repo        string   `json:"repo"`
 	Branch      string   `json:"branch"`
 	Dir         string   `json:"dir"`
@@ -27,13 +27,13 @@ type WorkspaceTerraformTemplatesRequest struct {
 
 // GetWorkspaceTerraformTemplates lists Terraform template directories for a workspace.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/terraform/templates
+//encore:api auth method=GET path=/api/users/:id/terraform/templates
 func (s *Service) GetWorkspaceTerraformTemplates(ctx context.Context, id string, req *WorkspaceTerraformTemplatesRequest) (*WorkspaceTerraformTemplatesResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

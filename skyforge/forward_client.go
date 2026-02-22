@@ -417,25 +417,14 @@ func forwardEnablePerformanceCollection(ctx context.Context, c *forwardClient, n
 	path := "/api/networks/" + url.PathEscape(networkID) + "/performance/settings"
 	payload := map[string]any{"enabled": true}
 
-	// Forward SaaS supports PATCH; keep PUT as fallback for compatibility.
 	resp, body, err := c.doJSON(ctx, http.MethodPatch, path, nil, payload)
 	if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return nil
-	}
-	resp2, body2, err2 := c.doJSON(ctx, http.MethodPut, path, nil, payload)
-	if err2 == nil && resp2.StatusCode >= 200 && resp2.StatusCode < 300 {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	if err2 != nil {
-		return fmt.Errorf("forward enable performance failed: %v", err2)
-	}
-	if strings.TrimSpace(string(body)) != "" {
-		return fmt.Errorf("forward enable performance failed: %s", strings.TrimSpace(string(body)))
-	}
-	return fmt.Errorf("forward enable performance failed: %s", strings.TrimSpace(string(body2)))
+	return fmt.Errorf("forward enable performance failed: %s", strings.TrimSpace(string(body)))
 }
 
 func forwardDeleteNetwork(ctx context.Context, c *forwardClient, networkID string) error {

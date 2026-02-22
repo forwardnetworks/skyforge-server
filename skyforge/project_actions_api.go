@@ -12,7 +12,7 @@ import (
 
 // SyncWorkspace syncs resources for a single workspace.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/sync
+//encore:api auth method=POST path=/api/users/:id/sync
 func (s *Service) SyncWorkspace(ctx context.Context, id string) (*workspaceSyncReport, error) {
 	workspaceSyncManualRequests.Add(1)
 	user, err := requireAuthUser()
@@ -20,7 +20,7 @@ func (s *Service) SyncWorkspace(ctx context.Context, id string) (*workspaceSyncR
 		workspaceSyncFailures.Add(1)
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		workspaceSyncFailures.Add(1)
 		return nil, err
@@ -68,13 +68,13 @@ type WorkspaceMembersRequest struct {
 
 // UpdateWorkspaceMembers updates workspace membership.
 //
-//encore:api auth method=PUT path=/api/workspaces/:id/members
+//encore:api auth method=PUT path=/api/users/:id/members
 func (s *Service) UpdateWorkspaceMembers(ctx context.Context, id string, req *WorkspaceMembersRequest) (*SkyforgeWorkspace, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +133,7 @@ func (s *Service) UpdateWorkspaceMembers(ctx context.Context, id string, req *Wo
 }
 
 type WorkspaceNetlabConfigResponse struct {
-	WorkspaceID   string   `json:"workspaceId"`
+	WorkspaceID   string   `json:"userId"`
 	NetlabServer  string   `json:"netlabServer"`
 	NetlabServers []string `json:"netlabServers"`
 }
@@ -144,13 +144,13 @@ type WorkspaceNetlabConfigRequest struct {
 
 // GetWorkspaceNetlab returns the workspace's netlab server selection.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/netlab
+//encore:api auth method=GET path=/api/users/:id/netlab
 func (s *Service) GetWorkspaceNetlab(ctx context.Context, id string) (*WorkspaceNetlabConfigResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -167,13 +167,13 @@ func (s *Service) GetWorkspaceNetlab(ctx context.Context, id string) (*Workspace
 
 // UpdateWorkspaceNetlab updates the workspace's netlab server selection.
 //
-//encore:api auth method=PUT path=/api/workspaces/:id/netlab
+//encore:api auth method=PUT path=/api/users/:id/netlab
 func (s *Service) UpdateWorkspaceNetlab(ctx context.Context, id string, req *WorkspaceNetlabConfigRequest) (*SkyforgeWorkspace, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -246,13 +246,13 @@ type WorkspaceAWSSSOUpdateResponse struct {
 
 // PutWorkspaceAWSSSOConfig stores the AWS SSO account/role for the workspace.
 //
-//encore:api auth method=PUT path=/api/workspaces/:id/cloud/aws-sso
+//encore:api auth method=PUT path=/api/users/:id/cloud/aws-sso
 func (s *Service) PutWorkspaceAWSSSOConfig(ctx context.Context, id string, req *WorkspaceAWSSSOUpdateRequest) (*WorkspaceAWSSSOUpdateResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -298,13 +298,13 @@ func (s *Service) PutWorkspaceAWSSSOConfig(ctx context.Context, id string, req *
 
 // GetWorkspaceAWSStatic returns AWS static credential status.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/cloud/aws-static
+//encore:api auth method=GET path=/api/users/:id/cloud/aws-static
 func (s *Service) GetWorkspaceAWSStatic(ctx context.Context, id string) (*WorkspaceAWSStaticGetResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -341,13 +341,13 @@ func (s *Service) GetWorkspaceAWSStatic(ctx context.Context, id string) (*Worksp
 
 // PutWorkspaceAWSStatic stores AWS static credentials.
 //
-//encore:api auth method=PUT path=/api/workspaces/:id/cloud/aws-static
+//encore:api auth method=PUT path=/api/users/:id/cloud/aws-static
 func (s *Service) PutWorkspaceAWSStatic(ctx context.Context, id string, req *WorkspaceAWSStaticPutRequest) (*WorkspaceAWSStaticStatusResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -377,13 +377,13 @@ func (s *Service) PutWorkspaceAWSStatic(ctx context.Context, id string, req *Wor
 
 // DeleteWorkspaceAWSStatic clears AWS static credentials.
 //
-//encore:api auth method=DELETE path=/api/workspaces/:id/cloud/aws-static
+//encore:api auth method=DELETE path=/api/users/:id/cloud/aws-static
 func (s *Service) DeleteWorkspaceAWSStatic(ctx context.Context, id string) (*WorkspaceAWSStaticStatusResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -429,13 +429,13 @@ type WorkspaceAzureCredentialStatusResponse struct {
 
 // GetWorkspaceAzureCredentials returns Azure service principal status.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/cloud/azure
+//encore:api auth method=GET path=/api/users/:id/cloud/azure
 func (s *Service) GetWorkspaceAzureCredentials(ctx context.Context, id string) (*WorkspaceAzureCredentialGetResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -476,13 +476,13 @@ func (s *Service) GetWorkspaceAzureCredentials(ctx context.Context, id string) (
 
 // PutWorkspaceAzureCredentials stores Azure service principal credentials.
 //
-//encore:api auth method=PUT path=/api/workspaces/:id/cloud/azure
+//encore:api auth method=PUT path=/api/users/:id/cloud/azure
 func (s *Service) PutWorkspaceAzureCredentials(ctx context.Context, id string, req *WorkspaceAzureCredentialPutRequest) (*WorkspaceAzureCredentialStatusResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -518,13 +518,13 @@ func (s *Service) PutWorkspaceAzureCredentials(ctx context.Context, id string, r
 
 // DeleteWorkspaceAzureCredentials clears Azure credentials.
 //
-//encore:api auth method=DELETE path=/api/workspaces/:id/cloud/azure
+//encore:api auth method=DELETE path=/api/users/:id/cloud/azure
 func (s *Service) DeleteWorkspaceAzureCredentials(ctx context.Context, id string) (*WorkspaceAzureCredentialStatusResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -552,14 +552,14 @@ func (s *Service) DeleteWorkspaceAzureCredentials(ctx context.Context, id string
 type WorkspaceGCPCredentialGetResponse struct {
 	Configured          bool   `json:"configured"`
 	ClientEmail         string `json:"clientEmail,omitempty"`
-	WorkspaceID         string `json:"workspaceId,omitempty"`
+	WorkspaceID         string `json:"userId,omitempty"`
 	SelectedWorkspaceID string `json:"selectedWorkspaceId,omitempty"`
 	UpdatedAt           string `json:"updatedAt,omitempty"`
 }
 
 type WorkspaceGCPCredentialPutRequest struct {
 	ServiceAccountJSON string `json:"serviceAccountJson"`
-	WorkspaceID        string `json:"workspaceId,omitempty"`
+	WorkspaceID        string `json:"userId,omitempty"`
 }
 
 type WorkspaceGCPCredentialStatusResponse struct {
@@ -568,13 +568,13 @@ type WorkspaceGCPCredentialStatusResponse struct {
 
 // GetWorkspaceGCPCredentials returns GCP service account status.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/cloud/gcp
+//encore:api auth method=GET path=/api/users/:id/cloud/gcp
 func (s *Service) GetWorkspaceGCPCredentials(ctx context.Context, id string) (*WorkspaceGCPCredentialGetResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -617,13 +617,13 @@ func (s *Service) GetWorkspaceGCPCredentials(ctx context.Context, id string) (*W
 
 // PutWorkspaceGCPCredentials stores GCP service account JSON.
 //
-//encore:api auth method=PUT path=/api/workspaces/:id/cloud/gcp
+//encore:api auth method=PUT path=/api/users/:id/cloud/gcp
 func (s *Service) PutWorkspaceGCPCredentials(ctx context.Context, id string, req *WorkspaceGCPCredentialPutRequest) (*WorkspaceGCPCredentialStatusResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -653,13 +653,13 @@ func (s *Service) PutWorkspaceGCPCredentials(ctx context.Context, id string, req
 
 // DeleteWorkspaceGCPCredentials clears GCP credentials.
 //
-//encore:api auth method=DELETE path=/api/workspaces/:id/cloud/gcp
+//encore:api auth method=DELETE path=/api/users/:id/cloud/gcp
 func (s *Service) DeleteWorkspaceGCPCredentials(ctx context.Context, id string) (*WorkspaceGCPCredentialStatusResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

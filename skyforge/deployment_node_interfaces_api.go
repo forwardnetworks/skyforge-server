@@ -36,13 +36,13 @@ type DeploymentNodeInterface struct {
 
 // GetWorkspaceDeploymentNodeInterfaces returns interface stats (launcher container) for a clabernetes node.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/nodes/:node/interfaces
+//encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/nodes/:node/interfaces
 func (s *Service) GetWorkspaceDeploymentNodeInterfaces(ctx context.Context, id, deploymentID, node string) (*DeploymentNodeInterfacesResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

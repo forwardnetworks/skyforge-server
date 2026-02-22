@@ -27,7 +27,7 @@ type containerlabTaskSpec struct {
 
 type containerlabRunSpec struct {
 	TaskID       int
-	WorkspaceCtx *workspaceContext
+	WorkspaceCtx *userContext
 	WorkspaceID  string
 	DeploymentID string
 	APIURL       string
@@ -56,7 +56,7 @@ func (e *Engine) dispatchContainerlabTask(ctx context.Context, task *taskstore.T
 	if username == "" {
 		username = ws.primaryOwner()
 	}
-	pc := &workspaceContext{
+	pc := &userContext{
 		workspace: *ws,
 		claims: SessionClaims{
 			Username: username,

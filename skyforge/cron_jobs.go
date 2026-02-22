@@ -63,7 +63,7 @@ func CronEnqueueCapacityRollups(ctx context.Context) error {
 		createdBy        string
 		forwardNetworkID string
 	}
-	rows, err := db.QueryContext(ctxReq, `SELECT workspace_id, id::text, created_by, COALESCE(config->>'forwardNetworkId','')
+	rows, err := db.QueryContext(ctxReq, `SELECT user_id, id::text, created_by, COALESCE(config->>'forwardNetworkId','')
 FROM sf_deployments
 WHERE COALESCE(config->>'forwardEnabled','false') IN ('true','1','yes')
   AND COALESCE(config->>'forwardNetworkId','') <> ''
@@ -114,7 +114,7 @@ LIMIT 500`)
 		collectorConfigID string
 		createdBy         string
 	}
-	nrows, err := db.QueryContext(ctxReq, `SELECT workspace_id, forward_network_id, COALESCE(collector_config_id,''), created_by
+	nrows, err := db.QueryContext(ctxReq, `SELECT user_id, forward_network_id, COALESCE(collector_config_id,''), created_by
 FROM sf_policy_report_forward_networks
 ORDER BY updated_at DESC
 LIMIT 500`)

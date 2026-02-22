@@ -36,7 +36,7 @@ type CapacityGrowthRow struct {
 }
 
 type DeploymentCapacityGrowthResponse struct {
-	WorkspaceID  string              `json:"workspaceId"`
+	WorkspaceID  string              `json:"userId"`
 	DeploymentID string              `json:"deploymentId"`
 	Metric       string              `json:"metric"`
 	Window       string              `json:"window"`
@@ -51,13 +51,13 @@ type DeploymentCapacityGrowthResponse struct {
 //
 // Intended for “top growers” views (week-over-week, day-over-day) without pulling Forward time series.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/capacity/growth
+//encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/capacity/growth
 func (s *Service) GetWorkspaceDeploymentCapacityGrowth(ctx context.Context, id, deploymentID string, q *DeploymentCapacityGrowthQuery) (*DeploymentCapacityGrowthResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +122,7 @@ func loadCapacityGrowth(ctx context.Context, db *sql.DB, workspaceID, deployment
 	// Latest bucket.
 	if err := db.QueryRowContext(ctxReq, `SELECT COALESCE(MAX(period_end), 'epoch'::timestamptz)
 FROM sf_capacity_rollups
-WHERE workspace_id=$1 AND deployment_id=$2 AND metric=$3 AND window=$4`,
+WHERE user_id=$1 AND deployment_id=$2 AND metric=$3 AND window=$4`,
 		workspaceID, deploymentID, metric, window).Scan(&asOf); err != nil {
 		return time.Time{}, time.Time{}, nil, err
 	}
@@ -134,7 +134,7 @@ WHERE workspace_id=$1 AND deployment_id=$2 AND metric=$3 AND window=$4`,
 	target := asOf.Add(-compareDur)
 	if err := db.QueryRowContext(ctxReq, `SELECT COALESCE(MAX(period_end), 'epoch'::timestamptz)
 FROM sf_capacity_rollups
-WHERE workspace_id=$1 AND deployment_id=$2 AND metric=$3 AND window=$4 AND period_end <= $5`,
+WHERE user_id=$1 AND deployment_id=$2 AND metric=$3 AND window=$4 AND period_end <= $5`,
 		workspaceID, deploymentID, metric, window, target).Scan(&compareAsOf); err != nil {
 		return asOf, time.Time{}, nil, err
 	}
@@ -150,7 +150,7 @@ WHERE workspace_id=$1 AND deployment_id=$2 AND metric=$3 AND window=$4 AND perio
 		query := `SELECT forward_network_id, object_type, object_id, metric, window,
   period_end, samples, avg, p95, p99, max, slope_per_day, forecast_crossing_ts, threshold, details, created_at
 FROM sf_capacity_rollups
-WHERE workspace_id=$1 AND deployment_id=$2 AND metric=$3 AND window=$4 AND period_end=$5`
+WHERE user_id=$1 AND deployment_id=$2 AND metric=$3 AND window=$4 AND period_end=$5`
 		if strings.TrimSpace(objectType) != "" {
 			query += " AND object_type=$6"
 			args = append(args, objectType)

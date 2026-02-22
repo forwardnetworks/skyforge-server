@@ -125,7 +125,6 @@ func purgeUserSQL(ctx context.Context, db *sql.DB, username string) (int, []stri
 		{"notifications", `DELETE FROM sf_notifications WHERE username = $1`, []any{username}},
 		{"audit_actor", `DELETE FROM sf_audit_log WHERE actor_username = $1 OR impersonated_username = $1`, []any{username}},
 		{"workspace_members", `DELETE FROM sf_workspace_members WHERE username = $1`, []any{username}},
-		{"user_forward_credentials", `DELETE FROM sf_user_forward_credentials WHERE username = $1`, []any{username}},
 		{"user_variable_groups", `DELETE FROM sf_user_variable_groups WHERE username = $1`, []any{username}},
 		{"user_servicenow_configs", `DELETE FROM sf_user_servicenow_configs WHERE username = $1`, []any{username}},
 		{"aws_sso_tokens", `DELETE FROM sf_aws_sso_tokens WHERE username = $1`, []any{username}},
@@ -152,20 +151,20 @@ func purgeUserSQL(ctx context.Context, db *sql.DB, username string) (int, []stri
 			label string
 			query string
 		}{
-			{"workspace_cost_snapshots", `DELETE FROM sf_cost_snapshots WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_usage_snapshots", `DELETE FROM sf_usage_snapshots WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_resource_events", `DELETE FROM sf_resource_events WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_resources", `DELETE FROM sf_resources WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_tasks", `DELETE FROM sf_tasks WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_deployments", `DELETE FROM sf_deployments WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_forward_credentials", `DELETE FROM sf_workspace_forward_credentials WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_aws_static_credentials", `DELETE FROM sf_workspace_aws_static_credentials WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_azure_credentials", `DELETE FROM sf_workspace_azure_credentials WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_gcp_credentials", `DELETE FROM sf_workspace_gcp_credentials WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_groups", `DELETE FROM sf_workspace_groups WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_variable_groups", `DELETE FROM sf_workspace_variable_groups WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_members_all", `DELETE FROM sf_workspace_members WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
-			{"workspace_audit_log", `DELETE FROM sf_audit_log WHERE workspace_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"workspace_cost_snapshots", `DELETE FROM sf_cost_snapshots WHERE user_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"workspace_usage_snapshots", `DELETE FROM sf_usage_snapshots WHERE user_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"workspace_resource_events", `DELETE FROM sf_resource_events WHERE user_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"workspace_resources", `DELETE FROM sf_resources WHERE user_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"workspace_tasks", `DELETE FROM sf_tasks WHERE user_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"workspace_deployments", `DELETE FROM sf_deployments WHERE user_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"workspace_forward_credentials", `DELETE FROM sf_workspace_forward_credentials WHERE user_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"workspace_aws_static_credentials", `DELETE FROM sf_workspace_aws_static_credentials WHERE user_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"workspace_azure_credentials", `DELETE FROM sf_workspace_azure_credentials WHERE user_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"workspace_gcp_credentials", `DELETE FROM sf_workspace_gcp_credentials WHERE user_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"workspace_groups", `DELETE FROM sf_workspace_groups WHERE user_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"workspace_variable_groups", `DELETE FROM sf_workspace_variable_groups WHERE user_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"workspace_members_all", `DELETE FROM sf_workspace_members WHERE user_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
+			{"workspace_audit_log", `DELETE FROM sf_audit_log WHERE user_id IN (SELECT id FROM sf_workspaces WHERE created_by = $1)`},
 		}
 		for _, stmt := range workspaceScopedDeletes {
 			if _, err := tx.ExecContext(ctx, stmt.query, username); err != nil {

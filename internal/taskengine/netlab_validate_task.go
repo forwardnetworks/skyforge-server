@@ -22,7 +22,7 @@ type netlabValidateTaskSpec struct {
 
 type netlabValidateRunSpec struct {
 	TaskID         int
-	WorkspaceCtx   *workspaceContext
+	WorkspaceCtx   *userContext
 	Username       string
 	TemplateSource string
 	TemplateRepo   string
@@ -50,7 +50,7 @@ func (e *Engine) dispatchNetlabValidateTask(ctx context.Context, task *taskstore
 	if username == "" {
 		username = ws.primaryOwner()
 	}
-	pc := &workspaceContext{
+	pc := &userContext{
 		workspace: *ws,
 		claims: SessionClaims{
 			Username: username,

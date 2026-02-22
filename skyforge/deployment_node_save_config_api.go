@@ -26,13 +26,13 @@ type WorkspaceDeploymentNodeSaveConfigResponse struct {
 //
 // For EOS/cEOS, this runs `write memory`.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/deployments/:deploymentID/nodes/:node/save-config
+//encore:api auth method=POST path=/api/users/:id/deployments/:deploymentID/nodes/:node/save-config
 func (s *Service) SaveWorkspaceDeploymentNodeConfig(ctx context.Context, id, deploymentID, node string) (*WorkspaceDeploymentNodeSaveConfigResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

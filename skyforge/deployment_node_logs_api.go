@@ -27,7 +27,7 @@ type WorkspaceDeploymentNodeLogsResponse struct {
 //
 // This powers the "View logs" action in the topology UI (similar to the c9s VSCode extension).
 //
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/nodes/:node/logs
+//encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/nodes/:node/logs
 func (s *Service) GetWorkspaceDeploymentNodeLogs(
 	ctx context.Context,
 	id, deploymentID, node string,
@@ -37,7 +37,7 @@ func (s *Service) GetWorkspaceDeploymentNodeLogs(
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

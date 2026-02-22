@@ -65,7 +65,7 @@ func createPolicyReportRecertCampaign(ctx context.Context, db *sql.DB, workspace
 
 	_, err := db.ExecContext(ctx, `
 INSERT INTO sf_policy_report_recert_campaigns (
-  id, workspace_id, name, description, forward_network_id, snapshot_id, pack_id, status, due_at, created_by
+  id, user_id, name, description, forward_network_id, snapshot_id, pack_id, status, due_at, created_by
 ) VALUES ($1,$2,$3,NULLIF($4,''),$5,$6,$7,'OPEN',$8,$9)
 `, id, workspaceID, name, desc, networkID, snapshotID, packID, dueAt, actor)
 	if err != nil {
@@ -110,10 +110,10 @@ func listPolicyReportRecertCampaigns(ctx context.Context, db *sql.DB, workspaceI
 	}
 
 	query := `
-SELECT c.id, c.workspace_id, c.name, COALESCE(c.description,''), c.forward_network_id, COALESCE(c.snapshot_id,''),
+SELECT c.id, c.user_id, c.name, COALESCE(c.description,''), c.forward_network_id, COALESCE(c.snapshot_id,''),
        c.pack_id, c.status, c.due_at, c.created_by, c.created_at, c.updated_at
   FROM sf_policy_report_recert_campaigns c
- WHERE c.workspace_id=$1`
+ WHERE c.user_id=$1`
 	args := []any{workspaceID}
 	if status != "" {
 		query += " AND c.status=$2"
@@ -178,10 +178,10 @@ func getPolicyReportRecertCampaign(ctx context.Context, db *sql.DB, workspaceID 
 	var snapshot string
 	var due sql.NullTime
 	err := db.QueryRowContext(ctx, `
-SELECT id, workspace_id, name, COALESCE(description,''), forward_network_id, COALESCE(snapshot_id,''),
+SELECT id, user_id, name, COALESCE(description,''), forward_network_id, COALESCE(snapshot_id,''),
        pack_id, status, due_at, created_by, created_at, updated_at
   FROM sf_policy_report_recert_campaigns
- WHERE id=$1 AND workspace_id=$2`, campaignID, workspaceID).Scan(
+ WHERE id=$1 AND user_id=$2`, campaignID, workspaceID).Scan(
 		&c.ID, &c.WorkspaceID, &c.Name, &desc, &c.ForwardNetwork, &snapshot,
 		&c.PackID, &c.Status, &due, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt,
 	)
@@ -247,7 +247,7 @@ func replacePolicyReportRecertAssignments(ctx context.Context, db *sql.DB, works
 		}
 		_, err := tx.ExecContext(ctx, `
 INSERT INTO sf_policy_report_recert_assignments (
-  id, campaign_id, workspace_id, finding_id, check_id, assignee_username, status, finding
+  id, campaign_id, user_id, finding_id, check_id, assignee_username, status, finding
 ) VALUES ($1,$2,$3,$4,$5,NULLIF($6,''),'PENDING',$7)
 `, id, campaignID, workspaceID, findingID, checkID, assignee, finding)
 		if err != nil {
@@ -287,10 +287,10 @@ func listPolicyReportRecertAssignments(ctx context.Context, db *sql.DB, workspac
 	}
 
 	query := `
-SELECT id, campaign_id, workspace_id, finding_id, check_id, COALESCE(assignee_username,''), status,
+SELECT id, campaign_id, user_id, finding_id, check_id, COALESCE(assignee_username,''), status,
        COALESCE(justification,''), attested_at, finding, created_at, updated_at
   FROM sf_policy_report_recert_assignments
- WHERE workspace_id=$1`
+ WHERE user_id=$1`
 	args := []any{workspaceID}
 	i := 2
 	if campaignID != "" {
@@ -385,7 +385,7 @@ UPDATE sf_policy_report_recert_assignments
        justification=NULLIF($2,''),
        attested_at=now(),
        updated_at=now()
- WHERE id=$3 AND workspace_id=$4
+ WHERE id=$3 AND user_id=$4
 `, newStatus, justification, assignmentID, workspaceID)
 	return err
 }
@@ -426,7 +426,7 @@ func createPolicyReportException(ctx context.Context, db *sql.DB, workspaceID st
 	policyReportsEnsureUser(ctx, db, actor)
 	_, err := db.ExecContext(ctx, `
 INSERT INTO sf_policy_report_exceptions (
-  id, workspace_id, forward_network_id, finding_id, check_id, status, justification, ticket_url, expires_at, created_by
+  id, user_id, forward_network_id, finding_id, check_id, status, justification, ticket_url, expires_at, created_by
 ) VALUES ($1,$2,$3,$4,$5,'PROPOSED',$6,NULLIF($7,''),$8,$9)
 `, id, workspaceID, networkID, findingID, checkID, just, strings.TrimSpace(req.TicketURL), expiresAt, actor)
 	if err != nil {
@@ -470,10 +470,10 @@ func listPolicyReportExceptions(ctx context.Context, db *sql.DB, workspaceID str
 	}
 
 	query := `
-SELECT id, workspace_id, forward_network_id, finding_id, check_id, status, justification, COALESCE(ticket_url,''), expires_at,
+SELECT id, user_id, forward_network_id, finding_id, check_id, status, justification, COALESCE(ticket_url,''), expires_at,
        created_by, COALESCE(approved_by,''), created_at, updated_at
   FROM sf_policy_report_exceptions
- WHERE workspace_id=$1`
+ WHERE user_id=$1`
 	args := []any{workspaceID}
 	if networkID != "" {
 		query += " AND forward_network_id=$2"
@@ -540,7 +540,7 @@ UPDATE sf_policy_report_exceptions
    SET status=$1,
        approved_by=CASE WHEN $1='APPROVED' THEN $2 ELSE approved_by END,
        updated_at=now()
- WHERE id=$3 AND workspace_id=$4
+ WHERE id=$3 AND user_id=$4
 `, newStatus, actor, exceptionID, workspaceID)
 	return err
 }
@@ -558,7 +558,7 @@ func policyReportAudit(ctx context.Context, db *sql.DB, workspaceID string, acto
 	policyReportsEnsureUser(ctx, db, actor)
 	b, _ := json.Marshal(details)
 	_, _ = db.ExecContext(ctx, `
-INSERT INTO sf_policy_report_audit_log (workspace_id, actor_username, action, details)
+INSERT INTO sf_policy_report_audit_log (user_id, actor_username, action, details)
 VALUES ($1,$2,$3,$4)
 `, workspaceID, actor, action, string(b))
 }

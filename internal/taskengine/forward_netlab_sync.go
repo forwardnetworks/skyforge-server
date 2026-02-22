@@ -338,7 +338,7 @@ FROM sf_user_forward_collectors WHERE username=$1 AND id=$2`, username, collecto
 				return nil, nil
 			}
 			if isMissingDBRelation(err) {
-				return e.getUserForwardCredentialsLegacy(ctx, username)
+				return nil, nil
 			}
 			return nil, err
 		}
@@ -353,7 +353,7 @@ LIMIT 1`, username).Scan(
 		)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) || isMissingDBRelation(err) {
-				return e.getUserForwardCredentialsLegacy(ctx, username)
+				return nil, nil
 			}
 			return nil, err
 		}
@@ -390,71 +390,6 @@ LIMIT 1`, username).Scan(
 	}, nil
 }
 
-func (e *Engine) getUserForwardCredentialsLegacy(ctx context.Context, username string) (*forwardCredentials, error) {
-	var baseURL, fwdUser, fwdPass sql.NullString
-	var collectorUser sql.NullString
-	var deviceUser, devicePass sql.NullString
-	var jumpHost, jumpUser, jumpKey, jumpCert sql.NullString
-	err := e.db.QueryRowContext(ctx, `SELECT base_url, forward_username, forward_password,
-  COALESCE(collector_username, ''),
-  COALESCE(device_username, ''), COALESCE(device_password, ''),
-  COALESCE(jump_host, ''), COALESCE(jump_username, ''), COALESCE(jump_private_key, ''), COALESCE(jump_cert, '')
-FROM sf_user_forward_credentials WHERE username=$1`, username).Scan(
-		&baseURL,
-		&fwdUser,
-		&fwdPass,
-		&collectorUser,
-		&deviceUser,
-		&devicePass,
-		&jumpHost,
-		&jumpUser,
-		&jumpKey,
-		&jumpCert,
-	)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	dec := func(v sql.NullString) (string, error) {
-		return e.box.decrypt(v.String)
-	}
-	baseURLValue, err := dec(baseURL)
-	if err != nil {
-		return nil, fmt.Errorf("forward credentials could not be decrypted; re-save Forward settings")
-	}
-	usernameValue, err := dec(fwdUser)
-	if err != nil {
-		return nil, fmt.Errorf("forward credentials could not be decrypted; re-save Forward settings")
-	}
-	passwordValue, err := dec(fwdPass)
-	if err != nil {
-		return nil, fmt.Errorf("forward credentials could not be decrypted; re-save Forward settings")
-	}
-	collectorUserValue, _ := dec(collectorUser)
-	deviceUserValue, _ := dec(deviceUser)
-	devicePassValue, _ := dec(devicePass)
-	jumpHostValue, _ := dec(jumpHost)
-	jumpUserValue, _ := dec(jumpUser)
-	jumpKeyValue, _ := dec(jumpKey)
-	jumpCertValue, _ := dec(jumpCert)
-
-	return &forwardCredentials{
-		BaseURL:        strings.TrimSpace(baseURLValue),
-		Username:       strings.TrimSpace(usernameValue),
-		Password:       strings.TrimSpace(passwordValue),
-		CollectorUser:  strings.TrimSpace(collectorUserValue),
-		DeviceUsername: strings.TrimSpace(deviceUserValue),
-		DevicePassword: strings.TrimSpace(devicePassValue),
-		JumpHost:       strings.TrimSpace(jumpHostValue),
-		JumpUsername:   strings.TrimSpace(jumpUserValue),
-		JumpPrivateKey: strings.TrimSpace(jumpKeyValue),
-		JumpCert:       strings.TrimSpace(jumpCertValue),
-	}, nil
-}
-
 func (e *Engine) updateDeploymentConfig(ctx context.Context, workspaceID, deploymentID string, cfgAny map[string]any) error {
 	if e == nil || e.db == nil {
 		return fmt.Errorf("database unavailable")
@@ -469,11 +404,11 @@ func (e *Engine) updateDeploymentConfig(ctx context.Context, workspaceID, deploy
 	_, err = e.db.ExecContext(ctxReq, `UPDATE sf_deployments SET
   config=$1,
   updated_at=now()
-WHERE workspace_id=$2 AND id=$3`, cfgBytes, workspaceID, deploymentID)
+WHERE user_id=$2 AND id=$3`, cfgBytes, workspaceID, deploymentID)
 	return err
 }
 
-func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *workspaceContext, dep *WorkspaceDeployment) (map[string]any, error) {
+func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *userContext, dep *WorkspaceDeployment) (map[string]any, error) {
 	cfgAny, _ := fromJSONMap(dep.Config)
 	if cfgAny == nil {
 		cfgAny = map[string]any{}
@@ -593,7 +528,7 @@ func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *work
 	return cfgAny, nil
 }
 
-func (e *Engine) startForwardCollectionForDeployment(ctx context.Context, taskID int, pc *workspaceContext, dep *WorkspaceDeployment) error {
+func (e *Engine) startForwardCollectionForDeployment(ctx context.Context, taskID int, pc *userContext, dep *WorkspaceDeployment) error {
 	if e == nil || pc == nil || dep == nil {
 		return nil
 	}
@@ -629,7 +564,7 @@ func (e *Engine) startForwardCollectionForDeployment(ctx context.Context, taskID
 	return nil
 }
 
-func (e *Engine) startForwardConnectivityTestsForDeployment(ctx context.Context, taskID int, pc *workspaceContext, dep *WorkspaceDeployment, graph *TopologyGraph) error {
+func (e *Engine) startForwardConnectivityTestsForDeployment(ctx context.Context, taskID int, pc *userContext, dep *WorkspaceDeployment, graph *TopologyGraph) error {
 	if e == nil || pc == nil || dep == nil || graph == nil {
 		return nil
 	}
@@ -733,7 +668,7 @@ func sanitizeCredentialComponent(raw string) string {
 	return out
 }
 
-func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *workspaceContext, dep *WorkspaceDeployment, logText string) (int, error) {
+func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *userContext, dep *WorkspaceDeployment, logText string) (int, error) {
 	cfgAny, _ := fromJSONMap(dep.Config)
 	if cfgAny == nil {
 		cfgAny = map[string]any{}
@@ -1152,7 +1087,7 @@ type forwardSyncOptions struct {
 	StartCollection bool
 }
 
-func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int, pc *workspaceContext, dep *WorkspaceDeployment, graph *TopologyGraph, opts forwardSyncOptions) (int, error) {
+func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int, pc *userContext, dep *WorkspaceDeployment, graph *TopologyGraph, opts forwardSyncOptions) (int, error) {
 	if e == nil || pc == nil || dep == nil || graph == nil {
 		return 0, nil
 	}

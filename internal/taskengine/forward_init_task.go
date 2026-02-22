@@ -32,7 +32,7 @@ func (e *Engine) dispatchForwardInitTask(ctx context.Context, task *taskstore.Ta
 	if username == "" {
 		username = ws.primaryOwner()
 	}
-	pc := &workspaceContext{
+	pc := &userContext{
 		workspace: *ws,
 		claims: SessionClaims{
 			Username: username,
@@ -52,7 +52,7 @@ func (e *Engine) dispatchForwardInitTask(ctx context.Context, task *taskstore.Ta
 	})
 }
 
-func (e *Engine) runForwardInitTask(ctx context.Context, pc *workspaceContext, deploymentID string, log Logger) error {
+func (e *Engine) runForwardInitTask(ctx context.Context, pc *userContext, deploymentID string, log Logger) error {
 	if e == nil || e.db == nil {
 		return fmt.Errorf("engine unavailable")
 	}

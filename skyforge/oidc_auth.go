@@ -19,10 +19,7 @@ import (
 )
 
 const (
-	oidcStateCookie = "skyforge_oidc_state"
-	oidcNonceCookie = "skyforge_oidc_nonce"
-	oidcNextCookie  = "skyforge_oidc_next"
-	oidcFlowCookie  = "skyforge_oidc_flow"
+	oidcFlowCookie = "skyforge_oidc_flow"
 )
 
 type OIDCClient struct {
@@ -223,11 +220,6 @@ func (s *Service) OIDCLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	writeOIDCFlowCookie(w, s.sessionManager, flows, secure)
 
-	// Backward-compatible single-flow cookies (also used by older callers).
-	setOIDCCookie(w, s.sessionManager, oidcStateCookie, state, secure)
-	setOIDCCookie(w, s.sessionManager, oidcNonceCookie, nonce, secure)
-	setOIDCCookie(w, s.sessionManager, oidcNextCookie, url.QueryEscape(next), secure)
-
 	authURL := s.oidc.oauth2Config.AuthCodeURL(state, oidc.Nonce(nonce))
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
@@ -256,19 +248,9 @@ func (s *Service) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 			nextFromFlow = strings.TrimSpace(f.Next)
 		}
 	}
-	// Fallback to legacy cookies (single in-flight flow).
 	if expectedNonce == "" {
-		stateCookie, err := r.Cookie(oidcStateCookie)
-		if err != nil || stateCookie.Value == "" || stateCookie.Value != state {
-			http.Error(w, "invalid oidc state", http.StatusBadRequest)
-			return
-		}
-		nonceCookie, err := r.Cookie(oidcNonceCookie)
-		if err != nil || nonceCookie.Value == "" {
-			http.Error(w, "missing oidc nonce", http.StatusBadRequest)
-			return
-		}
-		expectedNonce = strings.TrimSpace(nonceCookie.Value)
+		http.Error(w, "invalid oidc state", http.StatusBadRequest)
+		return
 	}
 
 	ctx := r.Context()
@@ -345,20 +327,13 @@ func (s *Service) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, cookie)
-	clearOIDCCookie(w, s.sessionManager, oidcStateCookie)
-	clearOIDCCookie(w, s.sessionManager, oidcNonceCookie)
 
 	next := "/"
 	if nextFromFlow != "" {
 		if decoded, err := url.QueryUnescape(nextFromFlow); err == nil {
 			next = sanitizeOIDCNext(decoded)
 		}
-	} else if nextCookie, err := r.Cookie(oidcNextCookie); err == nil && nextCookie.Value != "" {
-		if decoded, err := url.QueryUnescape(nextCookie.Value); err == nil {
-			next = sanitizeOIDCNext(decoded)
-		}
 	}
-	clearOIDCCookie(w, s.sessionManager, oidcNextCookie)
 
 	// Remove this flow from the multi-flow cookie (if present).
 	secure := s.sessionManager.cookieSecure(r)

@@ -16,7 +16,7 @@ import (
 )
 
 type WorkspaceNetlabTemplatesResponse struct {
-	WorkspaceID string   `json:"workspaceId"`
+	WorkspaceID string   `json:"userId"`
 	Repo        string   `json:"repo"`
 	Branch      string   `json:"branch"`
 	Dir         string   `json:"dir"`
@@ -45,13 +45,13 @@ type WorkspaceNetlabValidateRequest struct {
 
 // GetWorkspaceNetlabTemplates lists Netlab templates for a workspace.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/netlab/templates
+//encore:api auth method=GET path=/api/users/:id/netlab/templates
 func (s *Service) GetWorkspaceNetlabTemplates(ctx context.Context, id string, req *WorkspaceNetlabTemplatesRequest) (*WorkspaceNetlabTemplatesResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -219,13 +219,13 @@ func (s *Service) GetWorkspaceNetlabTemplates(ctx context.Context, id string, re
 // ValidateWorkspaceNetlabTemplate runs `netlab create` against a selected template bundle without deploying it.
 // This catches missing images, invalid attributes, and missing required plugins/templates.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/netlab/validate
+//encore:api auth method=POST path=/api/users/:id/netlab/validate
 func (s *Service) ValidateWorkspaceNetlabTemplate(ctx context.Context, id string, req *WorkspaceNetlabValidateRequest) (*WorkspaceRunResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -335,12 +335,9 @@ func isNetlabTemplatePathExcluded(rel string) bool {
 }
 
 func isNetlabAnyYAMLDir(relDir string) bool {
-	// Some directories intentionally contain multiple standalone templates rather than
-	// a "topology.yml" entrypoint per folder. For those, we include any YAML files.
-	//
-	// Today this is used for AI-generated templates.
-	relDir = strings.Trim(strings.TrimSpace(relDir), "/")
-	return relDir == "ai/generated" || strings.HasPrefix(relDir, "ai/generated/")
+	// Hard-cut: user-selectable templates must use standard topology entrypoints.
+	_ = relDir
+	return false
 }
 
 func listNetlabTemplatesViaGitTree(cfg Config, owner, repo, headSHA, dir string, maxResults int) ([]string, error) {

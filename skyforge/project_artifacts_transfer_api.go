@@ -21,7 +21,7 @@ type WorkspaceArtifactUploadResponse struct {
 	Status        string `json:"status"`
 	Bucket        string `json:"bucket"`
 	Key           string `json:"key"`
-	WorkspaceID   string `json:"workspaceId"`
+	WorkspaceID   string `json:"userId"`
 	WorkspaceSlug string `json:"workspaceSlug"`
 	UploadedBy    string `json:"uploadedBy"`
 	UploadedAtUtc string `json:"uploadedAtUtc,omitempty"`
@@ -40,7 +40,7 @@ type WorkspaceArtifactDownloadResponse struct {
 
 // UploadWorkspaceArtifact uploads or presigns an artifact to the workspace's bucket.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/artifacts/upload
+//encore:api auth method=POST path=/api/users/:id/artifacts/upload
 func (s *Service) UploadWorkspaceArtifact(ctx context.Context, id string, req *WorkspaceArtifactUploadRequest) (*WorkspaceArtifactUploadResponse, error) {
 	return s.handleWorkspaceArtifactUpload(ctx, id, req)
 }
@@ -50,7 +50,7 @@ func (s *Service) handleWorkspaceArtifactUpload(ctx context.Context, id string, 
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +117,7 @@ func (s *Service) handleWorkspaceArtifactUpload(ctx context.Context, id string, 
 
 // DownloadWorkspaceArtifact returns a presigned download redirect for the artifact.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/artifacts/download
+//encore:api auth method=GET path=/api/users/:id/artifacts/download
 func (s *Service) DownloadWorkspaceArtifact(ctx context.Context, id string, params *WorkspaceArtifactDownloadParams) (*WorkspaceArtifactDownloadResponse, error) {
 	return s.handleWorkspaceArtifactDownload(ctx, id, params)
 }
@@ -127,7 +127,7 @@ func (s *Service) handleWorkspaceArtifactDownload(ctx context.Context, id string
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

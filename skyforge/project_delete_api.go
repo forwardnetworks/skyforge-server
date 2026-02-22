@@ -40,13 +40,13 @@ type WorkspaceDeleteItem struct {
 
 // DeleteWorkspace deletes a workspace and its backing resources.
 //
-//encore:api auth method=DELETE path=/api/workspaces/:id
+//encore:api auth method=DELETE path=/api/users/:id
 func (s *Service) DeleteWorkspace(ctx context.Context, id string, params *WorkspaceDeleteParams) (*WorkspaceDeleteResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

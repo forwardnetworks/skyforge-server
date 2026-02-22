@@ -29,7 +29,7 @@ type ProviderCostBreakdown struct {
 
 type GovernanceResource struct {
 	ID            string          `json:"id"`
-	WorkspaceID   string          `json:"workspaceId,omitempty"`
+	WorkspaceID   string          `json:"userId,omitempty"`
 	WorkspaceName string          `json:"workspaceName,omitempty"`
 	Provider      string          `json:"provider"`
 	ResourceID    string          `json:"resourceId"`
@@ -48,7 +48,7 @@ type GovernanceResource struct {
 
 type GovernanceCostSnapshot struct {
 	ID            string          `json:"id"`
-	WorkspaceID   string          `json:"workspaceId,omitempty"`
+	WorkspaceID   string          `json:"userId,omitempty"`
 	WorkspaceName string          `json:"workspaceName,omitempty"`
 	ResourceID    string          `json:"resourceId,omitempty"`
 	Provider      string          `json:"provider"`
@@ -63,7 +63,7 @@ type GovernanceCostSnapshot struct {
 
 type GovernanceUsageSnapshot struct {
 	ID            string          `json:"id"`
-	WorkspaceID   string          `json:"workspaceId,omitempty"`
+	WorkspaceID   string          `json:"userId,omitempty"`
 	WorkspaceName string          `json:"workspaceName,omitempty"`
 	Provider      string          `json:"provider"`
 	ScopeType     string          `json:"scopeType"`
@@ -82,7 +82,7 @@ type GovernanceResourceIngestRequest struct {
 }
 
 type GovernanceResourceInput struct {
-	WorkspaceID  string            `json:"workspaceId,omitempty"`
+	WorkspaceID  string            `json:"userId,omitempty"`
 	Provider     string            `json:"provider"`
 	ResourceID   string            `json:"resourceId"`
 	ResourceType string            `json:"resourceType"`
@@ -101,7 +101,7 @@ type GovernanceCostIngestRequest struct {
 }
 
 type GovernanceCostInput struct {
-	WorkspaceID string            `json:"workspaceId,omitempty"`
+	WorkspaceID string            `json:"userId,omitempty"`
 	ResourceID  string            `json:"resourceId,omitempty"`
 	Provider    string            `json:"provider"`
 	PeriodStart string            `json:"periodStart"`
@@ -117,7 +117,7 @@ type GovernanceUsageIngestRequest struct {
 }
 
 type GovernanceUsageInput struct {
-	WorkspaceID string            `json:"workspaceId,omitempty"`
+	WorkspaceID string            `json:"userId,omitempty"`
 	Provider    string            `json:"provider"`
 	ScopeType   string            `json:"scopeType"`
 	ScopeID     string            `json:"scopeId,omitempty"`
@@ -128,7 +128,7 @@ type GovernanceUsageInput struct {
 }
 
 type GovernanceResourceQuery struct {
-	WorkspaceID string `query:"workspace_id" encore:"optional"`
+	WorkspaceID string `query:"user_id" encore:"optional"`
 	Provider    string `query:"provider" encore:"optional"`
 	Status      string `query:"status" encore:"optional"`
 	Owner       string `query:"owner" encore:"optional"`
@@ -138,13 +138,13 @@ type GovernanceResourceQuery struct {
 }
 
 type GovernanceCostQuery struct {
-	WorkspaceID string `query:"workspace_id" encore:"optional"`
+	WorkspaceID string `query:"user_id" encore:"optional"`
 	Provider    string `query:"provider" encore:"optional"`
 	Limit       int    `query:"limit" encore:"optional"`
 }
 
 type GovernanceUsageQuery struct {
-	WorkspaceID string `query:"workspace_id" encore:"optional"`
+	WorkspaceID string `query:"user_id" encore:"optional"`
 	Provider    string `query:"provider" encore:"optional"`
 	Metric      string `query:"metric" encore:"optional"`
 	Limit       int    `query:"limit" encore:"optional"`

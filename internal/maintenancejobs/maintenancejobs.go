@@ -455,7 +455,7 @@ func writeAuditEvent(ctx context.Context, db *sql.DB, actor string, actorIsAdmin
 		details = details[:4000]
 	}
 	_, _ = db.ExecContext(ctx, `INSERT INTO sf_audit_log (
-  actor_username, actor_is_admin, impersonated_username, action, workspace_id, details
+  actor_username, actor_is_admin, impersonated_username, action, user_id, details
 ) VALUES ($1,$2,NULLIF($3,''),$4,NULLIF($5,''),NULLIF($6,''))`,
 		actor, actorIsAdmin, impersonated, action, workspaceID, details,
 	)
@@ -615,7 +615,7 @@ FROM sf_workspaces ORDER BY created_at DESC`)
 		return nil, err
 	}
 
-	memberRows, err := db.QueryContext(ctx, `SELECT workspace_id, username, role FROM sf_workspace_members ORDER BY workspace_id, username`)
+	memberRows, err := db.QueryContext(ctx, `SELECT user_id, username, role FROM sf_workspace_members ORDER BY user_id, username`)
 	if err != nil {
 		return nil, err
 	}
@@ -660,7 +660,7 @@ func getWorkspaceAWSStaticCredentials(ctx context.Context, db *sql.DB, box *secr
 	}
 	var akid, sak, st sql.NullString
 	err := db.QueryRowContext(ctx, `SELECT access_key_id, secret_access_key, session_token
-FROM sf_workspace_aws_static_credentials WHERE workspace_id=$1`, workspaceID).Scan(&akid, &sak, &st)
+FROM sf_workspace_aws_static_credentials WHERE user_id=$1`, workspaceID).Scan(&akid, &sak, &st)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -724,7 +724,7 @@ func getWorkspaceAzureCredentials(ctx context.Context, db *sql.DB, box *secretbo
 	}
 	var tenantID, clientID, clientSecret, subscriptionID sql.NullString
 	err := db.QueryRowContext(ctx, `SELECT tenant_id, client_id, client_secret, subscription_id
-FROM sf_workspace_azure_credentials WHERE workspace_id=$1`, workspaceID).Scan(&tenantID, &clientID, &clientSecret, &subscriptionID)
+FROM sf_workspace_azure_credentials WHERE user_id=$1`, workspaceID).Scan(&tenantID, &clientID, &clientSecret, &subscriptionID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -756,7 +756,7 @@ func getWorkspaceGCPCredentials(ctx context.Context, db *sql.DB, box *secretbox.
 		return nil, fmt.Errorf("workspace id is required")
 	}
 	var jsonBlob sql.NullString
-	err := db.QueryRowContext(ctx, `SELECT service_account_json FROM sf_workspace_gcp_credentials WHERE workspace_id=$1`, workspaceID).Scan(&jsonBlob)
+	err := db.QueryRowContext(ctx, `SELECT service_account_json FROM sf_workspace_gcp_credentials WHERE user_id=$1`, workspaceID).Scan(&jsonBlob)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil

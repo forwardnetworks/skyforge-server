@@ -45,7 +45,7 @@ func (s *Service) resolveWorkspaceNetlabServerConfig(ctx context.Context, worksp
 	return &custom, nil
 }
 
-func (s *Service) resolveNetlabServerConfig(ctx context.Context, pc *workspaceContext, serverRef string) (*NetlabServerConfig, error) {
+func (s *Service) resolveNetlabServerConfig(ctx context.Context, pc *userContext, serverRef string) (*NetlabServerConfig, error) {
 	if pc == nil || pc.claims == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("workspace context unavailable").Err()
 	}
@@ -95,7 +95,7 @@ func (s *Service) resolveNetlabServerConfig(ctx context.Context, pc *workspaceCo
 	return nil, errs.B().Code(errs.InvalidArgument).Msg("netlab server must be a workspace reference (ws:...) or user reference (user:...)").Err()
 }
 
-func (s *Service) resolveContainerlabServerConfig(ctx context.Context, pc *workspaceContext, serverRef string) (*NetlabServerConfig, error) {
+func (s *Service) resolveContainerlabServerConfig(ctx context.Context, pc *userContext, serverRef string) (*NetlabServerConfig, error) {
 	if pc == nil || pc.claims == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("workspace context unavailable").Err()
 	}
@@ -145,7 +145,7 @@ func (s *Service) resolveContainerlabServerConfig(ctx context.Context, pc *works
 	return nil, errs.B().Code(errs.InvalidArgument).Msg("containerlab server must be a workspace reference (ws:...) or user reference (user:...)").Err()
 }
 
-func (s *Service) resolveEveServerConfig(ctx context.Context, pc *workspaceContext, serverRef string) (*EveServerConfig, error) {
+func (s *Service) resolveEveServerConfig(ctx context.Context, pc *userContext, serverRef string) (*EveServerConfig, error) {
 	if pc == nil || pc.claims == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("workspace context unavailable").Err()
 	}

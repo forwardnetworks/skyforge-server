@@ -9,8 +9,8 @@ import (
 )
 
 type RunnerRunsParams struct {
-	WorkspaceID string `query:"workspace_id" encore:"optional"`
-	Limit       string `query:"limit" encore:"optional"`
+	UserID string `query:"user_id" encore:"optional"`
+	Limit  string `query:"limit" encore:"optional"`
 }
 
 type NetlabRun struct {
@@ -21,9 +21,9 @@ type NetlabRun struct {
 }
 
 type NetlabRunsResponse struct {
-	WorkspaceID string      `json:"workspaceId"`
-	User        string      `json:"user"`
-	Runs        []NetlabRun `json:"runs"`
+	UserID string      `json:"userId"`
+	User   string      `json:"user"`
+	Runs   []NetlabRun `json:"runs"`
 }
 
 // GetNetlabRuns returns recent Netlab runs for a workspace.
@@ -35,11 +35,11 @@ func (s *Service) GetNetlabRuns(ctx context.Context, params *RunnerRunsParams) (
 	if err != nil {
 		return nil, err
 	}
-	workspaceKey, limit, err := parseRunnerRunsParams(params)
+	userID, limit, err := parseRunnerRunsParams(params)
 	if err != nil {
 		return nil, err
 	}
-	workspace, err := s.resolveWorkspaceForUser(ctx, user, workspaceKey)
+	workspace, err := s.resolveWorkspaceForUser(ctx, user, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +66,7 @@ func (s *Service) GetNetlabRuns(ctx context.Context, params *RunnerRunsParams) (
 		}
 		labs, artifacts := parseSkyforgeMarkers(logRows)
 		runInfo := taskToRunInfo(task)
-		runInfo["workspaceId"] = workspace.ID
+		runInfo["userId"] = workspace.ID
 		taskJSON, err := toJSONMap(runInfo)
 		if err != nil {
 			return nil, errs.B().Code(errs.Internal).Msg("failed to encode task").Err()
@@ -81,18 +81,18 @@ func (s *Service) GetNetlabRuns(ctx context.Context, params *RunnerRunsParams) (
 
 	_ = ctx
 	return &NetlabRunsResponse{
-		WorkspaceID: workspace.ID,
-		User:        user.Username,
-		Runs:        runs,
+		UserID: workspace.ID,
+		User:   user.Username,
+		Runs:   runs,
 	}, nil
 }
 
 func parseRunnerRunsParams(params *RunnerRunsParams) (string, int, error) {
-	workspaceID := ""
+	userID := ""
 	limit := 10
 	if params != nil {
-		if raw := strings.TrimSpace(params.WorkspaceID); raw != "" {
-			workspaceID = raw
+		if raw := strings.TrimSpace(params.UserID); raw != "" {
+			userID = raw
 		}
 		if raw := strings.TrimSpace(params.Limit); raw != "" {
 			if v, err := strconv.Atoi(raw); err == nil && v > 0 && v <= 25 {
@@ -100,5 +100,5 @@ func parseRunnerRunsParams(params *RunnerRunsParams) (string, int, error) {
 			}
 		}
 	}
-	return workspaceID, limit, nil
+	return userID, limit, nil
 }

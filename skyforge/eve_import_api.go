@@ -21,7 +21,7 @@ type WorkspaceEveLabsRequest struct {
 }
 
 type WorkspaceEveLabsResponse struct {
-	WorkspaceID string          `json:"workspaceId"`
+	WorkspaceID string          `json:"userId"`
 	Server      string          `json:"server"`
 	Labs        []EveLabSummary `json:"labs"`
 	Folders     []EveFolderInfo `json:"folders,omitempty"`
@@ -45,13 +45,13 @@ type EveFolderInfo struct {
 
 // ListWorkspaceEveLabs returns EVE-NG labs for import.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/eve/labs
+//encore:api auth method=GET path=/api/users/:id/eve/labs
 func (s *Service) ListWorkspaceEveLabs(ctx context.Context, id string, req *WorkspaceEveLabsRequest) (*WorkspaceEveLabsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -128,13 +128,13 @@ type WorkspaceEveImportRequest struct {
 
 // ImportWorkspaceEveLab registers an existing EVE-NG lab as a deployment.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/eve/import
+//encore:api auth method=POST path=/api/users/:id/eve/import
 func (s *Service) ImportWorkspaceEveLab(ctx context.Context, id string, req *WorkspaceEveImportRequest) (*WorkspaceDeployment, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +201,7 @@ type WorkspaceEveConvertRequest struct {
 }
 
 type WorkspaceEveConvertResponse struct {
-	WorkspaceID string               `json:"workspaceId"`
+	WorkspaceID string               `json:"userId"`
 	Path        string               `json:"path"`
 	Deployment  *WorkspaceDeployment `json:"deployment,omitempty"`
 	Warnings    []string             `json:"warnings,omitempty"`
@@ -209,13 +209,13 @@ type WorkspaceEveConvertResponse struct {
 
 // ConvertWorkspaceEveLab exports an EVE-NG lab into a Containerlab template.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/eve/convert
+//encore:api auth method=POST path=/api/users/:id/eve/convert
 func (s *Service) ConvertWorkspaceEveLab(ctx context.Context, id string, req *WorkspaceEveConvertRequest) (*WorkspaceEveConvertResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

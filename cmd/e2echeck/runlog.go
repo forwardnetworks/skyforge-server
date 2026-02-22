@@ -21,7 +21,7 @@ type e2eRunLogEntry struct {
 	At          string `json:"at"`
 	BaseURL     string `json:"baseUrl"`
 	Workspace   string `json:"workspace"`
-	WorkspaceID string `json:"workspaceId"`
+	WorkspaceID string `json:"userId"`
 	Test        string `json:"test"`
 	Kind        string `json:"kind"`
 

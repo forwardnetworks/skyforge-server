@@ -37,13 +37,13 @@ type WorkspacePodContainer struct {
 
 // GetWorkspaceDeploymentNodeDescribe returns a lightweight summary of the clabernetes node pod.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/nodes/:node/describe
+//encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/nodes/:node/describe
 func (s *Service) GetWorkspaceDeploymentNodeDescribe(ctx context.Context, id, deploymentID, node string) (*WorkspaceDeploymentNodeDescribeResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

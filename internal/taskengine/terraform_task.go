@@ -33,7 +33,7 @@ type terraformTaskSpec struct {
 
 type terraformRunSpec struct {
 	TaskID         int
-	WorkspaceCtx   *workspaceContext
+	WorkspaceCtx   *userContext
 	WorkspaceSlug  string
 	Username       string
 	Cloud          string
@@ -61,7 +61,7 @@ func (e *Engine) dispatchTerraformTask(ctx context.Context, task *taskstore.Task
 	if username == "" {
 		username = ws.primaryOwner()
 	}
-	pc := &workspaceContext{
+	pc := &userContext{
 		workspace: *ws,
 		claims: SessionClaims{
 			Username: username,

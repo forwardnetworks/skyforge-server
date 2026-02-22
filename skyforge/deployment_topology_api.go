@@ -42,13 +42,13 @@ type TopologyEdge struct {
 // For containerlab, the topology is sourced from the containerlab API after deploy so we
 // can reflect the resolved management IPs.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/topology
+//encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/topology
 func (s *Service) GetWorkspaceDeploymentTopology(ctx context.Context, id, deploymentID string) (*DeploymentTopologyResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +74,7 @@ func (s *Service) GetWorkspaceDeploymentTopology(ctx context.Context, id, deploy
 	}
 }
 
-func (s *Service) getDeploymentTopologyFromLatestTaskArtifact(ctx context.Context, pc *workspaceContext, dep *WorkspaceDeployment, taskType string) (*DeploymentTopologyResponse, error) {
+func (s *Service) getDeploymentTopologyFromLatestTaskArtifact(ctx context.Context, pc *userContext, dep *WorkspaceDeployment, taskType string) (*DeploymentTopologyResponse, error) {
 	taskType = strings.TrimSpace(taskType)
 	if taskType == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("task type is required").Err()
@@ -95,7 +95,7 @@ func (s *Service) getDeploymentTopologyFromLatestTaskArtifact(ctx context.Contex
 	return nil, errs.B().Code(errs.Unavailable).Msg("topology is not available yet for this deployment").Err()
 }
 
-func (s *Service) getContainerlabDeploymentTopology(ctx context.Context, pc *workspaceContext, dep *WorkspaceDeployment) (*DeploymentTopologyResponse, error) {
+func (s *Service) getContainerlabDeploymentTopology(ctx context.Context, pc *userContext, dep *WorkspaceDeployment) (*DeploymentTopologyResponse, error) {
 	cfgAny, _ := fromJSONMap(dep.Config)
 	netlabServer, _ := cfgAny["netlabServer"].(string)
 	netlabServer = strings.TrimSpace(netlabServer)

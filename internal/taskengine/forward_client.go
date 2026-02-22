@@ -353,46 +353,21 @@ func forwardCreateSnmpCredential(ctx context.Context, c *forwardClient, networkI
 		},
 	}
 
-	// Forward has used multiple endpoint spellings over time. Our environment uses:
-	//   POST /api/networks/{id}/snmpCredentials
-	// Keep a fallback to the legacy path to avoid regressions if the API differs.
-	paths := []string{
-		"/api/networks/" + url.PathEscape(strings.TrimSpace(networkID)) + "/snmpCredentials",
-		"/api/networks/" + url.PathEscape(strings.TrimSpace(networkID)) + "/snmp-credentials",
-	}
-
-	var (
-		resp *http.Response
-		body []byte
-		err  error
+	resp, body, err := c.doJSON(
+		ctx,
+		http.MethodPost,
+		"/api/networks/"+url.PathEscape(strings.TrimSpace(networkID))+"/snmpCredentials",
+		nil,
+		payload,
 	)
-	var lastResp *http.Response
-	var lastBody []byte
-	for _, p := range paths {
-		resp, body, err = c.doJSON(ctx, http.MethodPost, p, nil, payload)
-		if err != nil {
-			continue
-		}
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			lastResp = resp
-			lastBody = body
-			break
-		}
-		lastResp = resp
-		lastBody = body
-	}
 	if err != nil {
 		return nil, err
 	}
-	if lastResp == nil {
-		return nil, fmt.Errorf("forward create snmp credential failed: no response")
-	}
-
-	if lastResp.StatusCode < 200 || lastResp.StatusCode >= 300 {
-		return nil, fmt.Errorf("forward create snmp credential failed: %s", strings.TrimSpace(string(lastBody)))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("forward create snmp credential failed: %s", strings.TrimSpace(string(body)))
 	}
 	var out forwardSnmpCredential
-	if err := json.Unmarshal(lastBody, &out); err != nil {
+	if err := json.Unmarshal(body, &out); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(out.ID) == "" {
@@ -407,63 +382,60 @@ func forwardFindSnmpCredential(ctx context.Context, c *forwardClient, networkID 
 		return nil, nil
 	}
 
-	paths := []string{
-		"/api/networks/" + url.PathEscape(strings.TrimSpace(networkID)) + "/snmpCredentials",
-		"/api/networks/" + url.PathEscape(strings.TrimSpace(networkID)) + "/snmp-credentials",
+	resp, body, err := c.doJSON(
+		ctx,
+		http.MethodGet,
+		"/api/networks/"+url.PathEscape(strings.TrimSpace(networkID))+"/snmpCredentials",
+		nil,
+		nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("forward list snmp credentials failed: %s", strings.TrimSpace(string(body)))
 	}
 
-	for _, p := range paths {
-		resp, body, err := c.doJSON(ctx, http.MethodGet, p, nil, nil)
-		if err != nil {
-			continue
-		}
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			continue
-		}
+	var payload any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
 
-		var payload any
-		if err := json.Unmarshal(body, &payload); err != nil {
-			continue
+	items := []forwardSnmpCredential{}
+	switch v := payload.(type) {
+	case []any:
+		for _, raw := range v {
+			buf, _ := json.Marshal(raw)
+			var item forwardSnmpCredential
+			if err := json.Unmarshal(buf, &item); err == nil {
+				items = append(items, item)
+			}
 		}
-
-		items := []forwardSnmpCredential{}
-		switch v := payload.(type) {
-		case []any:
-			for _, raw := range v {
+	case map[string]any:
+		for _, key := range []string{"items", "data", "results", "snmpCredentials"} {
+			if raw, ok := v[key]; ok {
 				buf, _ := json.Marshal(raw)
+				_ = json.Unmarshal(buf, &items)
+				break
+			}
+		}
+		if len(items) == 0 {
+			if _, ok := v["id"]; ok {
+				buf, _ := json.Marshal(v)
 				var item forwardSnmpCredential
-				if err := json.Unmarshal(buf, &item); err == nil {
+				if err := json.Unmarshal(buf, &item); err == nil && strings.TrimSpace(item.ID) != "" {
 					items = append(items, item)
 				}
 			}
-		case map[string]any:
-			// Common wrapper shapes: {"items":[...]}, {"data":[...]}.
-			for _, key := range []string{"items", "data", "results", "snmpCredentials"} {
-				if raw, ok := v[key]; ok {
-					buf, _ := json.Marshal(raw)
-					_ = json.Unmarshal(buf, &items)
-					break
-				}
-			}
-			// Sometimes a single object is returned.
-			if len(items) == 0 {
-				if _, ok := v["id"]; ok {
-					buf, _ := json.Marshal(v)
-					var item forwardSnmpCredential
-					if err := json.Unmarshal(buf, &item); err == nil && strings.TrimSpace(item.ID) != "" {
-						items = append(items, item)
-					}
-				}
-			}
 		}
+	}
 
-		for _, item := range items {
-			if strings.TrimSpace(item.ID) == "" {
-				continue
-			}
-			if strings.EqualFold(strings.TrimSpace(item.Name), name) {
-				return &item, nil
-			}
+	for _, item := range items {
+		if strings.TrimSpace(item.ID) == "" {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(item.Name), name) {
+			return &item, nil
 		}
 	}
 
@@ -512,18 +484,7 @@ func forwardPutClassicDevices(ctx context.Context, c *forwardClient, networkID s
 		return err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		// Backward-compat: older Forward versions may accept PUT with wrapped payload.
-		fallbackPayload := map[string]any{"devices": devices}
-		resp2, body2, err2 := c.doJSON(ctx, http.MethodPut, "/api/networks/"+url.PathEscape(strings.TrimSpace(networkID))+"/classic-devices", nil, fallbackPayload)
-		if err2 != nil {
-			return err
-		}
-		if resp2.StatusCode < 200 || resp2.StatusCode >= 300 {
-			if strings.TrimSpace(string(body)) != "" {
-				return fmt.Errorf("forward put classic devices failed: %s", strings.TrimSpace(string(body)))
-			}
-			return fmt.Errorf("forward put classic devices failed: %s", strings.TrimSpace(string(body2)))
-		}
+		return fmt.Errorf("forward put classic devices failed: %s", strings.TrimSpace(string(body)))
 	}
 	return nil
 }
@@ -544,18 +505,7 @@ func forwardStartCollection(ctx context.Context, c *forwardClient, networkID str
 		return nil
 	}
 
-	// Backward-compat: try the legacy collector/start path.
-	resp2, body2, err2 := c.doJSON(ctx, http.MethodPost, "/api/networks/"+url.PathEscape(strings.TrimSpace(networkID))+"/collector/start", nil, nil)
-	if err2 != nil {
-		return fmt.Errorf("forward start collection failed: %s", strings.TrimSpace(string(body)))
-	}
-	if resp2.StatusCode < 200 || resp2.StatusCode >= 300 {
-		if strings.TrimSpace(string(body)) != "" {
-			return fmt.Errorf("forward start collection failed: %s", strings.TrimSpace(string(body)))
-		}
-		return fmt.Errorf("forward start collection failed: %s", strings.TrimSpace(string(body2)))
-	}
-	return nil
+	return fmt.Errorf("forward start collection failed: %s", strings.TrimSpace(string(body)))
 }
 
 func forwardEnablePerformanceCollection(ctx context.Context, c *forwardClient, networkID string) error {
@@ -566,25 +516,14 @@ func forwardEnablePerformanceCollection(ctx context.Context, c *forwardClient, n
 	path := "/api/networks/" + url.PathEscape(networkID) + "/performance/settings"
 	payload := map[string]any{"enabled": true}
 
-	// Forward SaaS supports PATCH; keep PUT as a fallback for compatibility.
 	resp, body, err := c.doJSON(ctx, http.MethodPatch, path, nil, payload)
 	if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return nil
-	}
-	resp2, body2, err2 := c.doJSON(ctx, http.MethodPut, path, nil, payload)
-	if err2 == nil && resp2.StatusCode >= 200 && resp2.StatusCode < 300 {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	if err2 != nil {
-		return fmt.Errorf("forward enable performance failed: %v", err2)
-	}
-	if strings.TrimSpace(string(body)) != "" {
-		return fmt.Errorf("forward enable performance failed: %s", strings.TrimSpace(string(body)))
-	}
-	return fmt.Errorf("forward enable performance failed: %s", strings.TrimSpace(string(body2)))
+	return fmt.Errorf("forward enable performance failed: %s", strings.TrimSpace(string(body)))
 }
 
 var forwardNameSanitizer = regexp.MustCompile(`[^a-zA-Z0-9_.-]+`)

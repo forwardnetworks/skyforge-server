@@ -16,7 +16,7 @@ type WorkspacesSyncResponse struct {
 
 // SyncWorkspaces syncs all workspaces from external systems (admin only).
 //
-//encore:api auth method=POST path=/api/admin/workspaces/sync tag:admin
+//encore:api auth method=POST path=/api/admin/users/sync tag:admin
 func (s *Service) SyncWorkspaces(ctx context.Context) (*WorkspacesSyncResponse, error) {
 	workspaceSyncAdminRequests.Add(1)
 	user, err := requireAuthUser()

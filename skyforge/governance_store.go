@@ -36,7 +36,7 @@ func loadGovernanceSummary(ctx context.Context, db *sql.DB) (*GovernanceSummary,
 	}
 
 	var workspaceCount int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT workspace_id) FROM sf_resources WHERE workspace_id IS NOT NULL`).Scan(&workspaceCount); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT user_id) FROM sf_resources WHERE user_id IS NOT NULL`).Scan(&workspaceCount); err != nil {
 		workspaceCount = 0
 	}
 
@@ -110,10 +110,10 @@ func listGovernanceResources(ctx context.Context, db *sql.DB, params *Governance
 	}
 
 	query := `
-SELECT r.id, r.workspace_id, p.name, r.provider, r.resource_id, r.resource_type, r.name, r.region,
+SELECT r.id, r.user_id, p.name, r.provider, r.resource_id, r.resource_type, r.name, r.region,
        r.account_id, r.owner_username, r.status, r.tags, r.metadata, r.first_seen, r.last_seen, r.updated_at
   FROM sf_resources r
-  LEFT JOIN sf_workspaces p ON p.id = r.workspace_id
+  LEFT JOIN sf_workspaces p ON p.id = r.user_id
  WHERE 1=1`
 
 	var args []any
@@ -128,7 +128,7 @@ SELECT r.id, r.workspace_id, p.name, r.provider, r.resource_id, r.resource_type,
 		argIndex++
 	}
 
-	addFilter("r.workspace_id", params.WorkspaceID)
+	addFilter("r.user_id", params.WorkspaceID)
 	addFilter("r.provider", params.Provider)
 	addFilter("r.status", params.Status)
 	addFilter("r.owner_username", strings.ToLower(strings.TrimSpace(params.Owner)))
@@ -196,15 +196,15 @@ func listGovernanceCosts(ctx context.Context, db *sql.DB, params *GovernanceCost
 		limit = 50
 	}
 	query := `
-SELECT c.id, c.workspace_id, p.name, c.resource_id, c.provider, c.period_start, c.period_end,
+SELECT c.id, c.user_id, p.name, c.resource_id, c.provider, c.period_start, c.period_end,
        c.cost_amount::double precision, c.cost_currency, c.source, c.metadata, c.created_at
   FROM sf_cost_snapshots c
-  LEFT JOIN sf_workspaces p ON p.id = c.workspace_id
+  LEFT JOIN sf_workspaces p ON p.id = c.user_id
  WHERE 1=1`
 	var args []any
 	argIndex := 1
 	if strings.TrimSpace(params.WorkspaceID) != "" {
-		query += fmt.Sprintf(" AND c.workspace_id = $%d", argIndex)
+		query += fmt.Sprintf(" AND c.user_id = $%d", argIndex)
 		args = append(args, strings.TrimSpace(params.WorkspaceID))
 		argIndex++
 	}
@@ -277,15 +277,15 @@ func listGovernanceUsage(ctx context.Context, db *sql.DB, params *GovernanceUsag
 		limit = 50
 	}
 	query := `
-SELECT u.id, u.workspace_id, p.name, u.provider, u.scope_type, u.scope_id, u.metric,
+SELECT u.id, u.user_id, p.name, u.provider, u.scope_type, u.scope_id, u.metric,
        u.value::double precision, u.unit, u.metadata, u.collected_at
   FROM sf_usage_snapshots u
-  LEFT JOIN sf_workspaces p ON p.id = u.workspace_id
+  LEFT JOIN sf_workspaces p ON p.id = u.user_id
  WHERE 1=1`
 	var args []any
 	argIndex := 1
 	if strings.TrimSpace(params.WorkspaceID) != "" {
-		query += fmt.Sprintf(" AND u.workspace_id = $%d", argIndex)
+		query += fmt.Sprintf(" AND u.user_id = $%d", argIndex)
 		args = append(args, strings.TrimSpace(params.WorkspaceID))
 		argIndex++
 	}
@@ -381,14 +381,14 @@ func upsertGovernanceResource(ctx context.Context, db *sql.DB, input GovernanceR
 
 	row := db.QueryRowContext(ctx, `
 INSERT INTO sf_resources (
-  id, provider, resource_id, resource_type, workspace_id, name, region, account_id,
+  id, provider, resource_id, resource_type, user_id, name, region, account_id,
   owner_username, status, tags, metadata, first_seen, last_seen, updated_at
 ) VALUES ($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),
           NULLIF($9,''),$10,$11,$12,$13,$14,$15)
 ON CONFLICT (provider, resource_id)
 DO UPDATE SET
   resource_type=EXCLUDED.resource_type,
-  workspace_id=COALESCE(EXCLUDED.workspace_id, sf_resources.workspace_id),
+  user_id=COALESCE(EXCLUDED.user_id, sf_resources.user_id),
   name=COALESCE(EXCLUDED.name, sf_resources.name),
   region=COALESCE(EXCLUDED.region, sf_resources.region),
   account_id=COALESCE(EXCLUDED.account_id, sf_resources.account_id),
@@ -398,7 +398,7 @@ DO UPDATE SET
   metadata=COALESCE(EXCLUDED.metadata, sf_resources.metadata),
   last_seen=EXCLUDED.last_seen,
   updated_at=EXCLUDED.updated_at
-RETURNING id, workspace_id, name, region, account_id, owner_username, status, tags, metadata, first_seen, last_seen, updated_at`,
+RETURNING id, user_id, name, region, account_id, owner_username, status, tags, metadata, first_seen, last_seen, updated_at`,
 		resourceUUID,
 		provider,
 		resourceID,
@@ -477,7 +477,7 @@ func insertGovernanceResourceEvent(ctx context.Context, db *sql.DB, resourceID s
 	writeAuditEvent(ctx, db, actor, actorIsAdmin, impersonated, "governance.resource."+eventType, workspaceID, string(detailsJSON))
 	_, err := db.ExecContext(ctx, `
 INSERT INTO sf_resource_events (
-  id, resource_id, event_type, actor_username, actor_is_admin, impersonated_username, workspace_id, details
+  id, resource_id, event_type, actor_username, actor_is_admin, impersonated_username, user_id, details
 ) VALUES ($1,$2,$3,NULLIF($4,''),$5,NULLIF($6,''),NULLIF($7,''),$8)`,
 		eventID, resourceID, eventType, actor, actorIsAdmin, impersonated, workspaceID, string(detailsJSON),
 	)
@@ -529,7 +529,7 @@ func insertGovernanceCost(ctx context.Context, db *sql.DB, input GovernanceCostI
 
 	_, err = db.ExecContext(ctx, `
 INSERT INTO sf_cost_snapshots (
-  id, resource_id, workspace_id, provider, period_start, period_end,
+  id, resource_id, user_id, provider, period_start, period_end,
   cost_amount, cost_currency, source, metadata
 ) VALUES ($1,NULLIF($2,''),NULLIF($3,''),$4,$5,$6,$7,$8,NULLIF($9,''),$10)`,
 		id, resourceID, workspaceID, provider, periodStart, periodEnd, input.Amount, currency, record.Source, string(metadataJSON),
@@ -564,7 +564,7 @@ func insertGovernanceUsage(ctx context.Context, db *sql.DB, input GovernanceUsag
 
 	_, err := db.ExecContext(ctx, `
 INSERT INTO sf_usage_snapshots (
-  id, workspace_id, provider, scope_type, scope_id, metric, value, unit, metadata
+  id, user_id, provider, scope_type, scope_id, metric, value, unit, metadata
 ) VALUES ($1,NULLIF($2,''),$3,$4,NULLIF($5,''),$6,$7,NULLIF($8,''),$9)`,
 		id, workspaceID, provider, record.ScopeType, scopeID, record.Metric, input.Value, record.Unit, string(metadataJSON),
 	)

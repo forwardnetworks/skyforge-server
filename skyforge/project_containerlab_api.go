@@ -13,7 +13,7 @@ import (
 )
 
 type WorkspaceContainerlabTemplatesResponse struct {
-	WorkspaceID string   `json:"workspaceId"`
+	WorkspaceID string   `json:"userId"`
 	Repo        string   `json:"repo"`
 	Branch      string   `json:"branch"`
 	Dir         string   `json:"dir"`
@@ -28,13 +28,13 @@ type WorkspaceContainerlabTemplatesRequest struct {
 
 // GetWorkspaceContainerlabTemplates lists Containerlab templates for a workspace.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/containerlab/templates
+//encore:api auth method=GET path=/api/users/:id/containerlab/templates
 func (s *Service) GetWorkspaceContainerlabTemplates(ctx context.Context, id string, req *WorkspaceContainerlabTemplatesRequest) (*WorkspaceContainerlabTemplatesResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

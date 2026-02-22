@@ -18,7 +18,7 @@ type WorkspaceArtifactsListParams struct {
 }
 
 type WorkspaceArtifactsListResponse struct {
-	WorkspaceID     string                 `json:"workspaceId"`
+	WorkspaceID     string                 `json:"userId"`
 	WorkspaceSlug   string                 `json:"workspaceSlug"`
 	ArtifactsBucket string                 `json:"artifactsBucket"`
 	Prefix          string                 `json:"prefix"`
@@ -27,13 +27,13 @@ type WorkspaceArtifactsListResponse struct {
 
 // ListWorkspaceArtifacts lists artifact objects for a workspace.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/artifacts
+//encore:api auth method=GET path=/api/users/:id/artifacts
 func (s *Service) ListWorkspaceArtifacts(ctx context.Context, id string, params *WorkspaceArtifactsListParams) (*WorkspaceArtifactsListResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

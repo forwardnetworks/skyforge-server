@@ -42,13 +42,13 @@ func (s *Service) secureTrackForwardClient(ctx context.Context, workspaceID stri
 
 // GetWorkspaceSecureTrackCatalog returns the embedded SecureTrack check catalog.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/securetrack/catalog
+//encore:api auth method=GET path=/api/users/:id/securetrack/catalog
 func (s *Service) GetWorkspaceSecureTrackCatalog(ctx context.Context, id string) (*SecureTrackCatalog, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -63,13 +63,13 @@ func (s *Service) GetWorkspaceSecureTrackCatalog(ctx context.Context, id string)
 
 // GetWorkspaceSecureTrackPacks returns the embedded SecureTrack packs definition.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/securetrack/packs
+//encore:api auth method=GET path=/api/users/:id/securetrack/packs
 func (s *Service) GetWorkspaceSecureTrackPacks(ctx context.Context, id string) (*SecureTrackPacks, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -84,13 +84,13 @@ func (s *Service) GetWorkspaceSecureTrackPacks(ctx context.Context, id string) (
 
 // GetWorkspaceSecureTrackChecks lists known checks (catalog + embedded .nqe files).
 //
-//encore:api auth method=GET path=/api/workspaces/:id/securetrack/checks
+//encore:api auth method=GET path=/api/users/:id/securetrack/checks
 func (s *Service) GetWorkspaceSecureTrackChecks(ctx context.Context, id string) (*SecureTrackChecksResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -132,13 +132,13 @@ func (s *Service) GetWorkspaceSecureTrackChecks(ctx context.Context, id string) 
 
 // GetWorkspaceSecureTrackCheck returns the .nqe file content for a given check.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/securetrack/checks/:checkId
+//encore:api auth method=GET path=/api/users/:id/securetrack/checks/:checkId
 func (s *Service) GetWorkspaceSecureTrackCheck(ctx context.Context, id string, checkId string) (*SecureTrackCheckResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -171,13 +171,13 @@ func (s *Service) GetWorkspaceSecureTrackCheck(ctx context.Context, id string, c
 
 // GetWorkspaceSecureTrackSnapshots lists snapshots for a Forward network.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/securetrack/snapshots
+//encore:api auth method=GET path=/api/users/:id/securetrack/snapshots
 func (s *Service) GetWorkspaceSecureTrackSnapshots(ctx context.Context, id string, req *SecureTrackSnapshotsRequest) (*SecureTrackSnapshotsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -209,13 +209,13 @@ func (s *Service) GetWorkspaceSecureTrackSnapshots(ctx context.Context, id strin
 
 // RunWorkspaceSecureTrackNQE executes an NQE query and returns a normalized response.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/securetrack/nqe
+//encore:api auth method=POST path=/api/users/:id/securetrack/nqe
 func (s *Service) RunWorkspaceSecureTrackNQE(ctx context.Context, id string, req *SecureTrackNQERequest) (*SecureTrackNQEResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -265,13 +265,13 @@ func (s *Service) RunWorkspaceSecureTrackNQE(ctx context.Context, id string, req
 
 // RunWorkspaceSecureTrackCheck executes an embedded check (.nqe) and returns a normalized response.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/securetrack/checks/run
+//encore:api auth method=POST path=/api/users/:id/securetrack/checks/run
 func (s *Service) RunWorkspaceSecureTrackCheck(ctx context.Context, id string, req *SecureTrackRunCheckRequest) (*SecureTrackNQEResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -333,13 +333,13 @@ func (s *Service) RunWorkspaceSecureTrackCheck(ctx context.Context, id string, r
 
 // RunWorkspaceSecureTrackPack executes all checks in a pack (serially) and returns per-check results.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/securetrack/packs/run
+//encore:api auth method=POST path=/api/users/:id/securetrack/packs/run
 func (s *Service) RunWorkspaceSecureTrackPack(ctx context.Context, id string, req *SecureTrackRunPackRequest) (*SecureTrackRunPackResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

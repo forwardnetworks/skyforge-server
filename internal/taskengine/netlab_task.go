@@ -27,7 +27,7 @@ type netlabTaskSpec struct {
 
 type netlabRunSpec struct {
 	TaskID        int
-	WorkspaceCtx  *workspaceContext
+	WorkspaceCtx  *userContext
 	WorkspaceSlug string
 	Username      string
 	Environment   map[string]string
@@ -58,7 +58,7 @@ func (e *Engine) dispatchNetlabTask(ctx context.Context, task *taskstore.TaskRec
 	if username == "" {
 		username = ws.primaryOwner()
 	}
-	pc := &workspaceContext{
+	pc := &userContext{
 		workspace: *ws,
 		claims: SessionClaims{
 			Username: username,

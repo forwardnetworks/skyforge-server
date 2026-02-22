@@ -12,7 +12,7 @@ import (
 )
 
 type RunsListParams struct {
-	WorkspaceID string `query:"workspace_id" encore:"optional"`
+	UserID      string `query:"user_id" encore:"optional"`
 	Limit       string `query:"limit" encore:"optional"`
 	Owner       string `query:"owner" encore:"optional"`
 }
@@ -42,8 +42,8 @@ func (s *Service) GetRuns(ctx context.Context, params *RunsListParams) (*RunsLis
 	if err != nil {
 		return nil, err
 	}
-	if params != nil && strings.TrimSpace(params.WorkspaceID) != "" {
-		workspace, err = s.resolveWorkspaceForUser(ctx, user, params.WorkspaceID)
+	if params != nil && strings.TrimSpace(params.UserID) != "" {
+		workspace, err = s.resolveWorkspaceForUser(ctx, user, params.UserID)
 		if err != nil {
 			return nil, err
 		}
@@ -73,7 +73,7 @@ func (s *Service) GetRuns(ctx context.Context, params *RunsListParams) (*RunsLis
 	runItems := make([]map[string]any, 0, len(tasks))
 	for _, task := range tasks {
 		run := taskToRunInfo(task)
-		run["workspaceId"] = workspace.ID
+		run["userId"] = workspace.ID
 		runItems = append(runItems, run)
 	}
 	tasksJSON, err := toJSONMapSlice(runItems)
@@ -89,9 +89,9 @@ func (s *Service) GetRuns(ctx context.Context, params *RunsListParams) (*RunsLis
 }
 
 type RunsCreateResponse struct {
-	WorkspaceID string  `json:"workspaceId"`
-	Task        JSONMap `json:"task"`
-	User        string  `json:"user"`
+	UserID string  `json:"userId"`
+	Task   JSONMap `json:"task"`
+	User   string  `json:"user"`
 }
 
 // CreateRun is a reserved endpoint for admin-triggered native tasks.
@@ -114,7 +114,7 @@ func (s *Service) CreateRun(ctx context.Context, req *RunRequest) (*RunsCreateRe
 		workspaceKey = *req.WorkspaceID
 	}
 	if workspaceKey == "" {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("workspace_id is required").Err()
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("user_id is required").Err()
 	}
 	if _, err := s.resolveWorkspaceForUser(ctx, user, workspaceKey); err != nil {
 		return nil, err
@@ -123,15 +123,15 @@ func (s *Service) CreateRun(ctx context.Context, req *RunRequest) (*RunsCreateRe
 }
 
 type RunsOutputParams struct {
-	WorkspaceID string `query:"workspace_id" encore:"optional"`
+	UserID string `query:"user_id" encore:"optional"`
 }
 
 type RunsCancelResponse struct {
-	TaskID      int      `json:"task_id"`
-	WorkspaceID string   `json:"workspaceId"`
-	Status      string   `json:"status"`
-	Task        *JSONMap `json:"task,omitempty"`
-	User        string   `json:"user"`
+	TaskID int      `json:"task_id"`
+	UserID string   `json:"userId"`
+	Status string   `json:"status"`
+	Task   *JSONMap `json:"task,omitempty"`
+	User   string   `json:"user"`
 }
 
 // CancelRun cancels a queued or running task.
@@ -161,7 +161,7 @@ func (s *Service) CancelRun(ctx context.Context, id int, params *RunsOutputParam
 	// Resolve workspace access (also enforces user membership).
 	workspaceKey := ""
 	if params != nil {
-		workspaceKey = strings.TrimSpace(params.WorkspaceID)
+		workspaceKey = strings.TrimSpace(params.UserID)
 	}
 	workspace, err := s.resolveWorkspaceForUser(ctx, user, workspaceKey)
 	if err != nil {
@@ -171,7 +171,7 @@ func (s *Service) CancelRun(ctx context.Context, id int, params *RunsOutputParam
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
 	// Viewers can see runs but shouldn't cancel them.
-	pc, err := s.workspaceContextForUser(user, workspace.ID)
+	pc, err := s.userContextForUser(user, workspace.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -218,16 +218,16 @@ func (s *Service) CancelRun(ctx context.Context, id int, params *RunsOutputParam
 
 	taskJSON, err := toJSONMap(taskToRunInfo(*task))
 	if err != nil {
-		return &RunsCancelResponse{TaskID: task.ID, WorkspaceID: workspace.ID, Status: "canceled", User: user.Username}, nil
+		return &RunsCancelResponse{TaskID: task.ID, UserID: workspace.ID, Status: "canceled", User: user.Username}, nil
 	}
-	return &RunsCancelResponse{TaskID: task.ID, WorkspaceID: workspace.ID, Status: "canceled", Task: &taskJSON, User: user.Username}, nil
+	return &RunsCancelResponse{TaskID: task.ID, UserID: workspace.ID, Status: "canceled", Task: &taskJSON, User: user.Username}, nil
 }
 
 type RunsOutputResponse struct {
-	TaskID      int       `json:"task_id"`
-	WorkspaceID string    `json:"workspaceId"`
-	Output      []JSONMap `json:"output"`
-	User        string    `json:"user"`
+	TaskID int       `json:"task_id"`
+	UserID string    `json:"userId"`
+	Output []JSONMap `json:"output"`
+	User   string    `json:"user"`
 }
 
 // GetRunOutput returns output for a specific native task.
@@ -244,7 +244,7 @@ func (s *Service) GetRunOutput(ctx context.Context, id int, params *RunsOutputPa
 	}
 	workspaceKey := ""
 	if params != nil {
-		workspaceKey = strings.TrimSpace(params.WorkspaceID)
+		workspaceKey = strings.TrimSpace(params.UserID)
 	}
 	workspace, err := s.resolveWorkspaceForUser(ctx, user, workspaceKey)
 	if err != nil {
@@ -275,9 +275,9 @@ func (s *Service) GetRunOutput(ctx context.Context, id int, params *RunsOutputPa
 	}
 	_ = ctx
 	return &RunsOutputResponse{
-		TaskID:      id,
-		WorkspaceID: workspace.ID,
-		Output:      outputJSON,
-		User:        user.Username,
+		TaskID: id,
+		UserID: workspace.ID,
+		Output: outputJSON,
+		User:   user.Username,
 	}, nil
 }

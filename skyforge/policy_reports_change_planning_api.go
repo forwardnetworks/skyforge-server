@@ -11,7 +11,6 @@ import (
 // This endpoint is intentionally stubbed for now. Earlier iterations depended on
 // fast-changing NQE output shapes and would become brittle quickly.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/policy-reports/change-planning/simulate
 func (s *Service) SimulateWorkspacePolicyReportChangePlanning(ctx context.Context, id string, req *PolicyReportChangePlanningRequest) (*PolicyReportChangePlanningResponse, error) {
 	_ = s
 	_ = ctx

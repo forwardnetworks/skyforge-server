@@ -18,13 +18,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"encore.dev"
 	"encore.dev/rlog"
 
-	elasticint "encore.app/integrations/elastic"
 	"encore.app/internal/secretbox"
 	"encore.app/internal/skyforgeconfig"
 	"encore.app/internal/skyforgedb"
@@ -46,7 +44,7 @@ import (
 
 type RunRequest struct {
 	TemplateID  int     `json:"templateId"`
-	WorkspaceID *string `json:"workspaceId,omitempty"`
+	WorkspaceID *string `json:"userId,omitempty"`
 	Debug       bool    `json:"debug,omitempty"`
 	DryRun      bool    `json:"dryRun,omitempty"`
 	Diff        bool    `json:"diff,omitempty"`
@@ -63,7 +61,7 @@ type RunRequest struct {
 type TemplateSummary struct {
 	ID          int    `json:"id"`
 	Name        string `json:"name"`
-	WorkspaceID string `json:"workspaceId"`
+	WorkspaceID string `json:"userId"`
 	Repository  string `json:"repository,omitempty"`
 	Playbook    string `json:"playbook,omitempty"`
 	Description string `json:"description,omitempty"`
@@ -105,7 +103,7 @@ func externalTemplateRepoByID(ws *SkyforgeWorkspace, id string) *ExternalTemplat
 	return nil
 }
 
-func externalTemplateRepoByIDForContext(pc *workspaceContext, id string) *ExternalTemplateRepo {
+func externalTemplateRepoByIDForContext(pc *userContext, id string) *ExternalTemplateRepo {
 	if pc == nil {
 		return nil
 	}
@@ -543,7 +541,7 @@ type AuditEvent struct {
 	ActorIsAdmin     bool      `json:"actorIsAdmin"`
 	ImpersonatedUser string    `json:"impersonatedUsername,omitempty"`
 	Action           string    `json:"action"`
-	WorkspaceID      string    `json:"workspaceId,omitempty"`
+	WorkspaceID      string    `json:"userId,omitempty"`
 	Details          string    `json:"details,omitempty"`
 }
 
@@ -610,7 +608,7 @@ func writeAuditEvent(ctx context.Context, db *sql.DB, actor string, actorIsAdmin
 		details = details[:4000]
 	}
 	_, err := db.ExecContext(ctx, `INSERT INTO sf_audit_log (
-  actor_username, actor_is_admin, impersonated_username, action, workspace_id, details
+  actor_username, actor_is_admin, impersonated_username, action, user_id, details
 ) VALUES ($1,$2,NULLIF($3,''),$4,NULLIF($5,''),NULLIF($6,''))`,
 		actor, actorIsAdmin, impersonated, action, workspaceID, details,
 	)
@@ -630,7 +628,7 @@ func getWorkspaceAWSStaticCredentials(ctx context.Context, db *sql.DB, box *secr
 	var akid, sak, st sql.NullString
 	var updatedAt sql.NullTime
 	err := db.QueryRowContext(ctx, `SELECT access_key_id, secret_access_key, session_token, updated_at
-FROM sf_workspace_aws_static_credentials WHERE workspace_id=$1`, workspaceID).Scan(&akid, &sak, &st, &updatedAt)
+FROM sf_workspace_aws_static_credentials WHERE user_id=$1`, workspaceID).Scan(&akid, &sak, &st, &updatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -686,9 +684,9 @@ func putWorkspaceAWSStaticCredentials(ctx context.Context, db *sql.DB, box *secr
 	if err != nil {
 		return err
 	}
-	_, err = db.ExecContext(ctx, `INSERT INTO sf_workspace_aws_static_credentials (workspace_id, access_key_id, secret_access_key, session_token, updated_at)
+	_, err = db.ExecContext(ctx, `INSERT INTO sf_workspace_aws_static_credentials (user_id, access_key_id, secret_access_key, session_token, updated_at)
 VALUES ($1,$2,$3,NULLIF($4,''),now())
-ON CONFLICT (workspace_id) DO UPDATE SET
+ON CONFLICT (user_id) DO UPDATE SET
   access_key_id=excluded.access_key_id,
   secret_access_key=excluded.secret_access_key,
   session_token=excluded.session_token,
@@ -704,7 +702,7 @@ func deleteWorkspaceAWSStaticCredentials(ctx context.Context, db *sql.DB, worksp
 	if workspaceID == "" {
 		return nil
 	}
-	_, err := db.ExecContext(ctx, `DELETE FROM sf_workspace_aws_static_credentials WHERE workspace_id=$1`, workspaceID)
+	_, err := db.ExecContext(ctx, `DELETE FROM sf_workspace_aws_static_credentials WHERE user_id=$1`, workspaceID)
 	return err
 }
 
@@ -742,7 +740,7 @@ func getWorkspaceForwardCredentials(ctx context.Context, db *sql.DB, box *secret
   COALESCE(device_username, ''), COALESCE(device_password, ''),
   COALESCE(jump_host, ''), COALESCE(jump_username, ''), COALESCE(jump_private_key, ''), COALESCE(jump_cert, ''),
   updated_at
-FROM sf_workspace_forward_credentials WHERE workspace_id=$1`, workspaceID).Scan(
+FROM sf_workspace_forward_credentials WHERE user_id=$1`, workspaceID).Scan(
 		&baseURL,
 		&username,
 		&password,
@@ -885,13 +883,13 @@ func putWorkspaceForwardCredentials(ctx context.Context, db *sql.DB, box *secret
 		return err
 	}
 	_, err = db.ExecContext(ctx, `INSERT INTO sf_workspace_forward_credentials (
-  workspace_id, base_url, username, password,
+  user_id, base_url, username, password,
   collector_id, collector_username,
   device_username, device_password,
   jump_host, jump_username, jump_private_key, jump_cert,
   updated_at
 ) VALUES ($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),NULLIF($12,''),now())
-ON CONFLICT (workspace_id) DO UPDATE SET
+ON CONFLICT (user_id) DO UPDATE SET
   base_url=excluded.base_url,
   username=excluded.username,
   password=excluded.password,
@@ -928,7 +926,7 @@ func deleteWorkspaceForwardCredentials(ctx context.Context, db *sql.DB, workspac
 	if workspaceID == "" {
 		return nil
 	}
-	_, err := db.ExecContext(ctx, `DELETE FROM sf_workspace_forward_credentials WHERE workspace_id=$1`, workspaceID)
+	_, err := db.ExecContext(ctx, `DELETE FROM sf_workspace_forward_credentials WHERE user_id=$1`, workspaceID)
 	return err
 }
 
@@ -943,7 +941,7 @@ func getWorkspaceAzureCredentials(ctx context.Context, db *sql.DB, box *secretBo
 	var tenantID, clientID, clientSecret, subscriptionID sql.NullString
 	var updatedAt sql.NullTime
 	err := db.QueryRowContext(ctx, `SELECT tenant_id, client_id, client_secret, COALESCE(subscription_id, ''), updated_at
-FROM sf_workspace_azure_credentials WHERE workspace_id=$1`, workspaceID).Scan(&tenantID, &clientID, &clientSecret, &subscriptionID, &updatedAt)
+FROM sf_workspace_azure_credentials WHERE user_id=$1`, workspaceID).Scan(&tenantID, &clientID, &clientSecret, &subscriptionID, &updatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -1015,9 +1013,9 @@ func putWorkspaceAzureCredentials(ctx context.Context, db *sql.DB, box *secretBo
 		}
 	}
 	_, err = db.ExecContext(ctx, `INSERT INTO sf_workspace_azure_credentials (
-  workspace_id, tenant_id, client_id, client_secret, subscription_id, updated_at
+  user_id, tenant_id, client_id, client_secret, subscription_id, updated_at
 ) VALUES ($1,$2,$3,$4,NULLIF($5,''),now())
-ON CONFLICT (workspace_id) DO UPDATE SET
+ON CONFLICT (user_id) DO UPDATE SET
   tenant_id=excluded.tenant_id,
   client_id=excluded.client_id,
   client_secret=excluded.client_secret,
@@ -1034,7 +1032,7 @@ func deleteWorkspaceAzureCredentials(ctx context.Context, db *sql.DB, workspaceI
 	if workspaceID == "" {
 		return nil
 	}
-	_, err := db.ExecContext(ctx, `DELETE FROM sf_workspace_azure_credentials WHERE workspace_id=$1`, workspaceID)
+	_, err := db.ExecContext(ctx, `DELETE FROM sf_workspace_azure_credentials WHERE user_id=$1`, workspaceID)
 	return err
 }
 
@@ -1050,7 +1048,7 @@ func getWorkspaceGCPCredentials(ctx context.Context, db *sql.DB, box *secretBox,
 	var projectOverride sql.NullString
 	var updatedAt sql.NullTime
 	err := db.QueryRowContext(ctx, `SELECT service_account_json, COALESCE(project_id_override, ''), updated_at
-FROM sf_workspace_gcp_credentials WHERE workspace_id=$1`, workspaceID).Scan(&raw, &projectOverride, &updatedAt)
+FROM sf_workspace_gcp_credentials WHERE user_id=$1`, workspaceID).Scan(&raw, &projectOverride, &updatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -1086,9 +1084,9 @@ func putWorkspaceGCPCredentials(ctx context.Context, db *sql.DB, box *secretBox,
 		return err
 	}
 	_, err = db.ExecContext(ctx, `INSERT INTO sf_workspace_gcp_credentials (
-  workspace_id, service_account_json, project_id_override, updated_at
+  user_id, service_account_json, project_id_override, updated_at
 ) VALUES ($1,$2,NULLIF($3,''),now())
-ON CONFLICT (workspace_id) DO UPDATE SET
+ON CONFLICT (user_id) DO UPDATE SET
   service_account_json=excluded.service_account_json,
   project_id_override=excluded.project_id_override,
   updated_at=now()`, workspaceID, encJSON, projectOverride)
@@ -1103,7 +1101,7 @@ func deleteWorkspaceGCPCredentials(ctx context.Context, db *sql.DB, workspaceID 
 	if workspaceID == "" {
 		return nil
 	}
-	_, err := db.ExecContext(ctx, `DELETE FROM sf_workspace_gcp_credentials WHERE workspace_id=$1`, workspaceID)
+	_, err := db.ExecContext(ctx, `DELETE FROM sf_workspace_gcp_credentials WHERE user_id=$1`, workspaceID)
 	return err
 }
 
@@ -1190,7 +1188,7 @@ func (s *pgWorkspacesStore) load() ([]SkyforgeWorkspace, error) {
 		return nil, err
 	}
 
-	memberRows, err := s.db.Query(`SELECT workspace_id, username, role FROM sf_workspace_members ORDER BY workspace_id, username`)
+	memberRows, err := s.db.Query(`SELECT user_id, username, role FROM sf_workspace_members ORDER BY user_id, username`)
 	if err != nil {
 		return nil, err
 	}
@@ -1217,7 +1215,7 @@ func (s *pgWorkspacesStore) load() ([]SkyforgeWorkspace, error) {
 		return nil, err
 	}
 
-	groupRows, err := s.db.Query(`SELECT workspace_id, group_name, role FROM sf_workspace_groups ORDER BY workspace_id, group_name`)
+	groupRows, err := s.db.Query(`SELECT user_id, group_name, role FROM sf_workspace_groups ORDER BY user_id, group_name`)
 	if err != nil {
 		return nil, err
 	}
@@ -1340,10 +1338,10 @@ func (s *pgWorkspacesStore) upsert(workspace SkyforgeWorkspace) error {
 		return err
 	}
 
-	if _, err := tx.Exec(`DELETE FROM sf_workspace_members WHERE workspace_id=$1`, id); err != nil {
+	if _, err := tx.Exec(`DELETE FROM sf_workspace_members WHERE user_id=$1`, id); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM sf_workspace_groups WHERE workspace_id=$1`, id); err != nil {
+	if _, err := tx.Exec(`DELETE FROM sf_workspace_groups WHERE user_id=$1`, id); err != nil {
 		return err
 	}
 
@@ -1362,8 +1360,8 @@ func (s *pgWorkspacesStore) upsert(workspace SkyforgeWorkspace) error {
 		if username == "" || !isValidUsername(username) {
 			return nil
 		}
-		_, err := tx.Exec(`INSERT INTO sf_workspace_members (workspace_id, username, role) VALUES ($1,$2,$3)
-ON CONFLICT (workspace_id, username) DO UPDATE SET role=excluded.role`, id, username, role)
+		_, err := tx.Exec(`INSERT INTO sf_workspace_members (user_id, username, role) VALUES ($1,$2,$3)
+ON CONFLICT (user_id, username) DO UPDATE SET role=excluded.role`, id, username, role)
 		return err
 	}
 	for _, u := range owners {
@@ -1387,8 +1385,8 @@ ON CONFLICT (workspace_id, username) DO UPDATE SET role=excluded.role`, id, user
 		if groupName == "" || len(groupName) > 512 {
 			return nil
 		}
-		_, err := tx.Exec(`INSERT INTO sf_workspace_groups (workspace_id, group_name, role) VALUES ($1,$2,$3)
-ON CONFLICT (workspace_id, group_name) DO UPDATE SET role=excluded.role`, id, groupName, role)
+		_, err := tx.Exec(`INSERT INTO sf_workspace_groups (user_id, group_name, role) VALUES ($1,$2,$3)
+ON CONFLICT (user_id, group_name) DO UPDATE SET role=excluded.role`, id, groupName, role)
 		return err
 	}
 	for _, g := range ownerGroups {
@@ -1528,10 +1526,10 @@ func (s *pgWorkspacesStore) replaceAll(workspaces []SkyforgeWorkspace) error {
 			return err
 		}
 
-		if _, err := tx.Exec(`DELETE FROM sf_workspace_members WHERE workspace_id=$1`, id); err != nil {
+		if _, err := tx.Exec(`DELETE FROM sf_workspace_members WHERE user_id=$1`, id); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`DELETE FROM sf_workspace_groups WHERE workspace_id=$1`, id); err != nil {
+		if _, err := tx.Exec(`DELETE FROM sf_workspace_groups WHERE user_id=$1`, id); err != nil {
 			return err
 		}
 
@@ -1550,8 +1548,8 @@ func (s *pgWorkspacesStore) replaceAll(workspaces []SkyforgeWorkspace) error {
 			if username == "" || !isValidUsername(username) {
 				return nil
 			}
-			_, err := tx.Exec(`INSERT INTO sf_workspace_members (workspace_id, username, role) VALUES ($1,$2,$3)
-ON CONFLICT (workspace_id, username) DO UPDATE SET role=excluded.role`, id, username, role)
+			_, err := tx.Exec(`INSERT INTO sf_workspace_members (user_id, username, role) VALUES ($1,$2,$3)
+ON CONFLICT (user_id, username) DO UPDATE SET role=excluded.role`, id, username, role)
 			return err
 		}
 		for _, u := range owners {
@@ -1575,8 +1573,8 @@ ON CONFLICT (workspace_id, username) DO UPDATE SET role=excluded.role`, id, user
 			if groupName == "" || len(groupName) > 512 {
 				return nil
 			}
-			_, err := tx.Exec(`INSERT INTO sf_workspace_groups (workspace_id, group_name, role) VALUES ($1,$2,$3)
-ON CONFLICT (workspace_id, group_name) DO UPDATE SET role=excluded.role`, id, groupName, role)
+			_, err := tx.Exec(`INSERT INTO sf_workspace_groups (user_id, group_name, role) VALUES ($1,$2,$3)
+ON CONFLICT (user_id, group_name) DO UPDATE SET role=excluded.role`, id, groupName, role)
 			return err
 		}
 		for _, g := range ownerGroups {
@@ -2215,7 +2213,7 @@ func getAWSRoleCredentials(ctx context.Context, cfg Config, store awsSSOTokenSto
 }
 
 type workspaceSyncReport struct {
-	WorkspaceID string   `json:"workspaceId"`
+	WorkspaceID string   `json:"userId"`
 	Slug        string   `json:"slug"`
 	Updated     bool     `json:"updated"`
 	Steps       []string `json:"steps,omitempty"`
@@ -2463,13 +2461,6 @@ type Service struct {
 	userStore      usersStore
 	box            *secretBox
 	db             *sql.DB
-
-	elasticOnce    sync.Once
-	elasticClient  *elasticint.Client
-	elasticInitErr error
-
-	elasticUserPrefixCacheMu sync.Mutex
-	elasticUserPrefixCache   map[string]elasticUserPrefixCacheEntry
 }
 
 func NewSessionManager(secret, cookie string, ttl time.Duration, secureMode, cookieDomain string) *SessionManager {

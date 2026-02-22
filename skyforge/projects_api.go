@@ -122,11 +122,11 @@ func (s *Service) resolveWorkspaceForUser(ctx context.Context, user *AuthUser, w
 			return nil, err
 		}
 		if workspace == nil {
-			return nil, errs.B().Code(errs.InvalidArgument).Msg("workspace_id is required").Err()
+			return nil, errs.B().Code(errs.InvalidArgument).Msg("user_id is required").Err()
 		}
 		return workspace, nil
 	}
-	wc, err := s.workspaceContextForUser(user, workspaceKey)
+	wc, err := s.userContextForUser(user, workspaceKey)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +135,7 @@ func (s *Service) resolveWorkspaceForUser(ctx context.Context, user *AuthUser, w
 
 // GetWorkspaces returns workspaces visible to the authenticated user.
 //
-//encore:api auth method=GET path=/api/workspaces tag:list-workspaces
+//encore:api auth method=GET path=/api/users tag:list-workspaces
 func (s *Service) GetWorkspaces(ctx context.Context, params *WorkspacesListParams) (*WorkspacesListResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -218,7 +218,7 @@ type BlueprintSyncResponse struct {
 
 // CreateWorkspace provisions a new Skyforge workspace.
 //
-//encore:api auth method=POST path=/api/workspaces
+//encore:api auth method=POST path=/api/users
 func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateRequest) (*SkyforgeWorkspace, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -433,13 +433,13 @@ func (s *Service) CreateWorkspace(ctx context.Context, req *WorkspaceCreateReque
 
 // SyncWorkspaceBlueprint syncs a workspace's blueprint catalog into the repo.
 //
-//encore:api auth method=POST path=/api/workspaces/:workspaceID/blueprint/sync
+//encore:api auth method=POST path=/api/users/:workspaceID/blueprint/sync
 func (s *Service) SyncWorkspaceBlueprint(ctx context.Context, workspaceID string) (*BlueprintSyncResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, workspaceID)
+	pc, err := s.userContextForUser(user, workspaceID)
 	if err != nil {
 		return nil, err
 	}

@@ -1,4 +1,4 @@
-h1:J+zAzDcat8HXo5D37OYiE4DQhNs8hILQIkofFi95c+I=
+h1:F+axEtcu2ks7cG2cuqjVaDpPaoNQpye1/IeEq3wZKsE=
 20251220000100_init.up.sql h1:ZR4Y0ICXFcjlVW2XKzVYoSNksZP2tQ0ajHHNnh/1IoM=
 20251221000100_cloud_credentials.up.sql h1:Xb5agfyv110UYW/49J7WKrDhUCDZeS7EiMKgQUf+Tvs=
 20251222000100_project_visibility.up.sql h1:PDVyAxeOyGa1iSj+KXN2dlV1G2jxBK9A49c/1gXv4PQ=
@@ -95,3 +95,7 @@ h1:J+zAzDcat8HXo5D37OYiE4DQhNs8hILQIkofFi95c+I=
 20260207000900_capacity_tables_forward_network_scope.up.sql h1:g5eNnlJa2AwXPLwmj31WxkSXVnAYn1CALJUJ8UGjkL4=
 20260222090000_drop_legacy_pki_gemini_ai.down.sql h1:KJ6/vdHcHODfl/KCkL81UC4kRC8CVMIzqjQgQx1O5eI=
 20260222090000_drop_legacy_pki_gemini_ai.up.sql h1:8XS0yzTZMuCNJoC/FAv9q+VERO1JTs3+90HIND+fv+g=
+20260222113000_drop_legacy_elastic_config.down.sql h1:MM59Tzpi+fRQrDjR3RONitX6qBsEX3rJ2VQ4aj7OSbk=
+20260222113000_drop_legacy_elastic_config.up.sql h1:2Tl/08gD1WMCQaqZc4G4TGOkW3xsYyHJKa+Eq5YxDFo=
+20260222140000_drop_legacy_user_forward_credentials.down.sql h1:J46bdoFccPTJaJGnAK5sO1RGSfuES/yUY52aDhAFLRY=
+20260222140000_drop_legacy_user_forward_credentials.up.sql h1:PHZXpyJtuMThtGSgEdMvq780MYmz2YjPWT/s4yUwNZs=

@@ -12,12 +12,12 @@ This document captures the Skyforge access-control conventions for Skyforge’s 
 
 Skyforge uses a single workspace identity:
 
-1) **Skyforge workspace key** (string): slug/ID used in routes like `/api/workspaces/:id/...`
+1) **Skyforge workspace key** (string): slug/ID used in routes like `/api/users/:id/...`
 
 ### A) Skyforge workspace key endpoints (preferred)
 
 If an endpoint is routed by Skyforge workspace key (slug/ID), use:
-- `s.workspaceContextForUser(user, workspaceKey)`
+- `s.userContextForUser(user, workspaceKey)`
 
 This enforces:
 - authentication required

@@ -70,7 +70,7 @@ func (w Workspace) primaryOwner() string {
 	return ""
 }
 
-type workspaceContext struct {
+type userContext struct {
 	workspace Workspace
 	claims    SessionClaims
 }

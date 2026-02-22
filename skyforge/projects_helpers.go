@@ -29,7 +29,7 @@ func (s *Service) loadWorkspaceByKey(workspaceKey string) ([]SkyforgeWorkspace, 
 	return workspaces, -1, SkyforgeWorkspace{}, errWorkspaceNotFound
 }
 
-type workspaceContext struct {
+type userContext struct {
 	workspaces   []SkyforgeWorkspace
 	idx          int
 	workspace    SkyforgeWorkspace
@@ -38,7 +38,7 @@ type workspaceContext struct {
 	userSettings *UserSettingsResponse
 }
 
-func (s *Service) workspaceContextForUser(user *AuthUser, workspaceKey string) (*workspaceContext, error) {
+func (s *Service) userContextForUser(user *AuthUser, workspaceKey string) (*userContext, error) {
 	if user == nil {
 		return nil, errs.B().Code(errs.Unauthenticated).Msg("authentication required").Err()
 	}
@@ -78,7 +78,7 @@ func (s *Service) workspaceContextForUser(user *AuthUser, workspaceKey string) (
 			}
 		}
 	}
-	return &workspaceContext{
+	return &userContext{
 		workspaces:   workspaces,
 		idx:          idx,
 		workspace:    workspace,

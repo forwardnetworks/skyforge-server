@@ -7,7 +7,7 @@ import (
 
 type PolicyReportRecertCampaign struct {
 	ID             string     `json:"id"`
-	WorkspaceID    string     `json:"workspaceId"`
+	WorkspaceID    string     `json:"userId"`
 	Name           string     `json:"name"`
 	Description    string     `json:"description,omitempty"`
 	ForwardNetwork string     `json:"forwardNetworkId"`
@@ -35,7 +35,7 @@ type PolicyReportRecertCampaignWithCounts struct {
 type PolicyReportRecertAssignment struct {
 	ID              string          `json:"id"`
 	CampaignID      string          `json:"campaignId"`
-	WorkspaceID     string          `json:"workspaceId"`
+	WorkspaceID     string          `json:"userId"`
 	FindingID       string          `json:"findingId"`
 	CheckID         string          `json:"checkId"`
 	Assignee        string          `json:"assigneeUsername,omitempty"`
@@ -55,7 +55,7 @@ type PolicyReportRecertAssignment struct {
 
 type PolicyReportException struct {
 	ID            string     `json:"id"`
-	WorkspaceID   string     `json:"workspaceId"`
+	WorkspaceID   string     `json:"userId"`
 	ForwardNetwork string    `json:"forwardNetworkId"`
 	FindingID     string     `json:"findingId"`
 	CheckID       string     `json:"checkId"`
@@ -71,7 +71,7 @@ type PolicyReportException struct {
 
 type PolicyReportAuditEvent struct {
 	ID          int64           `json:"id"`
-	WorkspaceID string          `json:"workspaceId"`
+	WorkspaceID string          `json:"userId"`
 	Actor       string          `json:"actorUsername"`
 	Action      string          `json:"action"`
 	Details     json.RawMessage `json:"details"`

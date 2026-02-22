@@ -273,9 +273,9 @@ func upsertCapacityNQECache(ctx context.Context, db *sql.DB, workspaceID string,
 	var err error
 	if depVal != nil {
 		_, err = db.ExecContext(ctxReq, `INSERT INTO sf_capacity_nqe_cache (
-  workspace_id, deployment_id, forward_network_id, query_id, snapshot_id, payload
+  user_id, deployment_id, forward_network_id, query_id, snapshot_id, payload
 ) VALUES ($1,$2,$3,$4,$5,$6)
-ON CONFLICT (workspace_id, deployment_id, query_id, snapshot_id)
+ON CONFLICT (user_id, deployment_id, query_id, snapshot_id)
 DO UPDATE SET
   forward_network_id = EXCLUDED.forward_network_id,
   payload = EXCLUDED.payload,
@@ -287,9 +287,9 @@ DO UPDATE SET
 
 	// Network-scoped cache entry (deployment_id IS NULL).
 	_, err = db.ExecContext(ctxReq, `INSERT INTO sf_capacity_nqe_cache (
-  workspace_id, deployment_id, forward_network_id, query_id, snapshot_id, payload
+  user_id, deployment_id, forward_network_id, query_id, snapshot_id, payload
 ) VALUES ($1,NULL,$2,$3,$4,$5)
-ON CONFLICT (workspace_id, forward_network_id, query_id, snapshot_id) WHERE deployment_id IS NULL
+ON CONFLICT (user_id, forward_network_id, query_id, snapshot_id) WHERE deployment_id IS NULL
 DO UPDATE SET
   payload = EXCLUDED.payload,
   created_at = now()`,

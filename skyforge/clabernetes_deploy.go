@@ -30,7 +30,7 @@ func clabernetesTopologyName(labName string) string {
 
 func (s *Service) runClabernetesDeploymentAction(
 	ctx context.Context,
-	pc *workspaceContext,
+	pc *userContext,
 	dep *WorkspaceDeployment,
 	envJSON JSONMap,
 	action string,

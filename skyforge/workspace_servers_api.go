@@ -28,7 +28,7 @@ type WorkspaceNetlabServerConfig struct {
 }
 
 type WorkspaceNetlabServersResponse struct {
-	WorkspaceID string                        `json:"workspaceId"`
+	WorkspaceID string                        `json:"userId"`
 	Servers     []WorkspaceNetlabServerConfig `json:"servers"`
 }
 
@@ -38,12 +38,12 @@ type WorkspaceServerHealthResponse struct {
 	Error  string `json:"error,omitempty"`
 }
 
-func requireWorkspaceOwner(ctx context.Context, s *Service, workspaceID string) (*workspaceContext, error) {
+func requireWorkspaceOwner(ctx context.Context, s *Service, workspaceID string) (*userContext, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, workspaceID)
+	pc, err := s.userContextForUser(user, workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -71,13 +71,13 @@ func validateURL(raw string) (string, error) {
 
 // ListWorkspaceNetlabServers returns the configured Netlab API endpoints for this workspace.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/netlab/servers
+//encore:api auth method=GET path=/api/users/:id/netlab/servers
 func (s *Service) ListWorkspaceNetlabServers(ctx context.Context, id string) (*WorkspaceNetlabServersResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func (s *Service) ListWorkspaceNetlabServers(ctx context.Context, id string) (*W
 
 // UpsertWorkspaceNetlabServer creates or updates a workspace-scoped Netlab API endpoint.
 //
-//encore:api auth method=PUT path=/api/workspaces/:id/netlab/servers
+//encore:api auth method=PUT path=/api/users/:id/netlab/servers
 func (s *Service) UpsertWorkspaceNetlabServer(ctx context.Context, id string, payload *WorkspaceNetlabServerConfig) (*WorkspaceNetlabServerConfig, error) {
 	if payload == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("payload required").Err()
@@ -158,7 +158,7 @@ func (s *Service) UpsertWorkspaceNetlabServer(ctx context.Context, id string, pa
 
 // DeleteWorkspaceNetlabServer deletes a workspace-scoped Netlab server.
 //
-//encore:api auth method=DELETE path=/api/workspaces/:id/netlab/servers/:serverID
+//encore:api auth method=DELETE path=/api/users/:id/netlab/servers/:serverID
 func (s *Service) DeleteWorkspaceNetlabServer(ctx context.Context, id, serverID string) error {
 	_, err := requireWorkspaceOwner(ctx, s, id)
 	if err != nil {
@@ -182,19 +182,19 @@ type WorkspaceEveServerConfig struct {
 }
 
 type WorkspaceEveServersResponse struct {
-	WorkspaceID string                     `json:"workspaceId"`
+	WorkspaceID string                     `json:"userId"`
 	Servers     []WorkspaceEveServerConfig `json:"servers"`
 }
 
 // ListWorkspaceEveServers returns the configured EVE-NG API endpoints for this workspace.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/eve/servers
+//encore:api auth method=GET path=/api/users/:id/eve/servers
 func (s *Service) ListWorkspaceEveServers(ctx context.Context, id string) (*WorkspaceEveServersResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +225,7 @@ func (s *Service) ListWorkspaceEveServers(ctx context.Context, id string) (*Work
 
 // UpsertWorkspaceEveServer creates or updates a workspace-scoped EVE-NG server.
 //
-//encore:api auth method=PUT path=/api/workspaces/:id/eve/servers
+//encore:api auth method=PUT path=/api/users/:id/eve/servers
 func (s *Service) UpsertWorkspaceEveServer(ctx context.Context, id string, payload *WorkspaceEveServerConfig) (*WorkspaceEveServerConfig, error) {
 	if payload == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("payload required").Err()
@@ -287,7 +287,7 @@ func (s *Service) UpsertWorkspaceEveServer(ctx context.Context, id string, paylo
 
 // DeleteWorkspaceEveServer deletes a workspace-scoped EVE-NG server.
 //
-//encore:api auth method=DELETE path=/api/workspaces/:id/eve/servers/:serverID
+//encore:api auth method=DELETE path=/api/users/:id/eve/servers/:serverID
 func (s *Service) DeleteWorkspaceEveServer(ctx context.Context, id, serverID string) error {
 	_, err := requireWorkspaceOwner(ctx, s, id)
 	if err != nil {
@@ -301,13 +301,13 @@ func (s *Service) DeleteWorkspaceEveServer(ctx context.Context, id, serverID str
 
 // GetWorkspaceNetlabServerHealth checks the health of a workspace-scoped Netlab API server.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/netlab/servers/:serverID/health
+//encore:api auth method=GET path=/api/users/:id/netlab/servers/:serverID/health
 func (s *Service) GetWorkspaceNetlabServerHealth(ctx context.Context, id, serverID string) (*WorkspaceServerHealthResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

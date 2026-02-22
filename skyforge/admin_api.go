@@ -43,7 +43,7 @@ func (s *Service) GetAdminAudit(ctx context.Context, params *AdminAuditParams) (
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	rows, err := s.db.QueryContext(ctx, `SELECT id, created_at, actor_username, actor_is_admin, COALESCE(impersonated_username,''), action, COALESCE(workspace_id,''), COALESCE(details,'')
+	rows, err := s.db.QueryContext(ctx, `SELECT id, created_at, actor_username, actor_is_admin, COALESCE(impersonated_username,''), action, COALESCE(user_id,''), COALESCE(details,'')
 FROM sf_audit_log ORDER BY created_at DESC LIMIT $1`, limit)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load audit log").Err()

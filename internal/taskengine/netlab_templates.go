@@ -142,7 +142,7 @@ func (e *Engine) giteaDefaultBranch(owner, repo string) string {
 	return branch
 }
 
-func (e *Engine) resolveTemplateRepoForWorkspace(pc *workspaceContext, source string, customRepo string) (templateRepoRef, error) {
+func (e *Engine) resolveTemplateRepoForWorkspace(pc *userContext, source string, customRepo string) (templateRepoRef, error) {
 	if pc == nil {
 		return templateRepoRef{}, fmt.Errorf("workspace context unavailable")
 	}
@@ -262,7 +262,7 @@ func (e *Engine) readGiteaFileBytes(ctx context.Context, owner, repo, filePath, 
 //
 // The bundle root is flattened: the template directory contents are written at the tar root, and
 // the selected topology is renamed to topology.yml.
-func (e *Engine) buildNetlabTopologyBundleB64(ctx context.Context, pc *workspaceContext, templateSource, templateRepo, templatesDir, templateFile string) (string, error) {
+func (e *Engine) buildNetlabTopologyBundleB64(ctx context.Context, pc *userContext, templateSource, templateRepo, templatesDir, templateFile string) (string, error) {
 	if e == nil {
 		return "", fmt.Errorf("engine unavailable")
 	}

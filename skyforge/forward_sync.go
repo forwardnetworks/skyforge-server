@@ -385,7 +385,7 @@ WHERE username=$1 AND id=$2`, username, collectorConfigID).Scan(
 	}, nil
 }
 
-func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *workspaceContext, dep *WorkspaceDeployment) (map[string]any, error) {
+func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *userContext, dep *WorkspaceDeployment) (map[string]any, error) {
 	cfgAny, _ := fromJSONMap(dep.Config)
 	if cfgAny == nil {
 		cfgAny = map[string]any{}
@@ -596,7 +596,7 @@ func isForwardJumpServerMissing(err error) bool {
 	return strings.Contains(msg, "jump server") && strings.Contains(msg, "not found")
 }
 
-func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *workspaceContext, dep *WorkspaceDeployment, logText string) (int, error) {
+func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *userContext, dep *WorkspaceDeployment, logText string) (int, error) {
 	cfgAny, _ := fromJSONMap(dep.Config)
 	if cfgAny == nil {
 		cfgAny = map[string]any{}
@@ -952,6 +952,6 @@ func (s *Service) updateDeploymentConfig(ctx context.Context, workspaceID, deplo
 	_, err = s.db.ExecContext(ctx, `UPDATE sf_deployments SET
   config=$1,
   updated_at=now()
-WHERE workspace_id=$2 AND id=$3`, cfgBytes, workspaceID, deploymentID)
+WHERE user_id=$2 AND id=$3`, cfgBytes, workspaceID, deploymentID)
 	return err
 }

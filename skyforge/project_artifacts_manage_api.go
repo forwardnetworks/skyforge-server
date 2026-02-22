@@ -26,13 +26,13 @@ type WorkspaceArtifactPutObjectResponse struct {
 // This is an object-store-native alternative to the legacy `UploadWorkspaceArtifact`
 // endpoint (which uses Encore's objects SDK and may require bucket subdomain DNS).
 //
-//encore:api auth method=POST path=/api/workspaces/:id/artifacts/object
+//encore:api auth method=POST path=/api/users/:id/artifacts/object
 func (s *Service) PutWorkspaceArtifactObject(ctx context.Context, id string, req *WorkspaceArtifactPutObjectRequest) (*WorkspaceArtifactPutObjectResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -89,13 +89,13 @@ type WorkspaceArtifactDeleteResponse struct {
 
 // DeleteWorkspaceArtifactObject deletes a single artifact object.
 //
-//encore:api auth method=DELETE path=/api/workspaces/:id/artifacts/object
+//encore:api auth method=DELETE path=/api/users/:id/artifacts/object
 func (s *Service) DeleteWorkspaceArtifactObject(ctx context.Context, id string, params *WorkspaceArtifactDeleteParams) (*WorkspaceArtifactDeleteResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -138,13 +138,13 @@ type WorkspaceArtifactCreateFolderResponse struct {
 
 // CreateWorkspaceArtifactFolder creates a "folder" placeholder (zero-byte object with trailing slash).
 //
-//encore:api auth method=POST path=/api/workspaces/:id/artifacts/folder
+//encore:api auth method=POST path=/api/users/:id/artifacts/folder
 func (s *Service) CreateWorkspaceArtifactFolder(ctx context.Context, id string, req *WorkspaceArtifactCreateFolderRequest) (*WorkspaceArtifactCreateFolderResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

@@ -74,13 +74,13 @@ func (s *Service) capacityForwardClientForDeployment(ctx context.Context, userna
 
 // GetWorkspaceDeploymentCapacitySummary returns the latest stored capacity rollups for a deployment.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/capacity/summary
+//encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/capacity/summary
 func (s *Service) GetWorkspaceDeploymentCapacitySummary(ctx context.Context, id, deploymentID string) (*DeploymentCapacitySummaryResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -121,13 +121,13 @@ type capacityRollupRefreshRequest struct {
 
 // RefreshWorkspaceDeploymentCapacityRollups enqueues a background rollup task for the deployment.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/deployments/:deploymentID/capacity/rollups/refresh
+//encore:api auth method=POST path=/api/users/:id/deployments/:deploymentID/capacity/rollups/refresh
 func (s *Service) RefreshWorkspaceDeploymentCapacityRollups(ctx context.Context, id, deploymentID string, req *capacityRollupRefreshRequest) (*DeploymentCapacityRefreshResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -188,13 +188,13 @@ type CapacityInterfaceMetricsQuery struct {
 
 // GetWorkspaceDeploymentCapacityInterfaceMetrics proxies Forward's interface-metrics endpoint.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/capacity/perf/interface-metrics
+//encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/capacity/perf/interface-metrics
 func (s *Service) GetWorkspaceDeploymentCapacityInterfaceMetrics(ctx context.Context, id, deploymentID string, q *CapacityInterfaceMetricsQuery) (*CapacityPerfProxyResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -263,13 +263,13 @@ type fwdInterfaceMetricsHistoryPayload struct {
 
 // PostWorkspaceDeploymentCapacityInterfaceMetricsHistory proxies Forward's interface-metrics-history endpoint.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/deployments/:deploymentID/capacity/perf/interface-metrics-history
+//encore:api auth method=POST path=/api/users/:id/deployments/:deploymentID/capacity/perf/interface-metrics-history
 func (s *Service) PostWorkspaceDeploymentCapacityInterfaceMetricsHistory(ctx context.Context, id, deploymentID string, req *capacityInterfaceMetricsHistoryRequest) (*CapacityPerfProxyResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -322,13 +322,13 @@ type CapacityDeviceMetricsQuery struct {
 
 // GetWorkspaceDeploymentCapacityDeviceMetrics proxies Forward's device-metrics endpoint.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/capacity/perf/device-metrics
+//encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/capacity/perf/device-metrics
 func (s *Service) GetWorkspaceDeploymentCapacityDeviceMetrics(ctx context.Context, id, deploymentID string, q *CapacityDeviceMetricsQuery) (*CapacityPerfProxyResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -385,13 +385,13 @@ type fwdDeviceSetPayload struct {
 
 // PostWorkspaceDeploymentCapacityDeviceMetricsHistory proxies Forward's device-metrics-history endpoint.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/deployments/:deploymentID/capacity/perf/device-metrics-history
+//encore:api auth method=POST path=/api/users/:id/deployments/:deploymentID/capacity/perf/device-metrics-history
 func (s *Service) PostWorkspaceDeploymentCapacityDeviceMetricsHistory(ctx context.Context, id, deploymentID string, req *capacityDeviceSet) (*CapacityPerfProxyResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -443,13 +443,13 @@ type CapacityUnhealthyDevicesQuery struct {
 
 // GetWorkspaceDeploymentCapacityUnhealthyDevices proxies Forward's unhealthy-devices endpoint.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/capacity/perf/unhealthy-devices
+//encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/capacity/perf/unhealthy-devices
 func (s *Service) GetWorkspaceDeploymentCapacityUnhealthyDevices(ctx context.Context, id, deploymentID string, q *CapacityUnhealthyDevicesQuery) (*CapacityPerfProxyResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -492,13 +492,13 @@ type CapacityUnhealthyInterfacesRequest struct {
 
 // GetWorkspaceDeploymentCapacityUnhealthyInterfaces proxies Forward's unhealthy-interfaces endpoint.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/deployments/:deploymentID/capacity/perf/unhealthy-interfaces
+//encore:api auth method=POST path=/api/users/:id/deployments/:deploymentID/capacity/perf/unhealthy-interfaces
 func (s *Service) GetWorkspaceDeploymentCapacityUnhealthyInterfaces(ctx context.Context, id, deploymentID string, req *CapacityUnhealthyInterfacesRequest) (*CapacityPerfProxyResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -548,7 +548,7 @@ func loadLatestCapacityRollups(ctx context.Context, db *sql.DB, workspaceID, dep
 	var periodEnd time.Time
 	err := db.QueryRowContext(ctxReq, `SELECT COALESCE(MAX(period_end), 'epoch'::timestamptz)
 FROM sf_capacity_rollups
-WHERE workspace_id=$1 AND deployment_id=$2`, workspaceID, deploymentID).Scan(&periodEnd)
+WHERE user_id=$1 AND deployment_id=$2`, workspaceID, deploymentID).Scan(&periodEnd)
 	if err != nil {
 		return time.Time{}, nil, err
 	}
@@ -558,7 +558,7 @@ WHERE workspace_id=$1 AND deployment_id=$2`, workspaceID, deploymentID).Scan(&pe
 	rows, err := db.QueryContext(ctxReq, `SELECT forward_network_id, object_type, object_id, metric, window_label,
   period_end, samples, avg, p95, p99, max, slope_per_day, forecast_crossing_ts, threshold, details, created_at
 FROM sf_capacity_rollups
-WHERE workspace_id=$1 AND deployment_id=$2 AND period_end=$3
+WHERE user_id=$1 AND deployment_id=$2 AND period_end=$3
 ORDER BY metric, window_label, object_type, object_id`, workspaceID, deploymentID, periodEnd)
 	if err != nil {
 		return time.Time{}, nil, err

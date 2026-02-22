@@ -83,7 +83,7 @@
           "impersonatedUsername": {
             "type": "string"
           },
-          "workspaceId": {
+          "userId": {
             "type": "string"
           }
         },
@@ -94,7 +94,7 @@
           "actorIsAdmin",
           "impersonatedUsername",
           "action",
-          "workspaceId",
+          "userId",
           "details"
         ],
         "type": "object"
@@ -492,10 +492,10 @@
           "threshold": {
             "type": "number"
           },
-          "window": {
+          "userId": {
             "type": "string"
           },
-          "workspaceId": {
+          "window": {
             "type": "string"
           }
         },
@@ -517,7 +517,7 @@
           "createdAt",
           "forwardNetworkId",
           "deploymentId",
-          "workspaceId"
+          "userId"
         ],
         "type": "object"
       },
@@ -751,72 +751,6 @@
         ],
         "type": "object"
       },
-      "skyforge.ElasticToolServiceStatus": {
-        "properties": {
-          "availableReplicas": {
-            "format": "int32",
-            "maximum": 2147483647,
-            "minimum": -2147483648,
-            "type": "integer"
-          },
-          "desiredReplicas": {
-            "format": "int32",
-            "maximum": 2147483647,
-            "minimum": -2147483648,
-            "type": "integer"
-          },
-          "id": {
-            "title": "elasticsearch | kibana\n",
-            "type": "string"
-          },
-          "kind": {
-            "title": "statefulset | deployment\n",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "kind",
-          "desiredReplicas",
-          "availableReplicas"
-        ],
-        "type": "object"
-      },
-      "skyforge.ElasticToolsStatusResponse": {
-        "properties": {
-          "autosleepEnabled": {
-            "type": "boolean"
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "idleMinutes": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "lastActivityAt": {
-            "type": "string"
-          },
-          "now": {
-            "type": "string"
-          },
-          "services": {
-            "items": {
-              "$ref": "#/components/schemas/skyforge.ElasticToolServiceStatus"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "enabled",
-          "autosleepEnabled",
-          "idleMinutes",
-          "now",
-          "lastActivityAt",
-          "services"
-        ],
-        "type": "object"
-      },
       "skyforge.EveFolderInfo": {
         "properties": {
           "mtime": {
@@ -1026,12 +960,12 @@
           "source": {
             "type": "string"
           },
-          "workspaceId": {
+          "userId": {
             "type": "string"
           }
         },
         "required": [
-          "workspaceId",
+          "userId",
           "resourceId",
           "provider",
           "periodStart",
@@ -1076,7 +1010,7 @@
           "source": {
             "type": "string"
           },
-          "workspaceId": {
+          "userId": {
             "type": "string"
           },
           "workspaceName": {
@@ -1085,7 +1019,7 @@
         },
         "required": [
           "id",
-          "workspaceId",
+          "userId",
           "workspaceName",
           "resourceId",
           "provider",
@@ -1188,7 +1122,7 @@
             "format": "date-time",
             "type": "string"
           },
-          "workspaceId": {
+          "userId": {
             "type": "string"
           },
           "workspaceName": {
@@ -1197,7 +1131,7 @@
         },
         "required": [
           "id",
-          "workspaceId",
+          "userId",
           "workspaceName",
           "provider",
           "resourceId",
@@ -1256,12 +1190,12 @@
             },
             "type": "object"
           },
-          "workspaceId": {
+          "userId": {
             "type": "string"
           }
         },
         "required": [
-          "workspaceId",
+          "userId",
           "provider",
           "resourceId",
           "resourceType",
@@ -1299,15 +1233,15 @@
           "unit": {
             "type": "string"
           },
+          "userId": {
+            "type": "string"
+          },
           "value": {
             "type": "number"
-          },
-          "workspaceId": {
-            "type": "string"
           }
         },
         "required": [
-          "workspaceId",
+          "userId",
           "provider",
           "scopeType",
           "scopeId",
@@ -1345,11 +1279,11 @@
           "unit": {
             "type": "string"
           },
+          "userId": {
+            "type": "string"
+          },
           "value": {
             "type": "number"
-          },
-          "workspaceId": {
-            "type": "string"
           },
           "workspaceName": {
             "type": "string"
@@ -1357,7 +1291,7 @@
         },
         "required": [
           "id",
-          "workspaceId",
+          "userId",
           "workspaceName",
           "provider",
           "scopeType",
@@ -1685,221 +1619,6 @@
         ],
         "type": "object"
       },
-      "skyforge.PolicyReportCatalog": {
-        "properties": {
-          "checks": {
-            "items": {
-              "$ref": "#/components/schemas/skyforge.PolicyReportCatalogCheck"
-            },
-            "type": "array"
-          },
-          "version": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "version",
-          "checks"
-        ],
-        "type": "object"
-      },
-      "skyforge.PolicyReportCatalogCheck": {
-        "properties": {
-          "category": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "params": {
-            "items": {
-              "$ref": "#/components/schemas/skyforge.PolicyReportCatalogParam"
-            },
-            "type": "array"
-          },
-          "severity": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "title",
-          "category",
-          "severity",
-          "description",
-          "params"
-        ],
-        "type": "object"
-      },
-      "skyforge.PolicyReportCatalogParam": {
-        "properties": {
-          "default": {
-            "type": "object"
-          },
-          "description": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "required": {
-            "type": "boolean"
-          },
-          "type": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "type",
-          "default",
-          "description",
-          "required"
-        ],
-        "type": "object"
-      },
-      "skyforge.PolicyReportException": {
-        "properties": {
-          "approvedBy": {
-            "type": "string"
-          },
-          "checkId": {
-            "type": "string"
-          },
-          "createdAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "createdBy": {
-            "type": "string"
-          },
-          "expiresAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "findingId": {
-            "type": "string"
-          },
-          "forwardNetworkId": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "justification": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
-          },
-          "ticketUrl": {
-            "type": "string"
-          },
-          "updatedAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "workspaceId": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "workspaceId",
-          "forwardNetworkId",
-          "findingId",
-          "checkId",
-          "status",
-          "justification",
-          "ticketUrl",
-          "expiresAt",
-          "createdBy",
-          "approvedBy",
-          "createdAt",
-          "updatedAt"
-        ],
-        "type": "object"
-      },
-      "skyforge.PolicyReportFlowImpact": {
-        "properties": {
-          "afterDecision": {
-            "type": "string"
-          },
-          "afterIndex": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "afterRule": {
-            "type": "string"
-          },
-          "beforeDecision": {
-            "type": "string"
-          },
-          "beforeIndex": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "beforeRule": {
-            "type": "string"
-          },
-          "changed": {
-            "type": "boolean"
-          },
-          "device": {
-            "type": "string"
-          },
-          "flow": {
-            "$ref": "#/components/schemas/skyforge.PolicyReportFlowTuple"
-          },
-          "reason": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "device",
-          "flow",
-          "beforeDecision",
-          "afterDecision",
-          "beforeRule",
-          "afterRule",
-          "beforeIndex",
-          "afterIndex",
-          "changed",
-          "reason"
-        ],
-        "type": "object"
-      },
-      "skyforge.PolicyReportFlowTuple": {
-        "properties": {
-          "dstIp": {
-            "type": "string"
-          },
-          "dstPort": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "ipProto": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "srcIp": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "srcIp",
-          "dstIp",
-          "ipProto",
-          "dstPort"
-        ],
-        "type": "object"
-      },
       "skyforge.PolicyReportForwardNetwork": {
         "properties": {
           "collectorConfigId": {
@@ -1928,13 +1647,13 @@
             "format": "date-time",
             "type": "string"
           },
-          "workspaceId": {
+          "userId": {
             "type": "string"
           }
         },
         "required": [
           "id",
-          "workspaceId",
+          "userId",
           "forwardNetworkId",
           "name",
           "description",
@@ -1942,366 +1661,6 @@
           "createdBy",
           "createdAt",
           "updatedAt"
-        ],
-        "type": "object"
-      },
-      "skyforge.PolicyReportNQEResponse": {
-        "properties": {
-          "results": {
-            "type": "object"
-          },
-          "snapshotId": {
-            "type": "string"
-          },
-          "total": {
-            "format": "int64",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "snapshotId",
-          "total",
-          "results"
-        ],
-        "type": "object"
-      },
-      "skyforge.PolicyReportPack": {
-        "properties": {
-          "checks": {
-            "items": {
-              "$ref": "#/components/schemas/skyforge.PolicyReportPackCheck"
-            },
-            "type": "array"
-          },
-          "description": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "title",
-          "description",
-          "checks"
-        ],
-        "type": "object"
-      },
-      "skyforge.PolicyReportPackCheck": {
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "parameters": {
-            "$ref": "#/components/schemas/skyforge.JSONMap"
-          }
-        },
-        "required": [
-          "id",
-          "parameters"
-        ],
-        "type": "object"
-      },
-      "skyforge.PolicyReportPackDeltaCheck": {
-        "properties": {
-          "baselineTotal": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "changedCount": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "changedSamples": {
-            "type": "object"
-          },
-          "checkId": {
-            "type": "string"
-          },
-          "compareTotal": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "newCount": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "newSamples": {
-            "type": "object"
-          },
-          "oldSamples": {
-            "type": "object"
-          },
-          "resolvedCount": {
-            "format": "int64",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "checkId",
-          "baselineTotal",
-          "compareTotal",
-          "newCount",
-          "resolvedCount",
-          "changedCount",
-          "newSamples",
-          "oldSamples",
-          "changedSamples"
-        ],
-        "type": "object"
-      },
-      "skyforge.PolicyReportProposedRule": {
-        "properties": {
-          "action": {
-            "title": "PERMIT or DENY\n",
-            "type": "string"
-          },
-          "index": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "ipProto": {
-            "items": {
-              "format": "int64",
-              "type": "integer"
-            },
-            "title": "empty = any\n",
-            "type": "array"
-          },
-          "ipv4Dst": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "ipv4Src": {
-            "items": {
-              "type": "string"
-            },
-            "title": "CIDR strings, empty = any\n",
-            "type": "array"
-          },
-          "tpDst": {
-            "items": {
-              "type": "string"
-            },
-            "title": "entries like \"443\" or \"443-445\"; empty = any\n",
-            "type": "array"
-          }
-        },
-        "required": [
-          "index",
-          "action",
-          "ipv4Src",
-          "ipv4Dst",
-          "ipProto",
-          "tpDst"
-        ],
-        "type": "object"
-      },
-      "skyforge.PolicyReportRecertAssignment": {
-        "properties": {
-          "assigneeUsername": {
-            "type": "string"
-          },
-          "attestedAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "campaignId": {
-            "type": "string"
-          },
-          "checkCategory": {
-            "type": "string"
-          },
-          "checkId": {
-            "type": "string"
-          },
-          "checkSeverity": {
-            "type": "string"
-          },
-          "checkTitle": {
-            "type": "string"
-          },
-          "createdAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "finding": {
-            "type": "object"
-          },
-          "findingAssetKey": {
-            "type": "string"
-          },
-          "findingId": {
-            "type": "string"
-          },
-          "findingRiskReasons": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "findingRiskScore": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "id": {
-            "type": "string"
-          },
-          "justification": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
-          },
-          "updatedAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "workspaceId": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "campaignId",
-          "workspaceId",
-          "findingId",
-          "checkId",
-          "assigneeUsername",
-          "status",
-          "justification",
-          "attestedAt",
-          "finding",
-          "createdAt",
-          "updatedAt",
-          "checkTitle",
-          "checkCategory",
-          "checkSeverity",
-          "findingRiskScore",
-          "findingRiskReasons",
-          "findingAssetKey"
-        ],
-        "type": "object"
-      },
-      "skyforge.PolicyReportRecertCampaign": {
-        "properties": {
-          "createdAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "createdBy": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "dueAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "forwardNetworkId": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "packId": {
-            "type": "string"
-          },
-          "snapshotId": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
-          },
-          "updatedAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "workspaceId": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "workspaceId",
-          "name",
-          "description",
-          "forwardNetworkId",
-          "snapshotId",
-          "packId",
-          "status",
-          "dueAt",
-          "createdBy",
-          "createdAt",
-          "updatedAt"
-        ],
-        "type": "object"
-      },
-      "skyforge.PolicyReportRecertCampaignCounts": {
-        "properties": {
-          "attested": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "pending": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "total": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "waived": {
-            "format": "int64",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "total",
-          "pending",
-          "attested",
-          "waived"
-        ],
-        "type": "object"
-      },
-      "skyforge.PolicyReportRecertCampaignWithCounts": {
-        "properties": {
-          "campaign": {
-            "$ref": "#/components/schemas/skyforge.PolicyReportRecertCampaign"
-          },
-          "counts": {
-            "$ref": "#/components/schemas/skyforge.PolicyReportRecertCampaignCounts"
-          }
-        },
-        "required": [
-          "campaign",
-          "counts"
-        ],
-        "type": "object"
-      },
-      "skyforge.PolicyReportRuleChange": {
-        "properties": {
-          "op": {
-            "title": "ADD, REMOVE, MODIFY\n",
-            "type": "string"
-          },
-          "rule": {
-            "$ref": "#/components/schemas/skyforge.PolicyReportProposedRule"
-          }
-        },
-        "required": [
-          "op",
-          "rule"
         ],
         "type": "object"
       },
@@ -2805,14 +2164,14 @@
           "repository": {
             "type": "string"
           },
-          "workspaceId": {
+          "userId": {
             "type": "string"
           }
         },
         "required": [
           "id",
           "name",
-          "workspaceId",
+          "userId",
           "repository",
           "playbook",
           "description",
@@ -3283,13 +2642,13 @@
           "updatedAt": {
             "type": "string"
           },
-          "workspaceId": {
+          "userId": {
             "type": "string"
           }
         },
         "required": [
           "id",
-          "workspaceId",
+          "userId",
           "name",
           "type",
           "config",
@@ -3629,12 +2988,12 @@
           "updated": {
             "type": "boolean"
           },
-          "workspaceId": {
+          "userId": {
             "type": "string"
           }
         },
         "required": [
-          "workspaceId",
+          "userId",
           "slug",
           "updated",
           "steps",
@@ -3651,9 +3010,6 @@
             "type": "boolean"
           },
           "dnsEnabled": {
-            "type": "boolean"
-          },
-          "elasticEnabled": {
             "type": "boolean"
           },
           "forwardEnabled": {
@@ -3688,8 +3044,7 @@
           "forwardEnabled",
           "netboxEnabled",
           "nautobotEnabled",
-          "dnsEnabled",
-          "elasticEnabled"
+          "dnsEnabled"
         ],
         "type": "object"
       }
@@ -4077,7 +3432,7 @@
             "allowEmptyValue": true,
             "explode": true,
             "in": "query",
-            "name": "workspace_id",
+            "name": "user_id",
             "schema": {
               "type": "string"
             },
@@ -4279,7 +3634,7 @@
             "allowEmptyValue": true,
             "explode": true,
             "in": "query",
-            "name": "workspace_id",
+            "name": "user_id",
             "schema": {
               "type": "string"
             },
@@ -4545,7 +3900,7 @@
             "allowEmptyValue": true,
             "explode": true,
             "in": "query",
-            "name": "workspace_id",
+            "name": "user_id",
             "schema": {
               "type": "string"
             },
@@ -5097,7 +4452,7 @@
         "summary": "PurgeUser removes a user and their state (admin only).\n"
       }
     },
-    "/api/admin/workspaces/sync": {
+    "/api/admin/users/sync": {
       "post": {
         "operationId": "POST:skyforge.SyncWorkspaces",
         "responses": {
@@ -5912,262 +5267,6 @@
         "summary": "DNSToken mints a Technitium session token for the current Skyforge user session.\n"
       }
     },
-    "/api/forward/collector": {
-      "delete": {
-        "operationId": "DELETE:skyforge.ClearUserForwardCollector",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "authorizationKey": {
-                      "type": "string"
-                    },
-                    "baseUrl": {
-                      "type": "string"
-                    },
-                    "collectorId": {
-                      "type": "string"
-                    },
-                    "collectorUsername": {
-                      "type": "string"
-                    },
-                    "configured": {
-                      "type": "boolean"
-                    },
-                    "forwardCollector": {
-                      "$ref": "#/components/schemas/skyforge.ForwardCollectorInfo"
-                    },
-                    "hasJumpCert": {
-                      "type": "boolean"
-                    },
-                    "hasJumpPrivateKey": {
-                      "type": "boolean"
-                    },
-                    "hasPassword": {
-                      "type": "boolean"
-                    },
-                    "runtime": {
-                      "$ref": "#/components/schemas/skyforge.collectorRuntimeStatus"
-                    },
-                    "skipTlsVerify": {
-                      "type": "boolean"
-                    },
-                    "updatedAt": {
-                      "type": "string"
-                    },
-                    "username": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "configured",
-                    "baseUrl",
-                    "skipTlsVerify",
-                    "username",
-                    "collectorId",
-                    "collectorUsername",
-                    "authorizationKey",
-                    "runtime",
-                    "forwardCollector",
-                    "hasPassword",
-                    "hasJumpPrivateKey",
-                    "hasJumpCert",
-                    "updatedAt"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "ClearUserForwardCollector deletes the stored user Forward collector settings.\n"
-      },
-      "get": {
-        "operationId": "GET:skyforge.GetUserForwardCollector",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "authorizationKey": {
-                      "type": "string"
-                    },
-                    "baseUrl": {
-                      "type": "string"
-                    },
-                    "collectorId": {
-                      "type": "string"
-                    },
-                    "collectorUsername": {
-                      "type": "string"
-                    },
-                    "configured": {
-                      "type": "boolean"
-                    },
-                    "forwardCollector": {
-                      "$ref": "#/components/schemas/skyforge.ForwardCollectorInfo"
-                    },
-                    "hasJumpCert": {
-                      "type": "boolean"
-                    },
-                    "hasJumpPrivateKey": {
-                      "type": "boolean"
-                    },
-                    "hasPassword": {
-                      "type": "boolean"
-                    },
-                    "runtime": {
-                      "$ref": "#/components/schemas/skyforge.collectorRuntimeStatus"
-                    },
-                    "skipTlsVerify": {
-                      "type": "boolean"
-                    },
-                    "updatedAt": {
-                      "type": "string"
-                    },
-                    "username": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "configured",
-                    "baseUrl",
-                    "skipTlsVerify",
-                    "username",
-                    "collectorId",
-                    "collectorUsername",
-                    "authorizationKey",
-                    "runtime",
-                    "forwardCollector",
-                    "hasPassword",
-                    "hasJumpPrivateKey",
-                    "hasJumpCert",
-                    "updatedAt"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GetUserForwardCollector returns the authenticated user's Forward collector\nsettings.\n"
-      },
-      "put": {
-        "operationId": "PUT:skyforge.PutUserForwardCollector",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "baseUrl": {
-                    "type": "string"
-                  },
-                  "password": {
-                    "type": "string"
-                  },
-                  "skipTlsVerify": {
-                    "type": "boolean"
-                  },
-                  "username": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "baseUrl",
-                  "skipTlsVerify",
-                  "username",
-                  "password"
-                ],
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "authorizationKey": {
-                      "type": "string"
-                    },
-                    "baseUrl": {
-                      "type": "string"
-                    },
-                    "collectorId": {
-                      "type": "string"
-                    },
-                    "collectorUsername": {
-                      "type": "string"
-                    },
-                    "configured": {
-                      "type": "boolean"
-                    },
-                    "forwardCollector": {
-                      "$ref": "#/components/schemas/skyforge.ForwardCollectorInfo"
-                    },
-                    "hasJumpCert": {
-                      "type": "boolean"
-                    },
-                    "hasJumpPrivateKey": {
-                      "type": "boolean"
-                    },
-                    "hasPassword": {
-                      "type": "boolean"
-                    },
-                    "runtime": {
-                      "$ref": "#/components/schemas/skyforge.collectorRuntimeStatus"
-                    },
-                    "skipTlsVerify": {
-                      "type": "boolean"
-                    },
-                    "updatedAt": {
-                      "type": "string"
-                    },
-                    "username": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "configured",
-                    "baseUrl",
-                    "skipTlsVerify",
-                    "username",
-                    "collectorId",
-                    "collectorUsername",
-                    "authorizationKey",
-                    "runtime",
-                    "forwardCollector",
-                    "hasPassword",
-                    "hasJumpPrivateKey",
-                    "hasJumpCert",
-                    "updatedAt"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "PutUserForwardCollector stores Forward credentials and ensures a per-user\ncollector exists.\n"
-      }
-    },
     "/api/forward/collector-configs": {
       "get": {
         "operationId": "GET:skyforge.ListUserForwardCollectorConfigs",
@@ -6620,189 +5719,6 @@
         "summary": "GetUserForwardCollectorConfigRuntime returns runtime state for a configured\ncollector.\n"
       }
     },
-    "/api/forward/collector/logs": {
-      "get": {
-        "operationId": "GET:skyforge.GetUserCollectorLogs",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": true,
-            "in": "query",
-            "name": "tail",
-            "schema": {
-              "format": "int64",
-              "type": "integer"
-            },
-            "style": "form"
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "logs": {
-                      "type": "string"
-                    },
-                    "podName": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "podName",
-                    "logs"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GetUserCollectorLogs returns recent log lines from the user's in-cluster\ncollector pod.\n"
-      }
-    },
-    "/api/forward/collector/reset": {
-      "post": {
-        "description": "NOTE: This does not delete any existing collector in Forward; it only updates the Skyforge profile.\n",
-        "operationId": "POST:skyforge.ResetUserForwardCollector",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "authorizationKey": {
-                      "type": "string"
-                    },
-                    "baseUrl": {
-                      "type": "string"
-                    },
-                    "collectorId": {
-                      "type": "string"
-                    },
-                    "collectorUsername": {
-                      "type": "string"
-                    },
-                    "configured": {
-                      "type": "boolean"
-                    },
-                    "forwardCollector": {
-                      "$ref": "#/components/schemas/skyforge.ForwardCollectorInfo"
-                    },
-                    "hasJumpCert": {
-                      "type": "boolean"
-                    },
-                    "hasJumpPrivateKey": {
-                      "type": "boolean"
-                    },
-                    "hasPassword": {
-                      "type": "boolean"
-                    },
-                    "runtime": {
-                      "$ref": "#/components/schemas/skyforge.collectorRuntimeStatus"
-                    },
-                    "skipTlsVerify": {
-                      "type": "boolean"
-                    },
-                    "updatedAt": {
-                      "type": "string"
-                    },
-                    "username": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "configured",
-                    "baseUrl",
-                    "skipTlsVerify",
-                    "username",
-                    "collectorId",
-                    "collectorUsername",
-                    "authorizationKey",
-                    "runtime",
-                    "forwardCollector",
-                    "hasPassword",
-                    "hasJumpPrivateKey",
-                    "hasJumpCert",
-                    "updatedAt"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "ResetUserForwardCollector rotates the user's Forward collector by creating a new\none and storing its authorization key.\n"
-      }
-    },
-    "/api/forward/collector/restart": {
-      "post": {
-        "description": "This is used to pull down a newer image when using \\`:latest\\`.\n",
-        "operationId": "POST:skyforge.RestartUserCollector",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "runtime": {
-                      "$ref": "#/components/schemas/skyforge.collectorRuntimeStatus"
-                    }
-                  },
-                  "required": [
-                    "runtime"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "RestartUserCollector triggers a rolling restart of the user's in-cluster\ncollector Deployment.\n"
-      }
-    },
-    "/api/forward/collector/runtime": {
-      "get": {
-        "operationId": "GET:skyforge.GetUserCollectorRuntime",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "runtime": {
-                      "$ref": "#/components/schemas/skyforge.collectorRuntimeStatus"
-                    }
-                  },
-                  "required": [
-                    "runtime"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GetUserCollectorRuntime returns the in-cluster runtime status for the user's\ncollector.\n"
-      }
-    },
     "/api/forward/collectors": {
       "get": {
         "operationId": "GET:skyforge.ListForwardCollectors",
@@ -7034,7 +5950,7 @@
             "allowEmptyValue": true,
             "explode": true,
             "in": "query",
-            "name": "workspace_id",
+            "name": "user_id",
             "schema": {
               "type": "string"
             },
@@ -7066,12 +5982,12 @@
                     "user": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "user",
                     "runs"
                   ],
@@ -7242,7 +6158,7 @@
             "allowEmptyValue": true,
             "explode": true,
             "in": "query",
-            "name": "workspace_id",
+            "name": "user_id",
             "schema": {
               "type": "string"
             },
@@ -7346,13 +6262,13 @@
                     "format": "int64",
                     "type": "integer"
                   },
-                  "workspaceId": {
+                  "userId": {
                     "type": "string"
                   }
                 },
                 "required": [
                   "templateId",
-                  "workspaceId",
+                  "userId",
                   "debug",
                   "dryRun",
                   "diff",
@@ -7382,12 +6298,12 @@
                     "user": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "task",
                     "user"
                   ],
@@ -7424,7 +6340,7 @@
             "allowEmptyValue": true,
             "explode": true,
             "in": "query",
-            "name": "workspace_id",
+            "name": "user_id",
             "schema": {
               "type": "string"
             },
@@ -7450,13 +6366,13 @@
                     "user": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
                     "task_id",
-                    "workspaceId",
+                    "userId",
                     "status",
                     "task",
                     "user"
@@ -7550,7 +6466,7 @@
             "allowEmptyValue": true,
             "explode": true,
             "in": "query",
-            "name": "workspace_id",
+            "name": "user_id",
             "schema": {
               "type": "string"
             },
@@ -7576,13 +6492,13 @@
                     "user": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
                     "task_id",
-                    "workspaceId",
+                    "userId",
                     "output",
                     "user"
                   ],
@@ -8138,117 +7054,6 @@
         "summary": "UpsertSyslogRoute creates/updates a syslog route (admin only).\n"
       }
     },
-    "/api/system/elastic/tools/sleep": {
-      "post": {
-        "operationId": "POST:skyforge.SleepElasticTools",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "status": {
-                      "$ref": "#/components/schemas/skyforge.ElasticToolsStatusResponse"
-                    }
-                  },
-                  "required": [
-                    "status"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "SleepElasticTools scales in-cluster Elasticsearch + Kibana to 0 replicas (admin\nonly).\n"
-      }
-    },
-    "/api/system/elastic/tools/status": {
-      "get": {
-        "operationId": "GET:skyforge.GetElasticToolsStatus",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "autosleepEnabled": {
-                      "type": "boolean"
-                    },
-                    "enabled": {
-                      "type": "boolean"
-                    },
-                    "idleMinutes": {
-                      "format": "int64",
-                      "type": "integer"
-                    },
-                    "lastActivityAt": {
-                      "type": "string"
-                    },
-                    "now": {
-                      "type": "string"
-                    },
-                    "services": {
-                      "items": {
-                        "$ref": "#/components/schemas/skyforge.ElasticToolServiceStatus"
-                      },
-                      "type": "array"
-                    }
-                  },
-                  "required": [
-                    "enabled",
-                    "autosleepEnabled",
-                    "idleMinutes",
-                    "now",
-                    "lastActivityAt",
-                    "services"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GetElasticToolsStatus returns the current sleep/wake status for in-cluster\nElasticsearch + Kibana.\n"
-      }
-    },
-    "/api/system/elastic/tools/wake": {
-      "post": {
-        "operationId": "POST:skyforge.WakeElasticTools",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "status": {
-                      "$ref": "#/components/schemas/skyforge.ElasticToolsStatusResponse"
-                    }
-                  },
-                  "required": [
-                    "status"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "WakeElasticTools scales in-cluster Elasticsearch + Kibana to 1 replica\n(best-effort).\n"
-      }
-    },
     "/api/templates": {
       "get": {
         "operationId": "GET:skyforge.GetTemplates",
@@ -8268,7 +7073,7 @@
             "allowEmptyValue": true,
             "explode": true,
             "in": "query",
-            "name": "workspace_id",
+            "name": "user_id",
             "schema": {
               "type": "string"
             },
@@ -8290,13 +7095,13 @@
                     "user": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
                     "user",
-                    "workspaceId",
+                    "userId",
                     "templates"
                   ],
                   "type": "object"
@@ -9593,246 +8398,6 @@
         "summary": "RotateUserGitDeployKey rotates the user's SSH deploy key.\n"
       }
     },
-    "/api/user/integrations/elastic": {
-      "get": {
-        "operationId": "GET:skyforge.GetUserElasticConfig",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "authType": {
-                      "title": "none | api_key | basic\n",
-                      "type": "string"
-                    },
-                    "basicUsername": {
-                      "type": "string"
-                    },
-                    "configured": {
-                      "type": "boolean"
-                    },
-                    "defaultIndexPrefix": {
-                      "type": "string"
-                    },
-                    "defaultUrl": {
-                      "type": "string"
-                    },
-                    "enabled": {
-                      "type": "boolean"
-                    },
-                    "hasApiKey": {
-                      "type": "boolean"
-                    },
-                    "hasBasicPassword": {
-                      "type": "boolean"
-                    },
-                    "indexPrefix": {
-                      "type": "string"
-                    },
-                    "updatedAt": {
-                      "type": "string"
-                    },
-                    "url": {
-                      "type": "string"
-                    },
-                    "verifyTls": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "enabled",
-                    "configured",
-                    "url",
-                    "indexPrefix",
-                    "authType",
-                    "hasApiKey",
-                    "basicUsername",
-                    "hasBasicPassword",
-                    "verifyTls",
-                    "updatedAt",
-                    "defaultUrl",
-                    "defaultIndexPrefix"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GetUserElasticConfig returns the current user's Elastic integration settings.\n"
-      },
-      "put": {
-        "operationId": "PUT:skyforge.PutUserElasticConfig",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "apiKey": {
-                    "type": "string"
-                  },
-                  "authType": {
-                    "title": "none | api_key | basic\n",
-                    "type": "string"
-                  },
-                  "basicPassword": {
-                    "type": "string"
-                  },
-                  "basicUsername": {
-                    "type": "string"
-                  },
-                  "indexPrefix": {
-                    "type": "string"
-                  },
-                  "url": {
-                    "type": "string"
-                  },
-                  "verifyTls": {
-                    "type": "boolean"
-                  }
-                },
-                "required": [
-                  "url",
-                  "indexPrefix",
-                  "authType",
-                  "apiKey",
-                  "basicUsername",
-                  "basicPassword",
-                  "verifyTls"
-                ],
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "authType": {
-                      "title": "none | api_key | basic\n",
-                      "type": "string"
-                    },
-                    "basicUsername": {
-                      "type": "string"
-                    },
-                    "configured": {
-                      "type": "boolean"
-                    },
-                    "defaultIndexPrefix": {
-                      "type": "string"
-                    },
-                    "defaultUrl": {
-                      "type": "string"
-                    },
-                    "enabled": {
-                      "type": "boolean"
-                    },
-                    "hasApiKey": {
-                      "type": "boolean"
-                    },
-                    "hasBasicPassword": {
-                      "type": "boolean"
-                    },
-                    "indexPrefix": {
-                      "type": "string"
-                    },
-                    "updatedAt": {
-                      "type": "string"
-                    },
-                    "url": {
-                      "type": "string"
-                    },
-                    "verifyTls": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "enabled",
-                    "configured",
-                    "url",
-                    "indexPrefix",
-                    "authType",
-                    "hasApiKey",
-                    "basicUsername",
-                    "hasBasicPassword",
-                    "verifyTls",
-                    "updatedAt",
-                    "defaultUrl",
-                    "defaultIndexPrefix"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "PutUserElasticConfig upserts the user's Elastic integration settings.\n"
-      }
-    },
-    "/api/user/integrations/elastic/clear": {
-      "post": {
-        "operationId": "POST:skyforge.ClearUserElasticConfig",
-        "responses": {
-          "200": {
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "ClearUserElasticConfig removes the user's Elastic integration settings.\n"
-      }
-    },
-    "/api/user/integrations/elastic/test": {
-      "post": {
-        "operationId": "POST:skyforge.TestUserElasticConfig",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "checkedAt": {
-                      "type": "string"
-                    },
-                    "detail": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "title": "ok | error\n",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "status",
-                    "detail",
-                    "checkedAt"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "TestUserElasticConfig does a lightweight health check of the configured Elastic\nendpoint.\n"
-      }
-    },
     "/api/user/integrations/servicenow": {
       "get": {
         "operationId": "GET:skyforge.GetUserServiceNowConfig",
@@ -10718,150 +9283,7 @@
         "summary": "UpdateUserVariableGroup updates a variable group for the current user.\n"
       }
     },
-    "/api/webhooks/events": {
-      "get": {
-        "operationId": "GET:skyforge.ListWebhookEvents",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": true,
-            "in": "query",
-            "name": "limit",
-            "schema": {
-              "type": "string"
-            },
-            "style": "form"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": true,
-            "in": "query",
-            "name": "before_id",
-            "schema": {
-              "type": "string"
-            },
-            "style": "form"
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "events": {
-                      "items": {
-                        "$ref": "#/components/schemas/skyforge.WebhookEvent"
-                      },
-                      "type": "array"
-                    }
-                  },
-                  "required": [
-                    "events"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "ListWebhookEvents returns the current user's webhook inbox.\n"
-      }
-    },
-    "/api/webhooks/events/stream": {
-      "get": {
-        "description": "It emits \"snapshot\" events (JSON payload) whenever new webhook events are ingested for the authenticated user.\n\nQuery params: - limit=1..1000 (default 200)\n",
-        "operationId": "GET:skyforge.WebhookEventsStream",
-        "responses": {
-          "200": {
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "WebhookEventsStream streams the webhook inbox as Server-Sent Events (SSE).\n"
-      }
-    },
-    "/api/webhooks/token": {
-      "get": {
-        "operationId": "GET:skyforge.GetWebhookToken",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "ingestBaseUrl": {
-                      "type": "string"
-                    },
-                    "token": {
-                      "type": "string"
-                    },
-                    "updatedAt": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "token",
-                    "ingestBaseUrl",
-                    "updatedAt"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GetWebhookToken returns the per-user webhook ingest token.\n"
-      }
-    },
-    "/api/webhooks/token/rotate": {
-      "post": {
-        "operationId": "POST:skyforge.RotateWebhookToken",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "ingestBaseUrl": {
-                      "type": "string"
-                    },
-                    "token": {
-                      "type": "string"
-                    },
-                    "updatedAt": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "token",
-                    "ingestBaseUrl",
-                    "updatedAt"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "RotateWebhookToken rotates the per-user webhook ingest token (invalidates the\nold one).\n"
-      }
-    },
-    "/api/workspaces": {
+    "/api/users": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaces",
         "parameters": [
@@ -11185,7 +9607,7 @@
         "summary": "CreateWorkspace provisions a new Skyforge workspace.\n"
       }
     },
-    "/api/workspaces-events": {
+    "/api/users-events": {
       "get": {
         "description": "Query params: - all=true (admin only; default false)\n",
         "operationId": "GET:skyforge.WorkspacesEvents",
@@ -11200,7 +9622,7 @@
         "summary": "WorkspacesEvents streams the workspace list as Server-Sent Events (SSE).\n"
       }
     },
-    "/api/workspaces/{id}": {
+    "/api/users/{id}": {
       "delete": {
         "operationId": "DELETE:skyforge.DeleteWorkspace",
         "parameters": [
@@ -11324,7 +9746,7 @@
         "summary": "DeleteWorkspace deletes a workspace and its backing resources.\n"
       }
     },
-    "/api/workspaces/{id}/artifacts": {
+    "/api/users/{id}/artifacts": {
       "get": {
         "operationId": "GET:skyforge.ListWorkspaceArtifacts",
         "parameters": [
@@ -11378,7 +9800,7 @@
                     "prefix": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     },
                     "workspaceSlug": {
@@ -11386,7 +9808,7 @@
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "workspaceSlug",
                     "artifactsBucket",
                     "prefix",
@@ -11405,7 +9827,7 @@
         "summary": "ListWorkspaceArtifacts lists artifact objects for a workspace.\n"
       }
     },
-    "/api/workspaces/{id}/artifacts/download": {
+    "/api/users/{id}/artifacts/download": {
       "get": {
         "operationId": "GET:skyforge.DownloadWorkspaceArtifact",
         "parameters": [
@@ -11470,7 +9892,7 @@
         "summary": "DownloadWorkspaceArtifact returns a presigned download redirect for the\nartifact.\n"
       }
     },
-    "/api/workspaces/{id}/artifacts/folder": {
+    "/api/users/{id}/artifacts/folder": {
       "post": {
         "operationId": "POST:skyforge.CreateWorkspaceArtifactFolder",
         "parameters": [
@@ -11533,7 +9955,7 @@
         "summary": "CreateWorkspaceArtifactFolder creates a \"folder\" placeholder (zero-byte object\nwith trailing slash).\n"
       }
     },
-    "/api/workspaces/{id}/artifacts/object": {
+    "/api/users/{id}/artifacts/object": {
       "delete": {
         "operationId": "DELETE:skyforge.DeleteWorkspaceArtifactObject",
         "parameters": [
@@ -11665,7 +10087,7 @@
         "summary": "PutWorkspaceArtifactObject writes/overwrites a single artifact object.\n"
       }
     },
-    "/api/workspaces/{id}/artifacts/upload": {
+    "/api/users/{id}/artifacts/upload": {
       "post": {
         "operationId": "POST:skyforge.UploadWorkspaceArtifact",
         "parameters": [
@@ -11723,7 +10145,7 @@
                     "uploadedBy": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     },
                     "workspaceSlug": {
@@ -11734,7 +10156,7 @@
                     "status",
                     "bucket",
                     "key",
-                    "workspaceId",
+                    "userId",
                     "workspaceSlug",
                     "uploadedBy",
                     "uploadedAtUtc"
@@ -11752,7 +10174,7 @@
         "summary": "UploadWorkspaceArtifact uploads or presigns an artifact to the workspace's\nbucket.\n"
       }
     },
-    "/api/workspaces/{id}/cloud/aws-sso": {
+    "/api/users/{id}/cloud/aws-sso": {
       "put": {
         "operationId": "PUT:skyforge.PutWorkspaceAWSSSOConfig",
         "parameters": [
@@ -11831,7 +10253,7 @@
         "summary": "PutWorkspaceAWSSSOConfig stores the AWS SSO account/role for the workspace.\n"
       }
     },
-    "/api/workspaces/{id}/cloud/aws-static": {
+    "/api/users/{id}/cloud/aws-static": {
       "delete": {
         "operationId": "DELETE:skyforge.DeleteWorkspaceAWSStatic",
         "parameters": [
@@ -11986,7 +10408,7 @@
         "summary": "PutWorkspaceAWSStatic stores AWS static credentials.\n"
       }
     },
-    "/api/workspaces/{id}/cloud/azure": {
+    "/api/users/{id}/cloud/azure": {
       "delete": {
         "operationId": "DELETE:skyforge.DeleteWorkspaceAzureCredentials",
         "parameters": [
@@ -12153,7 +10575,7 @@
         "summary": "PutWorkspaceAzureCredentials stores Azure service principal credentials.\n"
       }
     },
-    "/api/workspaces/{id}/cloud/gcp": {
+    "/api/users/{id}/cloud/gcp": {
       "delete": {
         "operationId": "DELETE:skyforge.DeleteWorkspaceGCPCredentials",
         "parameters": [
@@ -12227,14 +10649,14 @@
                     "updatedAt": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
                     "configured",
                     "clientEmail",
-                    "workspaceId",
+                    "userId",
                     "selectedWorkspaceId",
                     "updatedAt"
                   ],
@@ -12273,13 +10695,13 @@
                   "serviceAccountJson": {
                     "type": "string"
                   },
-                  "workspaceId": {
+                  "userId": {
                     "type": "string"
                   }
                 },
                 "required": [
                   "serviceAccountJson",
-                  "workspaceId"
+                  "userId"
                 ],
                 "type": "object"
               }
@@ -12312,7 +10734,7 @@
         "summary": "PutWorkspaceGCPCredentials stores GCP service account JSON.\n"
       }
     },
-    "/api/workspaces/{id}/containerlab/template": {
+    "/api/users/{id}/containerlab/template": {
       "get": {
         "description": "This is used by the Lab Designer \"Import from templates\" feature.\n",
         "operationId": "GET:skyforge.GetWorkspaceContainerlabTemplate",
@@ -12396,7 +10818,7 @@
                     "source": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     },
                     "yaml": {
@@ -12404,7 +10826,7 @@
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "source",
                     "repo",
                     "branch",
@@ -12426,7 +10848,7 @@
         "summary": "GetWorkspaceContainerlabTemplate reads a containerlab YAML template from a\nworkspace/blueprints/external repo.\n"
       }
     },
-    "/api/workspaces/{id}/containerlab/templates": {
+    "/api/users/{id}/containerlab/templates": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceContainerlabTemplates",
         "parameters": [
@@ -12495,12 +10917,12 @@
                       },
                       "type": "array"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "repo",
                     "branch",
                     "dir",
@@ -12519,7 +10941,7 @@
         "summary": "GetWorkspaceContainerlabTemplates lists Containerlab templates for a workspace.\n"
       }
     },
-    "/api/workspaces/{id}/containerlab/topologies": {
+    "/api/users/{id}/containerlab/topologies": {
       "post": {
         "description": "deployed later (e.g. by creating a deployment referencing the file).\n",
         "operationId": "POST:skyforge.SaveContainerlabTopologyYAML",
@@ -12589,12 +11011,12 @@
                     "templatesDir": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "branch",
                     "templatesDir",
                     "template",
@@ -12613,7 +11035,7 @@
         "summary": "SaveContainerlabTopologyYAML writes a containerlab topology YAML into the user's\nworkspace repo so it can be\n"
       }
     },
-    "/api/workspaces/{id}/deployments": {
+    "/api/users/{id}/deployments": {
       "get": {
         "operationId": "GET:skyforge.ListWorkspaceDeployments",
         "parameters": [
@@ -12641,12 +11063,12 @@
                       },
                       "type": "array"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "deployments"
                   ],
                   "type": "object"
@@ -12756,13 +11178,13 @@
                     "updatedAt": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
                     "id",
-                    "workspaceId",
+                    "userId",
                     "name",
                     "type",
                     "config",
@@ -12791,7 +11213,7 @@
         "summary": "CreateWorkspaceDeployment creates a deployment definition for a workspace.\n"
       }
     },
-    "/api/workspaces/{id}/deployments-designer/clabernetes/from-template": {
+    "/api/users/{id}/deployments-designer/clabernetes/from-template": {
       "post": {
         "description": "(no YAML commit step).\n",
         "operationId": "POST:skyforge.CreateClabernetesDeploymentFromTemplate",
@@ -12864,12 +11286,12 @@
                     "run": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "deployment",
                     "run",
                     "note"
@@ -12887,7 +11309,7 @@
         "summary": "CreateClabernetesDeploymentFromTemplate creates a clabernetes deployment\npointing at an existing workspace template YAML\n"
       }
     },
-    "/api/workspaces/{id}/deployments-designer/clabernetes/from-yaml": {
+    "/api/users/{id}/deployments-designer/clabernetes/from-yaml": {
       "post": {
         "description": "creates a \"clabernetes\" deployment referencing that template, and (optionally) queues an initial deploy.\n\nThis is the first-class in-cluster mode (no netlab server required).\n",
         "operationId": "POST:skyforge.CreateClabernetesDeploymentFromYAML",
@@ -12960,12 +11382,12 @@
                     "run": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "deployment",
                     "run",
                     "note"
@@ -12983,7 +11405,7 @@
         "summary": "CreateClabernetesDeploymentFromYAML persists a containerlab topology YAML into\nthe workspace repo,\n"
       }
     },
-    "/api/workspaces/{id}/deployments-designer/containerlab/from-template": {
+    "/api/users/{id}/deployments-designer/containerlab/from-template": {
       "post": {
         "description": "(no YAML commit step).\n",
         "operationId": "POST:skyforge.CreateContainerlabDeploymentFromTemplate",
@@ -13034,12 +11456,12 @@
                     "run": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "deployment",
                     "run",
                     "note"
@@ -13057,7 +11479,7 @@
         "summary": "CreateContainerlabDeploymentFromTemplate creates a containerlab (BYOS)\ndeployment pointing at an existing workspace template YAML\n"
       }
     },
-    "/api/workspaces/{id}/deployments-designer/containerlab/from-yaml": {
+    "/api/users/{id}/deployments-designer/containerlab/from-yaml": {
       "post": {
         "description": "creates a \"containerlab\" deployment referencing that template, and (optionally) queues an initial deploy.\n\nNOTE: containerlab is BYOS mode (requires a workspace netlabServer selection).\n",
         "operationId": "POST:skyforge.CreateContainerlabDeploymentFromYAML",
@@ -13136,12 +11558,12 @@
                     "run": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "deployment",
                     "run",
                     "note"
@@ -13159,7 +11581,7 @@
         "summary": "CreateContainerlabDeploymentFromYAML persists a containerlab topology YAML into\nthe workspace repo,\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}": {
+    "/api/users/{id}/deployments/{deploymentID}": {
       "delete": {
         "operationId": "DELETE:skyforge.DeleteWorkspaceDeployment",
         "parameters": [
@@ -13219,12 +11641,12 @@
                     "run": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "deployment",
                     "run"
                   ],
@@ -13342,13 +11764,13 @@
                     "updatedAt": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
                     "id",
-                    "workspaceId",
+                    "userId",
                     "name",
                     "type",
                     "config",
@@ -13377,7 +11799,7 @@
         "summary": "UpdateWorkspaceDeployment updates an existing deployment definition.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/action": {
+    "/api/users/{id}/deployments/{deploymentID}/action": {
       "post": {
         "operationId": "POST:skyforge.RunWorkspaceDeploymentAction",
         "parameters": [
@@ -13434,12 +11856,12 @@
                     "run": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "deployment",
                     "run"
                   ],
@@ -13456,7 +11878,7 @@
         "summary": "RunWorkspaceDeploymentAction runs a deployment operation with consistent UX\nverbs.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/capacity/growth": {
+    "/api/users/{id}/deployments/{deploymentID}/capacity/growth": {
       "get": {
         "description": "Intended for “top growers” views (week-over-week, day-over-day) without pulling Forward time series.\n",
         "operationId": "GET:skyforge.GetWorkspaceDeploymentCapacityGrowth",
@@ -13569,15 +11991,15 @@
                       },
                       "type": "array"
                     },
-                    "window": {
+                    "userId": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "window": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "deploymentId",
                     "metric",
                     "window",
@@ -13600,7 +12022,7 @@
         "summary": "GetWorkspaceDeploymentCapacityGrowth compares the latest rollup bucket to an\nearlier one and returns deltas.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/capacity/inventory": {
+    "/api/users/{id}/deployments/{deploymentID}/capacity/inventory": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceDeploymentCapacityInventory",
         "parameters": [
@@ -13681,12 +12103,12 @@
                     "snapshotId": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "deploymentId",
                     "forwardNetworkId",
                     "asOf",
@@ -13711,7 +12133,7 @@
         "summary": "GetWorkspaceDeploymentCapacityInventory returns the latest cached NQE results\nfor inventory/routing scale.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/capacity/perf/device-metrics": {
+    "/api/users/{id}/deployments/{deploymentID}/capacity/perf/device-metrics": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceDeploymentCapacityDeviceMetrics",
         "parameters": [
@@ -13817,7 +12239,7 @@
         "summary": "GetWorkspaceDeploymentCapacityDeviceMetrics proxies Forward's device-metrics\nendpoint.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/capacity/perf/device-metrics-history": {
+    "/api/users/{id}/deployments/{deploymentID}/capacity/perf/device-metrics-history": {
       "post": {
         "operationId": "POST:skyforge.PostWorkspaceDeploymentCapacityDeviceMetricsHistory",
         "parameters": [
@@ -13912,7 +12334,7 @@
         "summary": "PostWorkspaceDeploymentCapacityDeviceMetricsHistory proxies Forward's\ndevice-metrics-history endpoint.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/capacity/perf/interface-metrics": {
+    "/api/users/{id}/deployments/{deploymentID}/capacity/perf/interface-metrics": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceDeploymentCapacityInterfaceMetrics",
         "parameters": [
@@ -14038,7 +12460,7 @@
         "summary": "GetWorkspaceDeploymentCapacityInterfaceMetrics proxies Forward's\ninterface-metrics endpoint.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/capacity/perf/interface-metrics-history": {
+    "/api/users/{id}/deployments/{deploymentID}/capacity/perf/interface-metrics-history": {
       "post": {
         "operationId": "POST:skyforge.PostWorkspaceDeploymentCapacityInterfaceMetricsHistory",
         "parameters": [
@@ -14133,7 +12555,7 @@
         "summary": "PostWorkspaceDeploymentCapacityInterfaceMetricsHistory proxies Forward's\ninterface-metrics-history endpoint.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/capacity/perf/unhealthy-devices": {
+    "/api/users/{id}/deployments/{deploymentID}/capacity/perf/unhealthy-devices": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceDeploymentCapacityUnhealthyDevices",
         "parameters": [
@@ -14206,7 +12628,7 @@
         "summary": "GetWorkspaceDeploymentCapacityUnhealthyDevices proxies Forward's\nunhealthy-devices endpoint.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/capacity/perf/unhealthy-interfaces": {
+    "/api/users/{id}/deployments/{deploymentID}/capacity/perf/unhealthy-interfaces": {
       "post": {
         "operationId": "POST:skyforge.GetWorkspaceDeploymentCapacityUnhealthyInterfaces",
         "parameters": [
@@ -14299,7 +12721,7 @@
         "summary": "GetWorkspaceDeploymentCapacityUnhealthyInterfaces proxies Forward's\nunhealthy-interfaces endpoint.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/capacity/rollups/refresh": {
+    "/api/users/{id}/deployments/{deploymentID}/capacity/rollups/refresh": {
       "post": {
         "operationId": "POST:skyforge.RefreshWorkspaceDeploymentCapacityRollups",
         "parameters": [
@@ -14357,12 +12779,12 @@
                     "run": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "deploymentId",
                     "run"
                   ],
@@ -14379,7 +12801,7 @@
         "summary": "RefreshWorkspaceDeploymentCapacityRollups enqueues a background rollup task for\nthe deployment.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/capacity/summary": {
+    "/api/users/{id}/deployments/{deploymentID}/capacity/summary": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceDeploymentCapacitySummary",
         "parameters": [
@@ -14430,12 +12852,12 @@
                     "stale": {
                       "type": "boolean"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "deploymentId",
                     "forwardNetworkId",
                     "asOf",
@@ -14455,7 +12877,7 @@
         "summary": "GetWorkspaceDeploymentCapacitySummary returns the latest stored capacity rollups\nfor a deployment.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/destroy": {
+    "/api/users/{id}/deployments/{deploymentID}/destroy": {
       "post": {
         "operationId": "POST:skyforge.DestroyWorkspaceDeployment",
         "parameters": [
@@ -14494,12 +12916,12 @@
                     "run": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "deployment",
                     "run"
                   ],
@@ -14516,7 +12938,7 @@
         "summary": "DestroyWorkspaceDeployment triggers a destructive run (destroy) for a\ndeployment.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/forward": {
+    "/api/users/{id}/deployments/{deploymentID}/forward": {
       "put": {
         "operationId": "PUT:skyforge.UpdateWorkspaceDeploymentForwardConfig",
         "parameters": [
@@ -14592,12 +13014,12 @@
                     "forwardSnapshotUrl": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "deploymentId",
                     "enabled",
                     "collectorConfigId",
@@ -14618,7 +13040,7 @@
         "summary": "UpdateWorkspaceDeploymentForwardConfig updates the per-deployment Forward toggle\nand collector selection.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/forward/sync": {
+    "/api/users/{id}/deployments/{deploymentID}/forward/sync": {
       "post": {
         "operationId": "POST:skyforge.SyncWorkspaceDeploymentForward",
         "parameters": [
@@ -14657,12 +13079,12 @@
                     "run": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "deploymentId",
                     "run"
                   ],
@@ -14679,7 +13101,7 @@
         "summary": "SyncWorkspaceDeploymentForward enqueues a Forward sync task for the deployment's\nlatest topology.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/info": {
+    "/api/users/{id}/deployments/{deploymentID}/info": {
       "get": {
         "description": "For Netlab deployments, this executes \\`netlab status\\` against the associated Netlab API and returns the output.\n",
         "operationId": "GET:skyforge.GetWorkspaceDeploymentInfo",
@@ -14746,12 +13168,12 @@
                     "status": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "deployment",
                     "provider",
                     "retrievedAt",
@@ -14777,7 +13199,7 @@
         "summary": "GetWorkspaceDeploymentInfo returns provider-specific info for a deployment.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/inventory": {
+    "/api/users/{id}/deployments/{deploymentID}/inventory": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceDeploymentInventory",
         "parameters": [
@@ -14840,13 +13262,13 @@
                       },
                       "type": "array"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
                     "generatedAt",
-                    "workspaceId",
+                    "userId",
                     "deploymentId",
                     "format",
                     "nodes",
@@ -14865,7 +13287,7 @@
         "summary": "GetWorkspaceDeploymentInventory returns a simple inventory of nodes and\nmanagement IPs.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/links/admin": {
+    "/api/users/{id}/deployments/{deploymentID}/links/admin": {
       "post": {
         "operationId": "POST:skyforge.UpdateWorkspaceDeploymentLinkAdmin",
         "parameters": [
@@ -14955,7 +13377,7 @@
         "summary": "UpdateWorkspaceDeploymentLinkAdmin performs administrative link operations\n(up/down) on a topology edge.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/links/capture": {
+    "/api/users/{id}/deployments/{deploymentID}/links/capture": {
       "post": {
         "operationId": "POST:skyforge.CaptureWorkspaceDeploymentLinkPcap",
         "parameters": [
@@ -15083,7 +13505,7 @@
         "summary": "CaptureWorkspaceDeploymentLinkPcap captures a short pcap on a topology link and\nuploads it as a workspace artifact.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/links/impair": {
+    "/api/users/{id}/deployments/{deploymentID}/links/impair": {
       "post": {
         "description": "The impairment is applied \"outside\" of the network OS by executing \\`tc\\` in the clabernetes launcher container (or another non-NOS container in the same pod netns).\n",
         "operationId": "POST:skyforge.SetWorkspaceDeploymentLinkImpairment",
@@ -15201,7 +13623,7 @@
         "summary": "SetWorkspaceDeploymentLinkImpairment applies or clears traffic impairment\nsettings for a single link.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/links/stats": {
+    "/api/users/{id}/deployments/{deploymentID}/links/stats": {
       "get": {
         "description": "This is used to render live link utilization on the topology graph (similar to c9s VSCode extension).\n",
         "operationId": "GET:skyforge.GetWorkspaceDeploymentLinkStats",
@@ -15266,7 +13688,7 @@
         "summary": "GetWorkspaceDeploymentLinkStats returns a snapshot of interface counters for\neach topology edge.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/links/stats/events": {
+    "/api/users/{id}/deployments/{deploymentID}/links/stats/events": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceDeploymentLinkStatsEvents",
         "parameters": [
@@ -15304,7 +13726,7 @@
         "summary": "GetWorkspaceDeploymentLinkStatsEvents streams link stats snapshots as SSE.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/netlab-graph": {
+    "/api/users/{id}/deployments/{deploymentID}/netlab-graph": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceDeploymentNetlabGraph",
         "parameters": [
@@ -15365,7 +13787,7 @@
         "summary": "GetWorkspaceDeploymentNetlabGraph returns a rendered netlab topology graph for a\ndeployment.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/netlab/connect": {
+    "/api/users/{id}/deployments/{deploymentID}/netlab/connect": {
       "post": {
         "description": "This is an alternative to local SSH ProxyJump when clients can't reach the lab network.\n",
         "operationId": "POST:skyforge.NetlabConnect",
@@ -15443,7 +13865,7 @@
         "summary": "NetlabConnect executes `netlab connect` on the Netlab runner host and returns\nits output.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/nodes/{node}/describe": {
+    "/api/users/{id}/deployments/{deploymentID}/nodes/{node}/describe": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceDeploymentNodeDescribe",
         "parameters": [
@@ -15542,7 +13964,7 @@
         "summary": "GetWorkspaceDeploymentNodeDescribe returns a lightweight summary of the\nclabernetes node pod.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/nodes/{node}/interfaces": {
+    "/api/users/{id}/deployments/{deploymentID}/nodes/{node}/interfaces": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceDeploymentNodeInterfaces",
         "parameters": [
@@ -15625,7 +14047,7 @@
         "summary": "GetWorkspaceDeploymentNodeInterfaces returns interface stats (launcher\ncontainer) for a clabernetes node.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/nodes/{node}/logs": {
+    "/api/users/{id}/deployments/{deploymentID}/nodes/{node}/logs": {
       "get": {
         "description": "This powers the \"View logs\" action in the topology UI (similar to the c9s VSCode extension).\n",
         "operationId": "GET:skyforge.GetWorkspaceDeploymentNodeLogs",
@@ -15728,7 +14150,7 @@
         "summary": "GetWorkspaceDeploymentNodeLogs returns recent log lines for a clabernetes node\npod.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/nodes/{node}/running-config": {
+    "/api/users/{id}/deployments/{deploymentID}/nodes/{node}/running-config": {
       "get": {
         "description": "Currently supports EOS/cEOS via \\`Cli -c \"show running-config\"\\`.\n",
         "operationId": "GET:skyforge.GetWorkspaceDeploymentNodeRunningConfig",
@@ -15821,7 +14243,7 @@
         "summary": "GetWorkspaceDeploymentNodeRunningConfig fetches the running config from a NOS\nnode (best-effort).\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/nodes/{node}/save-config": {
+    "/api/users/{id}/deployments/{deploymentID}/nodes/{node}/save-config": {
       "post": {
         "description": "For EOS/cEOS, this runs \\`write memory\\`.\n",
         "operationId": "POST:skyforge.SaveWorkspaceDeploymentNodeConfig",
@@ -15914,7 +14336,7 @@
         "summary": "SaveWorkspaceDeploymentNodeConfig triggers a best-effort \"save config\" operation\non a node.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/start": {
+    "/api/users/{id}/deployments/{deploymentID}/start": {
       "post": {
         "operationId": "POST:skyforge.StartWorkspaceDeployment",
         "parameters": [
@@ -15971,12 +14393,12 @@
                     "run": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "deployment",
                     "run"
                   ],
@@ -15993,7 +14415,7 @@
         "summary": "StartWorkspaceDeployment starts a deployment run.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/stop": {
+    "/api/users/{id}/deployments/{deploymentID}/stop": {
       "post": {
         "operationId": "POST:skyforge.StopWorkspaceDeployment",
         "parameters": [
@@ -16032,12 +14454,12 @@
                     "run": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "deployment",
                     "run"
                   ],
@@ -16054,7 +14476,7 @@
         "summary": "StopWorkspaceDeployment attempts to stop the most recent task for this\ndeployment.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/terminal/ws": {
+    "/api/users/{id}/deployments/{deploymentID}/terminal/ws": {
       "get": {
         "description": "using Kubernetes \\`pods/exec\\` (SPDY) and a WebSocket transport to the browser.\n\nQuery params: - node: required (clabernetes/topologyNode) - container: optional - command: optional (defaults to \"sh\"; for EOS nodes use \"Cli\")\n",
         "operationId": "GET:skyforge.TerminalExecWS",
@@ -16093,7 +14515,7 @@
         "summary": "TerminalExecWS provides an interactive in-browser terminal into\nclabernetes-backed nodes\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/topology": {
+    "/api/users/{id}/deployments/{deploymentID}/topology": {
       "get": {
         "description": "For containerlab, the topology is sourced from the containerlab API after deploy so we can reflect the resolved management IPs.\n",
         "operationId": "GET:skyforge.GetWorkspaceDeploymentTopology",
@@ -16169,7 +14591,7 @@
         "summary": "GetWorkspaceDeploymentTopology returns a lightweight, provider-derived topology\nview.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/ui-events": {
+    "/api/users/{id}/deployments/{deploymentID}/ui-events": {
       "get": {
         "operationId": "GET:skyforge.ListWorkspaceDeploymentUIEvents",
         "parameters": [
@@ -16235,12 +14657,12 @@
                       },
                       "type": "array"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "deploymentId",
                     "events"
                   ],
@@ -16257,7 +14679,7 @@
         "summary": "ListWorkspaceDeploymentUIEvents returns recent UI/graph events for a deployment.\n"
       }
     },
-    "/api/workspaces/{id}/deployments/{deploymentID}/ui-events/events": {
+    "/api/users/{id}/deployments/{deploymentID}/ui-events/events": {
       "get": {
         "operationId": "GET:skyforge.DeploymentUIEventsStream",
         "parameters": [
@@ -16295,7 +14717,7 @@
         "summary": "DeploymentUIEventsStream streams deployment UI events as SSE.\n"
       }
     },
-    "/api/workspaces/{id}/eve/convert": {
+    "/api/users/{id}/eve/convert": {
       "post": {
         "operationId": "POST:skyforge.ConvertWorkspaceEveLab",
         "parameters": [
@@ -16360,18 +14782,18 @@
                     "path": {
                       "type": "string"
                     },
+                    "userId": {
+                      "type": "string"
+                    },
                     "warnings": {
                       "items": {
                         "type": "string"
                       },
                       "type": "array"
-                    },
-                    "workspaceId": {
-                      "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "path",
                     "deployment",
                     "warnings"
@@ -16389,7 +14811,7 @@
         "summary": "ConvertWorkspaceEveLab exports an EVE-NG lab into a Containerlab template.\n"
       }
     },
-    "/api/workspaces/{id}/eve/import": {
+    "/api/users/{id}/eve/import": {
       "post": {
         "operationId": "POST:skyforge.ImportWorkspaceEveLab",
         "parameters": [
@@ -16485,13 +14907,13 @@
                     "updatedAt": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
                     "id",
-                    "workspaceId",
+                    "userId",
                     "name",
                     "type",
                     "config",
@@ -16520,7 +14942,7 @@
         "summary": "ImportWorkspaceEveLab registers an existing EVE-NG lab as a deployment.\n"
       }
     },
-    "/api/workspaces/{id}/eve/labs": {
+    "/api/users/{id}/eve/labs": {
       "get": {
         "operationId": "GET:skyforge.ListWorkspaceEveLabs",
         "parameters": [
@@ -16587,12 +15009,12 @@
                     "server": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "server",
                     "labs",
                     "folders"
@@ -16610,7 +15032,7 @@
         "summary": "ListWorkspaceEveLabs returns EVE-NG labs for import.\n"
       }
     },
-    "/api/workspaces/{id}/eve/servers": {
+    "/api/users/{id}/eve/servers": {
       "get": {
         "operationId": "GET:skyforge.ListWorkspaceEveServers",
         "parameters": [
@@ -16638,12 +15060,12 @@
                       },
                       "type": "array"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "servers"
                   ],
                   "type": "object"
@@ -16772,7 +15194,7 @@
         "summary": "UpsertWorkspaceEveServer creates or updates a workspace-scoped EVE-NG server.\n"
       }
     },
-    "/api/workspaces/{id}/eve/servers/{serverID}": {
+    "/api/users/{id}/eve/servers/{serverID}": {
       "delete": {
         "operationId": "DELETE:skyforge.DeleteWorkspaceEveServer",
         "parameters": [
@@ -16810,7 +15232,7 @@
         "summary": "DeleteWorkspaceEveServer deletes a workspace-scoped EVE-NG server.\n"
       }
     },
-    "/api/workspaces/{id}/forward-networks": {
+    "/api/users/{id}/forward-networks": {
       "get": {
         "operationId": "GET:skyforge.ListWorkspaceForwardNetworks",
         "parameters": [
@@ -16930,13 +15352,13 @@
                       "format": "date-time",
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
                     "id",
-                    "workspaceId",
+                    "userId",
                     "forwardNetworkId",
                     "name",
                     "description",
@@ -16958,7 +15380,7 @@
         "summary": "CreateWorkspaceForwardNetwork stores a Forward network id for a workspace.\n"
       }
     },
-    "/api/workspaces/{id}/forward-networks/{networkRef}": {
+    "/api/users/{id}/forward-networks/{networkRef}": {
       "delete": {
         "operationId": "DELETE:skyforge.DeleteWorkspaceForwardNetwork",
         "parameters": [
@@ -17011,7 +15433,7 @@
         "summary": "DeleteWorkspaceForwardNetwork deletes a saved Forward network (by uuid id or by\nforwardNetworkId).\n"
       }
     },
-    "/api/workspaces/{id}/forward-networks/{networkRef}/capacity/growth": {
+    "/api/users/{id}/forward-networks/{networkRef}/capacity/growth": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceForwardNetworkCapacityGrowth",
         "parameters": [
@@ -17126,15 +15548,15 @@
                       },
                       "type": "array"
                     },
-                    "window": {
+                    "userId": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "window": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "networkRef",
                     "forwardNetworkId",
                     "metric",
@@ -17158,7 +15580,7 @@
         "summary": "GetWorkspaceForwardNetworkCapacityGrowth compares the latest rollup bucket to an\nearlier one and returns deltas.\n"
       }
     },
-    "/api/workspaces/{id}/forward-networks/{networkRef}/capacity/inventory": {
+    "/api/users/{id}/forward-networks/{networkRef}/capacity/inventory": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceForwardNetworkCapacityInventory",
         "parameters": [
@@ -17239,12 +15661,12 @@
                     "snapshotId": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "networkRef",
                     "forwardNetworkId",
                     "asOf",
@@ -17269,7 +15691,7 @@
         "summary": "GetWorkspaceForwardNetworkCapacityInventory returns the latest cached NQE\nresults for inventory/routing scale.\n"
       }
     },
-    "/api/workspaces/{id}/forward-networks/{networkRef}/capacity/perf/device-metrics-history": {
+    "/api/users/{id}/forward-networks/{networkRef}/capacity/perf/device-metrics-history": {
       "post": {
         "operationId": "POST:skyforge.PostWorkspaceForwardNetworkCapacityDeviceMetricsHistory",
         "parameters": [
@@ -17364,7 +15786,7 @@
         "summary": "PostWorkspaceForwardNetworkCapacityDeviceMetricsHistory proxies Forward's\ndevice-metrics-history endpoint.\n"
       }
     },
-    "/api/workspaces/{id}/forward-networks/{networkRef}/capacity/perf/interface-metrics": {
+    "/api/users/{id}/forward-networks/{networkRef}/capacity/perf/interface-metrics": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceForwardNetworkCapacityInterfaceMetrics",
         "parameters": [
@@ -17490,7 +15912,7 @@
         "summary": "GetWorkspaceForwardNetworkCapacityInterfaceMetrics proxies Forward's\ninterface-metrics endpoint.\n"
       }
     },
-    "/api/workspaces/{id}/forward-networks/{networkRef}/capacity/perf/interface-metrics-history": {
+    "/api/users/{id}/forward-networks/{networkRef}/capacity/perf/interface-metrics-history": {
       "post": {
         "operationId": "POST:skyforge.PostWorkspaceForwardNetworkCapacityInterfaceMetricsHistory",
         "parameters": [
@@ -17585,7 +16007,7 @@
         "summary": "PostWorkspaceForwardNetworkCapacityInterfaceMetricsHistory proxies Forward's\ninterface-metrics-history endpoint.\n"
       }
     },
-    "/api/workspaces/{id}/forward-networks/{networkRef}/capacity/perf/unhealthy-devices": {
+    "/api/users/{id}/forward-networks/{networkRef}/capacity/perf/unhealthy-devices": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceForwardNetworkCapacityUnhealthyDevices",
         "parameters": [
@@ -17658,7 +16080,7 @@
         "summary": "GetWorkspaceForwardNetworkCapacityUnhealthyDevices proxies Forward's\nunhealthy-devices endpoint.\n"
       }
     },
-    "/api/workspaces/{id}/forward-networks/{networkRef}/capacity/perf/unhealthy-interfaces": {
+    "/api/users/{id}/forward-networks/{networkRef}/capacity/perf/unhealthy-interfaces": {
       "post": {
         "operationId": "POST:skyforge.PostWorkspaceForwardNetworkCapacityUnhealthyInterfaces",
         "parameters": [
@@ -17751,7 +16173,7 @@
         "summary": "PostWorkspaceForwardNetworkCapacityUnhealthyInterfaces proxies Forward's\nunhealthy-interfaces endpoint.\n"
       }
     },
-    "/api/workspaces/{id}/forward-networks/{networkRef}/capacity/rollups/refresh": {
+    "/api/users/{id}/forward-networks/{networkRef}/capacity/rollups/refresh": {
       "post": {
         "operationId": "POST:skyforge.RefreshWorkspaceForwardNetworkCapacityRollups",
         "parameters": [
@@ -17790,12 +16212,12 @@
                     "run": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "networkRef",
                     "run"
                   ],
@@ -17812,7 +16234,7 @@
         "summary": "RefreshWorkspaceForwardNetworkCapacityRollups enqueues a background rollup task\nfor the saved Forward network.\n"
       }
     },
-    "/api/workspaces/{id}/forward-networks/{networkRef}/capacity/summary": {
+    "/api/users/{id}/forward-networks/{networkRef}/capacity/summary": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceForwardNetworkCapacitySummary",
         "parameters": [
@@ -17863,12 +16285,12 @@
                     "stale": {
                       "type": "boolean"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "networkRef",
                     "forwardNetworkId",
                     "asOf",
@@ -17888,7 +16310,7 @@
         "summary": "GetWorkspaceForwardNetworkCapacitySummary returns the latest stored capacity\nrollups for a saved Forward network.\n"
       }
     },
-    "/api/workspaces/{id}/integrations/forward": {
+    "/api/users/{id}/integrations/forward": {
       "delete": {
         "operationId": "DELETE:skyforge.DeleteWorkspaceForwardConfig",
         "parameters": [
@@ -18025,115 +16447,6 @@
         },
         "summary": "GetWorkspaceForwardConfig returns Forward Networks credentials for a workspace.\n"
       },
-      "post": {
-        "operationId": "POST:skyforge.PostWorkspaceForwardConfig",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "baseUrl": {
-                    "type": "string"
-                  },
-                  "collectorId": {
-                    "type": "string"
-                  },
-                  "collectorUsername": {
-                    "type": "string"
-                  },
-                  "jumpCert": {
-                    "type": "string"
-                  },
-                  "jumpPrivateKey": {
-                    "type": "string"
-                  },
-                  "password": {
-                    "type": "string"
-                  },
-                  "username": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "baseUrl",
-                  "username",
-                  "password",
-                  "collectorId",
-                  "collectorUsername",
-                  "jumpPrivateKey",
-                  "jumpCert"
-                ],
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "baseUrl": {
-                      "type": "string"
-                    },
-                    "collectorId": {
-                      "type": "string"
-                    },
-                    "configured": {
-                      "type": "boolean"
-                    },
-                    "hasJumpCert": {
-                      "type": "boolean"
-                    },
-                    "hasJumpPrivateKey": {
-                      "type": "boolean"
-                    },
-                    "hasPassword": {
-                      "type": "boolean"
-                    },
-                    "updatedAt": {
-                      "type": "string"
-                    },
-                    "username": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "configured",
-                    "baseUrl",
-                    "username",
-                    "collectorId",
-                    "hasPassword",
-                    "hasJumpPrivateKey",
-                    "hasJumpCert",
-                    "updatedAt"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "PostWorkspaceForwardConfig stores Forward Networks credentials for a workspace\n(POST fallback).\n"
-      },
       "put": {
         "operationId": "PUT:skyforge.PutWorkspaceForwardConfig",
         "parameters": [
@@ -18244,7 +16557,7 @@
         "summary": "PutWorkspaceForwardConfig stores Forward Networks credentials for a workspace.\n"
       }
     },
-    "/api/workspaces/{id}/integrations/forward/collectors": {
+    "/api/users/{id}/integrations/forward/collectors": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceForwardCollectors",
         "parameters": [
@@ -18341,7 +16654,7 @@
         "summary": "CreateWorkspaceForwardCollector creates a Forward collector for the workspace.\n"
       }
     },
-    "/api/workspaces/{id}/members": {
+    "/api/users/{id}/members": {
       "put": {
         "operationId": "PUT:skyforge.UpdateWorkspaceMembers",
         "parameters": [
@@ -18616,7 +16929,7 @@
         "summary": "UpdateWorkspaceMembers updates workspace membership.\n"
       }
     },
-    "/api/workspaces/{id}/netlab": {
+    "/api/users/{id}/netlab": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceNetlab",
         "parameters": [
@@ -18647,12 +16960,12 @@
                       },
                       "type": "array"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "netlabServer",
                     "netlabServers"
                   ],
@@ -18900,7 +17213,7 @@
         "summary": "UpdateWorkspaceNetlab updates the workspace's netlab server selection.\n"
       }
     },
-    "/api/workspaces/{id}/netlab/servers": {
+    "/api/users/{id}/netlab/servers": {
       "get": {
         "operationId": "GET:skyforge.ListWorkspaceNetlabServers",
         "parameters": [
@@ -18928,12 +17241,12 @@
                       },
                       "type": "array"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "servers"
                   ],
                   "type": "object"
@@ -19062,7 +17375,7 @@
         "summary": "UpsertWorkspaceNetlabServer creates or updates a workspace-scoped Netlab API\nendpoint.\n"
       }
     },
-    "/api/workspaces/{id}/netlab/servers/{serverID}": {
+    "/api/users/{id}/netlab/servers/{serverID}": {
       "delete": {
         "operationId": "DELETE:skyforge.DeleteWorkspaceNetlabServer",
         "parameters": [
@@ -19100,7 +17413,7 @@
         "summary": "DeleteWorkspaceNetlabServer deletes a workspace-scoped Netlab server.\n"
       }
     },
-    "/api/workspaces/{id}/netlab/servers/{serverID}/health": {
+    "/api/users/{id}/netlab/servers/{serverID}/health": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceNetlabServerHealth",
         "parameters": [
@@ -19161,7 +17474,7 @@
         "summary": "GetWorkspaceNetlabServerHealth checks the health of a workspace-scoped Netlab\nAPI server.\n"
       }
     },
-    "/api/workspaces/{id}/netlab/template": {
+    "/api/users/{id}/netlab/template": {
       "get": {
         "description": "This powers \"View template\" in the deployment creation flow.\n",
         "operationId": "GET:skyforge.GetWorkspaceNetlabTemplate",
@@ -19245,7 +17558,7 @@
                     "template": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     },
                     "yaml": {
@@ -19253,7 +17566,7 @@
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "source",
                     "repo",
                     "branch",
@@ -19275,7 +17588,7 @@
         "summary": "GetWorkspaceNetlabTemplate reads a netlab YAML template from a\nworkspace/blueprints/external repo.\n"
       }
     },
-    "/api/workspaces/{id}/netlab/templates": {
+    "/api/users/{id}/netlab/templates": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceNetlabTemplates",
         "parameters": [
@@ -19353,12 +17666,12 @@
                     "updatedAt": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "repo",
                     "branch",
                     "dir",
@@ -19380,7 +17693,7 @@
         "summary": "GetWorkspaceNetlabTemplates lists Netlab templates for a workspace.\n"
       }
     },
-    "/api/workspaces/{id}/netlab/validate": {
+    "/api/users/{id}/netlab/validate": {
       "post": {
         "description": "This catches missing images, invalid attributes, and missing required plugins/templates.\n",
         "operationId": "POST:skyforge.ValidateWorkspaceNetlabTemplate",
@@ -19455,12 +17768,12 @@
                     "user": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "task",
                     "user"
                   ],
@@ -19477,2007 +17790,7 @@
         "summary": "ValidateWorkspaceNetlabTemplate runs `netlab create` against a selected template\nbundle without deploying it.\n"
       }
     },
-    "/api/workspaces/{id}/policy-reports/catalog": {
-      "get": {
-        "operationId": "GET:skyforge.GetWorkspacePolicyReportCatalog",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "checks": {
-                      "items": {
-                        "$ref": "#/components/schemas/skyforge.PolicyReportCatalogCheck"
-                      },
-                      "type": "array"
-                    },
-                    "version": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "version",
-                    "checks"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GetWorkspacePolicyReportCatalog returns the embedded Policy Reports check\ncatalog.\n"
-      }
-    },
-    "/api/workspaces/{id}/policy-reports/change-planning/simulate": {
-      "post": {
-        "description": "This endpoint is intentionally stubbed for now. Earlier iterations depended on fast-changing NQE output shapes and would become brittle quickly.\n",
-        "operationId": "POST:skyforge.SimulateWorkspacePolicyReportChangePlanning",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "change": {
-                    "$ref": "#/components/schemas/skyforge.PolicyReportRuleChange"
-                  },
-                  "deviceName": {
-                    "title": "optional filter\n",
-                    "type": "string"
-                  },
-                  "firewallsOnly": {
-                    "type": "boolean"
-                  },
-                  "flows": {
-                    "items": {
-                      "$ref": "#/components/schemas/skyforge.PolicyReportFlowTuple"
-                    },
-                    "type": "array"
-                  },
-                  "includeImplicitDefault": {
-                    "type": "boolean"
-                  },
-                  "networkId": {
-                    "type": "string"
-                  },
-                  "snapshotId": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "networkId",
-                  "snapshotId",
-                  "firewallsOnly",
-                  "includeImplicitDefault",
-                  "deviceName",
-                  "flows",
-                  "change"
-                ],
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "changedCount": {
-                      "format": "int64",
-                      "type": "integer"
-                    },
-                    "impacts": {
-                      "items": {
-                        "$ref": "#/components/schemas/skyforge.PolicyReportFlowImpact"
-                      },
-                      "type": "array"
-                    },
-                    "totalDevices": {
-                      "format": "int64",
-                      "type": "integer"
-                    },
-                    "totalFlows": {
-                      "format": "int64",
-                      "type": "integer"
-                    }
-                  },
-                  "required": [
-                    "totalFlows",
-                    "totalDevices",
-                    "changedCount",
-                    "impacts"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "SimulateWorkspacePolicyReportChangePlanning simulates a rule change against a\nset of flows (no config push).\n"
-      }
-    },
-    "/api/workspaces/{id}/policy-reports/checks": {
-      "get": {
-        "operationId": "GET:skyforge.GetWorkspacePolicyReportChecks",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "catalog": {
-                      "$ref": "#/components/schemas/skyforge.PolicyReportCatalog"
-                    },
-                    "checks": {
-                      "items": {
-                        "$ref": "#/components/schemas/skyforge.PolicyReportCatalogCheck"
-                      },
-                      "type": "array"
-                    },
-                    "files": {
-                      "items": {
-                        "type": "string"
-                      },
-                      "type": "array"
-                    }
-                  },
-                  "required": [
-                    "catalog",
-                    "checks",
-                    "files"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GetWorkspacePolicyReportChecks lists known checks (catalog + embedded .nqe\nfiles).\n"
-      }
-    },
-    "/api/workspaces/{id}/policy-reports/checks/run": {
-      "post": {
-        "operationId": "POST:skyforge.RunWorkspacePolicyReportCheck",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "checkId": {
-                    "type": "string"
-                  },
-                  "networkId": {
-                    "type": "string"
-                  },
-                  "parameters": {
-                    "$ref": "#/components/schemas/skyforge.JSONMap"
-                  },
-                  "queryOptions": {
-                    "$ref": "#/components/schemas/skyforge.JSONMap"
-                  },
-                  "snapshotId": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "networkId",
-                  "snapshotId",
-                  "checkId",
-                  "parameters",
-                  "queryOptions"
-                ],
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "results": {
-                      "type": "object"
-                    },
-                    "snapshotId": {
-                      "type": "string"
-                    },
-                    "total": {
-                      "format": "int64",
-                      "type": "integer"
-                    }
-                  },
-                  "required": [
-                    "snapshotId",
-                    "total",
-                    "results"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "RunWorkspacePolicyReportCheck executes an embedded check (.nqe) and returns a\nnormalized response.\n"
-      }
-    },
-    "/api/workspaces/{id}/policy-reports/checks/{checkId}": {
-      "get": {
-        "operationId": "GET:skyforge.GetWorkspacePolicyReportCheck",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "checkId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "check": {
-                      "$ref": "#/components/schemas/skyforge.PolicyReportCatalogCheck"
-                    },
-                    "content": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "check",
-                    "content"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GetWorkspacePolicyReportCheck returns the .nqe file content for a given check.\n"
-      }
-    },
-    "/api/workspaces/{id}/policy-reports/governance/assignments": {
-      "get": {
-        "operationId": "GET:skyforge.ListWorkspacePolicyReportRecertAssignments",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": true,
-            "in": "query",
-            "name": "campaignId",
-            "schema": {
-              "type": "string"
-            },
-            "style": "form"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": true,
-            "in": "query",
-            "name": "status",
-            "schema": {
-              "type": "string"
-            },
-            "style": "form"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": true,
-            "in": "query",
-            "name": "assignee",
-            "schema": {
-              "type": "string"
-            },
-            "style": "form"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": true,
-            "in": "query",
-            "name": "limit",
-            "schema": {
-              "format": "int64",
-              "type": "integer"
-            },
-            "style": "form"
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "assignments": {
-                      "items": {
-                        "$ref": "#/components/schemas/skyforge.PolicyReportRecertAssignment"
-                      },
-                      "type": "array"
-                    }
-                  },
-                  "required": [
-                    "assignments"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "ListWorkspacePolicyReportRecertAssignments lists assignments.\n"
-      }
-    },
-    "/api/workspaces/{id}/policy-reports/governance/assignments/{assignmentId}/attest": {
-      "post": {
-        "operationId": "POST:skyforge.AttestWorkspacePolicyReportRecertAssignment",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "assignmentId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "justification": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "justification"
-                ],
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "ok"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "AttestWorkspacePolicyReportRecertAssignment marks an assignment as attested.\n"
-      }
-    },
-    "/api/workspaces/{id}/policy-reports/governance/assignments/{assignmentId}/waive": {
-      "post": {
-        "operationId": "POST:skyforge.WaiveWorkspacePolicyReportRecertAssignment",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "assignmentId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "justification": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "justification"
-                ],
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "ok"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "WaiveWorkspacePolicyReportRecertAssignment marks an assignment as waived.\n"
-      }
-    },
-    "/api/workspaces/{id}/policy-reports/governance/campaigns": {
-      "get": {
-        "operationId": "GET:skyforge.ListWorkspacePolicyReportRecertCampaigns",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": true,
-            "in": "query",
-            "name": "status",
-            "schema": {
-              "type": "string"
-            },
-            "style": "form"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": true,
-            "in": "query",
-            "name": "limit",
-            "schema": {
-              "format": "int64",
-              "type": "integer"
-            },
-            "style": "form"
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "campaigns": {
-                      "items": {
-                        "$ref": "#/components/schemas/skyforge.PolicyReportRecertCampaignWithCounts"
-                      },
-                      "type": "array"
-                    }
-                  },
-                  "required": [
-                    "campaigns"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "ListWorkspacePolicyReportRecertCampaigns lists recertification campaigns.\n"
-      },
-      "post": {
-        "operationId": "POST:skyforge.CreateWorkspacePolicyReportRecertCampaign",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "description": {
-                    "type": "string"
-                  },
-                  "dueAt": {
-                    "title": "RFC3339\n",
-                    "type": "string"
-                  },
-                  "forwardNetworkId": {
-                    "type": "string"
-                  },
-                  "name": {
-                    "type": "string"
-                  },
-                  "packId": {
-                    "type": "string"
-                  },
-                  "snapshotId": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "name",
-                  "description",
-                  "forwardNetworkId",
-                  "snapshotId",
-                  "packId",
-                  "dueAt"
-                ],
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "campaign": {
-                      "$ref": "#/components/schemas/skyforge.PolicyReportRecertCampaign"
-                    },
-                    "counts": {
-                      "$ref": "#/components/schemas/skyforge.PolicyReportRecertCampaignCounts"
-                    }
-                  },
-                  "required": [
-                    "campaign",
-                    "counts"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "CreateWorkspacePolicyReportRecertCampaign creates a recertification campaign for\na given Forward network/snapshot/pack.\n"
-      }
-    },
-    "/api/workspaces/{id}/policy-reports/governance/campaigns/{campaignId}": {
-      "get": {
-        "operationId": "GET:skyforge.GetWorkspacePolicyReportRecertCampaign",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "campaignId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "campaign": {
-                      "$ref": "#/components/schemas/skyforge.PolicyReportRecertCampaign"
-                    },
-                    "counts": {
-                      "$ref": "#/components/schemas/skyforge.PolicyReportRecertCampaignCounts"
-                    }
-                  },
-                  "required": [
-                    "campaign",
-                    "counts"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GetWorkspacePolicyReportRecertCampaign gets one campaign plus assignment counts.\n"
-      }
-    },
-    "/api/workspaces/{id}/policy-reports/governance/campaigns/{campaignId}/generate": {
-      "post": {
-        "operationId": "POST:skyforge.GenerateWorkspacePolicyReportRecertAssignments",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "campaignId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "assigneeUsername": {
-                    "type": "string"
-                  },
-                  "maxPerCheck": {
-                    "format": "int64",
-                    "type": "integer"
-                  },
-                  "maxTotal": {
-                    "format": "int64",
-                    "type": "integer"
-                  },
-                  "queryOptions": {
-                    "$ref": "#/components/schemas/skyforge.JSONMap"
-                  }
-                },
-                "required": [
-                  "assigneeUsername",
-                  "maxPerCheck",
-                  "maxTotal",
-                  "queryOptions"
-                ],
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "campaignId": {
-                      "type": "string"
-                    },
-                    "created": {
-                      "format": "int64",
-                      "type": "integer"
-                    }
-                  },
-                  "required": [
-                    "campaignId",
-                    "created"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GenerateWorkspacePolicyReportRecertAssignments runs the campaign pack and stores\nresulting findings as assignments.\n"
-      }
-    },
-    "/api/workspaces/{id}/policy-reports/governance/exceptions": {
-      "get": {
-        "operationId": "GET:skyforge.ListWorkspacePolicyReportExceptions",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": true,
-            "in": "query",
-            "name": "forwardNetworkId",
-            "schema": {
-              "type": "string"
-            },
-            "style": "form"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": true,
-            "in": "query",
-            "name": "status",
-            "schema": {
-              "type": "string"
-            },
-            "style": "form"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": true,
-            "in": "query",
-            "name": "limit",
-            "schema": {
-              "format": "int64",
-              "type": "integer"
-            },
-            "style": "form"
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "exceptions": {
-                      "items": {
-                        "$ref": "#/components/schemas/skyforge.PolicyReportException"
-                      },
-                      "type": "array"
-                    }
-                  },
-                  "required": [
-                    "exceptions"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "ListWorkspacePolicyReportExceptions lists exceptions.\n"
-      },
-      "post": {
-        "operationId": "POST:skyforge.CreateWorkspacePolicyReportException",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "checkId": {
-                    "type": "string"
-                  },
-                  "expiresAt": {
-                    "title": "RFC3339\n",
-                    "type": "string"
-                  },
-                  "findingId": {
-                    "type": "string"
-                  },
-                  "forwardNetworkId": {
-                    "type": "string"
-                  },
-                  "justification": {
-                    "type": "string"
-                  },
-                  "ticketUrl": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "forwardNetworkId",
-                  "findingId",
-                  "checkId",
-                  "justification",
-                  "ticketUrl",
-                  "expiresAt"
-                ],
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "approvedBy": {
-                      "type": "string"
-                    },
-                    "checkId": {
-                      "type": "string"
-                    },
-                    "createdAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "createdBy": {
-                      "type": "string"
-                    },
-                    "expiresAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "findingId": {
-                      "type": "string"
-                    },
-                    "forwardNetworkId": {
-                      "type": "string"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "justification": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "type": "string"
-                    },
-                    "ticketUrl": {
-                      "type": "string"
-                    },
-                    "updatedAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "workspaceId": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "workspaceId",
-                    "forwardNetworkId",
-                    "findingId",
-                    "checkId",
-                    "status",
-                    "justification",
-                    "ticketUrl",
-                    "expiresAt",
-                    "createdBy",
-                    "approvedBy",
-                    "createdAt",
-                    "updatedAt"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "CreateWorkspacePolicyReportException proposes an exception for a finding.\n"
-      }
-    },
-    "/api/workspaces/{id}/policy-reports/governance/exceptions/{exceptionId}/approve": {
-      "post": {
-        "operationId": "POST:skyforge.ApproveWorkspacePolicyReportException",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "exceptionId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "ok"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "ApproveWorkspacePolicyReportException approves an exception (owner/admin only).\n"
-      }
-    },
-    "/api/workspaces/{id}/policy-reports/governance/exceptions/{exceptionId}/reject": {
-      "post": {
-        "operationId": "POST:skyforge.RejectWorkspacePolicyReportException",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "exceptionId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "ok"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "RejectWorkspacePolicyReportException rejects an exception (owner/admin only).\n"
-      }
-    },
-    "/api/workspaces/{id}/policy-reports/networks": {
-      "get": {
-        "operationId": "GET:skyforge.ListWorkspacePolicyReportForwardNetworks",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "networks": {
-                      "items": {
-                        "$ref": "#/components/schemas/skyforge.PolicyReportForwardNetwork"
-                      },
-                      "type": "array"
-                    }
-                  },
-                  "required": [
-                    "networks"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "ListWorkspacePolicyReportForwardNetworks lists saved Forward networks for Policy\nReports.\n"
-      },
-      "post": {
-        "operationId": "POST:skyforge.CreateWorkspacePolicyReportForwardNetwork",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "collectorConfigId": {
-                    "type": "string"
-                  },
-                  "description": {
-                    "type": "string"
-                  },
-                  "forwardNetworkId": {
-                    "type": "string"
-                  },
-                  "name": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "forwardNetworkId",
-                  "name",
-                  "description",
-                  "collectorConfigId"
-                ],
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "collectorConfigId": {
-                      "type": "string"
-                    },
-                    "createdAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "createdBy": {
-                      "type": "string"
-                    },
-                    "description": {
-                      "type": "string"
-                    },
-                    "forwardNetworkId": {
-                      "type": "string"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "name": {
-                      "type": "string"
-                    },
-                    "updatedAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
-                    "workspaceId": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "workspaceId",
-                    "forwardNetworkId",
-                    "name",
-                    "description",
-                    "collectorConfigId",
-                    "createdBy",
-                    "createdAt",
-                    "updatedAt"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "CreateWorkspacePolicyReportForwardNetwork stores a Forward network id for Policy\nReports.\n"
-      }
-    },
-    "/api/workspaces/{id}/policy-reports/networks/{forwardNetworkId}/credentials": {
-      "delete": {
-        "operationId": "DELETE:skyforge.DeleteWorkspacePolicyReportForwardNetworkCredentials",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "forwardNetworkId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "ok"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "DeleteWorkspacePolicyReportForwardNetworkCredentials clears the current user's\ncredentials for a Forward network.\n"
-      },
-      "get": {
-        "operationId": "GET:skyforge.GetWorkspacePolicyReportForwardNetworkCredentials",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "forwardNetworkId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "baseUrl": {
-                      "type": "string"
-                    },
-                    "configured": {
-                      "type": "boolean"
-                    },
-                    "hasPassword": {
-                      "type": "boolean"
-                    },
-                    "skipTlsVerify": {
-                      "type": "boolean"
-                    },
-                    "updatedAt": {
-                      "type": "string"
-                    },
-                    "username": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "configured",
-                    "baseUrl",
-                    "skipTlsVerify",
-                    "username",
-                    "hasPassword",
-                    "updatedAt"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GetWorkspacePolicyReportForwardNetworkCredentials returns the current user's\ncredentials status for a Forward network.\n"
-      },
-      "put": {
-        "operationId": "PUT:skyforge.PutWorkspacePolicyReportForwardNetworkCredentials",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "forwardNetworkId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "baseUrl": {
-                    "type": "string"
-                  },
-                  "password": {
-                    "type": "string"
-                  },
-                  "skipTlsVerify": {
-                    "type": "boolean"
-                  },
-                  "username": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "baseUrl",
-                  "skipTlsVerify",
-                  "username",
-                  "password"
-                ],
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "baseUrl": {
-                      "type": "string"
-                    },
-                    "configured": {
-                      "type": "boolean"
-                    },
-                    "hasPassword": {
-                      "type": "boolean"
-                    },
-                    "skipTlsVerify": {
-                      "type": "boolean"
-                    },
-                    "updatedAt": {
-                      "type": "string"
-                    },
-                    "username": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "configured",
-                    "baseUrl",
-                    "skipTlsVerify",
-                    "username",
-                    "hasPassword",
-                    "updatedAt"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "PutWorkspacePolicyReportForwardNetworkCredentials upserts the current user's\ncredentials for a Forward network.\n"
-      }
-    },
-    "/api/workspaces/{id}/policy-reports/networks/{networkRef}": {
-      "delete": {
-        "operationId": "DELETE:skyforge.DeleteWorkspacePolicyReportForwardNetwork",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "networkRef",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "ok"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "DeleteWorkspacePolicyReportForwardNetwork deletes a saved Forward network (by\nuuid id or by forwardNetworkId).\n"
-      }
-    },
-    "/api/workspaces/{id}/policy-reports/nqe": {
-      "post": {
-        "operationId": "POST:skyforge.RunWorkspacePolicyReportNQE",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "networkId": {
-                    "type": "string"
-                  },
-                  "parameters": {
-                    "$ref": "#/components/schemas/skyforge.JSONMap"
-                  },
-                  "query": {
-                    "type": "string"
-                  },
-                  "queryOptions": {
-                    "$ref": "#/components/schemas/skyforge.JSONMap"
-                  },
-                  "snapshotId": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "networkId",
-                  "snapshotId",
-                  "query",
-                  "parameters",
-                  "queryOptions"
-                ],
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "results": {
-                      "type": "object"
-                    },
-                    "snapshotId": {
-                      "type": "string"
-                    },
-                    "total": {
-                      "format": "int64",
-                      "type": "integer"
-                    }
-                  },
-                  "required": [
-                    "snapshotId",
-                    "total",
-                    "results"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "RunWorkspacePolicyReportNQE executes an NQE query and returns a normalized\nresponse.\n"
-      }
-    },
-    "/api/workspaces/{id}/policy-reports/packs": {
-      "get": {
-        "operationId": "GET:skyforge.GetWorkspacePolicyReportPacks",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "packs": {
-                      "items": {
-                        "$ref": "#/components/schemas/skyforge.PolicyReportPack"
-                      },
-                      "type": "array"
-                    },
-                    "version": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "version",
-                    "packs"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GetWorkspacePolicyReportPacks returns the embedded Policy Reports packs\ndefinition.\n"
-      }
-    },
-    "/api/workspaces/{id}/policy-reports/packs/delta": {
-      "post": {
-        "operationId": "POST:skyforge.RunWorkspacePolicyReportPackDelta",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "baselineSnapshotId": {
-                    "type": "string"
-                  },
-                  "compareSnapshotId": {
-                    "type": "string"
-                  },
-                  "maxSamplesPerBucket": {
-                    "format": "int64",
-                    "type": "integer"
-                  },
-                  "networkId": {
-                    "type": "string"
-                  },
-                  "packId": {
-                    "type": "string"
-                  },
-                  "queryOptions": {
-                    "$ref": "#/components/schemas/skyforge.JSONMap"
-                  }
-                },
-                "required": [
-                  "networkId",
-                  "packId",
-                  "baselineSnapshotId",
-                  "compareSnapshotId",
-                  "queryOptions",
-                  "maxSamplesPerBucket"
-                ],
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "baselineSnapshotId": {
-                      "type": "string"
-                    },
-                    "checks": {
-                      "items": {
-                        "$ref": "#/components/schemas/skyforge.PolicyReportPackDeltaCheck"
-                      },
-                      "type": "array"
-                    },
-                    "compareSnapshotId": {
-                      "type": "string"
-                    },
-                    "networkId": {
-                      "type": "string"
-                    },
-                    "packId": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "packId",
-                    "networkId",
-                    "baselineSnapshotId",
-                    "compareSnapshotId",
-                    "checks"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "RunWorkspacePolicyReportPackDelta runs a pack on two snapshots and returns a\nper-check delta summary.\n"
-      }
-    },
-    "/api/workspaces/{id}/policy-reports/packs/run": {
-      "post": {
-        "operationId": "POST:skyforge.RunWorkspacePolicyReportPack",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "networkId": {
-                    "type": "string"
-                  },
-                  "packId": {
-                    "type": "string"
-                  },
-                  "queryOptions": {
-                    "$ref": "#/components/schemas/skyforge.JSONMap"
-                  },
-                  "snapshotId": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "networkId",
-                  "snapshotId",
-                  "packId",
-                  "queryOptions"
-                ],
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "networkId": {
-                      "type": "string"
-                    },
-                    "packId": {
-                      "type": "string"
-                    },
-                    "results": {
-                      "additionalProperties": {
-                        "$ref": "#/components/schemas/skyforge.PolicyReportNQEResponse"
-                      },
-                      "type": "object"
-                    },
-                    "snapshotId": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "packId",
-                    "networkId",
-                    "snapshotId",
-                    "results"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "RunWorkspacePolicyReportPack executes all checks in a pack (serially) and\nreturns per-check results.\n"
-      }
-    },
-    "/api/workspaces/{id}/policy-reports/snapshots": {
-      "get": {
-        "operationId": "GET:skyforge.GetWorkspacePolicyReportSnapshots",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": true,
-            "in": "query",
-            "name": "networkId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "form"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": true,
-            "in": "query",
-            "name": "maxResults",
-            "schema": {
-              "format": "int64",
-              "type": "integer"
-            },
-            "style": "form"
-          },
-          {
-            "allowEmptyValue": true,
-            "explode": true,
-            "in": "query",
-            "name": "snapshotId",
-            "schema": {
-              "type": "string"
-            },
-            "style": "form"
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "body": {
-                      "type": "object"
-                    }
-                  },
-                  "required": [
-                    "body"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GetWorkspacePolicyReportSnapshots lists snapshots for a Forward network.\n"
-      }
-    },
-    "/api/workspaces/{id}/runs/ansible-run": {
+    "/api/users/{id}/runs/ansible-run": {
       "post": {
         "operationId": "POST:skyforge.RunWorkspaceAnsible",
         "parameters": [
@@ -21505,12 +17818,12 @@
                     "user": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "task",
                     "user"
                   ],
@@ -21527,7 +17840,7 @@
         "summary": "RunWorkspaceAnsible triggers an ansible run for a workspace.\n"
       }
     },
-    "/api/workspaces/{id}/runs/containerlab-run": {
+    "/api/users/{id}/runs/containerlab-run": {
       "post": {
         "operationId": "POST:skyforge.RunWorkspaceContainerlab",
         "parameters": [
@@ -21618,12 +17931,12 @@
                     "user": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "task",
                     "user"
                   ],
@@ -21640,7 +17953,7 @@
         "summary": "RunWorkspaceContainerlab triggers a Containerlab run for a workspace.\n"
       }
     },
-    "/api/workspaces/{id}/runs/eve-ng-run": {
+    "/api/users/{id}/runs/eve-ng-run": {
       "post": {
         "operationId": "POST:skyforge.RunWorkspaceEveNg",
         "parameters": [
@@ -21727,12 +18040,12 @@
                     "user": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "task",
                     "user"
                   ],
@@ -21749,7 +18062,7 @@
         "summary": "RunWorkspaceEveNg triggers an EVE-NG lab run for a workspace.\n"
       }
     },
-    "/api/workspaces/{id}/runs/netlab-run": {
+    "/api/users/{id}/runs/netlab-run": {
       "post": {
         "operationId": "POST:skyforge.RunWorkspaceNetlab",
         "parameters": [
@@ -21874,12 +18187,12 @@
                     "user": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "task",
                     "user"
                   ],
@@ -21896,7 +18209,7 @@
         "summary": "RunWorkspaceNetlab triggers a netlab run for a workspace.\n"
       }
     },
-    "/api/workspaces/{id}/runs/terraform-apply": {
+    "/api/users/{id}/runs/terraform-apply": {
       "post": {
         "operationId": "POST:skyforge.RunWorkspaceTerraformApply",
         "parameters": [
@@ -22004,12 +18317,12 @@
                     "user": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "task",
                     "user"
                   ],
@@ -22026,7 +18339,7 @@
         "summary": "RunWorkspaceTerraformApply triggers a terraform apply run for a workspace.\n"
       }
     },
-    "/api/workspaces/{id}/runs/terraform-plan": {
+    "/api/users/{id}/runs/terraform-plan": {
       "post": {
         "operationId": "POST:skyforge.RunWorkspaceTerraformPlan",
         "parameters": [
@@ -22054,12 +18367,12 @@
                     "user": {
                       "type": "string"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "task",
                     "user"
                   ],
@@ -22076,7 +18389,7 @@
         "summary": "RunWorkspaceTerraformPlan triggers a terraform plan run for a workspace.\n"
       }
     },
-    "/api/workspaces/{id}/securetrack/catalog": {
+    "/api/users/{id}/securetrack/catalog": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceSecureTrackCatalog",
         "parameters": [
@@ -22125,7 +18438,7 @@
         "summary": "GetWorkspaceSecureTrackCatalog returns the embedded SecureTrack check catalog.\n"
       }
     },
-    "/api/workspaces/{id}/securetrack/checks": {
+    "/api/users/{id}/securetrack/checks": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceSecureTrackChecks",
         "parameters": [
@@ -22181,7 +18494,7 @@
         "summary": "GetWorkspaceSecureTrackChecks lists known checks (catalog + embedded .nqe\nfiles).\n"
       }
     },
-    "/api/workspaces/{id}/securetrack/checks/run": {
+    "/api/users/{id}/securetrack/checks/run": {
       "post": {
         "operationId": "POST:skyforge.RunWorkspaceSecureTrackCheck",
         "parameters": [
@@ -22265,7 +18578,7 @@
         "summary": "RunWorkspaceSecureTrackCheck executes an embedded check (.nqe) and returns a\nnormalized response.\n"
       }
     },
-    "/api/workspaces/{id}/securetrack/checks/{checkId}": {
+    "/api/users/{id}/securetrack/checks/{checkId}": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceSecureTrackCheck",
         "parameters": [
@@ -22322,7 +18635,7 @@
         "summary": "GetWorkspaceSecureTrackCheck returns the .nqe file content for a given check.\n"
       }
     },
-    "/api/workspaces/{id}/securetrack/nqe": {
+    "/api/users/{id}/securetrack/nqe": {
       "post": {
         "operationId": "POST:skyforge.RunWorkspaceSecureTrackNQE",
         "parameters": [
@@ -22406,7 +18719,7 @@
         "summary": "RunWorkspaceSecureTrackNQE executes an NQE query and returns a normalized\nresponse.\n"
       }
     },
-    "/api/workspaces/{id}/securetrack/packs": {
+    "/api/users/{id}/securetrack/packs": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceSecureTrackPacks",
         "parameters": [
@@ -22455,7 +18768,7 @@
         "summary": "GetWorkspaceSecureTrackPacks returns the embedded SecureTrack packs definition.\n"
       }
     },
-    "/api/workspaces/{id}/securetrack/packs/run": {
+    "/api/users/{id}/securetrack/packs/run": {
       "post": {
         "operationId": "POST:skyforge.RunWorkspaceSecureTrackPack",
         "parameters": [
@@ -22537,7 +18850,7 @@
         "summary": "RunWorkspaceSecureTrackPack executes all checks in a pack (serially) and returns\nper-check results.\n"
       }
     },
-    "/api/workspaces/{id}/securetrack/snapshots": {
+    "/api/users/{id}/securetrack/snapshots": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceSecureTrackSnapshots",
         "parameters": [
@@ -22611,7 +18924,7 @@
         "summary": "GetWorkspaceSecureTrackSnapshots lists snapshots for a Forward network.\n"
       }
     },
-    "/api/workspaces/{id}/settings": {
+    "/api/users/{id}/settings": {
       "put": {
         "operationId": "PUT:skyforge.UpdateWorkspaceSettings",
         "parameters": [
@@ -22689,7 +19002,7 @@
         "summary": "UpdateWorkspaceSettings updates workspace-level feature flags and template repo\nsources.\n"
       }
     },
-    "/api/workspaces/{id}/sync": {
+    "/api/users/{id}/sync": {
       "post": {
         "operationId": "POST:skyforge.SyncWorkspace",
         "parameters": [
@@ -22729,12 +19042,12 @@
                     "updated": {
                       "type": "boolean"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "slug",
                     "updated",
                     "steps",
@@ -22753,7 +19066,7 @@
         "summary": "SyncWorkspace syncs resources for a single workspace.\n"
       }
     },
-    "/api/workspaces/{id}/terraform/templates": {
+    "/api/users/{id}/terraform/templates": {
       "get": {
         "operationId": "GET:skyforge.GetWorkspaceTerraformTemplates",
         "parameters": [
@@ -22822,12 +19135,12 @@
                       },
                       "type": "array"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "repo",
                     "branch",
                     "dir",
@@ -22846,7 +19159,7 @@
         "summary": "GetWorkspaceTerraformTemplates lists Terraform template directories for a\nworkspace.\n"
       }
     },
-    "/api/workspaces/{id}/variable-groups": {
+    "/api/users/{id}/variable-groups": {
       "get": {
         "operationId": "GET:skyforge.ListWorkspaceVariableGroups",
         "parameters": [
@@ -22874,12 +19187,12 @@
                       },
                       "type": "array"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "groups"
                   ],
                   "type": "object"
@@ -22971,7 +19284,7 @@
         "summary": "CreateWorkspaceVariableGroup creates a variable group for a workspace.\n"
       }
     },
-    "/api/workspaces/{id}/variable-groups/{groupID}": {
+    "/api/users/{id}/variable-groups/{groupID}": {
       "delete": {
         "operationId": "DELETE:skyforge.DeleteWorkspaceVariableGroup",
         "parameters": [
@@ -23011,12 +19324,12 @@
                       },
                       "type": "array"
                     },
-                    "workspaceId": {
+                    "userId": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "workspaceId",
+                    "userId",
                     "groups"
                   ],
                   "type": "object"
@@ -23120,7 +19433,7 @@
         "summary": "UpdateWorkspaceVariableGroup updates a variable group for a workspace.\n"
       }
     },
-    "/api/workspaces/{workspaceID}/blueprint/sync": {
+    "/api/users/{workspaceID}/blueprint/sync": {
       "post": {
         "operationId": "POST:skyforge.SyncWorkspaceBlueprint",
         "parameters": [
@@ -23160,6 +19473,149 @@
           }
         },
         "summary": "SyncWorkspaceBlueprint syncs a workspace's blueprint catalog into the repo.\n"
+      }
+    },
+    "/api/webhooks/events": {
+      "get": {
+        "operationId": "GET:skyforge.ListWebhookEvents",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "before_id",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "events": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.WebhookEvent"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "events"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ListWebhookEvents returns the current user's webhook inbox.\n"
+      }
+    },
+    "/api/webhooks/events/stream": {
+      "get": {
+        "description": "It emits \"snapshot\" events (JSON payload) whenever new webhook events are ingested for the authenticated user.\n\nQuery params: - limit=1..1000 (default 200)\n",
+        "operationId": "GET:skyforge.WebhookEventsStream",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "WebhookEventsStream streams the webhook inbox as Server-Sent Events (SSE).\n"
+      }
+    },
+    "/api/webhooks/token": {
+      "get": {
+        "operationId": "GET:skyforge.GetWebhookToken",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "ingestBaseUrl": {
+                      "type": "string"
+                    },
+                    "token": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "token",
+                    "ingestBaseUrl",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWebhookToken returns the per-user webhook ingest token.\n"
+      }
+    },
+    "/api/webhooks/token/rotate": {
+      "post": {
+        "operationId": "POST:skyforge.RotateWebhookToken",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "ingestBaseUrl": {
+                      "type": "string"
+                    },
+                    "token": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "token",
+                    "ingestBaseUrl",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "RotateWebhookToken rotates the per-user webhook ingest token (invalidates the\nold one).\n"
       }
     },
     "/api/yaade/sso": {
@@ -23816,33 +20272,6 @@
         "summary": "CronWorkerHeartbeatBridge triggers the worker heartbeat task.\n"
       }
     },
-    "/internal/bridge/worker/tasks/poll": {
-      "post": {
-        "operationId": "POST:worker.CronProcessQueuedTasksFallbackBridge",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": true,
-            "in": "header",
-            "name": "x-skyforge-internal-token",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "CronProcessQueuedTasksFallbackBridge triggers DB-backed fallback processing for\nqueued tasks.\n"
-      }
-    },
     "/internal/bridge/worker/tasks/reconcile": {
       "post": {
         "operationId": "POST:worker.CronReconcileQueuedTasksBridge",
@@ -24015,21 +20444,6 @@
         }
       }
     },
-    "/internal/elastic/tools/autosleep-tick": {
-      "post": {
-        "description": "This is intended to be called from a CronJob in-cluster using SKYFORGE\\_INTERNAL\\_TOKEN.\n",
-        "operationId": "POST:skyforge.ElasticAutosleepTick",
-        "responses": {
-          "200": {
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "ElasticAutosleepTick checks for inactivity and scales Elastic tools down to 0\nwhen idle.\n"
-      }
-    },
     "/internal/worker/heartbeat": {
       "post": {
         "description": "This is used to detect whether any worker pods are alive when tasks are queued.\n",
@@ -24043,21 +20457,6 @@
           }
         },
         "summary": "CronWorkerHeartbeat upserts a task worker heartbeat for this worker instance.\n"
-      }
-    },
-    "/internal/worker/tasks/poll": {
-      "post": {
-        "description": "appear stuck in \"queued\".\n\nThis avoids the \"queued forever\" failure mode when Pub/Sub delivery is delayed/unavailable. The primary mechanism is still Pub/Sub; this only kicks in after a minimum queued age.\n",
-        "operationId": "POST:worker.CronProcessQueuedTasksFallback",
-        "responses": {
-          "200": {
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "CronProcessQueuedTasksFallback is a DB-backed fallback that starts tasks\ndirectly when they\n"
       }
     },
     "/internal/worker/tasks/reconcile": {

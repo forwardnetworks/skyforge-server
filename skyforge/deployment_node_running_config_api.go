@@ -25,13 +25,13 @@ type DeploymentNodeRunningConfigResponse struct {
 //
 // Currently supports EOS/cEOS via `Cli -c "show running-config"`.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/deployments/:deploymentID/nodes/:node/running-config
+//encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/nodes/:node/running-config
 func (s *Service) GetWorkspaceDeploymentNodeRunningConfig(ctx context.Context, id, deploymentID, node string) (*DeploymentNodeRunningConfigResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

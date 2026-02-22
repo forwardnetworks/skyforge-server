@@ -52,13 +52,13 @@ const defaultForwardBaseURL = "https://fwd.app"
 
 // GetWorkspaceForwardConfig returns Forward Networks credentials for a workspace.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/integrations/forward
+//encore:api auth method=GET path=/api/users/:id/integrations/forward
 func (s *Service) GetWorkspaceForwardConfig(ctx context.Context, id string) (*WorkspaceForwardConfigResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -107,13 +107,13 @@ func (s *Service) GetWorkspaceForwardConfig(ctx context.Context, id string) (*Wo
 
 // PutWorkspaceForwardConfig stores Forward Networks credentials for a workspace.
 //
-//encore:api auth method=PUT path=/api/workspaces/:id/integrations/forward
+//encore:api auth method=PUT path=/api/users/:id/integrations/forward
 func (s *Service) PutWorkspaceForwardConfig(ctx context.Context, id string, req *WorkspaceForwardConfigRequest) (*WorkspaceForwardConfigResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -225,13 +225,13 @@ func (s *Service) PutWorkspaceForwardConfig(ctx context.Context, id string, req 
 
 // GetWorkspaceForwardCollectors lists available Forward collectors for the workspace.
 //
-//encore:api auth method=GET path=/api/workspaces/:id/integrations/forward/collectors
+//encore:api auth method=GET path=/api/users/:id/integrations/forward/collectors
 func (s *Service) GetWorkspaceForwardCollectors(ctx context.Context, id string) (*WorkspaceForwardCollectorsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -264,13 +264,13 @@ func (s *Service) GetWorkspaceForwardCollectors(ctx context.Context, id string) 
 
 // CreateWorkspaceForwardCollector creates a Forward collector for the workspace.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/integrations/forward/collectors
+//encore:api auth method=POST path=/api/users/:id/integrations/forward/collectors
 func (s *Service) CreateWorkspaceForwardCollector(ctx context.Context, id string) (*WorkspaceForwardCollectorCreateResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -302,22 +302,15 @@ func (s *Service) CreateWorkspaceForwardCollector(ctx context.Context, id string
 	}, nil
 }
 
-// PostWorkspaceForwardConfig stores Forward Networks credentials for a workspace (POST fallback).
-//
-//encore:api auth method=POST path=/api/workspaces/:id/integrations/forward
-func (s *Service) PostWorkspaceForwardConfig(ctx context.Context, id string, req *WorkspaceForwardConfigRequest) (*WorkspaceForwardConfigResponse, error) {
-	return s.PutWorkspaceForwardConfig(ctx, id, req)
-}
-
 // DeleteWorkspaceForwardConfig removes Forward Networks credentials for a workspace.
 //
-//encore:api auth method=DELETE path=/api/workspaces/:id/integrations/forward
+//encore:api auth method=DELETE path=/api/users/:id/integrations/forward
 func (s *Service) DeleteWorkspaceForwardConfig(ctx context.Context, id string) (*WorkspaceForwardConfigResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

@@ -27,7 +27,7 @@ func netlabMultilabNumericID(multilabID string) int {
 
 func (s *Service) runNetlabC9sDeploymentAction(
 	ctx context.Context,
-	pc *workspaceContext,
+	pc *userContext,
 	dep *WorkspaceDeployment,
 	envJSON JSONMap,
 	action string,

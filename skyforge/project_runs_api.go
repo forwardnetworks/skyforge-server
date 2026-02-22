@@ -20,7 +20,7 @@ import (
 )
 
 type WorkspaceRunResponse struct {
-	WorkspaceID string  `json:"workspaceId"`
+	WorkspaceID string  `json:"userId"`
 	Task        JSONMap `json:"task"`
 	User        string  `json:"user"`
 }
@@ -38,13 +38,13 @@ type WorkspaceTerraformApplyParams struct {
 
 // RunWorkspaceTerraformPlan triggers a terraform plan run for a workspace.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/runs/terraform-plan
+//encore:api auth method=POST path=/api/users/:id/runs/terraform-plan
 func (s *Service) RunWorkspaceTerraformPlan(ctx context.Context, id string) (*WorkspaceRunResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -167,13 +167,13 @@ func (s *Service) RunWorkspaceTerraformPlan(ctx context.Context, id string) (*Wo
 
 // RunWorkspaceTerraformApply triggers a terraform apply run for a workspace.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/runs/terraform-apply
+//encore:api auth method=POST path=/api/users/:id/runs/terraform-apply
 func (s *Service) RunWorkspaceTerraformApply(ctx context.Context, id string, params *WorkspaceTerraformApplyParams) (*WorkspaceRunResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +338,7 @@ func (s *Service) RunWorkspaceTerraformApply(ctx context.Context, id string, par
 
 // RunWorkspaceAnsible triggers an ansible run for a workspace.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/runs/ansible-run
+//encore:api auth method=POST path=/api/users/:id/runs/ansible-run
 func (s *Service) RunWorkspaceAnsible(ctx context.Context, id string) (*WorkspaceRunResponse, error) {
 	_ = ctx
 	_ = id
@@ -396,13 +396,13 @@ type WorkspaceEveNgRunRequest struct {
 
 // RunWorkspaceNetlab triggers a netlab run for a workspace.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/runs/netlab-run
+//encore:api auth method=POST path=/api/users/:id/runs/netlab-run
 func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *WorkspaceNetlabRunRequest) (*WorkspaceRunResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -609,13 +609,13 @@ func (s *Service) RunWorkspaceNetlab(ctx context.Context, id string, req *Worksp
 
 // RunWorkspaceContainerlab triggers a Containerlab run for a workspace.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/runs/containerlab-run
+//encore:api auth method=POST path=/api/users/:id/runs/containerlab-run
 func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *WorkspaceContainerlabRunRequest) (*WorkspaceRunResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -843,13 +843,13 @@ func (s *Service) RunWorkspaceContainerlab(ctx context.Context, id string, req *
 
 // RunWorkspaceEveNg triggers an EVE-NG lab run for a workspace.
 //
-//encore:api auth method=POST path=/api/workspaces/:id/runs/eve-ng-run
+//encore:api auth method=POST path=/api/users/:id/runs/eve-ng-run
 func (s *Service) RunWorkspaceEveNg(ctx context.Context, id string, req *WorkspaceEveNgRunRequest) (*WorkspaceRunResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
 	}
-	pc, err := s.workspaceContextForUser(user, id)
+	pc, err := s.userContextForUser(user, id)
 	if err != nil {
 		return nil, err
 	}

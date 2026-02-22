@@ -83,7 +83,7 @@ func loadWorkspacesSnapshot(ctx context.Context, svc *Service, claims *SessionCl
 // Query params:
 // - all=true (admin only; default false)
 //
-//encore:api auth raw method=GET path=/api/workspaces-events
+//encore:api auth raw method=GET path=/api/users-events
 func (s *Service) WorkspacesEvents(w http.ResponseWriter, req *http.Request) {
 	if s == nil || s.db == nil || s.sessionManager == nil {
 		http.Error(w, "service unavailable", http.StatusServiceUnavailable)

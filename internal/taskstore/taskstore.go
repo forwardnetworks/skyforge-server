@@ -187,7 +187,7 @@ func createTaskWithActiveCheck(ctx context.Context, db *sql.DB, workspaceID stri
 		msg = sql.NullString{String: message, Valid: true}
 	}
 	row := db.QueryRowContext(ctx, `INSERT INTO sf_tasks (
-  workspace_id,
+  user_id,
   deployment_id,
   task_type,
   priority,
@@ -216,7 +216,7 @@ func CountQueuedDeploymentTasks(ctx context.Context, db *sql.DB, workspaceID str
 	var count int
 	err := db.QueryRowContext(ctx, `SELECT COUNT(*)
 FROM sf_tasks
-WHERE workspace_id=$1
+WHERE user_id=$1
   AND deployment_id=$2
   AND status='queued'`, workspaceID, deploymentID).Scan(&count)
 	if err != nil {
@@ -232,7 +232,7 @@ func HasActiveDeploymentTask(ctx context.Context, db *sql.DB, workspaceID string
 	var count int
 	err := db.QueryRowContext(ctx, `SELECT COUNT(*)
 FROM sf_tasks
-WHERE workspace_id=$1
+WHERE user_id=$1
   AND deployment_id=$2
   AND status IN ('queued','running')`, workspaceID, deploymentID).Scan(&count)
 	if err != nil {
@@ -259,7 +259,7 @@ func findActiveTaskByDedupeKey(ctx context.Context, db *sql.DB, workspaceID stri
 
 	query := `SELECT id
 FROM sf_tasks
-WHERE workspace_id=$1
+WHERE user_id=$1
   AND task_type=$2
   AND status IN ('queued','running')
   AND metadata->>'dedupeKey'=$3`
@@ -404,7 +404,7 @@ func GetTask(ctx context.Context, db *sql.DB, taskID int) (*TaskRecord, error) {
 	if db == nil {
 		return nil, errDBUnavailable
 	}
-	row := db.QueryRowContext(ctx, `SELECT id, workspace_id, deployment_id, task_type, priority, status, message, metadata, created_by, created_at, started_at, finished_at, error
+	row := db.QueryRowContext(ctx, `SELECT id, user_id, deployment_id, task_type, priority, status, message, metadata, created_by, created_at, started_at, finished_at, error
 FROM sf_tasks
 WHERE id=$1`, taskID)
 	rec := TaskRecord{}
