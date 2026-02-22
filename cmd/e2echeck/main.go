@@ -33,28 +33,28 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
-type workspaceCreateRequest struct {
+type userScopeCreateRequest struct {
 	Name      string `json:"name"`
 	Blueprint string `json:"blueprint,omitempty"`
 }
 
-type workspaceResponse struct {
+type userScopeResponse struct {
 	ID   string `json:"id"`
 	Slug string `json:"slug"`
 	Name string `json:"name"`
 }
 
-type createdWorkspaceRecord struct {
+type createdUserScopeRecord struct {
 	BaseURL       string `json:"baseUrl"`
-	WorkspaceID   string `json:"userId"`
-	WorkspaceSlug string `json:"workspaceSlug"`
-	WorkspaceName string `json:"workspaceName"`
+	UserScopeID   string `json:"userId"`
+	UserScopeSlug string `json:"userScopeSlug"`
+	UserScopeName string `json:"userScopeName"`
 	CreatedAt     string `json:"createdAt"`
 }
 
-type listWorkspacesResponse struct {
+type listUserScopesResponse struct {
 	User       string              `json:"user"`
-	Workspaces []workspaceResponse `json:"workspaces"`
+	UserScopes []userScopeResponse `json:"userScopes"`
 }
 
 type netlabValidateRequest struct {
@@ -67,7 +67,7 @@ type netlabValidateRequest struct {
 }
 
 type netlabValidateResponse struct {
-	WorkspaceID string         `json:"userId"`
+	UserScopeID string         `json:"userId"`
 	User        string         `json:"user"`
 	Task        map[string]any `json:"task"`
 }
@@ -80,14 +80,14 @@ type deploymentCreateRequest struct {
 
 type deploymentResponse struct {
 	ID          string         `json:"id"`
-	WorkspaceID string         `json:"userId"`
+	UserScopeID string         `json:"userId"`
 	Name        string         `json:"name"`
 	Type        string         `json:"type"`
 	Config      map[string]any `json:"config,omitempty"`
 }
 
 type deploymentActionResponse struct {
-	WorkspaceID string             `json:"userId"`
+	UserScopeID string             `json:"userId"`
 	Deployment  deploymentResponse `json:"deployment"`
 	Run         map[string]any     `json:"run,omitempty"`
 }
@@ -205,7 +205,7 @@ type netlabDeviceDefaultsCatalog struct {
 	} `json:"sets"`
 }
 
-type workspaceNetlabServerConfig struct {
+type userScopeNetlabServerConfig struct {
 	ID          string `json:"id,omitempty"`
 	Name        string `json:"name,omitempty"`
 	APIURL      string `json:"apiUrl"`
@@ -252,12 +252,12 @@ func getenvBoolOK(key string) (bool, bool) {
 	}
 }
 
-func appendCreatedWorkspace(statusDir string, rec createdWorkspaceRecord) error {
+func appendCreatedUserScope(statusDir string, rec createdUserScopeRecord) error {
 	statusDir = strings.TrimSpace(statusDir)
 	if statusDir == "" {
 		return fmt.Errorf("statusDir missing")
 	}
-	path := filepath.Join(statusDir, "e2e-created-workspaces.jsonl")
+	path := filepath.Join(statusDir, "e2e-created-user-scopes.jsonl")
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
@@ -271,13 +271,13 @@ func appendCreatedWorkspace(statusDir string, rec createdWorkspaceRecord) error 
 	return err
 }
 
-func removeCreatedWorkspace(statusDir string, workspaceID string) error {
+func removeCreatedUserScope(statusDir string, userScopeID string) error {
 	statusDir = strings.TrimSpace(statusDir)
-	workspaceID = strings.TrimSpace(workspaceID)
-	if statusDir == "" || workspaceID == "" {
+	userScopeID = strings.TrimSpace(userScopeID)
+	if statusDir == "" || userScopeID == "" {
 		return nil
 	}
-	path := filepath.Join(statusDir, "e2e-created-workspaces.jsonl")
+	path := filepath.Join(statusDir, "e2e-created-user-scopes.jsonl")
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -292,8 +292,8 @@ func removeCreatedWorkspace(statusDir string, workspaceID string) error {
 		if ln == "" {
 			continue
 		}
-		var rec createdWorkspaceRecord
-		if json.Unmarshal([]byte(ln), &rec) == nil && strings.TrimSpace(rec.WorkspaceID) == workspaceID {
+		var rec createdUserScopeRecord
+		if json.Unmarshal([]byte(ln), &rec) == nil && strings.TrimSpace(rec.UserScopeID) == userScopeID {
 			continue
 		}
 		out = append(out, ln)
@@ -305,20 +305,20 @@ func removeCreatedWorkspace(statusDir string, workspaceID string) error {
 	return os.Rename(tmp, path)
 }
 
-func deleteWorkspaceByID(client *http.Client, baseURL, cookie, workspaceID, workspaceSlug string) error {
+func deleteUserScopeByID(client *http.Client, baseURL, cookie, userScopeID, userScopeSlug string) error {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	workspaceID = strings.TrimSpace(workspaceID)
-	workspaceSlug = strings.TrimSpace(workspaceSlug)
-	if baseURL == "" || workspaceID == "" {
-		return fmt.Errorf("missing baseURL/workspaceID")
+	userScopeID = strings.TrimSpace(userScopeID)
+	userScopeSlug = strings.TrimSpace(userScopeSlug)
+	if baseURL == "" || userScopeID == "" {
+		return fmt.Errorf("missing baseURL/userScopeID")
 	}
-	deleteURL := fmt.Sprintf("%s/api/users/%s?confirm=%s", baseURL, workspaceID, url.QueryEscape(workspaceSlug))
+	deleteURL := fmt.Sprintf("%s/api/users/%s?confirm=%s", baseURL, userScopeID, url.QueryEscape(userScopeSlug))
 	resp, body, err := doJSON(client, http.MethodDelete, deleteURL, nil, map[string]string{"Cookie": cookie})
 	if err != nil {
 		return err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("workspace delete failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return fmt.Errorf("user-scope delete failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	return nil
 }
@@ -399,7 +399,7 @@ func containsSetCI(set map[string]struct{}, v string) bool {
 	return false
 }
 
-func ensureWorkspaceNetlabServer(client *http.Client, baseURL, cookie, workspaceID string) (string, error) {
+func ensureUserScopeNetlabServer(client *http.Client, baseURL, cookie, userScopeID string) (string, error) {
 	apiURL := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_BYOS_NETLAB_API_URL"))
 	if apiURL == "" {
 		return "", fmt.Errorf("SKYFORGE_E2E_BYOS_NETLAB_API_URL is not set")
@@ -409,7 +409,7 @@ func ensureWorkspaceNetlabServer(client *http.Client, baseURL, cookie, workspace
 	apiPassword := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_BYOS_NETLAB_API_PASSWORD"))
 	apiInsecure := getenvBool("SKYFORGE_E2E_BYOS_NETLAB_API_INSECURE", false)
 
-	payload := workspaceNetlabServerConfig{
+	payload := userScopeNetlabServerConfig{
 		Name:        "",
 		APIURL:      apiURL,
 		APIInsecure: apiInsecure,
@@ -417,22 +417,22 @@ func ensureWorkspaceNetlabServer(client *http.Client, baseURL, cookie, workspace
 		APIPassword: apiPassword,
 		APIToken:    apiToken,
 	}
-	url := fmt.Sprintf("%s/api/users/%s/netlab/servers", strings.TrimRight(strings.TrimSpace(baseURL), "/"), strings.TrimSpace(workspaceID))
+	url := fmt.Sprintf("%s/api/users/%s/netlab/servers", strings.TrimRight(strings.TrimSpace(baseURL), "/"), strings.TrimSpace(userScopeID))
 	resp, body, err := doJSON(client, http.MethodPut, url, payload, map[string]string{"Cookie": cookie})
 	if err != nil {
 		return "", err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("upsert workspace netlab server failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return "", fmt.Errorf("upsert user scope netlab server failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
-	var out workspaceNetlabServerConfig
+	var out userScopeNetlabServerConfig
 	if err := json.Unmarshal(body, &out); err != nil {
-		return "", fmt.Errorf("upsert workspace netlab server parse failed: %w", err)
+		return "", fmt.Errorf("upsert user scope netlab server parse failed: %w", err)
 	}
 	if strings.TrimSpace(out.ID) == "" {
-		return "", fmt.Errorf("upsert workspace netlab server returned empty id")
+		return "", fmt.Errorf("upsert user scope netlab server returned empty id")
 	}
-	return "ws:" + strings.TrimSpace(out.ID), nil
+	return "user:" + strings.TrimSpace(out.ID), nil
 }
 
 type e2eTemplate struct {
@@ -1201,7 +1201,7 @@ func parseTaskID(task map[string]any) int {
 	return 0
 }
 
-func waitForTaskFinished(client *http.Client, baseURL string, cookie string, workspaceID string, taskID int, timeout time.Duration) (status string, errMsg string, err error) {
+func waitForTaskFinished(client *http.Client, baseURL string, cookie string, userScopeID string, taskID int, timeout time.Duration) (status string, errMsg string, err error) {
 	if taskID <= 0 {
 		return "", "", fmt.Errorf("invalid task id")
 	}
@@ -1260,7 +1260,7 @@ func waitForTaskFinished(client *http.Client, baseURL string, cookie string, wor
 	for {
 		select {
 		case <-ctx.Done():
-			if output, err := fetchRunOutput(client, baseURL, cookie, workspaceID, taskID); err == nil && strings.TrimSpace(output) != "" {
+			if output, err := fetchRunOutput(client, baseURL, cookie, userScopeID, taskID); err == nil && strings.TrimSpace(output) != "" {
 				fmt.Fprintf(os.Stderr, "--- task %d output ---\n%s\n--- end output ---\n", taskID, output)
 			}
 			return "", "", fmt.Errorf("timeout waiting for task %d", taskID)
@@ -1271,8 +1271,8 @@ func waitForTaskFinished(client *http.Client, baseURL string, cookie string, wor
 		case <-heartbeat.C:
 			fmt.Fprintf(os.Stderr, "WAIT task %d (elapsed %s) lastPoll=%q\n", taskID, time.Since(start).Truncate(time.Second), lastPoll)
 		case <-ticker.C:
-			if strings.TrimSpace(workspaceID) != "" {
-				st, er, state := pollTaskStatus(client, baseURL, cookie, workspaceID, taskID)
+			if strings.TrimSpace(userScopeID) != "" {
+				st, er, state := pollTaskStatus(client, baseURL, cookie, userScopeID, taskID)
 				switch state {
 				case pollTerminal:
 					return st, er, nil
@@ -1303,7 +1303,7 @@ func waitForTaskFinished(client *http.Client, baseURL string, cookie string, wor
 		case line, ok := <-lineCh:
 			if !ok {
 				// Stream ended; fall back to a final poll.
-				st, er, state := pollTaskStatus(client, baseURL, cookie, workspaceID, taskID)
+				st, er, state := pollTaskStatus(client, baseURL, cookie, userScopeID, taskID)
 				if state == pollTerminal {
 					return st, er, nil
 				}
@@ -1351,12 +1351,12 @@ const (
 	pollTerminal
 )
 
-func pollTaskStatus(client *http.Client, baseURL string, cookie string, workspaceID string, taskID int) (status string, errMsg string, state pollState) {
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" || taskID <= 0 {
+func pollTaskStatus(client *http.Client, baseURL string, cookie string, userScopeID string, taskID int) (status string, errMsg string, state pollState) {
+	userScopeID = strings.TrimSpace(userScopeID)
+	if userScopeID == "" || taskID <= 0 {
 		return "", "", pollMissing
 	}
-	url := fmt.Sprintf("%s/api/runs?user_id=%s&limit=25", strings.TrimRight(baseURL, "/"), workspaceID)
+	url := fmt.Sprintf("%s/api/runs?user_id=%s&limit=25", strings.TrimRight(baseURL, "/"), userScopeID)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return "", "", pollMissing
@@ -1405,11 +1405,11 @@ func pollTaskStatus(client *http.Client, baseURL string, cookie string, workspac
 	return "", "", pollMissing
 }
 
-func fetchRunOutput(client *http.Client, baseURL string, cookie string, workspaceID string, taskID int) (string, error) {
+func fetchRunOutput(client *http.Client, baseURL string, cookie string, userScopeID string, taskID int) (string, error) {
 	if taskID <= 0 {
 		return "", fmt.Errorf("invalid task id")
 	}
-	url := fmt.Sprintf("%s/api/runs/%d/output?user_id=%s", strings.TrimRight(baseURL, "/"), taskID, strings.TrimSpace(workspaceID))
+	url := fmt.Sprintf("%s/api/runs/%d/output?user_id=%s", strings.TrimRight(baseURL, "/"), taskID, strings.TrimSpace(userScopeID))
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return "", err
@@ -1782,25 +1782,25 @@ func run() int {
 	}
 	fmt.Printf("OK login: %s\n", username)
 
-	wsReuseID := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_WORKSPACE_ID"))
-	var ws workspaceResponse
+	wsReuseID := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_USER_SCOPE_ID"))
+	var ws userScopeResponse
 	if wsReuseID != "" {
 		resp, body, err := doJSON(client, http.MethodGet, baseURL+"/api/users", nil, map[string]string{"Cookie": cookie})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "workspace list request failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "user scope list request failed: %v\n", err)
 			return 1
 		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			fmt.Fprintf(os.Stderr, "workspace list failed (%d): %s\n", resp.StatusCode, strings.TrimSpace(string(body)))
+			fmt.Fprintf(os.Stderr, "user scope list failed (%d): %s\n", resp.StatusCode, strings.TrimSpace(string(body)))
 			return 1
 		}
-		var lr listWorkspacesResponse
+		var lr listUserScopesResponse
 		if err := json.Unmarshal(body, &lr); err != nil {
-			fmt.Fprintf(os.Stderr, "workspace list parse failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "user scope list parse failed: %v\n", err)
 			return 1
 		}
 		found := false
-		for _, w := range lr.Workspaces {
+		for _, w := range lr.UserScopes {
 			if strings.TrimSpace(w.ID) == wsReuseID {
 				ws = w
 				found = true
@@ -1808,31 +1808,31 @@ func run() int {
 			}
 		}
 		if !found || strings.TrimSpace(ws.ID) == "" {
-			fmt.Fprintf(os.Stderr, "workspace %q not found; set SKYFORGE_E2E_WORKSPACE_ID to an existing workspace id\n", wsReuseID)
+			fmt.Fprintf(os.Stderr, "user scope %q not found; set SKYFORGE_E2E_USER_SCOPE_ID to an existing user scope id\n", wsReuseID)
 			return 1
 		}
-		fmt.Printf("OK workspace reuse: %s (%s)\n", ws.Name, ws.ID)
+		fmt.Printf("OK user scope reuse: %s (%s)\n", ws.Name, ws.ID)
 	} else {
 		wsName := fmt.Sprintf("e2e-%s", time.Now().UTC().Format("20060102-150405"))
 		createURL := baseURL + "/api/users"
-		resp, body, err = doJSON(client, http.MethodPost, createURL, workspaceCreateRequest{Name: wsName}, map[string]string{"Cookie": cookie})
+		resp, body, err = doJSON(client, http.MethodPost, createURL, userScopeCreateRequest{Name: wsName}, map[string]string{"Cookie": cookie})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "workspace create request failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "user-scope create request failed: %v\n", err)
 			return 1
 		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			fmt.Fprintf(os.Stderr, "workspace create failed (%d): %s\n", resp.StatusCode, strings.TrimSpace(string(body)))
+			fmt.Fprintf(os.Stderr, "user-scope create failed (%d): %s\n", resp.StatusCode, strings.TrimSpace(string(body)))
 			return 1
 		}
 		if err := json.Unmarshal(body, &ws); err != nil {
-			fmt.Fprintf(os.Stderr, "workspace create parse failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "user-scope create parse failed: %v\n", err)
 			return 1
 		}
 		if strings.TrimSpace(ws.ID) == "" {
-			fmt.Fprintf(os.Stderr, "workspace create returned empty id: %s\n", strings.TrimSpace(string(body)))
+			fmt.Fprintf(os.Stderr, "user-scope create returned empty id: %s\n", strings.TrimSpace(string(body)))
 			return 1
 		}
-		fmt.Printf("OK workspace create: %s (%s)\n", ws.Name, ws.ID)
+		fmt.Printf("OK user-scope create: %s (%s)\n", ws.Name, ws.ID)
 	}
 
 	var statusRec *e2eStatusRecorder
@@ -1879,31 +1879,31 @@ func run() int {
 		}()
 	}
 
-	workspaceCleanup := true
-	if v, ok := getenvBoolOK("SKYFORGE_E2E_WORKSPACE_CLEANUP"); ok {
-		workspaceCleanup = v
+	userScopeCleanup := true
+	if v, ok := getenvBoolOK("SKYFORGE_E2E_USER_SCOPE_CLEANUP"); ok {
+		userScopeCleanup = v
 	}
 
 	if wsReuseID == "" {
-		_ = appendCreatedWorkspace(statusDir, createdWorkspaceRecord{
+		_ = appendCreatedUserScope(statusDir, createdUserScopeRecord{
 			BaseURL:       strings.TrimRight(baseURL, "/"),
-			WorkspaceID:   ws.ID,
-			WorkspaceSlug: ws.Slug,
-			WorkspaceName: ws.Name,
+			UserScopeID:   ws.ID,
+			UserScopeSlug: ws.Slug,
+			UserScopeName: ws.Name,
 			CreatedAt:     time.Now().UTC().Format(time.RFC3339),
 		})
 	}
 
-	if wsReuseID == "" && workspaceCleanup {
+	if wsReuseID == "" && userScopeCleanup {
 		var deleteOnce sync.Once
 		cleanup := func(reason string) {
 			deleteOnce.Do(func() {
-				if err := deleteWorkspaceByID(client, baseURL, cookie, ws.ID, ws.Slug); err != nil {
-					fmt.Fprintf(os.Stderr, "warning: workspace delete failed (%s): %v\n", reason, err)
+				if err := deleteUserScopeByID(client, baseURL, cookie, ws.ID, ws.Slug); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: user-scope delete failed (%s): %v\n", reason, err)
 					return
 				}
-				_ = removeCreatedWorkspace(statusDir, ws.ID)
-				fmt.Printf("OK workspace delete: %s\n", ws.ID)
+				_ = removeCreatedUserScope(statusDir, ws.ID)
+				fmt.Printf("OK user-scope delete: %s\n", ws.ID)
 			})
 		}
 
@@ -1918,8 +1918,8 @@ func run() int {
 		defer func() {
 			cleanup("defer")
 		}()
-	} else if wsReuseID == "" && !workspaceCleanup {
-		fmt.Printf("SKIP user delete: SKYFORGE_E2E_WORKSPACE_CLEANUP=false (userId=%s)\n", ws.ID)
+	} else if wsReuseID == "" && !userScopeCleanup {
+		fmt.Printf("SKIP user delete: SKYFORGE_E2E_USER_SCOPE_CLEANUP=false (userId=%s)\n", ws.ID)
 	}
 
 	var m matrixFile
@@ -2150,9 +2150,9 @@ func run() int {
 				depName = strings.ToLower(strings.ReplaceAll(name, "_", "-"))
 			}
 			depName = strings.Trim(depName, "-")
-			// When reusing a workspace across runs, avoid deployment name collisions by default.
+			// When reusing a user scope across runs, avoid deployment name collisions by default.
 			deploySuffix := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_DEPLOY_SUFFIX"))
-			if deploySuffix == "" && strings.TrimSpace(os.Getenv("SKYFORGE_E2E_WORKSPACE_ID")) != "" {
+			if deploySuffix == "" && strings.TrimSpace(os.Getenv("SKYFORGE_E2E_USER_SCOPE_ID")) != "" {
 				deploySuffix = fmt.Sprintf("r%d", time.Now().Unix()%100000)
 			}
 			if deploySuffix != "" {
@@ -2268,8 +2268,8 @@ func run() int {
 				if runLog != nil {
 					runLog.append(e2eRunLogEntry{
 						BaseURL:     baseURL,
-						Workspace:   ws.Name,
-						WorkspaceID: ws.ID,
+						UserScope:   ws.Name,
+						UserScopeID: ws.ID,
 						Test:        name,
 						Kind:        kind,
 						Device:      device,
@@ -2328,8 +2328,8 @@ func run() int {
 									if runLog != nil {
 										runLog.append(e2eRunLogEntry{
 											BaseURL:     baseURL,
-											Workspace:   ws.Name,
-											WorkspaceID: ws.ID,
+											UserScope:   ws.Name,
+											UserScopeID: ws.ID,
 											Test:        name,
 											Kind:        kind,
 											Device:      device,
@@ -2352,8 +2352,8 @@ func run() int {
 									if runLog != nil {
 										runLog.append(e2eRunLogEntry{
 											BaseURL:     baseURL,
-											Workspace:   ws.Name,
-											WorkspaceID: ws.ID,
+											UserScope:   ws.Name,
+											UserScopeID: ws.ID,
 											Test:        name,
 											Kind:        kind,
 											Device:      device,
@@ -2379,8 +2379,8 @@ func run() int {
 									if runLog != nil {
 										runLog.append(e2eRunLogEntry{
 											BaseURL:     baseURL,
-											Workspace:   ws.Name,
-											WorkspaceID: ws.ID,
+											UserScope:   ws.Name,
+											UserScopeID: ws.ID,
 											Test:        name,
 											Kind:        kind,
 											Device:      device,
@@ -2403,8 +2403,8 @@ func run() int {
 									if runLog != nil {
 										runLog.append(e2eRunLogEntry{
 											BaseURL:     baseURL,
-											Workspace:   ws.Name,
-											WorkspaceID: ws.ID,
+											UserScope:   ws.Name,
+											UserScopeID: ws.ID,
 											Test:        name,
 											Kind:        kind,
 											Device:      device,
@@ -2426,8 +2426,8 @@ func run() int {
 									if runLog != nil {
 										runLog.append(e2eRunLogEntry{
 											BaseURL:     baseURL,
-											Workspace:   ws.Name,
-											WorkspaceID: ws.ID,
+											UserScope:   ws.Name,
+											UserScopeID: ws.ID,
 											Test:        name,
 											Kind:        kind,
 											Device:      device,
@@ -2450,8 +2450,8 @@ func run() int {
 									if runLog != nil {
 										runLog.append(e2eRunLogEntry{
 											BaseURL:     baseURL,
-											Workspace:   ws.Name,
-											WorkspaceID: ws.ID,
+											UserScope:   ws.Name,
+											UserScopeID: ws.ID,
 											Test:        name,
 											Kind:        kind,
 											Device:      device,
@@ -2512,7 +2512,7 @@ func run() int {
 				}
 			}
 
-			serverRef, err := ensureWorkspaceNetlabServer(client, baseURL, cookie, ws.ID)
+			serverRef, err := ensureUserScopeNetlabServer(client, baseURL, cookie, ws.ID)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "test %q: byos netlab server not configured: %v\n", name, err)
 				return 1
@@ -2604,7 +2604,7 @@ func run() int {
 					wait = parsed
 				}
 			}
-			serverRef, err := ensureWorkspaceNetlabServer(client, baseURL, cookie, ws.ID)
+			serverRef, err := ensureUserScopeNetlabServer(client, baseURL, cookie, ws.ID)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "test %q: byos netlab server not configured: %v\n", name, err)
 				return 1

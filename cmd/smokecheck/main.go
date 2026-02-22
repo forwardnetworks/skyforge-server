@@ -20,12 +20,12 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
-type workspaceCreateRequest struct {
+type userScopeCreateRequest struct {
 	Name      string `json:"name"`
 	Blueprint string `json:"blueprint,omitempty"`
 }
 
-type workspaceResponse struct {
+type userScopeResponse struct {
 	ID   string `json:"id"`
 	Slug string `json:"slug"`
 	Name string `json:"name"`
@@ -146,51 +146,51 @@ func main() {
 
 	wsName := fmt.Sprintf("smoke-%s", time.Now().UTC().Format("20060102-150405"))
 	createURL := baseURL + "/api/skyforge/api/users"
-	resp, body, err = doJSON(client, http.MethodPost, createURL, workspaceCreateRequest{Name: wsName}, map[string]string{
+	resp, body, err = doJSON(client, http.MethodPost, createURL, userScopeCreateRequest{Name: wsName}, map[string]string{
 		"Cookie": setCookie,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "workspace create request failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "user-scope create request failed: %v\n", err)
 		os.Exit(1)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		fmt.Fprintf(os.Stderr, "workspace create failed (%d): %s\n", resp.StatusCode, strings.TrimSpace(string(body)))
+		fmt.Fprintf(os.Stderr, "user-scope create failed (%d): %s\n", resp.StatusCode, strings.TrimSpace(string(body)))
 		os.Exit(1)
 	}
-	var ws workspaceResponse
+	var ws userScopeResponse
 	if err := json.Unmarshal(body, &ws); err != nil {
-		fmt.Fprintf(os.Stderr, "workspace create parse failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "user-scope create parse failed: %v\n", err)
 		os.Exit(1)
 	}
 	if strings.TrimSpace(ws.ID) == "" {
-		fmt.Fprintf(os.Stderr, "workspace create returned empty id: %s\n", strings.TrimSpace(string(body)))
+		fmt.Fprintf(os.Stderr, "user-scope create returned empty id: %s\n", strings.TrimSpace(string(body)))
 		os.Exit(1)
 	}
-	fmt.Printf("OK workspace create: %s (%s)\n", ws.Name, ws.ID)
+	fmt.Printf("OK user-scope create: %s (%s)\n", ws.Name, ws.ID)
 
 	deleteURL := baseURL + "/api/skyforge/api/users/" + ws.ID + "?confirm=" + ws.Slug
 	resp, body, err = doJSON(client, http.MethodDelete, deleteURL, nil, map[string]string{
 		"Cookie": setCookie,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "workspace delete request failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "user-scope delete request failed: %v\n", err)
 		os.Exit(1)
 	}
 	if resp.StatusCode == http.StatusNotFound {
-		fmt.Printf("OK workspace delete (already gone): %s\n", ws.ID)
+		fmt.Printf("OK user-scope delete (already gone): %s\n", ws.ID)
 		return
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		fmt.Fprintf(os.Stderr, "workspace delete failed (%d): %s\n", resp.StatusCode, strings.TrimSpace(string(body)))
+		fmt.Fprintf(os.Stderr, "user-scope delete failed (%d): %s\n", resp.StatusCode, strings.TrimSpace(string(body)))
 		os.Exit(1)
 	}
 	if len(body) > 0 && !bytes.Equal(bytes.TrimSpace(body), []byte(`{}`)) {
 		// Some endpoints return an empty JSON response; tolerate either.
 		var okAny map[string]any
 		if err := json.Unmarshal(body, &okAny); err != nil {
-			fmt.Fprintf(os.Stderr, "workspace delete returned unexpected body: %s\n", strings.TrimSpace(string(body)))
+			fmt.Fprintf(os.Stderr, "user-scope delete returned unexpected body: %s\n", strings.TrimSpace(string(body)))
 			os.Exit(1)
 		}
 	}
-	fmt.Printf("OK workspace delete: %s\n", ws.ID)
+	fmt.Printf("OK user-scope delete: %s\n", ws.ID)
 }
