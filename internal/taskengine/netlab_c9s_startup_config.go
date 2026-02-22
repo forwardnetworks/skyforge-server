@@ -127,6 +127,16 @@ func injectNetlabC9sVrnetlabStartupConfig(
 			nodesAny[node] = cfg
 			continue
 		}
+		if isVrnetlabASAFamily(kind, image) {
+			// ASAv behaves like other vrnetlab images where we prefer baseline boot + SSH
+			// readiness instead of injecting partial startup snippets.
+			if _, ok := cfg["startup-config"]; ok {
+				delete(cfg, "startup-config")
+				modified = true
+			}
+			nodesAny[node] = cfg
+			continue
+		}
 		if isVrnetlabJunosFamily(kind, image) {
 			// Ensure the generated topology does not reference a startup-config file we
 			// are not going to mount/inject.
@@ -212,6 +222,12 @@ func injectNetlabC9sVrnetlabStartupConfig(
 	}
 
 	return out, nodeMounts, nil
+}
+
+func isVrnetlabASAFamily(kind, image string) bool {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	image = strings.ToLower(strings.TrimSpace(image))
+	return kind == "asav" || strings.Contains(image, "asav")
 }
 
 func isVrnetlabIOSFamily(kind, image string) bool {

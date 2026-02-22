@@ -35,6 +35,14 @@ type forwardSnmpCredential struct {
 	ID string `json:"id"`
 }
 
+type forwardSnmpV3Profile struct {
+	Username        string
+	AuthType        string
+	AuthPassword    string
+	PrivacyProtocol string
+	PrivacyPassword string
+}
+
 type forwardJumpServer struct {
 	ID string `json:"id"`
 }
@@ -385,6 +393,12 @@ func forwardSetCollector(ctx context.Context, c *forwardClient, networkID string
 }
 
 func forwardStartCollection(ctx context.Context, c *forwardClient, networkID string) error {
+	// Ensure Forward global performance collection is enabled for this network.
+	// This drives SNMP/perf ingestion required by Capacity analytics.
+	if err := forwardEnablePerformanceCollection(ctx, c, networkID); err != nil {
+		return err
+	}
+
 	resp, body, err := c.doJSON(ctx, http.MethodPost, "/api/networks/"+url.PathEscape(strings.TrimSpace(networkID))+"/startcollection", nil, nil)
 	if err != nil {
 		return err
@@ -393,6 +407,35 @@ func forwardStartCollection(ctx context.Context, c *forwardClient, networkID str
 		return fmt.Errorf("forward start collection failed: %s", strings.TrimSpace(string(body)))
 	}
 	return nil
+}
+
+func forwardEnablePerformanceCollection(ctx context.Context, c *forwardClient, networkID string) error {
+	networkID = strings.TrimSpace(networkID)
+	if networkID == "" {
+		return fmt.Errorf("forward network id is required")
+	}
+	path := "/api/networks/" + url.PathEscape(networkID) + "/performance/settings"
+	payload := map[string]any{"enabled": true}
+
+	// Forward SaaS supports PATCH; keep PUT as fallback for compatibility.
+	resp, body, err := c.doJSON(ctx, http.MethodPatch, path, nil, payload)
+	if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
+	resp2, body2, err2 := c.doJSON(ctx, http.MethodPut, path, nil, payload)
+	if err2 == nil && resp2.StatusCode >= 200 && resp2.StatusCode < 300 {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err2 != nil {
+		return fmt.Errorf("forward enable performance failed: %v", err2)
+	}
+	if strings.TrimSpace(string(body)) != "" {
+		return fmt.Errorf("forward enable performance failed: %s", strings.TrimSpace(string(body)))
+	}
+	return fmt.Errorf("forward enable performance failed: %s", strings.TrimSpace(string(body2)))
 }
 
 func forwardDeleteNetwork(ctx context.Context, c *forwardClient, networkID string) error {
@@ -456,16 +499,25 @@ func parseForwardCredentialID(body string) string {
 	return ""
 }
 
-func forwardCreateSnmpCredential(ctx context.Context, c *forwardClient, networkID string, name string, community string) (*forwardSnmpCredential, error) {
+func forwardCreateSnmpCredential(ctx context.Context, c *forwardClient, networkID string, name string, profile forwardSnmpV3Profile) (*forwardSnmpCredential, error) {
 	credentialName := strings.TrimSpace(name)
 	if credentialName == "" {
-		credentialName = fmt.Sprintf("Skyforge SNMP %d", time.Now().UTC().UnixNano())
+		credentialName = fmt.Sprintf("Skyforge SNMPv3 %d", time.Now().UTC().UnixNano())
+	}
+	if strings.TrimSpace(profile.Username) == "" || strings.TrimSpace(profile.AuthPassword) == "" || strings.TrimSpace(profile.PrivacyPassword) == "" {
+		return nil, fmt.Errorf("forward snmpv3 profile is required")
 	}
 	payload := map[string]any{
-		"name":            credentialName,
-		"version":         "V2C",
-		"communityString": strings.TrimSpace(community),
-		"autoAssociate":   true,
+		"name":          credentialName,
+		"version":       "V3",
+		"autoAssociate": true,
+		"authSettings": map[string]any{
+			"username":        strings.TrimSpace(profile.Username),
+			"authType":        strings.TrimSpace(profile.AuthType),
+			"password":        strings.TrimSpace(profile.AuthPassword),
+			"privacyProtocol": strings.TrimSpace(profile.PrivacyProtocol),
+			"privacyPassword": strings.TrimSpace(profile.PrivacyPassword),
+		},
 	}
 	resp, body, err := c.doJSON(ctx, http.MethodPost, "/api/networks/"+url.PathEscape(strings.TrimSpace(networkID))+"/snmpCredentials", nil, payload)
 	if err != nil {

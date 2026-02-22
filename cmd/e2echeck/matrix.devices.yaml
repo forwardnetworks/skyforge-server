@@ -5,7 +5,7 @@
 # the device types Skyforge expects to support.
 #
 # Usage:
-#   cd skyforge-private/server
+#   cd components/server
 #   export SKYFORGE_E2E_MATRIX_FILE=./cmd/e2echeck/matrix.devices.yaml
 #   go run ./cmd/e2echeck
 #
@@ -206,6 +206,34 @@ tests:
       template: topology.yml
       environment:
         NETLAB_DEVICE: cumulus
+      setOverrides: []
+      timeout: 25m
+      sshBanners: true
+      sshTimeout: 12m
+      cleanup: true
+
+  - name: netlab-validate-iosxr
+    kind: netlab_validate
+    netlab_validate:
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: iosxr
+      setOverrides: []
+      timeout: 10m
+
+  - name: netlab-deploy-iosxr
+    kind: netlab_deploy
+    netlab_deploy:
+      type: netlab-c9s
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: iosxr
       setOverrides: []
       timeout: 25m
       sshBanners: true
@@ -477,6 +505,34 @@ tests:
       sshTimeout: 25m
       cleanup: true
 
+  - name: netlab-validate-linux
+    kind: netlab_validate
+    netlab_validate:
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: linux
+      setOverrides: []
+      timeout: 10m
+
+  - name: netlab-deploy-linux
+    kind: netlab_deploy
+    netlab_deploy:
+      type: netlab-c9s
+      source: blueprints
+      repo: ""
+      dir: netlab/_e2e/minimal
+      template: topology.yml
+      environment:
+        NETLAB_DEVICE: linux
+      setOverrides: []
+      timeout: 25m
+      sshBanners: true
+      sshTimeout: 12m
+      cleanup: true
+
   - name: netlab-validate-vmx
     kind: netlab_validate
     netlab_validate:
@@ -507,92 +563,4 @@ tests:
       timeout: 45m
       sshBanners: true
       sshTimeout: 25m
-      cleanup: true
-
-  - name: netlab-validate-vsrx
-    kind: netlab_validate
-    netlab_validate:
-      source: blueprints
-      repo: ""
-      dir: netlab/_e2e/minimal
-      template: topology.yml
-      environment:
-        NETLAB_DEVICE: vsrx
-      setOverrides: []
-      timeout: 10m
-
-  - name: netlab-deploy-vsrx
-    kind: netlab_deploy
-    netlab_deploy:
-      type: netlab-c9s
-      source: blueprints
-      repo: ""
-      dir: netlab/_e2e/minimal
-      template: topology.yml
-      environment:
-        NETLAB_DEVICE: vsrx
-        SKYFORGE_NETLAB_C9S_ENABLE_NETLAB_INITIAL: "true"
-        SKYFORGE_NETLAB_C9S_ENABLE_STARTUP_CONFIG_INJECTION: "false"
-        SKYFORGE_NETLAB_INITIAL_SSH_READY_SECONDS: "1800"
-        SKYFORGE_FORWARD_SSH_READY_SECONDS: "1800"
-      setOverrides: []
-      timeout: 45m
-      sshBanners: true
-      sshTimeout: 25m
-      cleanup: true
-
-  - name: netlab-validate-vmx
-    kind: netlab_validate
-    netlab_validate:
-      source: blueprints
-      repo: ""
-      dir: netlab/_e2e/minimal
-      template: topology.yml
-      environment:
-        NETLAB_DEVICE: vmx
-      setOverrides: []
-      timeout: 10m
-
-  - name: netlab-deploy-vmx
-    kind: netlab_deploy
-    netlab_deploy:
-      type: netlab-c9s
-      source: blueprints
-      repo: ""
-      dir: netlab/_e2e/minimal
-      template: topology.yml
-      environment:
-        NETLAB_DEVICE: vmx
-      setOverrides: []
-      timeout: 35m
-      sshBanners: true
-      sshTimeout: 25m
-      cleanup: true
-
-  - name: netlab-validate-vsrx
-    kind: netlab_validate
-    netlab_validate:
-      source: blueprints
-      repo: ""
-      dir: netlab/_e2e/minimal
-      template: topology.yml
-      environment:
-        NETLAB_DEVICE: vsrx
-      setOverrides: []
-      timeout: 10m
-
-  - name: netlab-deploy-vsrx
-    kind: netlab_deploy
-    netlab_deploy:
-      type: netlab-c9s
-      source: blueprints
-      repo: ""
-      dir: netlab/_e2e/minimal
-      template: topology.yml
-      environment:
-        NETLAB_DEVICE: vsrx
-      setOverrides: []
-      timeout: 35m
-      sshBanners: true
-      sshTimeout: 20m
       cleanup: true

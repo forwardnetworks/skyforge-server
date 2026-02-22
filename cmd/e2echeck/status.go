@@ -211,7 +211,7 @@ func renderE2EStatusMarkdown(s e2eStatusFile) string {
 	}
 	lines = append(lines, "")
 	lines = append(lines, "## How to run", "")
-	lines = append(lines, "Run from `skyforge-private/server`:", "", "```bash", "SKYFORGE_E2E_DEPLOY=true \\")
+	lines = append(lines, "Run from `components/server`:", "", "```bash", "SKYFORGE_E2E_DEPLOY=true \\")
 	lines = append(lines, "SKYFORGE_E2E_SSH_PROBE_MODE=api \\")
 	lines = append(lines, "SKYFORGE_E2E_DEVICE_SET=all \\")
 	lines = append(lines, "go run ./cmd/e2echeck --run-generated", "```", "")

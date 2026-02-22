@@ -519,11 +519,8 @@ func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *work
 
 	snmpCredentialID := getString(forwardSnmpCredentialIDKey)
 	if snmpCredentialID == "" && e.cfg.Forward.SNMPPlaceholderEnabled {
-		community, err := e.ensureUserSnmpTrapToken(ctx, pc.claims.Username)
-		if err != nil {
-			return cfgAny, err
-		}
-		cred, err := forwardCreateSnmpCredential(ctx, client, networkID, community)
+		profile := snmpV3ProfileForUsername(pc.claims.Username)
+		cred, err := forwardCreateSnmpCredential(ctx, client, networkID, profile)
 		if err != nil {
 			log.Printf("forward snmp credential skipped: %v", err)
 		} else {

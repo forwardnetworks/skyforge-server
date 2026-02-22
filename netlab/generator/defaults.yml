@@ -25,45 +25,57 @@ configlets:
     linux: |
       # no-op (keep linux hosts SNMP-free by default)
     eos: |
-      snmp-server community public ro
+      snmp-server view sfv3 iso included
+      snmp-server group sfgroup v3 priv read sfv3
+      snmp-server user skyforge sfgroup v3 auth sha256 SfAuth-default priv aes-128 SfPriv-default
     # Netlab device keys that behave like EOS but don't necessarily inherit its configlet.
     # Keep explicit keys to avoid "fallback" behavior.
     ceos: |
-      snmp-server community public ro
+      snmp-server view sfv3 iso included
+      snmp-server group sfgroup v3 priv read sfv3
+      snmp-server user skyforge sfgroup v3 auth sha256 SfAuth-default priv aes-128 SfPriv-default
     ios: |
-      snmp-server community public RO
+      snmp-server view sfv3 iso included
+      snmp-server group sfgroup v3 priv read sfv3
+      snmp-server user skyforge sfgroup v3 auth sha SfAuth-default priv aes 128 SfPriv-default
     iol: |
-      snmp-server community public RO
+      snmp-server view sfv3 iso included
+      snmp-server group sfgroup v3 priv read sfv3
+      snmp-server user skyforge sfgroup v3 auth sha SfAuth-default priv aes 128 SfPriv-default
     ioll2: |
-      snmp-server community public RO
+      snmp-server view sfv3 iso included
+      snmp-server group sfgroup v3 priv read sfv3
+      snmp-server user skyforge sfgroup v3 auth sha SfAuth-default priv aes 128 SfPriv-default
     iosv: |
-      snmp-server community public RO
+      # legacy iosv disabled; use iol/ioll2
     iosvl2: |
-      snmp-server community public RO
+      # legacy iosvl2 disabled; use iol/ioll2
     iosxe: |
-      snmp-server community public RO
+      # legacy iosxe disabled; use iol/ioll2
     csr: |
-      snmp-server community public RO
+      # legacy csr disabled; use iol/ioll2
     cat8000v: |
-      snmp-server community public RO
+      # legacy cat8000v disabled; use iol/ioll2
     iosxr: |
-      snmp-server community public RO
+      snmp-server view sfv3 iso included
+      snmp-server group sfgroup v3 priv read sfv3
+      snmp-server user skyforge sfgroup v3 auth sha SfAuth-default priv aes 128 SfPriv-default
     asa: |
-      snmp-server community public
+      # SNMPv3 auto-config not available for ASA template
     junos: |
-      set snmp community public authorization read-only
+      # SNMPv3 auto-config not available for Junos template
     vmx: |
-      set snmp community public authorization read-only
+      # SNMPv3 auto-config not available for vMX template
     vsrx: |
-      set snmp community public authorization read-only
+      # SNMPv3 auto-config not available for vSRX template
     vjunos-router: |
-      set snmp community public authorization read-only
+      # SNMPv3 auto-config not available for vJunos router template
     vjunos-switch: |
-      set snmp community public authorization read-only
+      # SNMPv3 auto-config not available for vJunos switch template
     vptx: |
-      set snmp community public authorization read-only
+      # SNMPv3 auto-config not available for vPTX template
     nxos: |
-      snmp-server community public group network-operator
+      # SNMPv3 auto-config not available for NX-OS template
 
 devices:
   linux:

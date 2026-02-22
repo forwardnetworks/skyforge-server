@@ -32,10 +32,9 @@ type forwardCliCredential struct {
 }
 
 type forwardSnmpCredential struct {
-	ID              string `json:"id"`
-	Name            string `json:"name"`
-	Version         string `json:"version"`
-	CommunityString string `json:"communityString"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Version string `json:"version"`
 }
 
 type forwardJumpServer struct {
@@ -336,12 +335,22 @@ func forwardCreateCliCredentialNamed(ctx context.Context, c *forwardClient, netw
 	return nil, fmt.Errorf("forward create cli credential failed: name conflict (%s)", strings.TrimSpace(string(lastBody)))
 }
 
-func forwardCreateSnmpCredential(ctx context.Context, c *forwardClient, networkID string, community string) (*forwardSnmpCredential, error) {
+func forwardCreateSnmpCredential(ctx context.Context, c *forwardClient, networkID string, profile snmpV3Profile) (*forwardSnmpCredential, error) {
+	if strings.TrimSpace(profile.Username) == "" || strings.TrimSpace(profile.AuthPassword) == "" || strings.TrimSpace(profile.PrivacyPassword) == "" {
+		return nil, fmt.Errorf("forward create snmp credential missing snmpv3 profile")
+	}
+	name := fmt.Sprintf("Skyforge SNMPv3 %s %d", strings.TrimSpace(profile.Username), time.Now().UTC().UnixNano())
 	payload := map[string]any{
-		"name":            strings.TrimSpace(community),
-		"autoAssociate":   true,
-		"version":         "V2C",
-		"communityString": strings.TrimSpace(community),
+		"name":          name,
+		"autoAssociate": true,
+		"version":       "V3",
+		"authSettings": map[string]any{
+			"username":        strings.TrimSpace(profile.Username),
+			"authType":        strings.TrimSpace(profile.AuthProtocol),
+			"password":        strings.TrimSpace(profile.AuthPassword),
+			"privacyProtocol": strings.TrimSpace(profile.PrivacyProtocol),
+			"privacyPassword": strings.TrimSpace(profile.PrivacyPassword),
+		},
 	}
 
 	// Forward has used multiple endpoint spellings over time. Our environment uses:
@@ -379,14 +388,6 @@ func forwardCreateSnmpCredential(ctx context.Context, c *forwardClient, networkI
 		return nil, fmt.Errorf("forward create snmp credential failed: no response")
 	}
 
-	// If the credential already exists, try to find and reuse it so this call is idempotent.
-	if lastResp.StatusCode == 409 || strings.Contains(strings.ToLower(string(lastBody)), "already") {
-		existing, listErr := forwardFindSnmpCredential(ctx, c, networkID, community)
-		if listErr == nil && existing != nil && strings.TrimSpace(existing.ID) != "" {
-			return existing, nil
-		}
-	}
-
 	if lastResp.StatusCode < 200 || lastResp.StatusCode >= 300 {
 		return nil, fmt.Errorf("forward create snmp credential failed: %s", strings.TrimSpace(string(lastBody)))
 	}
@@ -400,9 +401,9 @@ func forwardCreateSnmpCredential(ctx context.Context, c *forwardClient, networkI
 	return &out, nil
 }
 
-func forwardFindSnmpCredential(ctx context.Context, c *forwardClient, networkID string, community string) (*forwardSnmpCredential, error) {
-	community = strings.TrimSpace(community)
-	if community == "" {
+func forwardFindSnmpCredential(ctx context.Context, c *forwardClient, networkID string, name string) (*forwardSnmpCredential, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
 		return nil, nil
 	}
 
@@ -460,13 +461,13 @@ func forwardFindSnmpCredential(ctx context.Context, c *forwardClient, networkID 
 			if strings.TrimSpace(item.ID) == "" {
 				continue
 			}
-			if strings.EqualFold(strings.TrimSpace(item.Name), community) || strings.EqualFold(strings.TrimSpace(item.CommunityString), community) {
+			if strings.EqualFold(strings.TrimSpace(item.Name), name) {
 				return &item, nil
 			}
 		}
 	}
 
-	return nil, fmt.Errorf("snmp credential %q not found", community)
+	return nil, fmt.Errorf("snmp credential %q not found", name)
 }
 
 func forwardCreateJumpServer(ctx context.Context, c *forwardClient, networkID string, host string, username string, privateKey string, cert string) (*forwardJumpServer, error) {
@@ -528,6 +529,12 @@ func forwardPutClassicDevices(ctx context.Context, c *forwardClient, networkID s
 }
 
 func forwardStartCollection(ctx context.Context, c *forwardClient, networkID string) error {
+	// Ensure Forward global performance collection is enabled for this network.
+	// This drives SNMP/perf ingestion required by Capacity analytics.
+	if err := forwardEnablePerformanceCollection(ctx, c, networkID); err != nil {
+		return err
+	}
+
 	// Prefer the public Forward API path.
 	resp, body, err := c.doJSON(ctx, http.MethodPost, "/api/networks/"+url.PathEscape(strings.TrimSpace(networkID))+"/startcollection", nil, nil)
 	if err != nil {
@@ -549,6 +556,35 @@ func forwardStartCollection(ctx context.Context, c *forwardClient, networkID str
 		return fmt.Errorf("forward start collection failed: %s", strings.TrimSpace(string(body2)))
 	}
 	return nil
+}
+
+func forwardEnablePerformanceCollection(ctx context.Context, c *forwardClient, networkID string) error {
+	networkID = strings.TrimSpace(networkID)
+	if networkID == "" {
+		return fmt.Errorf("forward network id is required")
+	}
+	path := "/api/networks/" + url.PathEscape(networkID) + "/performance/settings"
+	payload := map[string]any{"enabled": true}
+
+	// Forward SaaS supports PATCH; keep PUT as a fallback for compatibility.
+	resp, body, err := c.doJSON(ctx, http.MethodPatch, path, nil, payload)
+	if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
+	resp2, body2, err2 := c.doJSON(ctx, http.MethodPut, path, nil, payload)
+	if err2 == nil && resp2.StatusCode >= 200 && resp2.StatusCode < 300 {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err2 != nil {
+		return fmt.Errorf("forward enable performance failed: %v", err2)
+	}
+	if strings.TrimSpace(string(body)) != "" {
+		return fmt.Errorf("forward enable performance failed: %s", strings.TrimSpace(string(body)))
+	}
+	return fmt.Errorf("forward enable performance failed: %s", strings.TrimSpace(string(body2)))
 }
 
 var forwardNameSanitizer = regexp.MustCompile(`[^a-zA-Z0-9_.-]+`)

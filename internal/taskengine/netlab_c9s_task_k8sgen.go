@@ -5,11 +5,14 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"path"
+	"regexp"
 	"strings"
 	"time"
 
@@ -54,7 +57,46 @@ type netlabC9sManifest struct {
 // NOTE: Do not default to :latest; our deployments pin a known-good generator tag and
 // the :latest tag may not be published (which breaks netlab-c9s deploy/validate in new namespaces).
 
-func patchNetlabTopologyYAMLForSnmp(topologyYAML []byte, community, trapHost string, trapPort int) ([]byte, error) {
+type snmpV3Profile struct {
+	Username        string
+	AuthProtocol    string
+	AuthPassword    string
+	PrivacyProtocol string
+	PrivacyPassword string
+}
+
+var snmpV3UsernameCleaner = regexp.MustCompile(`[^a-z0-9_]`)
+
+func snmpV3ProfileForUsername(username string) snmpV3Profile {
+	username = strings.ToLower(strings.TrimSpace(username))
+	if username == "" {
+		username = "skyforge"
+	}
+	base := snmpV3UsernameCleaner.ReplaceAllString(username, "_")
+	base = strings.Trim(base, "_")
+	if base == "" {
+		base = "skyforge"
+	}
+	if len(base) > 20 {
+		base = strings.Trim(base[:20], "_")
+	}
+	if base == "" {
+		base = "skyforge"
+	}
+	authSum := sha256.Sum256([]byte("skyforge-snmpv3-auth:" + username))
+	privSum := sha256.Sum256([]byte("skyforge-snmpv3-priv:" + username))
+	authHex := hex.EncodeToString(authSum[:])
+	privHex := hex.EncodeToString(privSum[:])
+	return snmpV3Profile{
+		Username:        base,
+		AuthProtocol:    "SHA_256",
+		AuthPassword:    "SfAuth-" + authHex[:24],
+		PrivacyProtocol: "AES_128",
+		PrivacyPassword: "SfPriv-" + privHex[:24],
+	}
+}
+
+func patchNetlabTopologyYAMLForSnmp(topologyYAML []byte, profile snmpV3Profile) ([]byte, error) {
 	var topo map[string]any
 	if err := yaml.Unmarshal(topologyYAML, &topo); err != nil {
 		return nil, fmt.Errorf("parse topology.yml: %w", err)
@@ -79,6 +121,31 @@ func patchNetlabTopologyYAMLForSnmp(topologyYAML []byte, community, trapHost str
 		m := map[string]any{}
 		parent[key] = m
 		return m
+	}
+
+	// Keep SNMP configlet definition local to the patched topology so native netlab
+	// generation does not depend on external defaults.yml packaging state.
+	ceosCmd := fmt.Sprintf("snmp-server view sfv3 iso included\nsnmp-server group sfgroup v3 priv read sfv3\nsnmp-server user %s sfgroup v3 auth sha256 %s priv aes-128 %s", profile.Username, profile.AuthPassword, profile.PrivacyPassword)
+	iosCmd := fmt.Sprintf("snmp-server view sfv3 iso included\nsnmp-server group sfgroup v3 priv read sfv3\nsnmp-server user %s sfgroup v3 auth sha %s priv aes 128 %s", profile.Username, profile.AuthPassword, profile.PrivacyPassword)
+	snmpConfigletTemplates := map[string]string{
+		"linux":             "# no-op (keep linux hosts SNMP-free by default)",
+		"ceos":              ceosCmd,
+		"iol":               iosCmd,
+		"ioll2":             iosCmd,
+		"asa":               "# SNMPv3 auto-config not available for ASA template",
+		"junos":             "# SNMPv3 auto-config not available for Junos template",
+		"vmx":               "# SNMPv3 auto-config not available for vMX template",
+		"vsrx":              "# SNMPv3 auto-config not available for vSRX template",
+		"vjunos-router":     "# SNMPv3 auto-config not available for vJunos-router template",
+		"vjunos-switch":     "# SNMPv3 auto-config not available for vJunos-switch template",
+		"vptx":              "# SNMPv3 auto-config not available for vPTX template",
+		"nxos":              "# SNMPv3 auto-config not available for NX-OS template",
+		"dellos10":          "# SNMPv3 auto-config not available for Dell OS10 template",
+		"arubacx":           "# SNMPv3 auto-config not available for Aruba CX template",
+		"fortios":           "# SNMPv3 auto-config not available for FortiOS template",
+		"sros":              "# SNMPv3 auto-config not available for SR OS template",
+		"cumulus_nvue":      "echo 'SNMP managed externally'",
+		"xrd-control-plane": iosCmd,
 	}
 
 	groups := ensureMap(topo, "groups")
@@ -128,14 +195,40 @@ func patchNetlabTopologyYAMLForSnmp(topologyYAML []byte, community, trapHost str
 	}
 
 	defaults := ensureMap(topo, "defaults")
+	configlets := ensureMap(defaults, "configlets")
+	rawSnmpCfg, _ := configlets["snmp_config"]
+	snmpCfgMap, ok := rawSnmpCfg.(map[string]any)
+	if !ok || snmpCfgMap == nil {
+		snmpCfgMap = map[string]any{}
+	}
+	for dev, cfg := range snmpConfigletTemplates {
+		if _, exists := snmpCfgMap[dev]; !exists {
+			snmpCfgMap[dev] = cfg
+		}
+	}
+	// Netlab device identifiers remain canonical (for example eos/iosxr/cumulus),
+	// even when we standardize image families to ceos/xrd-control-plane/cumulus_nvue.
+	for alias, canonical := range map[string]string{
+		"eos":     "ceos",
+		"iosxr":   "xrd-control-plane",
+		"cumulus": "cumulus_nvue",
+	} {
+		if _, exists := snmpCfgMap[alias]; exists {
+			continue
+		}
+		if cfg, ok := snmpCfgMap[canonical]; ok {
+			snmpCfgMap[alias] = cfg
+		}
+	}
+	configlets["snmp_config"] = snmpCfgMap
+
 	snmp := ensureMap(defaults, "snmp")
-	if strings.TrimSpace(community) != "" {
-		snmp["community"] = strings.TrimSpace(community)
-	}
-	snmp["trap_host"] = strings.TrimSpace(trapHost)
-	if trapPort > 0 {
-		snmp["trap_port"] = trapPort
-	}
+	snmp["version"] = "v3"
+	snmp["username"] = profile.Username
+	snmp["auth_protocol"] = strings.ToLower(profile.AuthProtocol)
+	snmp["auth_password"] = profile.AuthPassword
+	snmp["privacy_protocol"] = strings.ToLower(profile.PrivacyProtocol)
+	snmp["privacy_password"] = profile.PrivacyPassword
 
 	out, err := yaml.Marshal(topo)
 	if err != nil {
@@ -144,7 +237,46 @@ func patchNetlabTopologyYAMLForSnmp(topologyYAML []byte, community, trapHost str
 	return out, nil
 }
 
-func patchNetlabBundleB64(bundleB64 string, patchTopology func([]byte) ([]byte, error)) (string, error) {
+func snmpTemplateFilesForBundle(profile snmpV3Profile) map[string]string {
+	ceosCmd := fmt.Sprintf("snmp-server view sfv3 iso included\nsnmp-server group sfgroup v3 priv read sfv3\nsnmp-server user %s sfgroup v3 auth sha256 %s priv aes-128 %s\n", profile.Username, profile.AuthPassword, profile.PrivacyPassword)
+	iosCmd := fmt.Sprintf("snmp-server view sfv3 iso included\nsnmp-server group sfgroup v3 priv read sfv3\nsnmp-server user %s sfgroup v3 auth sha %s priv aes 128 %s\n", profile.Username, profile.AuthPassword, profile.PrivacyPassword)
+	baseByDevice := map[string]string{
+		"ceos":              ceosCmd,
+		"iol":               iosCmd,
+		"ioll2":             iosCmd,
+		"asa":               "# SNMPv3 auto-config not available for ASA template\n",
+		"junos":             "# SNMPv3 auto-config not available for Junos template\n",
+		"vmx":               "# SNMPv3 auto-config not available for vMX template\n",
+		"vsrx":              "# SNMPv3 auto-config not available for vSRX template\n",
+		"vjunos-router":     "# SNMPv3 auto-config not available for vJunos-router template\n",
+		"vjunos-switch":     "# SNMPv3 auto-config not available for vJunos-switch template\n",
+		"vptx":              "# SNMPv3 auto-config not available for vPTX template\n",
+		"nxos":              "# SNMPv3 auto-config not available for NX-OS template\n",
+		"dellos10":          "# SNMPv3 auto-config not available for Dell OS10 template\n",
+		"arubacx":           "# SNMPv3 auto-config not available for Aruba CX template\n",
+		"fortios":           "# SNMPv3 auto-config not available for FortiOS template\n",
+		"sros":              "# SNMPv3 auto-config not available for SR OS template\n",
+		"cumulus_nvue":      "# SNMP managed externally\n",
+		"xrd-control-plane": iosCmd,
+	}
+
+	templates := make(map[string]string, len(baseByDevice)+3)
+	for dev, content := range baseByDevice {
+		templates[path.Join("snmp_config", dev+".j2")] = content
+	}
+	for alias, canonical := range map[string]string{
+		"eos":     "ceos",
+		"iosxr":   "xrd-control-plane",
+		"cumulus": "cumulus_nvue",
+	} {
+		if content, ok := baseByDevice[canonical]; ok {
+			templates[path.Join("snmp_config", alias+".j2")] = content
+		}
+	}
+	return templates
+}
+
+func patchNetlabBundleB64(bundleB64 string, patchTopology func([]byte) ([]byte, error), extraFiles map[string]string) (string, error) {
 	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(bundleB64))
 	if err != nil {
 		return "", fmt.Errorf("decode bundle: %w", err)
@@ -159,6 +291,7 @@ func patchNetlabBundleB64(bundleB64 string, patchTopology func([]byte) ([]byte, 
 	var out bytes.Buffer
 	gw := gzip.NewWriter(&out)
 	tw := tar.NewWriter(gw)
+	existing := map[string]struct{}{}
 	defer func() {
 		_ = tw.Close()
 		_ = gw.Close()
@@ -176,6 +309,7 @@ func patchNetlabBundleB64(bundleB64 string, patchTopology func([]byte) ([]byte, 
 		if name == "" || name == "." || strings.HasPrefix(name, "..") {
 			continue
 		}
+		existing[name] = struct{}{}
 		data, err := io.ReadAll(tr)
 		if err != nil {
 			return "", fmt.Errorf("read bundle file %s: %w", name, err)
@@ -195,6 +329,23 @@ func patchNetlabBundleB64(bundleB64 string, patchTopology func([]byte) ([]byte, 
 			return "", fmt.Errorf("write bundle file %s: %w", name, err)
 		}
 	}
+	for rawName, body := range extraFiles {
+		name := path.Clean(strings.TrimPrefix(strings.TrimSpace(rawName), "/"))
+		if name == "" || name == "." || strings.HasPrefix(name, "..") {
+			continue
+		}
+		if _, ok := existing[name]; ok {
+			continue
+		}
+		content := []byte(body)
+		hdr := &tar.Header{Name: name, Mode: 0o644, Size: int64(len(content))}
+		if err := tw.WriteHeader(hdr); err != nil {
+			return "", fmt.Errorf("write bundle header %s: %w", name, err)
+		}
+		if _, err := tw.Write(content); err != nil {
+			return "", fmt.Errorf("write bundle file %s: %w", name, err)
+		}
+	}
 	if err := tw.Close(); err != nil {
 		return "", err
 	}
@@ -203,6 +354,41 @@ func patchNetlabBundleB64(bundleB64 string, patchTopology func([]byte) ([]byte, 
 	}
 	return base64.StdEncoding.EncodeToString(out.Bytes()), nil
 }
+
+func validateNoLegacyIOSVMTopology(topologyYAML []byte) error {
+	var topo map[string]any
+	if err := yaml.Unmarshal(topologyYAML, &topo); err != nil {
+		return fmt.Errorf("parse topology.yml: %w", err)
+	}
+	if topo == nil {
+		return nil
+	}
+	nodes, _ := topo["nodes"].(map[string]any)
+	if len(nodes) == 0 {
+		return nil
+	}
+	legacyKinds := map[string]bool{
+		"iosv":     true,
+		"iosvl2":   true,
+		"iosxe":    true,
+		"csr":      true,
+		"cat8000v": true,
+		"iosxr":    true,
+	}
+	for nodeName, raw := range nodes {
+		node, _ := raw.(map[string]any)
+		if node == nil {
+			continue
+		}
+		kind := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", node["kind"])))
+		if !legacyKinds[kind] {
+			continue
+		}
+		return fmt.Errorf("legacy device kind %q is not supported in native mode (node=%s); use iol/ioll2 or xrd-control-plane", kind, strings.TrimSpace(nodeName))
+	}
+	return nil
+}
+
 const defaultNetlabC9sGeneratorImage = "ghcr.io/forwardnetworks/skyforge-netlab-generator:20260127-b8947318"
 
 // runNetlabC9sTaskK8sGenerator runs a netlab generator job inside the workspace namespace,
@@ -267,6 +453,17 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 	if _, err := base64.StdEncoding.DecodeString(bundleB64); err != nil {
 		return nil, nil, nil, fmt.Errorf("invalid netlab topology bundle encoding: %w", err)
 	}
+	// Hard-cut legacy Cisco IOS VM device types. Templates must use IOL variants.
+	validatedBundle, validateErr := patchNetlabBundleB64(bundleB64, func(b []byte) ([]byte, error) {
+		if err := validateNoLegacyIOSVMTopology(b); err != nil {
+			return nil, err
+		}
+		return b, nil
+	}, nil)
+	if validateErr != nil {
+		return nil, nil, nil, validateErr
+	}
+	bundleB64 = validatedBundle
 
 	if spec.WorkspaceCtx != nil && strings.TrimSpace(spec.DeploymentID) != "" {
 		dep, depErr := e.loadDeployment(ctx, strings.TrimSpace(spec.WorkspaceCtx.workspace.ID), strings.TrimSpace(spec.DeploymentID))
@@ -286,18 +483,10 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 				}
 			}
 			if enabled && e.cfg.Forward.SNMPPlaceholderEnabled {
-				community, tokErr := e.ensureUserSnmpTrapToken(ctx, strings.TrimSpace(spec.WorkspaceCtx.claims.Username))
-				if tokErr != nil {
-					return nil, nil, nil, tokErr
-				}
-				trapHost := ""
-				if ip, found, ipErr := kubeGetServiceClusterIP(ctx, kubeNamespace(), "skyforge-snmp-trap"); ipErr == nil && found {
-					trapHost = strings.TrimSpace(ip)
-				}
-				trapPort := 162
+				profile := snmpV3ProfileForUsername(strings.TrimSpace(spec.WorkspaceCtx.claims.Username))
 				patched, patchErr := patchNetlabBundleB64(bundleB64, func(b []byte) ([]byte, error) {
-					return patchNetlabTopologyYAMLForSnmp(b, community, trapHost, trapPort)
-				})
+					return patchNetlabTopologyYAMLForSnmp(b, profile)
+				}, snmpTemplateFilesForBundle(profile))
 				if patchErr != nil {
 					return nil, nil, nil, patchErr
 				}

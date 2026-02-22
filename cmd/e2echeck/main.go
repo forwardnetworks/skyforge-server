@@ -93,8 +93,9 @@ type deploymentActionResponse struct {
 }
 
 type deploymentForwardConfigRequest struct {
-	Enabled           bool   `json:"enabled"`
-	CollectorConfigID string `json:"collectorConfigId,omitempty"`
+	Enabled                    bool   `json:"enabled"`
+	CollectorConfigID          string `json:"collectorConfigId,omitempty"`
+	ForwardCredentialProfileID string `json:"forwardCredentialProfileId,omitempty"`
 }
 
 type deploymentTopologyResponse struct {
@@ -485,7 +486,7 @@ func deployableInSkyforge(device string) bool {
 	// for in-cluster (clabernetes) netlab deployments.
 	//
 	// NOTE: Exclude vsrx (out of scope) even if the upstream netlab catalog includes it.
-	case "eos", "iol", "iosv", "iosvl2", "csr", "nxos", "cumulus", "sros", "asav", "fortios", "vmx", "vjunos-router", "vjunos-switch", "cat8000v", "arubacx", "dellos10", "vptx", "linux":
+	case "eos", "iol", "iosv", "iosvl2", "csr", "iosxr", "nxos", "cumulus", "sros", "asav", "fortios", "vmx", "vjunos-router", "vjunos-switch", "cat8000v", "arubacx", "dellos10", "vptx", "linux":
 		return true
 	default:
 		return false
@@ -501,6 +502,7 @@ func onboardedNetlabDevices() []string {
 		"iosv",
 		"iosvl2",
 		"csr",
+		"iosxr",
 		"nxos",
 		"cumulus",
 		"sros",
@@ -550,6 +552,7 @@ func generateMatrixFromCatalog(catalogPath string) (matrixFile, error) {
 	templateFilter := splitCSVEnv("SKYFORGE_E2E_TEMPLATES")
 	deployEnabled := getenvBool("SKYFORGE_E2E_DEPLOY", false)
 	deployDeviceFilter := splitCSVEnv("SKYFORGE_E2E_DEPLOY_DEVICES")
+	forwardSSHReadyOverride := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_FORWARD_SSH_READY_SECONDS"))
 
 	deviceList := make([]string, 0, len(devices))
 	for d := range devices {
@@ -609,6 +612,13 @@ func generateMatrixFromCatalog(catalogPath string) (matrixFile, error) {
 						continue
 					}
 				}
+				deployEnv := map[string]string{
+					"NETLAB_DEVICE": d,
+				}
+				if forwardSSHReadyOverride != "" {
+					deployEnv["SKYFORGE_FORWARD_SSH_READY_SECONDS"] = forwardSSHReadyOverride
+				}
+
 				deployName := fmt.Sprintf("netlab-deploy-%s-%s", d, tmpl.Name)
 				deployTimeout, sshTimeout := deployTimeoutsForDevice(d)
 				tests = append(tests, matrixTest{
@@ -627,14 +637,12 @@ func generateMatrixFromCatalog(catalogPath string) (matrixFile, error) {
 						SSHTimeout   string            `yaml:"sshTimeout"`
 						Cleanup      bool              `yaml:"cleanup"`
 					}{
-						Type:     "netlab-c9s",
-						Source:   tmpl.Source,
-						Repo:     "",
-						Dir:      tmpl.Dir,
-						Template: tmpl.Template,
-						Environment: map[string]string{
-							"NETLAB_DEVICE": d,
-						},
+						Type:         "netlab-c9s",
+						Source:       tmpl.Source,
+						Repo:         "",
+						Dir:          tmpl.Dir,
+						Template:     tmpl.Template,
+						Environment:  deployEnv,
 						SetOverrides: nil,
 						Timeout:      deployTimeout,
 						SSHBanners:   true,
@@ -2205,10 +2213,15 @@ func run() int {
 
 			// Best-effort: enable Forward on this deployment so we also exercise Forward sync plumbing.
 			if getenvBool("SKYFORGE_E2E_FORWARD", false) && strings.TrimSpace(collectorConfigID) != "" {
-				fwdCfgURL := fmt.Sprintf("%s/api/workspaces/%s/deployments/%s/forward", baseURL, ws.ID, dep.ID)
+				profileID := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_FORWARD_CREDENTIAL_PROFILE_ID"))
+				if profileID == "" {
+					profileID = collectorConfigID
+				}
+				fwdCfgURL := fmt.Sprintf("%s/api/deploy/%s/forward", baseURL, dep.ID)
 				resp, body, err = doJSON(client, http.MethodPut, fwdCfgURL, deploymentForwardConfigRequest{
-					Enabled:           true,
-					CollectorConfigID: collectorConfigID,
+					Enabled:                    true,
+					CollectorConfigID:          collectorConfigID,
+					ForwardCredentialProfileID: profileID,
 				}, map[string]string{"Cookie": cookie})
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "test %q: forward config request failed: %v\n", name, err)

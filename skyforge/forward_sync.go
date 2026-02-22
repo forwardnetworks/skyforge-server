@@ -2,11 +2,14 @@ package skyforge
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 	"time"
 
@@ -45,6 +48,37 @@ type netlabDeviceDefaults struct {
 }
 
 var netlabDefaults = loadNetlabDeviceDefaults()
+
+var forwardSnmpV3UsernameCleaner = regexp.MustCompile(`[^a-z0-9_]`)
+
+func forwardSnmpV3ProfileForUsername(username string) forwardSnmpV3Profile {
+	username = strings.ToLower(strings.TrimSpace(username))
+	if username == "" {
+		username = "skyforge"
+	}
+	base := forwardSnmpV3UsernameCleaner.ReplaceAllString(username, "_")
+	base = strings.Trim(base, "_")
+	if base == "" {
+		base = "skyforge"
+	}
+	if len(base) > 20 {
+		base = strings.Trim(base[:20], "_")
+	}
+	if base == "" {
+		base = "skyforge"
+	}
+	authSum := sha256.Sum256([]byte("skyforge-snmpv3-auth:" + username))
+	privSum := sha256.Sum256([]byte("skyforge-snmpv3-priv:" + username))
+	authHex := hex.EncodeToString(authSum[:])
+	privHex := hex.EncodeToString(privSum[:])
+	return forwardSnmpV3Profile{
+		Username:        base,
+		AuthType:        "SHA_256",
+		AuthPassword:    "SfAuth-" + authHex[:24],
+		PrivacyProtocol: "AES_128",
+		PrivacyPassword: "SfPriv-" + privHex[:24],
+	}
+}
 
 func (s *Service) forwardDeviceTypes(ctx context.Context) map[string]string {
 	out := map[string]string{
@@ -450,25 +484,8 @@ func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *wor
 
 	snmpCredentialID := getString(forwardSnmpCredentialIDKey)
 	if snmpCredentialID == "" && s.cfg.Forward.SNMPPlaceholderEnabled {
-		rec, err := s.getSnmpTrapToken(ctx, pc.claims.Username)
-		if err != nil {
-			return cfgAny, err
-		}
-		community := ""
-		if rec != nil {
-			community = strings.TrimSpace(rec.Community)
-		}
-		if community == "" {
-			comm, err := generateCommunity(pc.claims.Username)
-			if err != nil {
-				return cfgAny, err
-			}
-			if err := s.putSnmpTrapToken(ctx, pc.claims.Username, comm); err != nil {
-				return cfgAny, err
-			}
-			community = comm
-		}
-		cred, err := forwardCreateSnmpCredential(ctx, client, networkID, credentialName, community)
+		profile := forwardSnmpV3ProfileForUsername(pc.claims.Username)
+		cred, err := forwardCreateSnmpCredential(ctx, client, networkID, credentialName, profile)
 		if err != nil {
 			if strings.Contains(err.Error(), "No collector configured") ||
 				strings.Contains(strings.ToLower(err.Error()), "not found") {

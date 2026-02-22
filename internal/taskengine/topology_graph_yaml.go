@@ -21,6 +21,17 @@ func containerlabYAMLBytesToTopologyGraph(raw []byte, podInfo map[string]Topolog
 	}
 
 	nodes := parseContainerlabNodes(topologyAny["nodes"])
+	defaultKind := ""
+	if defaults, ok := topologyAny["defaults"].(map[string]any); ok && defaults != nil {
+		defaultKind = strings.TrimSpace(firstString(defaults, "kind", "type", "imageKind"))
+	}
+	if defaultKind != "" {
+		for i := range nodes {
+			if strings.TrimSpace(nodes[i].Kind) == "" {
+				nodes[i].Kind = defaultKind
+			}
+		}
+	}
 	edges := parseContainerlabYAMLLinks(topologyAny["links"])
 
 	if len(nodes) == 0 {

@@ -102,66 +102,18 @@ type SnmpTrapTokenResponse struct {
 	UpdatedAtUTC string `json:"updatedAtUtc,omitempty"`
 }
 
-// GetSnmpTrapToken returns the per-user SNMPv2c community string used for trap routing.
+// GetSnmpTrapToken is disabled: SNMPv2c communities are no longer supported.
 //
 //encore:api auth method=GET path=/api/snmp/traps/token
 func (s *Service) GetSnmpTrapToken(ctx context.Context) (*SnmpTrapTokenResponse, error) {
-	user, err := requireAuthUser()
-	if err != nil {
-		return nil, err
-	}
-	rec, err := s.getSnmpTrapToken(ctx, user.Username)
-	if err != nil {
-		rlog.Error("failed to load snmp token", "username", user.Username, "error", err)
-		return nil, errs.B().Code(errs.Internal).Msg("failed to load snmp token").Err()
-	}
-	if rec == nil || rec.Community == "" {
-		comm, err := generateCommunity(user.Username)
-		if err != nil {
-			return nil, errs.B().Code(errs.Internal).Msg("failed to generate community").Err()
-		}
-		if err := s.putSnmpTrapToken(ctx, user.Username, comm); err != nil {
-			return nil, errs.B().Code(errs.Internal).Msg("failed to store community").Err()
-		}
-		rec = &snmpTrapTokenRecord{Community: comm, UpdatedAt: time.Now().UTC()}
-	}
-	host := strings.TrimSpace(s.cfg.PublicURL)
-	host = strings.TrimPrefix(host, "https://")
-	host = strings.TrimPrefix(host, "http://")
-	host = strings.TrimSuffix(host, "/")
-	return &SnmpTrapTokenResponse{
-		Community:    rec.Community,
-		ListenHost:   host,
-		ListenPort:   162,
-		UpdatedAtUTC: rec.UpdatedAt.UTC().Format(time.RFC3339),
-	}, nil
+	return nil, errs.B().Code(errs.FailedPrecondition).Msg("SNMPv2 communities are disabled; use SNMPv3 credentials").Err()
 }
 
-// RotateSnmpTrapToken rotates the per-user community string.
+// RotateSnmpTrapToken is disabled: SNMPv2c communities are no longer supported.
 //
 //encore:api auth method=POST path=/api/snmp/traps/token/rotate
 func (s *Service) RotateSnmpTrapToken(ctx context.Context) (*SnmpTrapTokenResponse, error) {
-	user, err := requireAuthUser()
-	if err != nil {
-		return nil, err
-	}
-	comm, err := generateCommunity(user.Username)
-	if err != nil {
-		return nil, errs.B().Code(errs.Internal).Msg("failed to generate community").Err()
-	}
-	if err := s.putSnmpTrapToken(ctx, user.Username, comm); err != nil {
-		return nil, errs.B().Code(errs.Internal).Msg("failed to store community").Err()
-	}
-	host := strings.TrimSpace(s.cfg.PublicURL)
-	host = strings.TrimPrefix(host, "https://")
-	host = strings.TrimPrefix(host, "http://")
-	host = strings.TrimSuffix(host, "/")
-	return &SnmpTrapTokenResponse{
-		Community:    comm,
-		ListenHost:   host,
-		ListenPort:   162,
-		UpdatedAtUTC: time.Now().UTC().Format(time.RFC3339),
-	}, nil
+	return nil, errs.B().Code(errs.FailedPrecondition).Msg("SNMPv2 communities are disabled; use SNMPv3 credentials").Err()
 }
 
 type SnmpTrapEvent struct {
