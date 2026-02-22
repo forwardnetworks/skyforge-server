@@ -44,12 +44,12 @@ type LinkEdgeStats struct {
 	TargetTxDr uint64 `json:"targetTxDropped"`
 }
 
-// GetWorkspaceDeploymentLinkStats returns a snapshot of interface counters for each topology edge.
+// GetUserScopeDeploymentLinkStats returns a snapshot of interface counters for each topology edge.
 //
 // This is used to render live link utilization on the topology graph (similar to c9s VSCode extension).
 //
 //encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/links/stats
-func (s *Service) GetWorkspaceDeploymentLinkStats(ctx context.Context, id, deploymentID string) (*LinkStatsSnapshot, error) {
+func (s *Service) GetUserScopeDeploymentLinkStats(ctx context.Context, id, deploymentID string) (*LinkStatsSnapshot, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -264,10 +264,10 @@ type LinkStatsSSEEvent struct {
 	Error    string             `json:"error,omitempty"`
 }
 
-// GetWorkspaceDeploymentLinkStatsEvents streams link stats snapshots as SSE.
+// GetUserScopeDeploymentLinkStatsEvents streams link stats snapshots as SSE.
 //
 //encore:api auth raw method=GET path=/api/users/:id/deployments/:deploymentID/links/stats/events
-func (s *Service) GetWorkspaceDeploymentLinkStatsEvents(w http.ResponseWriter, req *http.Request) {
+func (s *Service) GetUserScopeDeploymentLinkStatsEvents(w http.ResponseWriter, req *http.Request) {
 	if s == nil || s.db == nil || s.sessionManager == nil {
 		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
 		return
@@ -331,7 +331,7 @@ func (s *Service) GetWorkspaceDeploymentLinkStatsEvents(w http.ResponseWriter, r
 	}
 
 	// initial
-	snap, err := s.GetWorkspaceDeploymentLinkStats(ctx, userScopeKey, deploymentID)
+	snap, err := s.GetUserScopeDeploymentLinkStats(ctx, userScopeKey, deploymentID)
 	if err != nil {
 		send(LinkStatsSSEEvent{Type: "error", Error: err.Error()})
 	} else {
@@ -343,7 +343,7 @@ func (s *Service) GetWorkspaceDeploymentLinkStatsEvents(w http.ResponseWriter, r
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			snap, err := s.GetWorkspaceDeploymentLinkStats(ctx, userScopeKey, deploymentID)
+			snap, err := s.GetUserScopeDeploymentLinkStats(ctx, userScopeKey, deploymentID)
 			if err != nil {
 				send(LinkStatsSSEEvent{Type: "error", Error: err.Error()})
 				continue

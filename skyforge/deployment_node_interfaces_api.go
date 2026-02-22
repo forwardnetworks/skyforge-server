@@ -34,10 +34,10 @@ type DeploymentNodeInterface struct {
 	EdgeID    string `json:"edgeId,omitempty"`
 }
 
-// GetWorkspaceDeploymentNodeInterfaces returns interface stats (launcher container) for a clabernetes node.
+// GetUserScopeDeploymentNodeInterfaces returns interface stats (launcher container) for a clabernetes node.
 //
 //encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/nodes/:node/interfaces
-func (s *Service) GetWorkspaceDeploymentNodeInterfaces(ctx context.Context, id, deploymentID, node string) (*DeploymentNodeInterfacesResponse, error) {
+func (s *Service) GetUserScopeDeploymentNodeInterfaces(ctx context.Context, id, deploymentID, node string) (*DeploymentNodeInterfacesResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err

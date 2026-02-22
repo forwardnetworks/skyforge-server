@@ -35,10 +35,10 @@ type UserScopePodContainer struct {
 	Message      string `json:"message,omitempty"`
 }
 
-// GetWorkspaceDeploymentNodeDescribe returns a lightweight summary of the clabernetes node pod.
+// GetUserScopeDeploymentNodeDescribe returns a lightweight summary of the clabernetes node pod.
 //
 //encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/nodes/:node/describe
-func (s *Service) GetWorkspaceDeploymentNodeDescribe(ctx context.Context, id, deploymentID, node string) (*UserScopeDeploymentNodeDescribeResponse, error) {
+func (s *Service) GetUserScopeDeploymentNodeDescribe(ctx context.Context, id, deploymentID, node string) (*UserScopeDeploymentNodeDescribeResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err

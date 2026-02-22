@@ -98,10 +98,10 @@ type DeploymentCapacityInventoryResponse struct {
 	BgpNeighbors  []CapacityBgpNeighborRow        `json:"bgpNeighbors"`
 }
 
-// GetWorkspaceDeploymentCapacityInventory returns the latest cached NQE results for inventory/routing scale.
+// GetUserScopeDeploymentCapacityInventory returns the latest cached NQE results for inventory/routing scale.
 //
 //encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/capacity/inventory
-func (s *Service) GetWorkspaceDeploymentCapacityInventory(ctx context.Context, id, deploymentID string) (*DeploymentCapacityInventoryResponse, error) {
+func (s *Service) GetUserScopeDeploymentCapacityInventory(ctx context.Context, id, deploymentID string) (*DeploymentCapacityInventoryResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err

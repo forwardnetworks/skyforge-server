@@ -132,10 +132,10 @@ func (s *Service) capacityForwardClientForUserNetwork(ctx context.Context, usern
 
 // ---- Summary / Refresh ----
 
-// GetWorkspaceForwardNetworkCapacitySummary returns the latest stored capacity rollups for a saved Forward network.
+// GetUserScopeForwardNetworkCapacitySummary returns the latest stored capacity rollups for a saved Forward network.
 //
 //encore:api auth method=GET path=/api/users/:id/forward-networks/:networkRef/capacity/summary
-func (s *Service) GetWorkspaceForwardNetworkCapacitySummary(ctx context.Context, id, networkRef string) (*ForwardNetworkCapacitySummaryResponse, error) {
+func (s *Service) GetUserScopeForwardNetworkCapacitySummary(ctx context.Context, id, networkRef string) (*ForwardNetworkCapacitySummaryResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -173,10 +173,10 @@ func (s *Service) GetWorkspaceForwardNetworkCapacitySummary(ctx context.Context,
 	}, nil
 }
 
-// RefreshWorkspaceForwardNetworkCapacityRollups enqueues a background rollup task for the saved Forward network.
+// RefreshUserScopeForwardNetworkCapacityRollups enqueues a background rollup task for the saved Forward network.
 //
 //encore:api auth method=POST path=/api/users/:id/forward-networks/:networkRef/capacity/rollups/refresh
-func (s *Service) RefreshWorkspaceForwardNetworkCapacityRollups(ctx context.Context, id, networkRef string) (*ForwardNetworkCapacityRefreshResponse, error) {
+func (s *Service) RefreshUserScopeForwardNetworkCapacityRollups(ctx context.Context, id, networkRef string) (*ForwardNetworkCapacityRefreshResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -229,10 +229,10 @@ func (s *Service) RefreshWorkspaceForwardNetworkCapacityRollups(ctx context.Cont
 
 // ---- Inventory ----
 
-// GetWorkspaceForwardNetworkCapacityInventory returns the latest cached NQE results for inventory/routing scale.
+// GetUserScopeForwardNetworkCapacityInventory returns the latest cached NQE results for inventory/routing scale.
 //
 //encore:api auth method=GET path=/api/users/:id/forward-networks/:networkRef/capacity/inventory
-func (s *Service) GetWorkspaceForwardNetworkCapacityInventory(ctx context.Context, id, networkRef string) (*ForwardNetworkCapacityInventoryResponse, error) {
+func (s *Service) GetUserScopeForwardNetworkCapacityInventory(ctx context.Context, id, networkRef string) (*ForwardNetworkCapacityInventoryResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -275,10 +275,10 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityInventory(ctx context.Contex
 
 // ---- Growth ----
 
-// GetWorkspaceForwardNetworkCapacityGrowth compares the latest rollup bucket to an earlier one and returns deltas.
+// GetUserScopeForwardNetworkCapacityGrowth compares the latest rollup bucket to an earlier one and returns deltas.
 //
 //encore:api auth method=GET path=/api/users/:id/forward-networks/:networkRef/capacity/growth
-func (s *Service) GetWorkspaceForwardNetworkCapacityGrowth(ctx context.Context, id, networkRef string, q *DeploymentCapacityGrowthQuery) (*ForwardNetworkCapacityGrowthResponse, error) {
+func (s *Service) GetUserScopeForwardNetworkCapacityGrowth(ctx context.Context, id, networkRef string, q *DeploymentCapacityGrowthQuery) (*ForwardNetworkCapacityGrowthResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -340,10 +340,10 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityGrowth(ctx context.Context, 
 
 // ---- Forward perf proxy endpoints (read-through) ----
 
-// GetWorkspaceForwardNetworkCapacityInterfaceMetrics proxies Forward's interface-metrics endpoint.
+// GetUserScopeForwardNetworkCapacityInterfaceMetrics proxies Forward's interface-metrics endpoint.
 //
 //encore:api auth method=GET path=/api/users/:id/forward-networks/:networkRef/capacity/perf/interface-metrics
-func (s *Service) GetWorkspaceForwardNetworkCapacityInterfaceMetrics(ctx context.Context, id, networkRef string, q *CapacityInterfaceMetricsQuery) (*CapacityPerfProxyResponse, error) {
+func (s *Service) GetUserScopeForwardNetworkCapacityInterfaceMetrics(ctx context.Context, id, networkRef string, q *CapacityInterfaceMetricsQuery) (*CapacityPerfProxyResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -398,10 +398,10 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityInterfaceMetrics(ctx context
 	return &CapacityPerfProxyResponse{Body: body}, nil
 }
 
-// PostWorkspaceForwardNetworkCapacityInterfaceMetricsHistory proxies Forward's interface-metrics-history endpoint.
+// PostUserScopeForwardNetworkCapacityInterfaceMetricsHistory proxies Forward's interface-metrics-history endpoint.
 //
 //encore:api auth method=POST path=/api/users/:id/forward-networks/:networkRef/capacity/perf/interface-metrics-history
-func (s *Service) PostWorkspaceForwardNetworkCapacityInterfaceMetricsHistory(ctx context.Context, id, networkRef string, req *capacityInterfaceMetricsHistoryRequest) (*CapacityPerfProxyResponse, error) {
+func (s *Service) PostUserScopeForwardNetworkCapacityInterfaceMetricsHistory(ctx context.Context, id, networkRef string, req *capacityInterfaceMetricsHistoryRequest) (*CapacityPerfProxyResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -450,10 +450,10 @@ func (s *Service) PostWorkspaceForwardNetworkCapacityInterfaceMetricsHistory(ctx
 	return &CapacityPerfProxyResponse{Body: body}, nil
 }
 
-// PostWorkspaceForwardNetworkCapacityDeviceMetricsHistory proxies Forward's device-metrics-history endpoint.
+// PostUserScopeForwardNetworkCapacityDeviceMetricsHistory proxies Forward's device-metrics-history endpoint.
 //
 //encore:api auth method=POST path=/api/users/:id/forward-networks/:networkRef/capacity/perf/device-metrics-history
-func (s *Service) PostWorkspaceForwardNetworkCapacityDeviceMetricsHistory(ctx context.Context, id, networkRef string, req *capacityDeviceSet) (*CapacityPerfProxyResponse, error) {
+func (s *Service) PostUserScopeForwardNetworkCapacityDeviceMetricsHistory(ctx context.Context, id, networkRef string, req *capacityDeviceSet) (*CapacityPerfProxyResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -502,10 +502,10 @@ func (s *Service) PostWorkspaceForwardNetworkCapacityDeviceMetricsHistory(ctx co
 	return &CapacityPerfProxyResponse{Body: body}, nil
 }
 
-// GetWorkspaceForwardNetworkCapacityUnhealthyDevices proxies Forward's unhealthy-devices endpoint.
+// GetUserScopeForwardNetworkCapacityUnhealthyDevices proxies Forward's unhealthy-devices endpoint.
 //
 //encore:api auth method=GET path=/api/users/:id/forward-networks/:networkRef/capacity/perf/unhealthy-devices
-func (s *Service) GetWorkspaceForwardNetworkCapacityUnhealthyDevices(ctx context.Context, id, networkRef string, q *CapacityUnhealthyDevicesQuery) (*CapacityPerfProxyResponse, error) {
+func (s *Service) GetUserScopeForwardNetworkCapacityUnhealthyDevices(ctx context.Context, id, networkRef string, q *CapacityUnhealthyDevicesQuery) (*CapacityPerfProxyResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -545,10 +545,10 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityUnhealthyDevices(ctx context
 	return &CapacityPerfProxyResponse{Body: body}, nil
 }
 
-// PostWorkspaceForwardNetworkCapacityUnhealthyInterfaces proxies Forward's unhealthy-interfaces endpoint.
+// PostUserScopeForwardNetworkCapacityUnhealthyInterfaces proxies Forward's unhealthy-interfaces endpoint.
 //
 //encore:api auth method=POST path=/api/users/:id/forward-networks/:networkRef/capacity/perf/unhealthy-interfaces
-func (s *Service) PostWorkspaceForwardNetworkCapacityUnhealthyInterfaces(ctx context.Context, id, networkRef string, req *CapacityUnhealthyInterfacesRequest) (*CapacityPerfProxyResponse, error) {
+func (s *Service) PostUserScopeForwardNetworkCapacityUnhealthyInterfaces(ctx context.Context, id, networkRef string, req *CapacityUnhealthyInterfacesRequest) (*CapacityPerfProxyResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err

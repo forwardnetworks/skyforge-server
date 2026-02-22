@@ -36,8 +36,8 @@ func requireUserScopeOwnerRole(pc *userContext) error {
 	}
 }
 
-// CreateWorkspacePolicyReportRecertCampaign creates a recertification campaign for a given Forward network/snapshot/pack.
-func (s *Service) CreateWorkspacePolicyReportRecertCampaign(ctx context.Context, id string, req *PolicyReportCreateRecertCampaignRequest) (*PolicyReportRecertCampaignWithCounts, error) {
+// CreateUserScopePolicyReportRecertCampaign creates a recertification campaign for a given Forward network/snapshot/pack.
+func (s *Service) CreateUserScopePolicyReportRecertCampaign(ctx context.Context, id string, req *PolicyReportCreateRecertCampaignRequest) (*PolicyReportRecertCampaignWithCounts, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -88,8 +88,8 @@ func (s *Service) CreateWorkspacePolicyReportRecertCampaign(ctx context.Context,
 	return &PolicyReportRecertCampaignWithCounts{Campaign: *c, Counts: PolicyReportRecertCampaignCounts{}}, nil
 }
 
-// ListWorkspacePolicyReportRecertCampaigns lists recertification campaigns.
-func (s *Service) ListWorkspacePolicyReportRecertCampaigns(ctx context.Context, id string, req *PolicyReportListRecertCampaignsRequest) (*PolicyReportListRecertCampaignsResponse, error) {
+// ListUserScopePolicyReportRecertCampaigns lists recertification campaigns.
+func (s *Service) ListUserScopePolicyReportRecertCampaigns(ctx context.Context, id string, req *PolicyReportListRecertCampaignsRequest) (*PolicyReportListRecertCampaignsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -111,8 +111,8 @@ func (s *Service) ListWorkspacePolicyReportRecertCampaigns(ctx context.Context, 
 	return &PolicyReportListRecertCampaignsResponse{Campaigns: campaigns}, nil
 }
 
-// GetWorkspacePolicyReportRecertCampaign gets one campaign plus assignment counts.
-func (s *Service) GetWorkspacePolicyReportRecertCampaign(ctx context.Context, id string, campaignId string) (*PolicyReportRecertCampaignWithCounts, error) {
+// GetUserScopePolicyReportRecertCampaign gets one campaign plus assignment counts.
+func (s *Service) GetUserScopePolicyReportRecertCampaign(ctx context.Context, id string, campaignId string) (*PolicyReportRecertCampaignWithCounts, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -280,8 +280,8 @@ func (s *Service) GenerateWorkspacePolicyReportRecertAssignments(ctx context.Con
 	return &PolicyReportGenerateRecertAssignmentsResponse{CampaignID: campaign.ID, Created: created}, nil
 }
 
-// ListWorkspacePolicyReportRecertAssignments lists assignments.
-func (s *Service) ListWorkspacePolicyReportRecertAssignments(ctx context.Context, id string, req *PolicyReportListRecertAssignmentsRequest) (*PolicyReportListRecertAssignmentsResponse, error) {
+// ListUserScopePolicyReportRecertAssignments lists assignments.
+func (s *Service) ListUserScopePolicyReportRecertAssignments(ctx context.Context, id string, req *PolicyReportListRecertAssignmentsRequest) (*PolicyReportListRecertAssignmentsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -361,8 +361,8 @@ func (s *Service) WaiveWorkspacePolicyReportRecertAssignment(ctx context.Context
 	return &PolicyReportDecisionResponse{Ok: true}, nil
 }
 
-// CreateWorkspacePolicyReportException proposes an exception for a finding.
-func (s *Service) CreateWorkspacePolicyReportException(ctx context.Context, id string, req *PolicyReportCreateExceptionRequest) (*PolicyReportException, error) {
+// CreateUserScopePolicyReportException proposes an exception for a finding.
+func (s *Service) CreateUserScopePolicyReportException(ctx context.Context, id string, req *PolicyReportCreateExceptionRequest) (*PolicyReportException, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -393,8 +393,8 @@ func (s *Service) CreateWorkspacePolicyReportException(ctx context.Context, id s
 	return out, nil
 }
 
-// ListWorkspacePolicyReportExceptions lists exceptions.
-func (s *Service) ListWorkspacePolicyReportExceptions(ctx context.Context, id string, req *PolicyReportListExceptionsRequest) (*PolicyReportListExceptionsResponse, error) {
+// ListUserScopePolicyReportExceptions lists exceptions.
+func (s *Service) ListUserScopePolicyReportExceptions(ctx context.Context, id string, req *PolicyReportListExceptionsRequest) (*PolicyReportListExceptionsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err

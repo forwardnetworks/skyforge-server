@@ -26,10 +26,10 @@ type DeploymentForwardConfigResponse struct {
 	ForwardSnapshotURL string `json:"forwardSnapshotUrl,omitempty"`
 }
 
-// UpdateWorkspaceDeploymentForwardConfig updates the per-deployment Forward toggle and collector selection.
+// UpdateUserScopeDeploymentForwardConfig updates the per-deployment Forward toggle and collector selection.
 //
 //encore:api auth method=PUT path=/api/users/:id/deployments/:deploymentID/forward
-func (s *Service) UpdateWorkspaceDeploymentForwardConfig(ctx context.Context, id, deploymentID string, req *DeploymentForwardConfigRequest) (*DeploymentForwardConfigResponse, error) {
+func (s *Service) UpdateUserScopeDeploymentForwardConfig(ctx context.Context, id, deploymentID string, req *DeploymentForwardConfigRequest) (*DeploymentForwardConfigResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -106,10 +106,10 @@ type DeploymentForwardSyncResponse struct {
 	Run          JSONMap `json:"run"`
 }
 
-// SyncWorkspaceDeploymentForward enqueues a Forward sync task for the deployment's latest topology.
+// SyncUserScopeDeploymentForward enqueues a Forward sync task for the deployment's latest topology.
 //
 //encore:api auth method=POST path=/api/users/:id/deployments/:deploymentID/forward/sync
-func (s *Service) SyncWorkspaceDeploymentForward(ctx context.Context, id, deploymentID string) (*DeploymentForwardSyncResponse, error) {
+func (s *Service) SyncUserScopeDeploymentForward(ctx context.Context, id, deploymentID string) (*DeploymentForwardSyncResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err

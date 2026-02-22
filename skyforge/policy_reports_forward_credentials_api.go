@@ -9,8 +9,8 @@ import (
 	"encore.dev/beta/errs"
 )
 
-// GetWorkspacePolicyReportForwardNetworkCredentials returns the current user's credentials status for a Forward network.
-func (s *Service) GetWorkspacePolicyReportForwardNetworkCredentials(ctx context.Context, id string, forwardNetworkId string) (*PolicyReportForwardCredentialsStatus, error) {
+// GetUserScopePolicyReportForwardNetworkCredentials returns the current user's credentials status for a Forward network.
+func (s *Service) GetUserScopePolicyReportForwardNetworkCredentials(ctx context.Context, id string, forwardNetworkId string) (*PolicyReportForwardCredentialsStatus, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -40,8 +40,8 @@ func (s *Service) GetWorkspacePolicyReportForwardNetworkCredentials(ctx context.
 	}, nil
 }
 
-// PutWorkspacePolicyReportForwardNetworkCredentials upserts the current user's credentials for a Forward network.
-func (s *Service) PutWorkspacePolicyReportForwardNetworkCredentials(ctx context.Context, id string, forwardNetworkId string, req *PolicyReportPutForwardCredentialsRequest) (*PolicyReportForwardCredentialsStatus, error) {
+// PutUserScopePolicyReportForwardNetworkCredentials upserts the current user's credentials for a Forward network.
+func (s *Service) PutUserScopePolicyReportForwardNetworkCredentials(ctx context.Context, id string, forwardNetworkId string, req *PolicyReportPutForwardCredentialsRequest) (*PolicyReportForwardCredentialsStatus, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -80,8 +80,8 @@ func (s *Service) PutWorkspacePolicyReportForwardNetworkCredentials(ctx context.
 	}, nil
 }
 
-// DeleteWorkspacePolicyReportForwardNetworkCredentials clears the current user's credentials for a Forward network.
-func (s *Service) DeleteWorkspacePolicyReportForwardNetworkCredentials(ctx context.Context, id string, forwardNetworkId string) (*PolicyReportDecisionResponse, error) {
+// DeleteUserScopePolicyReportForwardNetworkCredentials clears the current user's credentials for a Forward network.
+func (s *Service) DeleteUserScopePolicyReportForwardNetworkCredentials(ctx context.Context, id string, forwardNetworkId string) (*PolicyReportDecisionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err

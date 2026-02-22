@@ -40,10 +40,10 @@ type DeploymentLinkAdminResponse struct {
 	Results   []DeploymentLinkAdminResult `json:"results"`
 }
 
-// UpdateWorkspaceDeploymentLinkAdmin performs administrative link operations (up/down) on a topology edge.
+// UpdateUserScopeDeploymentLinkAdmin performs administrative link operations (up/down) on a topology edge.
 //
 //encore:api auth method=POST path=/api/users/:id/deployments/:deploymentID/links/admin
-func (s *Service) UpdateWorkspaceDeploymentLinkAdmin(ctx context.Context, id, deploymentID string, req *DeploymentLinkAdminRequest) (*DeploymentLinkAdminResponse, error) {
+func (s *Service) UpdateUserScopeDeploymentLinkAdmin(ctx context.Context, id, deploymentID string, req *DeploymentLinkAdminRequest) (*DeploymentLinkAdminResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -214,10 +214,10 @@ type DeploymentLinkCaptureResponse struct {
 	Stderr      string `json:"stderr,omitempty"`
 }
 
-// CaptureWorkspaceDeploymentLinkPcap captures a short pcap on a topology link and uploads it as a user-scope artifact.
+// CaptureUserScopeDeploymentLinkPcap captures a short pcap on a topology link and uploads it as a user-scope artifact.
 //
 //encore:api auth method=POST path=/api/users/:id/deployments/:deploymentID/links/capture
-func (s *Service) CaptureWorkspaceDeploymentLinkPcap(ctx context.Context, id, deploymentID string, req *DeploymentLinkCaptureRequest) (*DeploymentLinkCaptureResponse, error) {
+func (s *Service) CaptureUserScopeDeploymentLinkPcap(ctx context.Context, id, deploymentID string, req *DeploymentLinkCaptureRequest) (*DeploymentLinkCaptureResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err

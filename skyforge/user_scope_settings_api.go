@@ -85,7 +85,7 @@ func validateExternalTemplateRepos(repos []ExternalTemplateRepo) ([]ExternalTemp
 // UpdateUserScopeSettings updates user-scope feature flags and template repo sources.
 //
 //encore:api auth method=PUT path=/api/users/:id/settings
-func (s *Service) UpdateWorkspaceSettings(ctx context.Context, id string, req *UserScopeSettingsRequest) (*UserScopeSettingsResponse, error) {
+func (s *Service) UpdateUserScopeSettings(ctx context.Context, id string, req *UserScopeSettingsRequest) (*UserScopeSettingsResponse, error) {
 	pc, err := requireWorkspaceOwner(ctx, s, id)
 	if err != nil {
 		return nil, err

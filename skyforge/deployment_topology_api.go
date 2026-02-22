@@ -37,13 +37,13 @@ type TopologyEdge struct {
 	Label    string `json:"label,omitempty"`
 }
 
-// GetWorkspaceDeploymentTopology returns a lightweight, provider-derived topology view.
+// GetUserScopeDeploymentTopology returns a lightweight, provider-derived topology view.
 //
 // For containerlab, the topology is sourced from the containerlab API after deploy so we
 // can reflect the resolved management IPs.
 //
 //encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/topology
-func (s *Service) GetWorkspaceDeploymentTopology(ctx context.Context, id, deploymentID string) (*DeploymentTopologyResponse, error) {
+func (s *Service) GetUserScopeDeploymentTopology(ctx context.Context, id, deploymentID string) (*DeploymentTopologyResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err

@@ -23,12 +23,12 @@ type UserScopeDeploymentNodeLogsResponse struct {
 	Logs      string `json:"logs,omitempty"`
 }
 
-// GetWorkspaceDeploymentNodeLogs returns recent log lines for a clabernetes node pod.
+// GetUserScopeDeploymentNodeLogs returns recent log lines for a clabernetes node pod.
 //
 // This powers the "View logs" action in the topology UI (similar to the c9s VSCode extension).
 //
 //encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/nodes/:node/logs
-func (s *Service) GetWorkspaceDeploymentNodeLogs(
+func (s *Service) GetUserScopeDeploymentNodeLogs(
 	ctx context.Context,
 	id, deploymentID, node string,
 	params *UserScopeDeploymentNodeLogsParams,

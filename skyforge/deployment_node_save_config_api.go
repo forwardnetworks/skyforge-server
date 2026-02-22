@@ -22,12 +22,12 @@ type UserScopeDeploymentNodeSaveConfigResponse struct {
 	Message   string `json:"message,omitempty"`
 }
 
-// SaveWorkspaceDeploymentNodeConfig triggers a best-effort "save config" operation on a node.
+// SaveUserScopeDeploymentNodeConfig triggers a best-effort "save config" operation on a node.
 //
 // For EOS/cEOS, this runs `write memory`.
 //
 //encore:api auth method=POST path=/api/users/:id/deployments/:deploymentID/nodes/:node/save-config
-func (s *Service) SaveWorkspaceDeploymentNodeConfig(ctx context.Context, id, deploymentID, node string) (*UserScopeDeploymentNodeSaveConfigResponse, error) {
+func (s *Service) SaveUserScopeDeploymentNodeConfig(ctx context.Context, id, deploymentID, node string) (*UserScopeDeploymentNodeSaveConfigResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err

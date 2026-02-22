@@ -21,12 +21,12 @@ type DeploymentNodeRunningConfigResponse struct {
 	Message   string `json:"message,omitempty"`
 }
 
-// GetWorkspaceDeploymentNodeRunningConfig fetches the running config from a NOS node (best-effort).
+// GetUserScopeDeploymentNodeRunningConfig fetches the running config from a NOS node (best-effort).
 //
 // Currently supports EOS/cEOS via `Cli -c "show running-config"`.
 //
 //encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/nodes/:node/running-config
-func (s *Service) GetWorkspaceDeploymentNodeRunningConfig(ctx context.Context, id, deploymentID, node string) (*DeploymentNodeRunningConfigResponse, error) {
+func (s *Service) GetUserScopeDeploymentNodeRunningConfig(ctx context.Context, id, deploymentID, node string) (*DeploymentNodeRunningConfigResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err

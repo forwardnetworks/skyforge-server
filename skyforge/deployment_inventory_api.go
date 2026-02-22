@@ -30,10 +30,10 @@ type DeploymentInventoryParams struct {
 	Format string `query:"format"` // json|csv
 }
 
-// GetWorkspaceDeploymentInventory returns a simple inventory of nodes and management IPs.
+// GetUserScopeDeploymentInventory returns a simple inventory of nodes and management IPs.
 //
 //encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/inventory
-func (s *Service) GetWorkspaceDeploymentInventory(ctx context.Context, id, deploymentID string, params *DeploymentInventoryParams) (*DeploymentInventoryResponse, error) {
+func (s *Service) GetUserScopeDeploymentInventory(ctx context.Context, id, deploymentID string, params *DeploymentInventoryParams) (*DeploymentInventoryResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -69,7 +69,7 @@ func (s *Service) GetWorkspaceDeploymentInventory(ctx context.Context, id, deplo
 
 	var topo *DeploymentTopologyResponse
 	if taskType == "" {
-		topo, err = s.GetWorkspaceDeploymentTopology(ctx, id, deploymentID)
+		topo, err = s.GetUserScopeDeploymentTopology(ctx, id, deploymentID)
 	} else {
 		topo, err = s.getDeploymentTopologyFromLatestTaskArtifact(ctx, pc, dep, taskType)
 	}

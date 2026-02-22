@@ -48,13 +48,13 @@ type LinkImpairmentResult struct {
 	Error     string `json:"error,omitempty"`
 }
 
-// SetWorkspaceDeploymentLinkImpairment applies or clears traffic impairment settings for a single link.
+// SetUserScopeDeploymentLinkImpairment applies or clears traffic impairment settings for a single link.
 //
 // The impairment is applied "outside" of the network OS by executing `tc` in the clabernetes launcher
 // container (or another non-NOS container in the same pod netns).
 //
 //encore:api auth method=POST path=/api/users/:id/deployments/:deploymentID/links/impair
-func (s *Service) SetWorkspaceDeploymentLinkImpairment(ctx context.Context, id, deploymentID string, req *LinkImpairmentRequest) (*LinkImpairmentResponse, error) {
+func (s *Service) SetUserScopeDeploymentLinkImpairment(ctx context.Context, id, deploymentID string, req *LinkImpairmentRequest) (*LinkImpairmentResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err

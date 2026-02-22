@@ -47,12 +47,12 @@ type DeploymentCapacityGrowthResponse struct {
 	Rows         []CapacityGrowthRow `json:"rows"`
 }
 
-// GetWorkspaceDeploymentCapacityGrowth compares the latest rollup bucket to an earlier one and returns deltas.
+// GetUserScopeDeploymentCapacityGrowth compares the latest rollup bucket to an earlier one and returns deltas.
 //
 // Intended for “top growers” views (week-over-week, day-over-day) without pulling Forward time series.
 //
 //encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/capacity/growth
-func (s *Service) GetWorkspaceDeploymentCapacityGrowth(ctx context.Context, id, deploymentID string, q *DeploymentCapacityGrowthQuery) (*DeploymentCapacityGrowthResponse, error) {
+func (s *Service) GetUserScopeDeploymentCapacityGrowth(ctx context.Context, id, deploymentID string, q *DeploymentCapacityGrowthQuery) (*DeploymentCapacityGrowthResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err

@@ -17,7 +17,7 @@ Skyforge uses a single user scope identity:
 ### A) Skyforge user scope key endpoints (preferred)
 
 If an endpoint is routed by Skyforge user scope key (slug/ID), use:
-- `s.userContextForUser(user, workspaceKey)`
+- `s.userContextForUser(user, userScopeKey)`
 
 This enforces:
 - authentication required

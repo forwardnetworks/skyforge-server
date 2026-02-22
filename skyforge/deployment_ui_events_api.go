@@ -32,10 +32,10 @@ type ListDeploymentUIEventsResponse struct {
 	Events       []DeploymentUIEvent `json:"events"`
 }
 
-// ListWorkspaceDeploymentUIEvents returns recent UI/graph events for a deployment.
+// ListUserScopeDeploymentUIEvents returns recent UI/graph events for a deployment.
 //
 //encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/ui-events
-func (s *Service) ListWorkspaceDeploymentUIEvents(ctx context.Context, id, deploymentID string, params *ListDeploymentUIEventsParams) (*ListDeploymentUIEventsResponse, error) {
+func (s *Service) ListUserScopeDeploymentUIEvents(ctx context.Context, id, deploymentID string, params *ListDeploymentUIEventsParams) (*ListDeploymentUIEventsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err

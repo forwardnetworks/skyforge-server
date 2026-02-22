@@ -296,10 +296,10 @@ func (s *Service) PutUserScopeAWSSSOConfig(ctx context.Context, id string, req *
 	}, nil
 }
 
-// GetWorkspaceAWSStatic returns AWS static credential status.
+// GetUserScopeAWSStatic returns AWS static credential status.
 //
 //encore:api auth method=GET path=/api/users/:id/cloud/aws-static
-func (s *Service) GetWorkspaceAWSStatic(ctx context.Context, id string) (*UserScopeAWSStaticGetResponse, error) {
+func (s *Service) GetUserScopeAWSStatic(ctx context.Context, id string) (*UserScopeAWSStaticGetResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -339,10 +339,10 @@ func (s *Service) GetWorkspaceAWSStatic(ctx context.Context, id string) (*UserSc
 	}, nil
 }
 
-// PutWorkspaceAWSStatic stores AWS static credentials.
+// PutUserScopeAWSStatic stores AWS static credentials.
 //
 //encore:api auth method=PUT path=/api/users/:id/cloud/aws-static
-func (s *Service) PutWorkspaceAWSStatic(ctx context.Context, id string, req *UserScopeAWSStaticPutRequest) (*UserScopeAWSStaticStatusResponse, error) {
+func (s *Service) PutUserScopeAWSStatic(ctx context.Context, id string, req *UserScopeAWSStaticPutRequest) (*UserScopeAWSStaticStatusResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -375,10 +375,10 @@ func (s *Service) PutWorkspaceAWSStatic(ctx context.Context, id string, req *Use
 	return &UserScopeAWSStaticStatusResponse{Status: "ok"}, nil
 }
 
-// DeleteWorkspaceAWSStatic clears AWS static credentials.
+// DeleteUserScopeAWSStatic clears AWS static credentials.
 //
 //encore:api auth method=DELETE path=/api/users/:id/cloud/aws-static
-func (s *Service) DeleteWorkspaceAWSStatic(ctx context.Context, id string) (*UserScopeAWSStaticStatusResponse, error) {
+func (s *Service) DeleteUserScopeAWSStatic(ctx context.Context, id string) (*UserScopeAWSStaticStatusResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -427,10 +427,10 @@ type UserScopeAzureCredentialStatusResponse struct {
 	Status string `json:"status"`
 }
 
-// GetWorkspaceAzureCredentials returns Azure service principal status.
+// GetUserScopeAzureCredentials returns Azure service principal status.
 //
 //encore:api auth method=GET path=/api/users/:id/cloud/azure
-func (s *Service) GetWorkspaceAzureCredentials(ctx context.Context, id string) (*UserScopeAzureCredentialGetResponse, error) {
+func (s *Service) GetUserScopeAzureCredentials(ctx context.Context, id string) (*UserScopeAzureCredentialGetResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -474,10 +474,10 @@ func (s *Service) GetWorkspaceAzureCredentials(ctx context.Context, id string) (
 	}, nil
 }
 
-// PutWorkspaceAzureCredentials stores Azure service principal credentials.
+// PutUserScopeAzureCredentials stores Azure service principal credentials.
 //
 //encore:api auth method=PUT path=/api/users/:id/cloud/azure
-func (s *Service) PutWorkspaceAzureCredentials(ctx context.Context, id string, req *UserScopeAzureCredentialPutRequest) (*UserScopeAzureCredentialStatusResponse, error) {
+func (s *Service) PutUserScopeAzureCredentials(ctx context.Context, id string, req *UserScopeAzureCredentialPutRequest) (*UserScopeAzureCredentialStatusResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -516,10 +516,10 @@ func (s *Service) PutWorkspaceAzureCredentials(ctx context.Context, id string, r
 	return &UserScopeAzureCredentialStatusResponse{Status: "ok"}, nil
 }
 
-// DeleteWorkspaceAzureCredentials clears Azure credentials.
+// DeleteUserScopeAzureCredentials clears Azure credentials.
 //
 //encore:api auth method=DELETE path=/api/users/:id/cloud/azure
-func (s *Service) DeleteWorkspaceAzureCredentials(ctx context.Context, id string) (*UserScopeAzureCredentialStatusResponse, error) {
+func (s *Service) DeleteUserScopeAzureCredentials(ctx context.Context, id string) (*UserScopeAzureCredentialStatusResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -566,10 +566,10 @@ type UserScopeGCPCredentialStatusResponse struct {
 	Status string `json:"status"`
 }
 
-// GetWorkspaceGCPCredentials returns GCP service identity status.
+// GetUserScopeGCPCredentials returns GCP service identity status.
 //
 //encore:api auth method=GET path=/api/users/:id/cloud/gcp
-func (s *Service) GetWorkspaceGCPCredentials(ctx context.Context, id string) (*UserScopeGCPCredentialGetResponse, error) {
+func (s *Service) GetUserScopeGCPCredentials(ctx context.Context, id string) (*UserScopeGCPCredentialGetResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -615,10 +615,10 @@ func (s *Service) GetWorkspaceGCPCredentials(ctx context.Context, id string) (*U
 	}, nil
 }
 
-// PutWorkspaceGCPCredentials stores GCP service identity JSON.
+// PutUserScopeGCPCredentials stores GCP service identity JSON.
 //
 //encore:api auth method=PUT path=/api/users/:id/cloud/gcp
-func (s *Service) PutWorkspaceGCPCredentials(ctx context.Context, id string, req *UserScopeGCPCredentialPutRequest) (*UserScopeGCPCredentialStatusResponse, error) {
+func (s *Service) PutUserScopeGCPCredentials(ctx context.Context, id string, req *UserScopeGCPCredentialPutRequest) (*UserScopeGCPCredentialStatusResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -651,10 +651,10 @@ func (s *Service) PutWorkspaceGCPCredentials(ctx context.Context, id string, req
 	return &UserScopeGCPCredentialStatusResponse{Status: "ok"}, nil
 }
 
-// DeleteWorkspaceGCPCredentials clears GCP credentials.
+// DeleteUserScopeGCPCredentials clears GCP credentials.
 //
 //encore:api auth method=DELETE path=/api/users/:id/cloud/gcp
-func (s *Service) DeleteWorkspaceGCPCredentials(ctx context.Context, id string) (*UserScopeGCPCredentialStatusResponse, error) {
+func (s *Service) DeleteUserScopeGCPCredentials(ctx context.Context, id string) (*UserScopeGCPCredentialStatusResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err

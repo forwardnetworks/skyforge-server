@@ -8,8 +8,8 @@ import (
 	"encore.dev/beta/errs"
 )
 
-// CreateWorkspacePolicyReportForwardNetwork stores a Forward network id for Policy Reports.
-func (s *Service) CreateWorkspacePolicyReportForwardNetwork(ctx context.Context, id string, req *PolicyReportCreateForwardNetworkRequest) (*PolicyReportForwardNetwork, error) {
+// CreateUserScopePolicyReportForwardNetwork stores a Forward network id for Policy Reports.
+func (s *Service) CreateUserScopePolicyReportForwardNetwork(ctx context.Context, id string, req *PolicyReportCreateForwardNetworkRequest) (*PolicyReportForwardNetwork, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -39,8 +39,8 @@ func (s *Service) CreateWorkspacePolicyReportForwardNetwork(ctx context.Context,
 	return out, nil
 }
 
-// ListWorkspacePolicyReportForwardNetworks lists saved Forward networks for Policy Reports.
-func (s *Service) ListWorkspacePolicyReportForwardNetworks(ctx context.Context, id string) (*PolicyReportListForwardNetworksResponse, error) {
+// ListUserScopePolicyReportForwardNetworks lists saved Forward networks for Policy Reports.
+func (s *Service) ListUserScopePolicyReportForwardNetworks(ctx context.Context, id string) (*PolicyReportListForwardNetworksResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -62,8 +62,8 @@ func (s *Service) ListWorkspacePolicyReportForwardNetworks(ctx context.Context, 
 	return &PolicyReportListForwardNetworksResponse{Networks: out}, nil
 }
 
-// DeleteWorkspacePolicyReportForwardNetwork deletes a saved Forward network (by uuid id or by forwardNetworkId).
-func (s *Service) DeleteWorkspacePolicyReportForwardNetwork(ctx context.Context, id string, networkRef string) (*PolicyReportDecisionResponse, error) {
+// DeleteUserScopePolicyReportForwardNetwork deletes a saved Forward network (by uuid id or by forwardNetworkId).
+func (s *Service) DeleteUserScopePolicyReportForwardNetwork(ctx context.Context, id string, networkRef string) (*PolicyReportDecisionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err

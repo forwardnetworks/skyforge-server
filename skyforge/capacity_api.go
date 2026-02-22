@@ -72,10 +72,10 @@ func (s *Service) capacityForwardClientForDeployment(ctx context.Context, userna
 	return client, nil
 }
 
-// GetWorkspaceDeploymentCapacitySummary returns the latest stored capacity rollups for a deployment.
+// GetUserScopeDeploymentCapacitySummary returns the latest stored capacity rollups for a deployment.
 //
 //encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/capacity/summary
-func (s *Service) GetWorkspaceDeploymentCapacitySummary(ctx context.Context, id, deploymentID string) (*DeploymentCapacitySummaryResponse, error) {
+func (s *Service) GetUserScopeDeploymentCapacitySummary(ctx context.Context, id, deploymentID string) (*DeploymentCapacitySummaryResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -119,10 +119,10 @@ type capacityRollupRefreshRequest struct {
 	DeploymentID string `json:"deploymentId,omitempty"`
 }
 
-// RefreshWorkspaceDeploymentCapacityRollups enqueues a background rollup task for the deployment.
+// RefreshUserScopeDeploymentCapacityRollups enqueues a background rollup task for the deployment.
 //
 //encore:api auth method=POST path=/api/users/:id/deployments/:deploymentID/capacity/rollups/refresh
-func (s *Service) RefreshWorkspaceDeploymentCapacityRollups(ctx context.Context, id, deploymentID string, req *capacityRollupRefreshRequest) (*DeploymentCapacityRefreshResponse, error) {
+func (s *Service) RefreshUserScopeDeploymentCapacityRollups(ctx context.Context, id, deploymentID string, req *capacityRollupRefreshRequest) (*DeploymentCapacityRefreshResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -186,10 +186,10 @@ type CapacityInterfaceMetricsQuery struct {
 	EndTime         string `query:"endTime" encore:"optional"`
 }
 
-// GetWorkspaceDeploymentCapacityInterfaceMetrics proxies Forward's interface-metrics endpoint.
+// GetUserScopeDeploymentCapacityInterfaceMetrics proxies Forward's interface-metrics endpoint.
 //
 //encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/capacity/perf/interface-metrics
-func (s *Service) GetWorkspaceDeploymentCapacityInterfaceMetrics(ctx context.Context, id, deploymentID string, q *CapacityInterfaceMetricsQuery) (*CapacityPerfProxyResponse, error) {
+func (s *Service) GetUserScopeDeploymentCapacityInterfaceMetrics(ctx context.Context, id, deploymentID string, q *CapacityInterfaceMetricsQuery) (*CapacityPerfProxyResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -261,10 +261,10 @@ type fwdInterfaceMetricsHistoryPayload struct {
 	Interfaces []CapacityInterfaceWithDirection `json:"interfaces"`
 }
 
-// PostWorkspaceDeploymentCapacityInterfaceMetricsHistory proxies Forward's interface-metrics-history endpoint.
+// PostUserScopeDeploymentCapacityInterfaceMetricsHistory proxies Forward's interface-metrics-history endpoint.
 //
 //encore:api auth method=POST path=/api/users/:id/deployments/:deploymentID/capacity/perf/interface-metrics-history
-func (s *Service) PostWorkspaceDeploymentCapacityInterfaceMetricsHistory(ctx context.Context, id, deploymentID string, req *capacityInterfaceMetricsHistoryRequest) (*CapacityPerfProxyResponse, error) {
+func (s *Service) PostUserScopeDeploymentCapacityInterfaceMetricsHistory(ctx context.Context, id, deploymentID string, req *capacityInterfaceMetricsHistoryRequest) (*CapacityPerfProxyResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -320,10 +320,10 @@ type CapacityDeviceMetricsQuery struct {
 	EndTime    string `query:"endTime" encore:"optional"`
 }
 
-// GetWorkspaceDeploymentCapacityDeviceMetrics proxies Forward's device-metrics endpoint.
+// GetUserScopeDeploymentCapacityDeviceMetrics proxies Forward's device-metrics endpoint.
 //
 //encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/capacity/perf/device-metrics
-func (s *Service) GetWorkspaceDeploymentCapacityDeviceMetrics(ctx context.Context, id, deploymentID string, q *CapacityDeviceMetricsQuery) (*CapacityPerfProxyResponse, error) {
+func (s *Service) GetUserScopeDeploymentCapacityDeviceMetrics(ctx context.Context, id, deploymentID string, q *CapacityDeviceMetricsQuery) (*CapacityPerfProxyResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -383,10 +383,10 @@ type fwdDeviceSetPayload struct {
 	Devices []string `json:"devices"`
 }
 
-// PostWorkspaceDeploymentCapacityDeviceMetricsHistory proxies Forward's device-metrics-history endpoint.
+// PostUserScopeDeploymentCapacityDeviceMetricsHistory proxies Forward's device-metrics-history endpoint.
 //
 //encore:api auth method=POST path=/api/users/:id/deployments/:deploymentID/capacity/perf/device-metrics-history
-func (s *Service) PostWorkspaceDeploymentCapacityDeviceMetricsHistory(ctx context.Context, id, deploymentID string, req *capacityDeviceSet) (*CapacityPerfProxyResponse, error) {
+func (s *Service) PostUserScopeDeploymentCapacityDeviceMetricsHistory(ctx context.Context, id, deploymentID string, req *capacityDeviceSet) (*CapacityPerfProxyResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -441,10 +441,10 @@ type CapacityUnhealthyDevicesQuery struct {
 	EndTime    string `query:"endTime" encore:"optional"`
 }
 
-// GetWorkspaceDeploymentCapacityUnhealthyDevices proxies Forward's unhealthy-devices endpoint.
+// GetUserScopeDeploymentCapacityUnhealthyDevices proxies Forward's unhealthy-devices endpoint.
 //
 //encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/capacity/perf/unhealthy-devices
-func (s *Service) GetWorkspaceDeploymentCapacityUnhealthyDevices(ctx context.Context, id, deploymentID string, q *CapacityUnhealthyDevicesQuery) (*CapacityPerfProxyResponse, error) {
+func (s *Service) GetUserScopeDeploymentCapacityUnhealthyDevices(ctx context.Context, id, deploymentID string, q *CapacityUnhealthyDevicesQuery) (*CapacityPerfProxyResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -490,10 +490,10 @@ type CapacityUnhealthyInterfacesRequest struct {
 	Devices    []string `json:"devices"`
 }
 
-// GetWorkspaceDeploymentCapacityUnhealthyInterfaces proxies Forward's unhealthy-interfaces endpoint.
+// GetUserScopeDeploymentCapacityUnhealthyInterfaces proxies Forward's unhealthy-interfaces endpoint.
 //
 //encore:api auth method=POST path=/api/users/:id/deployments/:deploymentID/capacity/perf/unhealthy-interfaces
-func (s *Service) GetWorkspaceDeploymentCapacityUnhealthyInterfaces(ctx context.Context, id, deploymentID string, req *CapacityUnhealthyInterfacesRequest) (*CapacityPerfProxyResponse, error) {
+func (s *Service) GetUserScopeDeploymentCapacityUnhealthyInterfaces(ctx context.Context, id, deploymentID string, req *CapacityUnhealthyInterfacesRequest) (*CapacityPerfProxyResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err

@@ -43,8 +43,8 @@ type PolicyReportCheckResponse struct {
 	Content string                    `json:"content"`
 }
 
-// GetWorkspacePolicyReportCatalog returns the embedded Policy Reports check catalog.
-func (s *Service) GetWorkspacePolicyReportCatalog(ctx context.Context, id string) (*PolicyReportCatalog, error) {
+// GetUserScopePolicyReportCatalog returns the embedded Policy Reports check catalog.
+func (s *Service) GetUserScopePolicyReportCatalog(ctx context.Context, id string) (*PolicyReportCatalog, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -62,8 +62,8 @@ func (s *Service) GetWorkspacePolicyReportCatalog(ctx context.Context, id string
 	return cat, nil
 }
 
-// GetWorkspacePolicyReportPacks returns the embedded Policy Reports packs definition.
-func (s *Service) GetWorkspacePolicyReportPacks(ctx context.Context, id string) (*PolicyReportPacks, error) {
+// GetUserScopePolicyReportPacks returns the embedded Policy Reports packs definition.
+func (s *Service) GetUserScopePolicyReportPacks(ctx context.Context, id string) (*PolicyReportPacks, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -81,8 +81,8 @@ func (s *Service) GetWorkspacePolicyReportPacks(ctx context.Context, id string) 
 	return packs, nil
 }
 
-// GetWorkspacePolicyReportChecks lists known checks (catalog + embedded .nqe files).
-func (s *Service) GetWorkspacePolicyReportChecks(ctx context.Context, id string) (*PolicyReportChecksResponse, error) {
+// GetUserScopePolicyReportChecks lists known checks (catalog + embedded .nqe files).
+func (s *Service) GetUserScopePolicyReportChecks(ctx context.Context, id string) (*PolicyReportChecksResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -127,8 +127,8 @@ func (s *Service) GetWorkspacePolicyReportChecks(ctx context.Context, id string)
 	}, nil
 }
 
-// GetWorkspacePolicyReportCheck returns the .nqe file content for a given check.
-func (s *Service) GetWorkspacePolicyReportCheck(ctx context.Context, id string, checkId string) (*PolicyReportCheckResponse, error) {
+// GetUserScopePolicyReportCheck returns the .nqe file content for a given check.
+func (s *Service) GetUserScopePolicyReportCheck(ctx context.Context, id string, checkId string) (*PolicyReportCheckResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -164,8 +164,8 @@ func (s *Service) GetWorkspacePolicyReportCheck(ctx context.Context, id string, 
 	}, nil
 }
 
-// GetWorkspacePolicyReportSnapshots lists snapshots for a Forward network.
-func (s *Service) GetWorkspacePolicyReportSnapshots(ctx context.Context, id string, req *PolicyReportSnapshotsRequest) (*PolicyReportSnapshotsResponse, error) {
+// GetUserScopePolicyReportSnapshots lists snapshots for a Forward network.
+func (s *Service) GetUserScopePolicyReportSnapshots(ctx context.Context, id string, req *PolicyReportSnapshotsRequest) (*PolicyReportSnapshotsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -200,8 +200,8 @@ func (s *Service) GetWorkspacePolicyReportSnapshots(ctx context.Context, id stri
 	return &PolicyReportSnapshotsResponse{Body: body}, nil
 }
 
-// RunWorkspacePolicyReportNQE executes an NQE query and returns a normalized response.
-func (s *Service) RunWorkspacePolicyReportNQE(ctx context.Context, id string, req *PolicyReportNQERequest) (*PolicyReportNQEResponse, error) {
+// RunUserScopePolicyReportNQE executes an NQE query and returns a normalized response.
+func (s *Service) RunUserScopePolicyReportNQE(ctx context.Context, id string, req *PolicyReportNQERequest) (*PolicyReportNQEResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -254,8 +254,8 @@ func (s *Service) RunWorkspacePolicyReportNQE(ctx context.Context, id string, re
 	return out, nil
 }
 
-// RunWorkspacePolicyReportCheck executes an embedded check (.nqe) and returns a normalized response.
-func (s *Service) RunWorkspacePolicyReportCheck(ctx context.Context, id string, req *PolicyReportRunCheckRequest) (*PolicyReportNQEResponse, error) {
+// RunUserScopePolicyReportCheck executes an embedded check (.nqe) and returns a normalized response.
+func (s *Service) RunUserScopePolicyReportCheck(ctx context.Context, id string, req *PolicyReportRunCheckRequest) (*PolicyReportNQEResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -320,8 +320,8 @@ func (s *Service) RunWorkspacePolicyReportCheck(ctx context.Context, id string, 
 	return out, nil
 }
 
-// RunWorkspacePolicyReportPack executes all checks in a pack (serially) and returns per-check results.
-func (s *Service) RunWorkspacePolicyReportPack(ctx context.Context, id string, req *PolicyReportRunPackRequest) (*PolicyReportRunPackResponse, error) {
+// RunUserScopePolicyReportPack executes all checks in a pack (serially) and returns per-check results.
+func (s *Service) RunUserScopePolicyReportPack(ctx context.Context, id string, req *PolicyReportRunPackRequest) (*PolicyReportRunPackResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -418,8 +418,8 @@ func (s *Service) RunWorkspacePolicyReportPack(ctx context.Context, id string, r
 	}, nil
 }
 
-// RunWorkspacePolicyReportPackDelta runs a pack on two snapshots and returns a per-check delta summary.
-func (s *Service) RunWorkspacePolicyReportPackDelta(ctx context.Context, id string, req *PolicyReportPackDeltaRequest) (*PolicyReportPackDeltaResponse, error) {
+// RunUserScopePolicyReportPackDelta runs a pack on two snapshots and returns a per-check delta summary.
+func (s *Service) RunUserScopePolicyReportPackDelta(ctx context.Context, id string, req *PolicyReportPackDeltaRequest) (*PolicyReportPackDeltaResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -451,7 +451,7 @@ func (s *Service) RunWorkspacePolicyReportPackDelta(ctx context.Context, id stri
 	}
 
 	// Run the pack twice.
-	baseResp, err := s.RunWorkspacePolicyReportPack(ctx, id, &PolicyReportRunPackRequest{
+	baseResp, err := s.RunUserScopePolicyReportPack(ctx, id, &PolicyReportRunPackRequest{
 		NetworkID:    networkID,
 		SnapshotID:   baseSnap,
 		PackID:       packID,
@@ -460,7 +460,7 @@ func (s *Service) RunWorkspacePolicyReportPackDelta(ctx context.Context, id stri
 	if err != nil {
 		return nil, err
 	}
-	compResp, err := s.RunWorkspacePolicyReportPack(ctx, id, &PolicyReportRunPackRequest{
+	compResp, err := s.RunUserScopePolicyReportPack(ctx, id, &PolicyReportRunPackRequest{
 		NetworkID:    networkID,
 		SnapshotID:   compSnap,
 		PackID:       packID,
