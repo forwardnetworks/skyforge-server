@@ -365,15 +365,33 @@ func validateNoLegacyIOSVMTopology(topologyYAML []byte) error {
 	}
 	nodes, _ := topo["nodes"].(map[string]any)
 	if len(nodes) == 0 {
+		if top, ok := topo["topology"].(map[string]any); ok {
+			nodes, _ = top["nodes"].(map[string]any)
+		}
+	}
+	if len(nodes) == 0 {
 		return nil
 	}
 	legacyKinds := map[string]bool{
-		"iosv":     true,
-		"iosvl2":   true,
-		"iosxe":    true,
-		"csr":      true,
-		"cat8000v": true,
-		"iosxr":    true,
+		"iosv":           true,
+		"iosvl2":         true,
+		"iosxe":          true,
+		"ios":            true,
+		"csr":            true,
+		"cat8000v":       true,
+		"cisco_vios":     true,
+		"cisco_viosl2":   true,
+		"vr-csr":         true,
+		"cisco_c8000v":   true,
+		"cisco_csr1000v": true,
+	}
+	legacyImageFragments := []string{
+		"/cisco_vios",
+		"/cisco_viosl2",
+		"/vr-csr",
+		"/cisco_c8000",
+		"cisco/csr1000v",
+		"cisco/iosv",
 	}
 	for nodeName, raw := range nodes {
 		node, _ := raw.(map[string]any)
@@ -381,10 +399,15 @@ func validateNoLegacyIOSVMTopology(topologyYAML []byte) error {
 			continue
 		}
 		kind := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", node["kind"])))
-		if !legacyKinds[kind] {
-			continue
+		image := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", node["image"])))
+		if legacyKinds[kind] {
+			return fmt.Errorf("legacy Cisco IOS VM kind %q is not supported in native mode (node=%s); use iol/ioll2", kind, strings.TrimSpace(nodeName))
 		}
-		return fmt.Errorf("legacy device kind %q is not supported in native mode (node=%s); use iol/ioll2 or xrd-control-plane", kind, strings.TrimSpace(nodeName))
+		for _, frag := range legacyImageFragments {
+			if strings.Contains(image, frag) {
+				return fmt.Errorf("legacy Cisco IOS VM image %q is not supported in native mode (node=%s); use cisco_iol/cisco_iol_l2", image, strings.TrimSpace(nodeName))
+			}
+		}
 	}
 	return nil
 }
