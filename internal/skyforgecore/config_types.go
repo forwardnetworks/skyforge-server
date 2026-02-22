@@ -66,23 +66,9 @@ type Config struct {
 	NetlabGeneratorPullPolicy                string
 	NetlabApplierImage                       string
 	NetlabApplierPullPolicy                  string
-	PKICACert                                string
-	PKICAKey                                 string
-	PKIDefaultDays                           int
-	SSHCAKey                                 string
-	SSHCADefaultDays                         int
 	DNSURL                                   string
 	DNSAdminUsername                         string
 	DNSUserZoneSuffix                        string
-	AIEnabled                                bool
-	GeminiEnabled                            bool
-	GeminiClientID                           string
-	GeminiClientSecret                       string
-	GeminiRedirectURL                        string
-	GeminiProjectID                          string
-	GeminiLocation                           string
-	GeminiModel                              string
-	GeminiFallbackModel                      string
 	TaskWorkerEnabled                        bool
 	ImagePullSecretName                      string
 	ImagePullSecretNamespace                 string
@@ -280,9 +266,5 @@ type Secrets struct {
 	ObjectStorageSecretKey string
 	InternalToken          string
 	ContainerlabJWTSecret  string
-	PKICACert              string
-	PKICAKey               string
-	SSHCAKey               string
 	YaadeAdminPassword     string
-	GeminiClientSecret     string
 }

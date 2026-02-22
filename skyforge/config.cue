@@ -16,8 +16,6 @@ SessionTTL: "8h"
 CookieSecure: "auto"
 CookieDomain: ""
 MaxGroups: 50
-PKIDefaultDays: 365
-SSHCADefaultDays: 30
 
 // Default polling interval for notifications (server-side).
 NotificationsIntervalSeconds: 30
@@ -68,26 +66,6 @@ DNS: {
 	URL: "http://technitium-dns:5380"
 	AdminUsername: "admin"
 	UserZoneSuffix: "skyforge"
-}
-
-	Gemini: {
-		Enabled: false
-		ClientID: ""
-		// When empty, Skyforge derives the callback URL from PublicURL:
-		//   {PublicURL}/api/user/integrations/gemini/callback
-		RedirectURL: ""
-		// Vertex AI settings for Gemini calls (non-secret).
-		ProjectID: ""
-		Location: "us-central1"
-		// Model name for Vertex AI (publisher "google").
-		Model: "gemini-3.0-pro"
-		// Fallback model used when Model isn't available in the configured
-		// project/location (common with preview rollouts).
-		FallbackModel: "gemini-3.0-flash"
-	}
-
-AI: {
-	Enabled: false
 }
 
 OIDC: {

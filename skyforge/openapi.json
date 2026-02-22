@@ -35,12 +35,6 @@
       }
     },
     "schemas": {
-      "skyforge.AITemplateKind": {
-        "type": "string"
-      },
-      "skyforge.AITemplateProvider": {
-        "type": "string"
-      },
       "skyforge.AssignableUser": {
         "properties": {
           "display": {
@@ -298,6 +292,47 @@
           "deltaP95",
           "deltaMax",
           "deltaP95Gbps"
+        ],
+        "type": "object"
+      },
+      "skyforge.CapacityHardwareTcamRow": {
+        "properties": {
+          "commandText": {
+            "type": "string"
+          },
+          "deviceName": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "os": {
+            "type": "string"
+          },
+          "tcamTotal": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "tcamUsed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "vendor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deviceName",
+          "vendor",
+          "os",
+          "model",
+          "tcamUsed",
+          "tcamTotal",
+          "commandText",
+          "evidence"
         ],
         "type": "object"
       },
@@ -713,6 +748,72 @@
           "eventType",
           "payload",
           "deploymentId"
+        ],
+        "type": "object"
+      },
+      "skyforge.ElasticToolServiceStatus": {
+        "properties": {
+          "availableReplicas": {
+            "format": "int32",
+            "maximum": 2147483647,
+            "minimum": -2147483648,
+            "type": "integer"
+          },
+          "desiredReplicas": {
+            "format": "int32",
+            "maximum": 2147483647,
+            "minimum": -2147483648,
+            "type": "integer"
+          },
+          "id": {
+            "title": "elasticsearch | kibana\n",
+            "type": "string"
+          },
+          "kind": {
+            "title": "statefulset | deployment\n",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "desiredReplicas",
+          "availableReplicas"
+        ],
+        "type": "object"
+      },
+      "skyforge.ElasticToolsStatusResponse": {
+        "properties": {
+          "autosleepEnabled": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "idleMinutes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "lastActivityAt": {
+            "type": "string"
+          },
+          "now": {
+            "type": "string"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/skyforge.ElasticToolServiceStatus"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "enabled",
+          "autosleepEnabled",
+          "idleMinutes",
+          "now",
+          "lastActivityAt",
+          "services"
         ],
         "type": "object"
       },
@@ -1584,86 +1685,6 @@
         ],
         "type": "object"
       },
-      "skyforge.PKICertSummary": {
-        "properties": {
-          "commonName": {
-            "type": "string"
-          },
-          "expiresAt": {
-            "type": "string"
-          },
-          "fingerprint": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "issuedAt": {
-            "type": "string"
-          },
-          "revokedAt": {
-            "type": "string"
-          },
-          "sans": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "workspaceId": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "commonName",
-          "sans",
-          "workspaceId",
-          "issuedAt",
-          "expiresAt",
-          "revokedAt",
-          "fingerprint"
-        ],
-        "type": "object"
-      },
-      "skyforge.PKISSHCertSummary": {
-        "properties": {
-          "expiresAt": {
-            "type": "string"
-          },
-          "fingerprint": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "issuedAt": {
-            "type": "string"
-          },
-          "principals": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "revokedAt": {
-            "type": "string"
-          },
-          "workspaceId": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "principals",
-          "workspaceId",
-          "issuedAt",
-          "expiresAt",
-          "revokedAt",
-          "fingerprint"
-        ],
-        "type": "object"
-      },
       "skyforge.PolicyReportCatalog": {
         "properties": {
           "checks": {
@@ -1765,6 +1786,9 @@
           "findingId": {
             "type": "string"
           },
+          "forwardNetworkId": {
+            "type": "string"
+          },
           "id": {
             "type": "string"
           },
@@ -1788,6 +1812,7 @@
         "required": [
           "id",
           "workspaceId",
+          "forwardNetworkId",
           "findingId",
           "checkId",
           "status",
@@ -1872,6 +1897,51 @@
           "dstIp",
           "ipProto",
           "dstPort"
+        ],
+        "type": "object"
+      },
+      "skyforge.PolicyReportForwardNetwork": {
+        "properties": {
+          "collectorConfigId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "forwardNetworkId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspaceId",
+          "forwardNetworkId",
+          "name",
+          "description",
+          "collectorConfigId",
+          "createdBy",
+          "createdAt",
+          "updatedAt"
         ],
         "type": "object"
       },
@@ -2256,6 +2326,146 @@
           "resourceCount",
           "cost",
           "currency"
+        ],
+        "type": "object"
+      },
+      "skyforge.SecureTrackCatalog": {
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/skyforge.SecureTrackCatalogCheck"
+            },
+            "type": "array"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "checks"
+        ],
+        "type": "object"
+      },
+      "skyforge.SecureTrackCatalogCheck": {
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "params": {
+            "items": {
+              "$ref": "#/components/schemas/skyforge.SecureTrackCatalogParam"
+            },
+            "type": "array"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "category",
+          "severity",
+          "description",
+          "params"
+        ],
+        "type": "object"
+      },
+      "skyforge.SecureTrackCatalogParam": {
+        "properties": {
+          "default": {
+            "type": "object"
+          },
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "default",
+          "description",
+          "required"
+        ],
+        "type": "object"
+      },
+      "skyforge.SecureTrackNQEResponse": {
+        "properties": {
+          "results": {
+            "type": "object"
+          },
+          "snapshotId": {
+            "type": "string"
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "snapshotId",
+          "total",
+          "results"
+        ],
+        "type": "object"
+      },
+      "skyforge.SecureTrackPack": {
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/skyforge.SecureTrackPackCheck"
+            },
+            "type": "array"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "checks"
+        ],
+        "type": "object"
+      },
+      "skyforge.SecureTrackPackCheck": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "parameters": {
+            "$ref": "#/components/schemas/skyforge.JSONMap"
+          }
+        },
+        "required": [
+          "id",
+          "parameters"
         ],
         "type": "object"
       },
@@ -2699,33 +2909,6 @@
           "kind",
           "mgmtIp",
           "status"
-        ],
-        "type": "object"
-      },
-      "skyforge.UserAIHistoryItem": {
-        "properties": {
-          "createdAt": {
-            "type": "string"
-          },
-          "filename": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "kind": {
-            "type": "string"
-          },
-          "provider": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "provider",
-          "kind",
-          "filename",
-          "createdAt"
         ],
         "type": "object"
       },
@@ -3514,7 +3697,7 @@
   },
   "info": {
     "description": "Generated by encore",
-    "title": "API for akhkw",
+    "title": "API for vzf8o",
     "version": "1",
     "x-logo": {
       "altText": "Encore logo",
@@ -6980,585 +7163,6 @@
         "summary": "OIDCLogin starts the Dex OIDC auth flow and stores state/nonce cookies.\n"
       }
     },
-    "/api/pki/certs": {
-      "get": {
-        "operationId": "GET:skyforge.ListPKICerts",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "certs": {
-                      "items": {
-                        "$ref": "#/components/schemas/skyforge.PKICertSummary"
-                      },
-                      "type": "array"
-                    }
-                  },
-                  "required": [
-                    "certs"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "ListPKICerts lists issued certificates for the current user.\n"
-      }
-    },
-    "/api/pki/certs/{id}/download": {
-      "get": {
-        "operationId": "GET:skyforge.DownloadPKICert",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "bundlePem": {
-                      "type": "string"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "keyPem": {
-                      "type": "string"
-                    },
-                    "pem": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "pem",
-                    "keyPem",
-                    "bundlePem"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "DownloadPKICert returns the certificate + key bundle for a specific cert.\n"
-      }
-    },
-    "/api/pki/certs/{id}/revoke": {
-      "post": {
-        "operationId": "POST:skyforge.RevokePKICert",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "commonName": {
-                      "type": "string"
-                    },
-                    "expiresAt": {
-                      "type": "string"
-                    },
-                    "fingerprint": {
-                      "type": "string"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "issuedAt": {
-                      "type": "string"
-                    },
-                    "revokedAt": {
-                      "type": "string"
-                    },
-                    "sans": {
-                      "items": {
-                        "type": "string"
-                      },
-                      "type": "array"
-                    },
-                    "workspaceId": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "commonName",
-                    "sans",
-                    "workspaceId",
-                    "issuedAt",
-                    "expiresAt",
-                    "revokedAt",
-                    "fingerprint"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "RevokePKICert marks a certificate revoked.\n"
-      }
-    },
-    "/api/pki/issue": {
-      "post": {
-        "operationId": "POST:skyforge.IssuePKICert",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "commonName": {
-                    "type": "string"
-                  },
-                  "sans": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  },
-                  "ttlDays": {
-                    "format": "int64",
-                    "type": "integer"
-                  },
-                  "workspaceId": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "commonName",
-                  "sans",
-                  "workspaceId",
-                  "ttlDays"
-                ],
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "bundlePem": {
-                      "type": "string"
-                    },
-                    "commonName": {
-                      "type": "string"
-                    },
-                    "expiresAt": {
-                      "type": "string"
-                    },
-                    "fingerprint": {
-                      "type": "string"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "issuedAt": {
-                      "type": "string"
-                    },
-                    "keyPem": {
-                      "type": "string"
-                    },
-                    "pem": {
-                      "type": "string"
-                    },
-                    "workspaceId": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "commonName",
-                    "pem",
-                    "keyPem",
-                    "bundlePem",
-                    "issuedAt",
-                    "expiresAt",
-                    "workspaceId",
-                    "fingerprint"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "IssuePKICert issues a TLS certificate signed by the Skyforge CA.\n"
-      }
-    },
-    "/api/pki/root": {
-      "get": {
-        "operationId": "GET:skyforge.GetPKIRoot",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "fingerprint": {
-                      "type": "string"
-                    },
-                    "notAfter": {
-                      "type": "string"
-                    },
-                    "pem": {
-                      "type": "string"
-                    },
-                    "subject": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "pem",
-                    "fingerprint",
-                    "subject",
-                    "notAfter"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GetPKIRoot returns the root CA certificate.\n"
-      }
-    },
-    "/api/pki/ssh/certs": {
-      "get": {
-        "operationId": "GET:skyforge.ListPKISSHCerts",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "certs": {
-                      "items": {
-                        "$ref": "#/components/schemas/skyforge.PKISSHCertSummary"
-                      },
-                      "type": "array"
-                    }
-                  },
-                  "required": [
-                    "certs"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "ListPKISSHCerts lists issued SSH certificates for the current user.\n"
-      }
-    },
-    "/api/pki/ssh/certs/{id}/download": {
-      "get": {
-        "operationId": "GET:skyforge.DownloadPKISSHCert",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "certificate": {
-                      "type": "string"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "privateKey": {
-                      "type": "string"
-                    },
-                    "publicKey": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "publicKey",
-                    "privateKey",
-                    "certificate"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "DownloadPKISSHCert returns the SSH certificate + key bundle for a specific cert.\n"
-      }
-    },
-    "/api/pki/ssh/certs/{id}/revoke": {
-      "post": {
-        "operationId": "POST:skyforge.RevokePKISSHCert",
-        "parameters": [
-          {
-            "allowEmptyValue": true,
-            "explode": false,
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "style": "simple"
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "expiresAt": {
-                      "type": "string"
-                    },
-                    "fingerprint": {
-                      "type": "string"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "issuedAt": {
-                      "type": "string"
-                    },
-                    "principals": {
-                      "items": {
-                        "type": "string"
-                      },
-                      "type": "array"
-                    },
-                    "revokedAt": {
-                      "type": "string"
-                    },
-                    "workspaceId": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "principals",
-                    "workspaceId",
-                    "issuedAt",
-                    "expiresAt",
-                    "revokedAt",
-                    "fingerprint"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "RevokePKISSHCert marks an SSH certificate revoked.\n"
-      }
-    },
-    "/api/pki/ssh/issue": {
-      "post": {
-        "operationId": "POST:skyforge.IssuePKISSHCert",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "principals": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  },
-                  "ttlDays": {
-                    "format": "int64",
-                    "type": "integer"
-                  },
-                  "workspaceId": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "principals",
-                  "workspaceId",
-                  "ttlDays"
-                ],
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "certificate": {
-                      "type": "string"
-                    },
-                    "expiresAt": {
-                      "type": "string"
-                    },
-                    "fingerprint": {
-                      "type": "string"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "issuedAt": {
-                      "type": "string"
-                    },
-                    "principals": {
-                      "items": {
-                        "type": "string"
-                      },
-                      "type": "array"
-                    },
-                    "privateKey": {
-                      "type": "string"
-                    },
-                    "publicKey": {
-                      "type": "string"
-                    },
-                    "workspaceId": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "principals",
-                    "publicKey",
-                    "privateKey",
-                    "certificate",
-                    "issuedAt",
-                    "expiresAt",
-                    "workspaceId",
-                    "fingerprint"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "IssuePKISSHCert issues an SSH user certificate signed by the Skyforge SSH CA.\n"
-      }
-    },
-    "/api/pki/ssh/root": {
-      "get": {
-        "operationId": "GET:skyforge.GetPKISSHRoot",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "fingerprint": {
-                      "type": "string"
-                    },
-                    "keyType": {
-                      "type": "string"
-                    },
-                    "publicKey": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "publicKey",
-                    "fingerprint",
-                    "keyType"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GetPKISSHRoot returns the SSH CA public key.\n"
-      }
-    },
     "/api/public/config": {
       "get": {
         "operationId": "GET:skyforge.PublicConfig",
@@ -8277,7 +7881,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "GetSnmpTrapToken returns the per-user SNMPv2c community string used for trap\nrouting.\n"
+        "summary": "GetSnmpTrapToken is disabled: SNMPv2c communities are no longer supported.\n"
       }
     },
     "/api/snmp/traps/token/rotate": {
@@ -8319,7 +7923,7 @@
             "$ref": "#/components/responses/APIError"
           }
         },
-        "summary": "RotateSnmpTrapToken rotates the per-user community string.\n"
+        "summary": "RotateSnmpTrapToken is disabled: SNMPv2c communities are no longer supported.\n"
       }
     },
     "/api/syslog/events": {
@@ -8532,6 +8136,117 @@
           }
         },
         "summary": "UpsertSyslogRoute creates/updates a syslog route (admin only).\n"
+      }
+    },
+    "/api/system/elastic/tools/sleep": {
+      "post": {
+        "operationId": "POST:skyforge.SleepElasticTools",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "status": {
+                      "$ref": "#/components/schemas/skyforge.ElasticToolsStatusResponse"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "SleepElasticTools scales in-cluster Elasticsearch + Kibana to 0 replicas (admin\nonly).\n"
+      }
+    },
+    "/api/system/elastic/tools/status": {
+      "get": {
+        "operationId": "GET:skyforge.GetElasticToolsStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "autosleepEnabled": {
+                      "type": "boolean"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "idleMinutes": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "lastActivityAt": {
+                      "type": "string"
+                    },
+                    "now": {
+                      "type": "string"
+                    },
+                    "services": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.ElasticToolServiceStatus"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "enabled",
+                    "autosleepEnabled",
+                    "idleMinutes",
+                    "now",
+                    "lastActivityAt",
+                    "services"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetElasticToolsStatus returns the current sleep/wake status for in-cluster\nElasticsearch + Kibana.\n"
+      }
+    },
+    "/api/system/elastic/tools/wake": {
+      "post": {
+        "operationId": "POST:skyforge.WakeElasticTools",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "status": {
+                      "$ref": "#/components/schemas/skyforge.ElasticToolsStatusResponse"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "WakeElasticTools scales in-cluster Elasticsearch + Kibana to 1 replica\n(best-effort).\n"
       }
     },
     "/api/templates": {
@@ -8759,368 +8474,6 @@
           }
         },
         "summary": "GetUIConfig returns UI configuration values.\n"
-      }
-    },
-    "/api/user/ai/autofix": {
-      "post": {
-        "description": "This is intentionally synchronous and bounded so it can be used from the UI without spawning jobs.\n",
-        "operationId": "POST:skyforge.AutofixUserAITemplate",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "content": {
-                    "type": "string"
-                  },
-                  "kind": {
-                    "$ref": "#/components/schemas/skyforge.AITemplateKind"
-                  },
-                  "maxIterations": {
-                    "format": "int64",
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "kind",
-                  "content",
-                  "maxIterations"
-                ],
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "content": {
-                      "type": "string"
-                    },
-                    "errors": {
-                      "items": {
-                        "type": "string"
-                      },
-                      "type": "array"
-                    },
-                    "iterations": {
-                      "format": "int64",
-                      "type": "integer"
-                    },
-                    "kind": {
-                      "type": "string"
-                    },
-                    "lastValidated": {
-                      "type": "string"
-                    },
-                    "ok": {
-                      "type": "boolean"
-                    },
-                    "warnings": {
-                      "items": {
-                        "type": "string"
-                      },
-                      "type": "array"
-                    }
-                  },
-                  "required": [
-                    "kind",
-                    "content",
-                    "ok",
-                    "errors",
-                    "iterations",
-                    "warnings",
-                    "lastValidated"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "AutofixUserAITemplate runs a short validate→regenerate loop for containerlab\ntemplates.\n"
-      }
-    },
-    "/api/user/ai/generate": {
-      "post": {
-        "operationId": "POST:skyforge.GenerateUserAITemplate",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "constraints": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  },
-                  "kind": {
-                    "$ref": "#/components/schemas/skyforge.AITemplateKind"
-                  },
-                  "maxOutputTokens": {
-                    "format": "int64",
-                    "title": "Optional model controls.\n",
-                    "type": "integer"
-                  },
-                  "prompt": {
-                    "type": "string"
-                  },
-                  "provider": {
-                    "$ref": "#/components/schemas/skyforge.AITemplateProvider"
-                  },
-                  "seedTemplate": {
-                    "type": "string"
-                  },
-                  "temperature": {
-                    "type": "number"
-                  }
-                },
-                "required": [
-                  "provider",
-                  "kind",
-                  "prompt",
-                  "constraints",
-                  "seedTemplate",
-                  "maxOutputTokens",
-                  "temperature"
-                ],
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "content": {
-                      "type": "string"
-                    },
-                    "createdAt": {
-                      "type": "string"
-                    },
-                    "filename": {
-                      "type": "string"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "kind": {
-                      "type": "string"
-                    },
-                    "provider": {
-                      "type": "string"
-                    },
-                    "warnings": {
-                      "items": {
-                        "type": "string"
-                      },
-                      "type": "array"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "provider",
-                    "kind",
-                    "filename",
-                    "content",
-                    "warnings",
-                    "createdAt"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GenerateUserAITemplate generates a single-file template using the user's\nconfigured AI provider.\n"
-      }
-    },
-    "/api/user/ai/history": {
-      "get": {
-        "operationId": "GET:skyforge.GetUserAITemplateHistory",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "items": {
-                      "items": {
-                        "$ref": "#/components/schemas/skyforge.UserAIHistoryItem"
-                      },
-                      "type": "array"
-                    }
-                  },
-                  "required": [
-                    "items"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GetUserAITemplateHistory lists recent AI generations for the current user.\n"
-      }
-    },
-    "/api/user/ai/save": {
-      "post": {
-        "operationId": "POST:skyforge.SaveUserAITemplate",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "content": {
-                    "type": "string"
-                  },
-                  "filename": {
-                    "description": "from Kind + PathHint). If provided, it may include the expected extension. Examples: - netlab: \"bgp-demo\" or \"bgp-demo.yml\" - containerlab: \"dc1\" or \"dc1.clab.yml\"\n",
-                    "title": "Filename is an optional user-provided base filename (repo-relative name is\ncomputed\n",
-                    "type": "string"
-                  },
-                  "kind": {
-                    "$ref": "#/components/schemas/skyforge.AITemplateKind"
-                  },
-                  "message": {
-                    "type": "string"
-                  },
-                  "pathHint": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "kind",
-                  "content",
-                  "pathHint",
-                  "filename",
-                  "message"
-                ],
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "branch": {
-                      "type": "string"
-                    },
-                    "path": {
-                      "type": "string"
-                    },
-                    "repo": {
-                      "type": "string"
-                    },
-                    "workspaceId": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "workspaceId",
-                    "repo",
-                    "branch",
-                    "path"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "SaveUserAITemplate writes generated template content into the user's default\nworkspace repo.\n"
-      }
-    },
-    "/api/user/ai/validate": {
-      "post": {
-        "operationId": "POST:skyforge.ValidateUserAITemplate",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "content": {
-                    "type": "string"
-                  },
-                  "environment": {
-                    "$ref": "#/components/schemas/skyforge.JSONMap"
-                  },
-                  "kind": {
-                    "$ref": "#/components/schemas/skyforge.AITemplateKind"
-                  },
-                  "setOverrides": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  }
-                },
-                "required": [
-                  "kind",
-                  "content",
-                  "environment",
-                  "setOverrides"
-                ],
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "task": {
-                      "$ref": "#/components/schemas/skyforge.JSONMap"
-                    },
-                    "workspaceId": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "workspaceId",
-                    "task"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "ValidateUserAITemplate persists a generated netlab template and enqueues a\nnetlab validation task.\n"
       }
     },
     "/api/user/cloud/aws-sso": {
@@ -10478,129 +9831,6 @@
           }
         },
         "summary": "TestUserElasticConfig does a lightweight health check of the configured Elastic\nendpoint.\n"
-      }
-    },
-    "/api/user/integrations/gemini": {
-      "get": {
-        "operationId": "GET:skyforge.GetUserGeminiConfig",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "aiEnabled": {
-                      "type": "boolean"
-                    },
-                    "configured": {
-                      "type": "boolean"
-                    },
-                    "email": {
-                      "type": "string"
-                    },
-                    "enabled": {
-                      "type": "boolean"
-                    },
-                    "fallbackModel": {
-                      "type": "string"
-                    },
-                    "hasToken": {
-                      "type": "boolean"
-                    },
-                    "location": {
-                      "type": "string"
-                    },
-                    "model": {
-                      "type": "string"
-                    },
-                    "oauthConfigured": {
-                      "type": "boolean"
-                    },
-                    "projectId": {
-                      "type": "string"
-                    },
-                    "redirectUrl": {
-                      "type": "string"
-                    },
-                    "scopes": {
-                      "type": "string"
-                    },
-                    "updatedAt": {
-                      "type": "string"
-                    },
-                    "vertexConfigured": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "enabled",
-                    "aiEnabled",
-                    "oauthConfigured",
-                    "vertexConfigured",
-                    "configured",
-                    "email",
-                    "scopes",
-                    "hasToken",
-                    "updatedAt",
-                    "redirectUrl",
-                    "projectId",
-                    "location",
-                    "model",
-                    "fallbackModel"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GetUserGeminiConfig returns the current user's Gemini integration status.\n"
-      }
-    },
-    "/api/user/integrations/gemini/callback": {
-      "get": {
-        "operationId": "GET:skyforge.GeminiCallback",
-        "responses": {
-          "200": {
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GeminiCallback completes the OAuth flow and stores the refresh token for the\ncurrent user.\n"
-      }
-    },
-    "/api/user/integrations/gemini/connect": {
-      "get": {
-        "operationId": "GET:skyforge.GeminiConnect",
-        "responses": {
-          "200": {
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GeminiConnect redirects the user to Google's OAuth consent screen and stores\nCSRF state in a cookie.\n"
-      }
-    },
-    "/api/user/integrations/gemini/disconnect": {
-      "post": {
-        "operationId": "POST:skyforge.GeminiDisconnect",
-        "responses": {
-          "200": {
-            "description": "Success response"
-          },
-          "default": {
-            "$ref": "#/components/responses/APIError"
-          }
-        },
-        "summary": "GeminiDisconnect deletes the stored tokens for the current user.\n"
       }
     },
     "/api/user/integrations/servicenow": {
@@ -14424,6 +13654,12 @@
                     "forwardNetworkId": {
                       "type": "string"
                     },
+                    "hardwareTcam": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.CapacityHardwareTcamRow"
+                      },
+                      "type": "array"
+                    },
                     "interfaceVrfs": {
                       "items": {
                         "$ref": "#/components/schemas/skyforge.CapacityInterfaceVrfRow"
@@ -14458,6 +13694,7 @@
                     "devices",
                     "interfaces",
                     "interfaceVrfs",
+                    "hardwareTcam",
                     "routeScale",
                     "bgpNeighbors"
                   ],
@@ -17573,6 +16810,1084 @@
         "summary": "DeleteWorkspaceEveServer deletes a workspace-scoped EVE-NG server.\n"
       }
     },
+    "/api/workspaces/{id}/forward-networks": {
+      "get": {
+        "operationId": "GET:skyforge.ListWorkspaceForwardNetworks",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "networks": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.PolicyReportForwardNetwork"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "networks"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ListWorkspaceForwardNetworks lists saved Forward networks for a workspace.\n"
+      },
+      "post": {
+        "operationId": "POST:skyforge.CreateWorkspaceForwardNetwork",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "collectorConfigId": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "forwardNetworkId": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "forwardNetworkId",
+                  "name",
+                  "description",
+                  "collectorConfigId"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "collectorConfigId": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "createdBy": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "forwardNetworkId": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "workspaceId",
+                    "forwardNetworkId",
+                    "name",
+                    "description",
+                    "collectorConfigId",
+                    "createdBy",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "CreateWorkspaceForwardNetwork stores a Forward network id for a workspace.\n"
+      }
+    },
+    "/api/workspaces/{id}/forward-networks/{networkRef}": {
+      "delete": {
+        "operationId": "DELETE:skyforge.DeleteWorkspaceForwardNetwork",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "networkRef",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "DeleteWorkspaceForwardNetwork deletes a saved Forward network (by uuid id or by\nforwardNetworkId).\n"
+      }
+    },
+    "/api/workspaces/{id}/forward-networks/{networkRef}/capacity/growth": {
+      "get": {
+        "operationId": "GET:skyforge.GetWorkspaceForwardNetworkCapacityGrowth",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "networkRef",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "metric",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "window",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "objectType",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "compareHours",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "asOf": {
+                      "type": "string"
+                    },
+                    "compareAsOf": {
+                      "type": "string"
+                    },
+                    "compareHours": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "forwardNetworkId": {
+                      "type": "string"
+                    },
+                    "metric": {
+                      "type": "string"
+                    },
+                    "networkRef": {
+                      "type": "string"
+                    },
+                    "objectType": {
+                      "type": "string"
+                    },
+                    "rows": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.CapacityGrowthRow"
+                      },
+                      "type": "array"
+                    },
+                    "window": {
+                      "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "workspaceId",
+                    "networkRef",
+                    "forwardNetworkId",
+                    "metric",
+                    "window",
+                    "objectType",
+                    "asOf",
+                    "compareAsOf",
+                    "compareHours",
+                    "rows"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspaceForwardNetworkCapacityGrowth compares the latest rollup bucket to an\nearlier one and returns deltas.\n"
+      }
+    },
+    "/api/workspaces/{id}/forward-networks/{networkRef}/capacity/inventory": {
+      "get": {
+        "operationId": "GET:skyforge.GetWorkspaceForwardNetworkCapacityInventory",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "networkRef",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "asOf": {
+                      "type": "string"
+                    },
+                    "bgpNeighbors": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.CapacityBgpNeighborRow"
+                      },
+                      "type": "array"
+                    },
+                    "devices": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.CapacityDeviceInventoryRow"
+                      },
+                      "type": "array"
+                    },
+                    "forwardNetworkId": {
+                      "type": "string"
+                    },
+                    "hardwareTcam": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.CapacityHardwareTcamRow"
+                      },
+                      "type": "array"
+                    },
+                    "interfaceVrfs": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.CapacityInterfaceVrfRow"
+                      },
+                      "type": "array"
+                    },
+                    "interfaces": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.CapacityInterfaceInventoryRow"
+                      },
+                      "type": "array"
+                    },
+                    "networkRef": {
+                      "type": "string"
+                    },
+                    "routeScale": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.CapacityRouteScaleRow"
+                      },
+                      "type": "array"
+                    },
+                    "snapshotId": {
+                      "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "workspaceId",
+                    "networkRef",
+                    "forwardNetworkId",
+                    "asOf",
+                    "snapshotId",
+                    "devices",
+                    "interfaces",
+                    "interfaceVrfs",
+                    "hardwareTcam",
+                    "routeScale",
+                    "bgpNeighbors"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspaceForwardNetworkCapacityInventory returns the latest cached NQE\nresults for inventory/routing scale.\n"
+      }
+    },
+    "/api/workspaces/{id}/forward-networks/{networkRef}/capacity/perf/device-metrics-history": {
+      "post": {
+        "operationId": "POST:skyforge.PostWorkspaceForwardNetworkCapacityDeviceMetricsHistory",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "networkRef",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "days": {
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "devices": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "endTime": {
+                    "type": "string"
+                  },
+                  "maxSamples": {
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "startTime": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "days",
+                  "startTime",
+                  "endTime",
+                  "maxSamples",
+                  "devices"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "body": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "body"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "PostWorkspaceForwardNetworkCapacityDeviceMetricsHistory proxies Forward's\ndevice-metrics-history endpoint.\n"
+      }
+    },
+    "/api/workspaces/{id}/forward-networks/{networkRef}/capacity/perf/interface-metrics": {
+      "get": {
+        "operationId": "GET:skyforge.GetWorkspaceForwardNetworkCapacityInterfaceMetrics",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "networkRef",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "type",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "days",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "direction",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "interface",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "interfaceFilter",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "snapshotId",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "endTime",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "body": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "body"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspaceForwardNetworkCapacityInterfaceMetrics proxies Forward's\ninterface-metrics endpoint.\n"
+      }
+    },
+    "/api/workspaces/{id}/forward-networks/{networkRef}/capacity/perf/interface-metrics-history": {
+      "post": {
+        "operationId": "POST:skyforge.PostWorkspaceForwardNetworkCapacityInterfaceMetricsHistory",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "networkRef",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "days": {
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "endTime": {
+                    "type": "string"
+                  },
+                  "interfaces": {
+                    "items": {
+                      "$ref": "#/components/schemas/skyforge.CapacityInterfaceWithDirection"
+                    },
+                    "type": "array"
+                  },
+                  "maxSamples": {
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "startTime": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "days",
+                  "startTime",
+                  "endTime",
+                  "maxSamples",
+                  "interfaces"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "body": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "body"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "PostWorkspaceForwardNetworkCapacityInterfaceMetricsHistory proxies Forward's\ninterface-metrics-history endpoint.\n"
+      }
+    },
+    "/api/workspaces/{id}/forward-networks/{networkRef}/capacity/perf/unhealthy-devices": {
+      "get": {
+        "operationId": "GET:skyforge.GetWorkspaceForwardNetworkCapacityUnhealthyDevices",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "networkRef",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "snapshotId",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "endTime",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "body": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "body"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspaceForwardNetworkCapacityUnhealthyDevices proxies Forward's\nunhealthy-devices endpoint.\n"
+      }
+    },
+    "/api/workspaces/{id}/forward-networks/{networkRef}/capacity/perf/unhealthy-interfaces": {
+      "post": {
+        "operationId": "POST:skyforge.PostWorkspaceForwardNetworkCapacityUnhealthyInterfaces",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "networkRef",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "snapshotId",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "endTime",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "devices": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "devices"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "body": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "body"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "PostWorkspaceForwardNetworkCapacityUnhealthyInterfaces proxies Forward's\nunhealthy-interfaces endpoint.\n"
+      }
+    },
+    "/api/workspaces/{id}/forward-networks/{networkRef}/capacity/rollups/refresh": {
+      "post": {
+        "operationId": "POST:skyforge.RefreshWorkspaceForwardNetworkCapacityRollups",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "networkRef",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "networkRef": {
+                      "type": "string"
+                    },
+                    "run": {
+                      "$ref": "#/components/schemas/skyforge.JSONMap"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "workspaceId",
+                    "networkRef",
+                    "run"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "RefreshWorkspaceForwardNetworkCapacityRollups enqueues a background rollup task\nfor the saved Forward network.\n"
+      }
+    },
+    "/api/workspaces/{id}/forward-networks/{networkRef}/capacity/summary": {
+      "get": {
+        "operationId": "GET:skyforge.GetWorkspaceForwardNetworkCapacitySummary",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "networkRef",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "asOf": {
+                      "type": "string"
+                    },
+                    "forwardNetworkId": {
+                      "type": "string"
+                    },
+                    "networkRef": {
+                      "type": "string"
+                    },
+                    "rollups": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.CapacityRollupRow"
+                      },
+                      "type": "array"
+                    },
+                    "stale": {
+                      "type": "boolean"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "workspaceId",
+                    "networkRef",
+                    "forwardNetworkId",
+                    "asOf",
+                    "rollups",
+                    "stale"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspaceForwardNetworkCapacitySummary returns the latest stored capacity\nrollups for a saved Forward network.\n"
+      }
+    },
     "/api/workspaces/{id}/integrations/forward": {
       "delete": {
         "operationId": "DELETE:skyforge.DeleteWorkspaceForwardConfig",
@@ -20053,6 +20368,16 @@
             "allowEmptyValue": true,
             "explode": true,
             "in": "query",
+            "name": "forwardNetworkId",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
             "name": "status",
             "schema": {
               "type": "string"
@@ -20129,6 +20454,9 @@
                   "findingId": {
                     "type": "string"
                   },
+                  "forwardNetworkId": {
+                    "type": "string"
+                  },
                   "justification": {
                     "type": "string"
                   },
@@ -20137,6 +20465,7 @@
                   }
                 },
                 "required": [
+                  "forwardNetworkId",
                   "findingId",
                   "checkId",
                   "justification",
@@ -20174,6 +20503,9 @@
                     "findingId": {
                       "type": "string"
                     },
+                    "forwardNetworkId": {
+                      "type": "string"
+                    },
                     "id": {
                       "type": "string"
                     },
@@ -20197,6 +20529,7 @@
                   "required": [
                     "id",
                     "workspaceId",
+                    "forwardNetworkId",
                     "findingId",
                     "checkId",
                     "status",
@@ -20325,6 +20658,431 @@
           }
         },
         "summary": "RejectWorkspacePolicyReportException rejects an exception (owner/admin only).\n"
+      }
+    },
+    "/api/workspaces/{id}/policy-reports/networks": {
+      "get": {
+        "operationId": "GET:skyforge.ListWorkspacePolicyReportForwardNetworks",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "networks": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.PolicyReportForwardNetwork"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "networks"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ListWorkspacePolicyReportForwardNetworks lists saved Forward networks for Policy\nReports.\n"
+      },
+      "post": {
+        "operationId": "POST:skyforge.CreateWorkspacePolicyReportForwardNetwork",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "collectorConfigId": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "forwardNetworkId": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "forwardNetworkId",
+                  "name",
+                  "description",
+                  "collectorConfigId"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "collectorConfigId": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "createdBy": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "forwardNetworkId": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "workspaceId",
+                    "forwardNetworkId",
+                    "name",
+                    "description",
+                    "collectorConfigId",
+                    "createdBy",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "CreateWorkspacePolicyReportForwardNetwork stores a Forward network id for Policy\nReports.\n"
+      }
+    },
+    "/api/workspaces/{id}/policy-reports/networks/{forwardNetworkId}/credentials": {
+      "delete": {
+        "operationId": "DELETE:skyforge.DeleteWorkspacePolicyReportForwardNetworkCredentials",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "forwardNetworkId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "DeleteWorkspacePolicyReportForwardNetworkCredentials clears the current user's\ncredentials for a Forward network.\n"
+      },
+      "get": {
+        "operationId": "GET:skyforge.GetWorkspacePolicyReportForwardNetworkCredentials",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "forwardNetworkId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "baseUrl": {
+                      "type": "string"
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "hasPassword": {
+                      "type": "boolean"
+                    },
+                    "skipTlsVerify": {
+                      "type": "boolean"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "username": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "configured",
+                    "baseUrl",
+                    "skipTlsVerify",
+                    "username",
+                    "hasPassword",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspacePolicyReportForwardNetworkCredentials returns the current user's\ncredentials status for a Forward network.\n"
+      },
+      "put": {
+        "operationId": "PUT:skyforge.PutWorkspacePolicyReportForwardNetworkCredentials",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "forwardNetworkId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "baseUrl": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  },
+                  "skipTlsVerify": {
+                    "type": "boolean"
+                  },
+                  "username": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "baseUrl",
+                  "skipTlsVerify",
+                  "username",
+                  "password"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "baseUrl": {
+                      "type": "string"
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "hasPassword": {
+                      "type": "boolean"
+                    },
+                    "skipTlsVerify": {
+                      "type": "boolean"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "username": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "configured",
+                    "baseUrl",
+                    "skipTlsVerify",
+                    "username",
+                    "hasPassword",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "PutWorkspacePolicyReportForwardNetworkCredentials upserts the current user's\ncredentials for a Forward network.\n"
+      }
+    },
+    "/api/workspaces/{id}/policy-reports/networks/{networkRef}": {
+      "delete": {
+        "operationId": "DELETE:skyforge.DeleteWorkspacePolicyReportForwardNetwork",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "networkRef",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "DeleteWorkspacePolicyReportForwardNetwork deletes a saved Forward network (by\nuuid id or by forwardNetworkId).\n"
       }
     },
     "/api/workspaces/{id}/policy-reports/nqe": {
@@ -21316,6 +22074,541 @@
           }
         },
         "summary": "RunWorkspaceTerraformPlan triggers a terraform plan run for a workspace.\n"
+      }
+    },
+    "/api/workspaces/{id}/securetrack/catalog": {
+      "get": {
+        "operationId": "GET:skyforge.GetWorkspaceSecureTrackCatalog",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "checks": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.SecureTrackCatalogCheck"
+                      },
+                      "type": "array"
+                    },
+                    "version": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "checks"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspaceSecureTrackCatalog returns the embedded SecureTrack check catalog.\n"
+      }
+    },
+    "/api/workspaces/{id}/securetrack/checks": {
+      "get": {
+        "operationId": "GET:skyforge.GetWorkspaceSecureTrackChecks",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "catalog": {
+                      "$ref": "#/components/schemas/skyforge.SecureTrackCatalog"
+                    },
+                    "checks": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.SecureTrackCatalogCheck"
+                      },
+                      "type": "array"
+                    },
+                    "files": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "catalog",
+                    "checks",
+                    "files"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspaceSecureTrackChecks lists known checks (catalog + embedded .nqe\nfiles).\n"
+      }
+    },
+    "/api/workspaces/{id}/securetrack/checks/run": {
+      "post": {
+        "operationId": "POST:skyforge.RunWorkspaceSecureTrackCheck",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "checkId": {
+                    "type": "string"
+                  },
+                  "networkId": {
+                    "type": "string"
+                  },
+                  "parameters": {
+                    "$ref": "#/components/schemas/skyforge.JSONMap"
+                  },
+                  "queryOptions": {
+                    "$ref": "#/components/schemas/skyforge.JSONMap"
+                  },
+                  "snapshotId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "networkId",
+                  "snapshotId",
+                  "checkId",
+                  "parameters",
+                  "queryOptions"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "results": {
+                      "type": "object"
+                    },
+                    "snapshotId": {
+                      "type": "string"
+                    },
+                    "total": {
+                      "format": "int64",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "snapshotId",
+                    "total",
+                    "results"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "RunWorkspaceSecureTrackCheck executes an embedded check (.nqe) and returns a\nnormalized response.\n"
+      }
+    },
+    "/api/workspaces/{id}/securetrack/checks/{checkId}": {
+      "get": {
+        "operationId": "GET:skyforge.GetWorkspaceSecureTrackCheck",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "checkId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "check": {
+                      "$ref": "#/components/schemas/skyforge.SecureTrackCatalogCheck"
+                    },
+                    "content": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "check",
+                    "content"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspaceSecureTrackCheck returns the .nqe file content for a given check.\n"
+      }
+    },
+    "/api/workspaces/{id}/securetrack/nqe": {
+      "post": {
+        "operationId": "POST:skyforge.RunWorkspaceSecureTrackNQE",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "networkId": {
+                    "type": "string"
+                  },
+                  "parameters": {
+                    "$ref": "#/components/schemas/skyforge.JSONMap"
+                  },
+                  "query": {
+                    "type": "string"
+                  },
+                  "queryOptions": {
+                    "$ref": "#/components/schemas/skyforge.JSONMap"
+                  },
+                  "snapshotId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "networkId",
+                  "snapshotId",
+                  "query",
+                  "parameters",
+                  "queryOptions"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "results": {
+                      "type": "object"
+                    },
+                    "snapshotId": {
+                      "type": "string"
+                    },
+                    "total": {
+                      "format": "int64",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "snapshotId",
+                    "total",
+                    "results"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "RunWorkspaceSecureTrackNQE executes an NQE query and returns a normalized\nresponse.\n"
+      }
+    },
+    "/api/workspaces/{id}/securetrack/packs": {
+      "get": {
+        "operationId": "GET:skyforge.GetWorkspaceSecureTrackPacks",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "packs": {
+                      "items": {
+                        "$ref": "#/components/schemas/skyforge.SecureTrackPack"
+                      },
+                      "type": "array"
+                    },
+                    "version": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "packs"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspaceSecureTrackPacks returns the embedded SecureTrack packs definition.\n"
+      }
+    },
+    "/api/workspaces/{id}/securetrack/packs/run": {
+      "post": {
+        "operationId": "POST:skyforge.RunWorkspaceSecureTrackPack",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "networkId": {
+                    "type": "string"
+                  },
+                  "packId": {
+                    "type": "string"
+                  },
+                  "snapshotId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "networkId",
+                  "snapshotId",
+                  "packId"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "networkId": {
+                      "type": "string"
+                    },
+                    "packId": {
+                      "type": "string"
+                    },
+                    "results": {
+                      "additionalProperties": {
+                        "$ref": "#/components/schemas/skyforge.SecureTrackNQEResponse"
+                      },
+                      "type": "object"
+                    },
+                    "snapshotId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "packId",
+                    "networkId",
+                    "snapshotId",
+                    "results"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "RunWorkspaceSecureTrackPack executes all checks in a pack (serially) and returns\nper-check results.\n"
+      }
+    },
+    "/api/workspaces/{id}/securetrack/snapshots": {
+      "get": {
+        "operationId": "GET:skyforge.GetWorkspaceSecureTrackSnapshots",
+        "parameters": [
+          {
+            "allowEmptyValue": true,
+            "explode": false,
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "simple"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "networkId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "maxResults",
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "style": "form"
+          },
+          {
+            "allowEmptyValue": true,
+            "explode": true,
+            "in": "query",
+            "name": "snapshotId",
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "body": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "body"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "GetWorkspaceSecureTrackSnapshots lists snapshots for a Forward network.\n"
       }
     },
     "/api/workspaces/{id}/settings": {
@@ -22720,6 +24013,21 @@
             "$ref": "#/components/responses/APIError"
           }
         }
+      }
+    },
+    "/internal/elastic/tools/autosleep-tick": {
+      "post": {
+        "description": "This is intended to be called from a CronJob in-cluster using SKYFORGE\\_INTERNAL\\_TOKEN.\n",
+        "operationId": "POST:skyforge.ElasticAutosleepTick",
+        "responses": {
+          "200": {
+            "description": "Success response"
+          },
+          "default": {
+            "$ref": "#/components/responses/APIError"
+          }
+        },
+        "summary": "ElasticAutosleepTick checks for inactivity and scales Elastic tools down to 0\nwhen idle.\n"
       }
     },
     "/internal/worker/heartbeat": {

@@ -52,22 +52,6 @@ type DNSDefaultsConfig struct {
 	UserZoneSuffix string
 }
 
-type GeminiDefaultsConfig struct {
-	Enabled     bool
-	ClientID    string
-	RedirectURL string
-	ProjectID   string
-	Location    string
-	Model       string
-	// FallbackModel is used when Model is unavailable in the configured
-	// project/location (e.g. preview model not enabled).
-	FallbackModel string
-}
-
-type AIDefaultsConfig struct {
-	Enabled bool
-}
-
 type ContainerlabDefaultsConfig struct {
 	APIPath       string
 	SkipTLSVerify bool
@@ -178,9 +162,6 @@ type EncoreConfig struct {
 	CookieDomain  string
 	MaxGroups     int
 
-	PKIDefaultDays   int
-	SSHCADefaultDays int
-
 	NotificationsIntervalSeconds int
 	CloudCheckIntervalMinutes    int
 
@@ -197,8 +178,6 @@ type EncoreConfig struct {
 	OIDC             OIDCDefaultsConfig
 	LDAP             LDAPDefaultsConfig
 	DNS              DNSDefaultsConfig
-	Gemini           GeminiDefaultsConfig
-	AI               AIDefaultsConfig
 	Containerlab     ContainerlabDefaultsConfig
 	Workspaces       WorkspacesDefaultsConfig
 	ObjectStorage    ObjectStorageDefaultsConfig
