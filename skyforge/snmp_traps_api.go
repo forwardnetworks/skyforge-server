@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"encore.dev/beta/errs"
-	"encore.dev/rlog"
 )
 
 type snmpTrapTokenRecord struct {
@@ -137,6 +136,8 @@ type SnmpTrapEventsResponse struct {
 //
 //encore:api auth method=GET path=/api/snmp/traps/events
 func (s *Service) ListSnmpTrapEvents(ctx context.Context, params *SnmpTrapEventsParams) (*SnmpTrapEventsResponse, error) {
+	return nil, errs.B().Code(errs.FailedPrecondition).Msg("SNMP trap ingestion is disabled; use SNMPv3 polling-based collection").Err()
+
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err

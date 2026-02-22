@@ -146,6 +146,8 @@ func (s *Service) IngestSNMPTrap(ctx context.Context, params *IngestTelegrafMetr
 	if err := s.requireInternalIngest(params.Token); err != nil {
 		return err
 	}
+	return errs.B().Code(errs.FailedPrecondition).Msg("SNMP trap ingestion is disabled; use SNMPv3 polling-based collection").Err()
+
 	if params == nil {
 		return errs.B().Code(errs.InvalidArgument).Msg("invalid payload").Err()
 	}

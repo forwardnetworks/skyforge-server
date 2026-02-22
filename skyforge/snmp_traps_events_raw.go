@@ -62,6 +62,9 @@ LIMIT $2
 //
 //encore:api auth raw method=GET path=/api/snmp/traps/events/stream
 func (s *Service) SnmpTrapEventsStream(w http.ResponseWriter, req *http.Request) {
+	http.Error(w, "SNMP trap ingestion is disabled; use SNMPv3 polling-based collection", http.StatusPreconditionFailed)
+	return
+
 	if s == nil || s.db == nil || s.sessionManager == nil {
 		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
 		return
