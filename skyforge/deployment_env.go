@@ -29,7 +29,7 @@ func (s *Service) mergeDeploymentEnvironment(ctx context.Context, userScopeID, u
 		if scope == "user" {
 			groupEnv, err = loadUserVariableGroupsByID(ctx, s.db, username, groupIDs)
 		} else {
-			groupEnv, err = loadWorkspaceVariableGroupsByID(ctx, s.db, userScopeID, groupIDs)
+			groupEnv, err = loadUserScopeVariableGroupsByID(ctx, s.db, userScopeID, groupIDs)
 		}
 		if err != nil {
 			return nil, err
@@ -128,7 +128,7 @@ func normalizeEnvOverrideKey(key string) string {
 	return key
 }
 
-func loadWorkspaceVariableGroupsByID(ctx context.Context, db *sql.DB, userScopeID string, groupIDs []int) (map[string]string, error) {
+func loadUserScopeVariableGroupsByID(ctx context.Context, db *sql.DB, userScopeID string, groupIDs []int) (map[string]string, error) {
 	if len(groupIDs) == 0 {
 		return map[string]string{}, nil
 	}

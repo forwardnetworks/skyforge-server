@@ -63,7 +63,7 @@ type resolveForwardNetworkRow struct {
 	CollectorConfigID string
 }
 
-func resolveWorkspaceForwardNetwork(ctx context.Context, db *sql.DB, userScopeID, networkRef string) (*resolveForwardNetworkRow, error) {
+func resolveUserScopeForwardNetwork(ctx context.Context, db *sql.DB, userScopeID, networkRef string) (*resolveForwardNetworkRow, error) {
 	if db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
@@ -148,7 +148,7 @@ func (s *Service) GetUserScopeForwardNetworkCapacitySummary(ctx context.Context,
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
+	net, err := resolveUserScopeForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +192,7 @@ func (s *Service) RefreshUserScopeForwardNetworkCapacityRollups(ctx context.Cont
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
+	net, err := resolveUserScopeForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +245,7 @@ func (s *Service) GetUserScopeForwardNetworkCapacityInventory(ctx context.Contex
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
+	net, err := resolveUserScopeForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -290,7 +290,7 @@ func (s *Service) GetUserScopeForwardNetworkCapacityGrowth(ctx context.Context, 
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
+	net, err := resolveUserScopeForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -355,7 +355,7 @@ func (s *Service) GetUserScopeForwardNetworkCapacityInterfaceMetrics(ctx context
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
+	net, err := resolveUserScopeForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -413,7 +413,7 @@ func (s *Service) PostUserScopeForwardNetworkCapacityInterfaceMetricsHistory(ctx
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
+	net, err := resolveUserScopeForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -465,7 +465,7 @@ func (s *Service) PostUserScopeForwardNetworkCapacityDeviceMetricsHistory(ctx co
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
+	net, err := resolveUserScopeForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -517,7 +517,7 @@ func (s *Service) GetUserScopeForwardNetworkCapacityUnhealthyDevices(ctx context
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
+	net, err := resolveUserScopeForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -560,7 +560,7 @@ func (s *Service) PostUserScopeForwardNetworkCapacityUnhealthyInterfaces(ctx con
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
+	net, err := resolveUserScopeForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
 	if err != nil {
 		return nil, err
 	}

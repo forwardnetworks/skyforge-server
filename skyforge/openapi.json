@@ -1013,14 +1013,14 @@
           "userId": {
             "type": "string"
           },
-          "workspaceName": {
+          "userScopeName": {
             "type": "string"
           }
         },
         "required": [
           "id",
           "userId",
-          "workspaceName",
+          "userScopeName",
           "resourceId",
           "provider",
           "periodStart",
@@ -1125,14 +1125,14 @@
           "userId": {
             "type": "string"
           },
-          "workspaceName": {
+          "userScopeName": {
             "type": "string"
           }
         },
         "required": [
           "id",
           "userId",
-          "workspaceName",
+          "userScopeName",
           "provider",
           "resourceId",
           "resourceType",
@@ -1285,14 +1285,14 @@
           "value": {
             "type": "number"
           },
-          "workspaceName": {
+          "userScopeName": {
             "type": "string"
           }
         },
         "required": [
           "id",
           "userId",
-          "workspaceName",
+          "userScopeName",
           "provider",
           "scopeType",
           "scopeId",
@@ -2560,7 +2560,7 @@
         ],
         "type": "object"
       },
-      "skyforge.WorkspaceDeployment": {
+      "skyforge.UserScopeDeployment": {
         "properties": {
           "activeTaskId": {
             "format": "int64",
@@ -2594,7 +2594,7 @@
             "format": "int64",
             "type": "integer"
           },
-          "lastTaskWorkspaceId": {
+          "lastTaskUserScopeId": {
             "format": "int64",
             "type": "integer"
           },
@@ -2624,7 +2624,7 @@
           "createdBy",
           "createdAt",
           "updatedAt",
-          "lastTaskWorkspaceId",
+          "lastTaskUserScopeId",
           "lastTaskId",
           "lastStatus",
           "lastStartedAt",
@@ -2635,7 +2635,7 @@
         ],
         "type": "object"
       },
-      "skyforge.WorkspaceForwardCollector": {
+      "skyforge.UserScopeForwardCollector": {
         "properties": {
           "id": {
             "type": "string"
@@ -2654,7 +2654,7 @@
         ],
         "type": "object"
       },
-      "skyforge.WorkspacePodContainer": {
+      "skyforge.UserScopePodContainer": {
         "properties": {
           "image": {
             "type": "string"
@@ -2692,7 +2692,7 @@
         ],
         "type": "object"
       },
-      "skyforge.WorkspaceVariableGroup": {
+      "skyforge.UserScopeVariableGroup": {
         "properties": {
           "id": {
             "format": "int64",
@@ -2859,7 +2859,7 @@
         ],
         "type": "object"
       },
-      "skyforge.workspaceSyncReport": {
+      "skyforge.userScopeSyncReport": {
         "properties": {
           "errors": {
             "items": {
@@ -3714,7 +3714,7 @@
                       "format": "int64",
                       "type": "integer"
                     },
-                    "workspacesTracked": {
+                    "userScopesTracked": {
                       "format": "int64",
                       "type": "integer"
                     }
@@ -3722,7 +3722,7 @@
                   "required": [
                     "resourceCount",
                     "activeResources",
-                    "workspacesTracked",
+                    "userScopesTracked",
                     "costLast30Days",
                     "costCurrency",
                     "lastCostPeriodEnd",
@@ -4311,7 +4311,7 @@
               "application/json": {
                 "schema": {
                   "properties": {
-                    "deletedWorkspaces": {
+                    "deletedUserScopes": {
                       "format": "int64",
                       "type": "integer"
                     },
@@ -4327,7 +4327,7 @@
                   },
                   "required": [
                     "status",
-                    "deletedWorkspaces",
+                    "deletedUserScopes",
                     "warnings"
                   ],
                   "type": "object"
@@ -4358,7 +4358,7 @@
                     },
                     "reports": {
                       "items": {
-                        "$ref": "#/components/schemas/skyforge.workspaceSyncReport"
+                        "$ref": "#/components/schemas/skyforge.userScopeSyncReport"
                       },
                       "type": "array"
                     },
@@ -5014,7 +5014,7 @@
                     },
                     "deployments": {
                       "items": {
-                        "$ref": "#/components/schemas/skyforge.WorkspaceDeployment"
+                        "$ref": "#/components/schemas/skyforge.UserScopeDeployment"
                       },
                       "type": "array"
                     },
@@ -10007,7 +10007,7 @@
                     "userId": {
                       "type": "string"
                     },
-                    "workspaceSlug": {
+                    "userScopeSlug": {
                       "type": "string"
                     }
                   },
@@ -10016,7 +10016,7 @@
                     "bucket",
                     "key",
                     "userId",
-                    "workspaceSlug",
+                    "userScopeSlug",
                     "uploadedBy",
                     "uploadedAtUtc"
                   ],
@@ -10502,7 +10502,7 @@
                     "configured": {
                       "type": "boolean"
                     },
-                    "selectedWorkspaceId": {
+                    "selectedUserScopeId": {
                       "type": "string"
                     },
                     "updatedAt": {
@@ -10516,7 +10516,7 @@
                     "configured",
                     "clientEmail",
                     "userId",
-                    "selectedWorkspaceId",
+                    "selectedUserScopeId",
                     "updatedAt"
                   ],
                   "type": "object"
@@ -10918,7 +10918,7 @@
                   "properties": {
                     "deployments": {
                       "items": {
-                        "$ref": "#/components/schemas/skyforge.WorkspaceDeployment"
+                        "$ref": "#/components/schemas/skyforge.UserScopeDeployment"
                       },
                       "type": "array"
                     },
@@ -11020,7 +11020,7 @@
                       "format": "int64",
                       "type": "integer"
                     },
-                    "lastTaskWorkspaceId": {
+                    "lastTaskUserScopeId": {
                       "format": "int64",
                       "type": "integer"
                     },
@@ -11050,7 +11050,7 @@
                     "createdBy",
                     "createdAt",
                     "updatedAt",
-                    "lastTaskWorkspaceId",
+                    "lastTaskUserScopeId",
                     "lastTaskId",
                     "lastStatus",
                     "lastStartedAt",
@@ -11137,7 +11137,7 @@
                 "schema": {
                   "properties": {
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.WorkspaceDeployment"
+                      "$ref": "#/components/schemas/skyforge.UserScopeDeployment"
                     },
                     "note": {
                       "type": "string"
@@ -11233,7 +11233,7 @@
                 "schema": {
                   "properties": {
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.WorkspaceDeployment"
+                      "$ref": "#/components/schemas/skyforge.UserScopeDeployment"
                     },
                     "note": {
                       "type": "string"
@@ -11307,7 +11307,7 @@
                 "schema": {
                   "properties": {
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.WorkspaceDeployment"
+                      "$ref": "#/components/schemas/skyforge.UserScopeDeployment"
                     },
                     "note": {
                       "type": "string"
@@ -11409,7 +11409,7 @@
                 "schema": {
                   "properties": {
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.WorkspaceDeployment"
+                      "$ref": "#/components/schemas/skyforge.UserScopeDeployment"
                     },
                     "note": {
                       "type": "string"
@@ -11495,7 +11495,7 @@
                 "schema": {
                   "properties": {
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.WorkspaceDeployment"
+                      "$ref": "#/components/schemas/skyforge.UserScopeDeployment"
                     },
                     "run": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
@@ -11606,7 +11606,7 @@
                       "format": "int64",
                       "type": "integer"
                     },
-                    "lastTaskWorkspaceId": {
+                    "lastTaskUserScopeId": {
                       "format": "int64",
                       "type": "integer"
                     },
@@ -11636,7 +11636,7 @@
                     "createdBy",
                     "createdAt",
                     "updatedAt",
-                    "lastTaskWorkspaceId",
+                    "lastTaskUserScopeId",
                     "lastTaskId",
                     "lastStatus",
                     "lastStartedAt",
@@ -11710,7 +11710,7 @@
                 "schema": {
                   "properties": {
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.WorkspaceDeployment"
+                      "$ref": "#/components/schemas/skyforge.UserScopeDeployment"
                     },
                     "run": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
@@ -12770,7 +12770,7 @@
                 "schema": {
                   "properties": {
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.WorkspaceDeployment"
+                      "$ref": "#/components/schemas/skyforge.UserScopeDeployment"
                     },
                     "run": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
@@ -13001,7 +13001,7 @@
                       "$ref": "#/components/schemas/skyforge.ContainerlabInfo"
                     },
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.WorkspaceDeployment"
+                      "$ref": "#/components/schemas/skyforge.UserScopeDeployment"
                     },
                     "forwardNetworkId": {
                       "type": "string"
@@ -13770,7 +13770,7 @@
                   "properties": {
                     "containers": {
                       "items": {
-                        "$ref": "#/components/schemas/skyforge.WorkspacePodContainer"
+                        "$ref": "#/components/schemas/skyforge.UserScopePodContainer"
                       },
                       "type": "array"
                     },
@@ -14247,7 +14247,7 @@
                 "schema": {
                   "properties": {
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.WorkspaceDeployment"
+                      "$ref": "#/components/schemas/skyforge.UserScopeDeployment"
                     },
                     "run": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
@@ -14308,7 +14308,7 @@
                 "schema": {
                   "properties": {
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.WorkspaceDeployment"
+                      "$ref": "#/components/schemas/skyforge.UserScopeDeployment"
                     },
                     "run": {
                       "$ref": "#/components/schemas/skyforge.JSONMap"
@@ -14636,7 +14636,7 @@
                 "schema": {
                   "properties": {
                     "deployment": {
-                      "$ref": "#/components/schemas/skyforge.WorkspaceDeployment"
+                      "$ref": "#/components/schemas/skyforge.UserScopeDeployment"
                     },
                     "path": {
                       "type": "string"
@@ -14749,7 +14749,7 @@
                       "format": "int64",
                       "type": "integer"
                     },
-                    "lastTaskWorkspaceId": {
+                    "lastTaskUserScopeId": {
                       "format": "int64",
                       "type": "integer"
                     },
@@ -14779,7 +14779,7 @@
                     "createdBy",
                     "createdAt",
                     "updatedAt",
-                    "lastTaskWorkspaceId",
+                    "lastTaskUserScopeId",
                     "lastTaskId",
                     "lastStatus",
                     "lastStartedAt",
@@ -16240,7 +16240,7 @@
                   "properties": {
                     "collectors": {
                       "items": {
-                        "$ref": "#/components/schemas/skyforge.WorkspaceForwardCollector"
+                        "$ref": "#/components/schemas/skyforge.UserScopeForwardCollector"
                       },
                       "type": "array"
                     }
@@ -17519,7 +17519,7 @@
                   "netlabServer": {
                     "type": "string"
                   },
-                  "netlabWorkspaceDir": {
+                  "netlabUserScopeDir": {
                     "type": "string"
                   },
                   "template": {
@@ -17555,7 +17555,7 @@
                   "cleanup",
                   "netlabServer",
                   "netlabPassword",
-                  "netlabWorkspaceDir",
+                  "netlabUserScopeDir",
                   "netlabMultilabId",
                   "netlabDeployment",
                   "topologyPath",
@@ -18581,7 +18581,7 @@
                   "properties": {
                     "groups": {
                       "items": {
-                        "$ref": "#/components/schemas/skyforge.WorkspaceVariableGroup"
+                        "$ref": "#/components/schemas/skyforge.UserScopeVariableGroup"
                       },
                       "type": "array"
                     },
@@ -18718,7 +18718,7 @@
                   "properties": {
                     "groups": {
                       "items": {
-                        "$ref": "#/components/schemas/skyforge.WorkspaceVariableGroup"
+                        "$ref": "#/components/schemas/skyforge.UserScopeVariableGroup"
                       },
                       "type": "array"
                     },

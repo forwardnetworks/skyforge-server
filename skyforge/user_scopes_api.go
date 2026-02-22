@@ -374,7 +374,7 @@ func (s *Service) CreateUserScope(ctx context.Context, req *UserScopeCreateReque
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist user scope").Err()
 	}
 	if s.db != nil {
-		_ = notifyWorkspacesUpdatePG(ctx, s.db, "*")
+		_ = notifyUserScopesUpdatePG(ctx, s.db, "*")
 		_ = notifyDashboardUpdatePG(ctx, s.db)
 	}
 	if s.db != nil {
@@ -480,10 +480,10 @@ func (s *Service) SyncUserBlueprint(ctx context.Context, userID string) (*Bluepr
 	if targetBranch == "" {
 		targetBranch = "main"
 	}
-	if err := syncBlueprintCatalogIntoWorkspaceRepo(s.cfg, giteaCfg, pc.userScope.GiteaOwner, pc.userScope.GiteaRepo, blueprint, targetBranch, pc.claims); err != nil {
-		log.Printf("syncBlueprintCatalogIntoWorkspaceRepo: %v", err)
-		if fallbackErr := syncBlueprintCatalogIntoWorkspaceRepo(s.cfg, s.cfg, pc.userScope.GiteaOwner, pc.userScope.GiteaRepo, blueprint, targetBranch, pc.claims); fallbackErr != nil {
-			log.Printf("syncBlueprintCatalogIntoWorkspaceRepo fallback: %v", fallbackErr)
+	if err := syncBlueprintCatalogIntoUserScopeRepo(s.cfg, giteaCfg, pc.userScope.GiteaOwner, pc.userScope.GiteaRepo, blueprint, targetBranch, pc.claims); err != nil {
+		log.Printf("syncBlueprintCatalogIntoUserScopeRepo: %v", err)
+		if fallbackErr := syncBlueprintCatalogIntoUserScopeRepo(s.cfg, s.cfg, pc.userScope.GiteaOwner, pc.userScope.GiteaRepo, blueprint, targetBranch, pc.claims); fallbackErr != nil {
+			log.Printf("syncBlueprintCatalogIntoUserScopeRepo fallback: %v", fallbackErr)
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to sync blueprint").Err()
 		}
 	}

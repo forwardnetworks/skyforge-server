@@ -45,7 +45,7 @@ func (s *Service) SaveUserScopeDeploymentNodeConfig(ctx context.Context, id, dep
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("node is required").Err()
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
+	dep, err := s.getUserScopeDeployment(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}

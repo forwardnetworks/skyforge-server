@@ -26,7 +26,7 @@ func (s *Service) secureTrackForwardClient(ctx context.Context, userScopeID stri
 	if s == nil || s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("server unavailable").Err()
 	}
-	rec, err := getWorkspaceForwardCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), userScopeID)
+	rec, err := getUserScopeForwardCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), userScopeID)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward credentials").Err()
 	}

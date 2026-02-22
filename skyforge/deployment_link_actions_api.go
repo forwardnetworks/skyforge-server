@@ -67,7 +67,7 @@ func (s *Service) UpdateUserScopeDeploymentLinkAdmin(ctx context.Context, id, de
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("action must be up or down").Err()
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
+	dep, err := s.getUserScopeDeployment(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +272,7 @@ func (s *Service) CaptureUserScopeDeploymentLinkPcap(ctx context.Context, id, de
 		maxBytes = 25 << 20
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
+	dep, err := s.getUserScopeDeployment(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}

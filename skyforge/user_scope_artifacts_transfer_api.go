@@ -42,10 +42,10 @@ type UserScopeArtifactDownloadResponse struct {
 //
 //encore:api auth method=POST path=/api/users/:id/artifacts/upload
 func (s *Service) UploadUserScopeArtifact(ctx context.Context, id string, req *UserScopeArtifactUploadRequest) (*UserScopeArtifactUploadResponse, error) {
-	return s.handleWorkspaceArtifactUpload(ctx, id, req)
+	return s.handleUserScopeArtifactUpload(ctx, id, req)
 }
 
-func (s *Service) handleWorkspaceArtifactUpload(ctx context.Context, id string, req *UserScopeArtifactUploadRequest) (*UserScopeArtifactUploadResponse, error) {
+func (s *Service) handleUserScopeArtifactUpload(ctx context.Context, id string, req *UserScopeArtifactUploadRequest) (*UserScopeArtifactUploadResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -119,10 +119,10 @@ func (s *Service) handleWorkspaceArtifactUpload(ctx context.Context, id string, 
 //
 //encore:api auth method=GET path=/api/users/:id/artifacts/download
 func (s *Service) DownloadUserScopeArtifact(ctx context.Context, id string, params *UserScopeArtifactDownloadParams) (*UserScopeArtifactDownloadResponse, error) {
-	return s.handleWorkspaceArtifactDownload(ctx, id, params)
+	return s.handleUserScopeArtifactDownload(ctx, id, params)
 }
 
-func (s *Service) handleWorkspaceArtifactDownload(ctx context.Context, id string, params *UserScopeArtifactDownloadParams) (*UserScopeArtifactDownloadResponse, error) {
+func (s *Service) handleUserScopeArtifactDownload(ctx context.Context, id string, params *UserScopeArtifactDownloadParams) (*UserScopeArtifactDownloadResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err

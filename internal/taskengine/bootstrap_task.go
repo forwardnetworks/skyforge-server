@@ -83,7 +83,7 @@ func (e *Engine) dispatchUserBootstrapTask(ctx context.Context, task *taskstore.
 	return nil
 }
 
-func (e *Engine) dispatchWorkspaceBootstrapTask(ctx context.Context, task *taskstore.TaskRecord, log Logger) error {
+func (e *Engine) dispatchUserScopeBootstrapTask(ctx context.Context, task *taskstore.TaskRecord, log Logger) error {
 	if task == nil {
 		return nil
 	}

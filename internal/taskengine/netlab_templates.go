@@ -142,7 +142,7 @@ func (e *Engine) giteaDefaultBranch(owner, repo string) string {
 	return branch
 }
 
-func (e *Engine) resolveTemplateRepoForWorkspace(pc *userContext, source string, customRepo string) (templateRepoRef, error) {
+func (e *Engine) resolveTemplateRepoForUserScope(pc *userContext, source string, customRepo string) (templateRepoRef, error) {
 	if pc == nil {
 		return templateRepoRef{}, fmt.Errorf("user context unavailable")
 	}
@@ -276,7 +276,7 @@ func (e *Engine) buildNetlabTopologyBundleB64(ctx context.Context, pc *userConte
 	if !isSafeRelativePath(templatesDir) {
 		return "", fmt.Errorf("templatesDir must be a safe repo-relative path")
 	}
-	ref, err := e.resolveTemplateRepoForWorkspace(pc, templateSource, templateRepo)
+	ref, err := e.resolveTemplateRepoForUserScope(pc, templateSource, templateRepo)
 	if err != nil {
 		return "", err
 	}

@@ -131,8 +131,8 @@ func (s *Service) GetUserScopePolicyReportRecertCampaign(ctx context.Context, id
 	return out, nil
 }
 
-// GenerateWorkspacePolicyReportRecertAssignments runs the campaign pack and stores resulting findings as assignments.
-func (s *Service) GenerateWorkspacePolicyReportRecertAssignments(ctx context.Context, id string, campaignId string, req *PolicyReportGenerateRecertAssignmentsRequest) (*PolicyReportGenerateRecertAssignmentsResponse, error) {
+// GenerateUserScopePolicyReportRecertAssignments runs the campaign pack and stores resulting findings as assignments.
+func (s *Service) GenerateUserScopePolicyReportRecertAssignments(ctx context.Context, id string, campaignId string, req *PolicyReportGenerateRecertAssignmentsRequest) (*PolicyReportGenerateRecertAssignmentsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -303,8 +303,8 @@ func (s *Service) ListUserScopePolicyReportRecertAssignments(ctx context.Context
 	return &PolicyReportListRecertAssignmentsResponse{Assignments: out}, nil
 }
 
-// AttestWorkspacePolicyReportRecertAssignment marks an assignment as attested.
-func (s *Service) AttestWorkspacePolicyReportRecertAssignment(ctx context.Context, id string, assignmentId string, req *PolicyReportAttestAssignmentRequest) (*PolicyReportDecisionResponse, error) {
+// AttestUserScopePolicyReportRecertAssignment marks an assignment as attested.
+func (s *Service) AttestUserScopePolicyReportRecertAssignment(ctx context.Context, id string, assignmentId string, req *PolicyReportAttestAssignmentRequest) (*PolicyReportDecisionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -332,8 +332,8 @@ func (s *Service) AttestWorkspacePolicyReportRecertAssignment(ctx context.Contex
 	return &PolicyReportDecisionResponse{Ok: true}, nil
 }
 
-// WaiveWorkspacePolicyReportRecertAssignment marks an assignment as waived.
-func (s *Service) WaiveWorkspacePolicyReportRecertAssignment(ctx context.Context, id string, assignmentId string, req *PolicyReportAttestAssignmentRequest) (*PolicyReportDecisionResponse, error) {
+// WaiveUserScopePolicyReportRecertAssignment marks an assignment as waived.
+func (s *Service) WaiveUserScopePolicyReportRecertAssignment(ctx context.Context, id string, assignmentId string, req *PolicyReportAttestAssignmentRequest) (*PolicyReportDecisionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -416,8 +416,8 @@ func (s *Service) ListUserScopePolicyReportExceptions(ctx context.Context, id st
 	return &PolicyReportListExceptionsResponse{Exceptions: out}, nil
 }
 
-// ApproveWorkspacePolicyReportException approves an exception (owner/admin only).
-func (s *Service) ApproveWorkspacePolicyReportException(ctx context.Context, id string, exceptionId string) (*PolicyReportDecisionResponse, error) {
+// ApproveUserScopePolicyReportException approves an exception (owner/admin only).
+func (s *Service) ApproveUserScopePolicyReportException(ctx context.Context, id string, exceptionId string) (*PolicyReportDecisionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -441,8 +441,8 @@ func (s *Service) ApproveWorkspacePolicyReportException(ctx context.Context, id 
 	return &PolicyReportDecisionResponse{Ok: true}, nil
 }
 
-// RejectWorkspacePolicyReportException rejects an exception (owner/admin only).
-func (s *Service) RejectWorkspacePolicyReportException(ctx context.Context, id string, exceptionId string) (*PolicyReportDecisionResponse, error) {
+// RejectUserScopePolicyReportException rejects an exception (owner/admin only).
+func (s *Service) RejectUserScopePolicyReportException(ctx context.Context, id string, exceptionId string) (*PolicyReportDecisionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err

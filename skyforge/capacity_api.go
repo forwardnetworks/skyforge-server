@@ -20,7 +20,7 @@ func (s *Service) requireDeploymentForwardNetwork(ctx context.Context, userScope
 	if s == nil || s.db == nil {
 		return nil, nil, "", errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	dep, err = s.getWorkspaceDeployment(ctx, userScopeID, deploymentID)
+	dep, err = s.getUserScopeDeployment(ctx, userScopeID, deploymentID)
 	if err != nil {
 		return nil, nil, "", err
 	}

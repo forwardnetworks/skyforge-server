@@ -121,7 +121,7 @@ func (e *Engine) runTerraformTask(ctx context.Context, spec terraformRunSpec, lo
 	if spec.UserScopeCtx == nil {
 		return fmt.Errorf("user context unavailable")
 	}
-	ref, err := e.resolveTemplateRepoForWorkspace(spec.UserScopeCtx, spec.TemplateSource, spec.TemplateRepo)
+	ref, err := e.resolveTemplateRepoForUserScope(spec.UserScopeCtx, spec.TemplateSource, spec.TemplateRepo)
 	if err != nil {
 		return err
 	}

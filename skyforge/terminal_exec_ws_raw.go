@@ -344,7 +344,7 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 
 	ctx, cancel := context.WithCancel(req.Context())
 	defer cancel()
-	dep, err := s.getWorkspaceDeployment(ctx, ws.ID, deploymentID)
+	dep, err := s.getUserScopeDeployment(ctx, ws.ID, deploymentID)
 	if err != nil || dep == nil {
 		http.Error(w, "deployment not found", http.StatusNotFound)
 		return

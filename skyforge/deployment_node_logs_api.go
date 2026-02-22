@@ -64,7 +64,7 @@ func (s *Service) GetUserScopeDeploymentNodeLogs(
 		container = strings.TrimSpace(params.Container)
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
+	dep, err := s.getUserScopeDeployment(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}

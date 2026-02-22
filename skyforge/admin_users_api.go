@@ -18,7 +18,7 @@ type PurgeUserRequest struct {
 
 type PurgeUserResponse struct {
 	Status            string   `json:"status"`
-	DeletedWorkspaces int      `json:"deletedWorkspaces"`
+	DeletedUserScopes int      `json:"deletedUserScopes"`
 	Warnings          []string `json:"warnings,omitempty"`
 }
 
@@ -49,7 +49,7 @@ func (s *Service) PurgeUser(ctx context.Context, req *PurgeUserRequest) (*PurgeU
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	deletedWorkspaces, warnings, err := purgeUserSQL(ctx, s.db, username)
+	deletedUserScopes, warnings, err := purgeUserSQL(ctx, s.db, username)
 	if err != nil {
 		return nil, errs.B().Code(errs.Internal).Msg("purge failed").Err()
 	}
@@ -70,7 +70,7 @@ func (s *Service) PurgeUser(ctx context.Context, req *PurgeUserRequest) (*PurgeU
 	if err := s.userStore.remove(username); err != nil {
 		warnings = append(warnings, fmt.Sprintf("failed to update users store: %v", err))
 	}
-	_ = notifyWorkspacesUpdatePG(ctx, s.db, "*")
+	_ = notifyUserScopesUpdatePG(ctx, s.db, "*")
 	_ = notifyDashboardUpdatePG(ctx, s.db)
 
 	// Best-effort cleanup of Gitea user and repos.
@@ -84,7 +84,7 @@ func (s *Service) PurgeUser(ctx context.Context, req *PurgeUserRequest) (*PurgeU
 
 	return &PurgeUserResponse{
 		Status:            "ok",
-		DeletedWorkspaces: deletedWorkspaces,
+		DeletedUserScopes: deletedUserScopes,
 		Warnings:          warnings,
 	}, nil
 }
@@ -145,7 +145,7 @@ func purgeUserSQL(ctx context.Context, db *sql.DB, username string) (int, []stri
 		}
 	}
 
-	deletedWorkspaces := 0
+	deletedUserScopes := 0
 	if len(userScopeIDs) > 0 {
 		userScopeScopedDeletes := []struct {
 			label string
@@ -177,7 +177,7 @@ func purgeUserSQL(ctx context.Context, db *sql.DB, username string) (int, []stri
 			return rollback(err)
 		}
 		if n, _ := res.RowsAffected(); n > 0 {
-			deletedWorkspaces = int(n)
+			deletedUserScopes = int(n)
 		}
 	}
 
@@ -188,5 +188,5 @@ func purgeUserSQL(ctx context.Context, db *sql.DB, username string) (int, []stri
 	if err := tx.Commit(); err != nil {
 		return rollback(err)
 	}
-	return deletedWorkspaces, nil, nil
+	return deletedUserScopes, nil, nil
 }

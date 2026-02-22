@@ -55,7 +55,7 @@ func (s *Service) GetUserScopeDeploymentTopology(ctx context.Context, id, deploy
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	dep, err := s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
+	dep, err := s.getUserScopeDeployment(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +84,7 @@ func (s *Service) getDeploymentTopologyFromLatestTaskArtifact(ctx context.Contex
 		if key != "" {
 			ctxRead, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
-			if raw, err := readWorkspaceArtifact(ctxRead, s.cfg, pc.userScope.ID, key, 2<<20); err == nil && len(raw) > 0 {
+			if raw, err := readUserScopeArtifact(ctxRead, s.cfg, pc.userScope.ID, key, 2<<20); err == nil && len(raw) > 0 {
 				if graph, err := parseTopologyGraph(raw); err == nil && graph != nil {
 					graph.ArtifactKey = key
 					return graph, nil
@@ -122,7 +122,7 @@ func (s *Service) getContainerlabDeploymentTopology(ctx context.Context, pc *use
 		if key != "" {
 			ctxRead, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
-			if raw, err := readWorkspaceArtifact(ctxRead, s.cfg, pc.userScope.ID, key, 2<<20); err == nil && len(raw) > 0 {
+			if raw, err := readUserScopeArtifact(ctxRead, s.cfg, pc.userScope.ID, key, 2<<20); err == nil && len(raw) > 0 {
 				if graph, err := parseTopologyGraph(raw); err == nil && graph != nil {
 					graph.ArtifactKey = key
 					return graph, nil

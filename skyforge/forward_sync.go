@@ -250,13 +250,13 @@ func stripANSICodes(value string) string {
 	return b.String()
 }
 
-func (s *Service) forwardConfigForWorkspace(ctx context.Context, userScopeID string) (*forwardCredentials, error) {
+func (s *Service) forwardConfigForUserScope(ctx context.Context, userScopeID string) (*forwardCredentials, error) {
 	if s.db == nil {
 		return nil, fmt.Errorf("database unavailable")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	rec, err := getWorkspaceForwardCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), userScopeID)
+	rec, err := getUserScopeForwardCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), userScopeID)
 	if err != nil {
 		return nil, err
 	}

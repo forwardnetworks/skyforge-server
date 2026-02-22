@@ -53,8 +53,8 @@ func getOldestQueuedDeploymentTaskID(ctx context.Context, db *sql.DB, userScopeI
 	return taskstore.GetOldestQueuedDeploymentTaskID(ctx, db, userScopeID, deploymentID)
 }
 
-func getOldestQueuedWorkspaceTaskID(ctx context.Context, db *sql.DB, userScopeID string) (int, error) {
-	return taskstore.GetOldestQueuedWorkspaceTaskID(ctx, db, userScopeID)
+func getOldestQueuedUserScopeTaskID(ctx context.Context, db *sql.DB, userScopeID string) (int, error) {
+	return taskstore.GetOldestQueuedUserScopeTaskID(ctx, db, userScopeID)
 }
 
 func getDeploymentQueueSummary(ctx context.Context, db *sql.DB, userScopeID string, deploymentID string) (*deploymentQueueSummary, error) {

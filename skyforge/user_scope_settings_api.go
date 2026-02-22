@@ -86,7 +86,7 @@ func validateExternalTemplateRepos(repos []ExternalTemplateRepo) ([]ExternalTemp
 //
 //encore:api auth method=PUT path=/api/users/:id/settings
 func (s *Service) UpdateUserScopeSettings(ctx context.Context, id string, req *UserScopeSettingsRequest) (*UserScopeSettingsResponse, error) {
-	pc, err := requireWorkspaceOwner(ctx, s, id)
+	pc, err := requireUserScopeOwner(ctx, s, id)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +122,7 @@ func (s *Service) UpdateUserScopeSettings(ctx context.Context, id string, req *U
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to save user-scope settings").Err()
 	}
 	if s.db != nil {
-		_ = notifyWorkspacesUpdatePG(ctx, s.db, "*")
+		_ = notifyUserScopesUpdatePG(ctx, s.db, "*")
 		_ = notifyDashboardUpdatePG(ctx, s.db)
 	}
 	return &UserScopeSettingsResponse{UserScope: pc.userScope}, nil

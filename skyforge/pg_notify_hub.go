@@ -277,7 +277,7 @@ func notifySnmpUpdatePG(ctx context.Context, db *sql.DB, username string) error 
 	return err
 }
 
-func notifyWorkspacesUpdatePG(ctx context.Context, db *sql.DB, payload string) error {
+func notifyUserScopesUpdatePG(ctx context.Context, db *sql.DB, payload string) error {
 	payload = strings.ToLower(strings.TrimSpace(payload))
 	if payload == "" {
 		payload = "*"
@@ -446,7 +446,7 @@ func waitForSnmpUpdateSignal(ctx context.Context, db *sql.DB, username string) b
 	}
 }
 
-func waitForWorkspacesUpdateSignal(ctx context.Context, db *sql.DB, username string) bool {
+func waitForUserScopesUpdateSignal(ctx context.Context, db *sql.DB, username string) bool {
 	username = strings.ToLower(strings.TrimSpace(username))
 	if username == "" {
 		return false

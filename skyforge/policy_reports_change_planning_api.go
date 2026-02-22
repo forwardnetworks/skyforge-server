@@ -6,11 +6,11 @@ import (
 	"encore.dev/beta/errs"
 )
 
-// SimulateWorkspacePolicyReportChangePlanning simulates a rule change against a set of flows (no config push).
+// SimulateUserScopePolicyReportChangePlanning simulates a rule change against a set of flows (no config push).
 //
 // This endpoint is intentionally stubbed for now. Earlier iterations depended on
 // fast-changing NQE output shapes and would become brittle quickly.
-func (s *Service) SimulateWorkspacePolicyReportChangePlanning(ctx context.Context, id string, req *PolicyReportChangePlanningRequest) (*PolicyReportChangePlanningResponse, error) {
+func (s *Service) SimulateUserScopePolicyReportChangePlanning(ctx context.Context, id string, req *PolicyReportChangePlanningRequest) (*PolicyReportChangePlanningResponse, error) {
 	_ = s
 	_ = ctx
 	_ = id

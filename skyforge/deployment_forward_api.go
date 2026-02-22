@@ -48,7 +48,7 @@ func (s *Service) UpdateUserScopeDeploymentForwardConfig(ctx context.Context, id
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid payload").Err()
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
+	dep, err := s.getUserScopeDeployment(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func (s *Service) SyncUserScopeDeploymentForward(ctx context.Context, id, deploy
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
+	dep, err := s.getUserScopeDeployment(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}

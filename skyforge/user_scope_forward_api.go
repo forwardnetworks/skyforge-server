@@ -71,7 +71,7 @@ func (s *Service) GetUserScopeForwardConfig(ctx context.Context, id string) (*Us
 
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	rec, err := getWorkspaceForwardCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), pc.userScope.ID)
+	rec, err := getUserScopeForwardCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), pc.userScope.ID)
 	if err != nil {
 		log.Printf("forward get: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward config").Err()
@@ -141,7 +141,7 @@ func (s *Service) PutUserScopeForwardConfig(ctx context.Context, id string, req 
 	box := newSecretBox(s.cfg.SessionSecret)
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	current, err := getWorkspaceForwardCredentials(ctx, s.db, box, pc.userScope.ID)
+	current, err := getUserScopeForwardCredentials(ctx, s.db, box, pc.userScope.ID)
 	if err != nil {
 		log.Printf("forward get: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward config").Err()
@@ -190,7 +190,7 @@ func (s *Service) PutUserScopeForwardConfig(ctx context.Context, id string, req 
 		}
 	}
 
-	if err := putWorkspaceForwardCredentials(ctx, s.db, box, pc.userScope.ID, forwardCredentials{
+	if err := putUserScopeForwardCredentials(ctx, s.db, box, pc.userScope.ID, forwardCredentials{
 		BaseURL:        baseURL,
 		Username:       username,
 		Password:       password,
@@ -239,7 +239,7 @@ func (s *Service) GetUserScopeForwardCollectors(ctx context.Context, id string) 
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
 
-	forwardCfg, err := s.forwardConfigForWorkspace(ctx, pc.userScope.ID)
+	forwardCfg, err := s.forwardConfigForUserScope(ctx, pc.userScope.ID)
 	if err != nil || forwardCfg == nil {
 		return &UserScopeForwardCollectorsResponse{Collectors: []UserScopeForwardCollector{}}, err
 	}
@@ -278,7 +278,7 @@ func (s *Service) CreateUserScopeForwardCollector(ctx context.Context, id string
 		return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 	}
 
-	forwardCfg, err := s.forwardConfigForWorkspace(ctx, pc.userScope.ID)
+	forwardCfg, err := s.forwardConfigForUserScope(ctx, pc.userScope.ID)
 	if err != nil || forwardCfg == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("Forward credentials required").Err()
 	}
@@ -322,7 +322,7 @@ func (s *Service) DeleteUserScopeForwardConfig(ctx context.Context, id string) (
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	if err := deleteWorkspaceForwardCredentials(ctx, s.db, pc.userScope.ID); err != nil {
+	if err := deleteUserScopeForwardCredentials(ctx, s.db, pc.userScope.ID); err != nil {
 		log.Printf("forward delete: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to delete Forward config").Err()
 	}

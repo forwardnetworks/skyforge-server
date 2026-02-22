@@ -9,7 +9,7 @@ import (
 	"encore.dev/beta/errs"
 )
 
-func requireWorkspaceOwner(ctx context.Context, s *Service, userScopeID string) (*userContext, error) {
+func requireUserScopeOwner(ctx context.Context, s *Service, userScopeID string) (*userContext, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err

@@ -270,7 +270,7 @@ func (s *Service) RunUserScopeTerraformApply(ctx context.Context, id string, par
 	}
 
 	if deploymentID != "" {
-		dep, err := s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
+		dep, err := s.getUserScopeDeployment(ctx, pc.userScope.ID, deploymentID)
 		if err != nil {
 			return nil, err
 		}
@@ -353,7 +353,7 @@ type UserScopeNetlabRunRequest struct {
 	Cleanup            bool    `json:"cleanup,omitempty"` // for down/restart, remove workdir when true
 	NetlabServer       string  `json:"netlabServer,omitempty"`
 	NetlabPassword     string  `json:"netlabPassword,omitempty"`
-	NetlabWorkspaceDir string  `json:"netlabWorkspaceDir,omitempty"`
+	NetlabUserScopeDir string  `json:"netlabUserScopeDir,omitempty"`
 	NetlabMultilabID   string  `json:"netlabMultilabId,omitempty"`
 	NetlabDeployment   string  `json:"netlabDeployment,omitempty"`
 	TopologyPath       string  `json:"topologyPath,omitempty"`   // remote workdir-relative (or absolute) topology file
@@ -456,7 +456,7 @@ func (s *Service) RunUserScopeNetlab(ctx context.Context, id string, req *UserSc
 	userScopeRoot := fmt.Sprintf("/home/%s/netlab", pc.claims.Username)
 
 	// Keep support for older runner scripts/config.
-	userScopeDir := strings.TrimSpace(req.NetlabWorkspaceDir)
+	userScopeDir := strings.TrimSpace(req.NetlabUserScopeDir)
 	if userScopeDir == "" {
 		userScopeDir = fmt.Sprintf("%s/%s/%s", userScopeRoot, strings.TrimSpace(pc.userScope.Slug), deploymentName)
 	}
@@ -1008,7 +1008,7 @@ func populateAWSAuthEnv(ctx context.Context, cfg Config, db *sql.DB, store awsSS
 		}
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
-		rec, err := getWorkspaceAWSStaticCredentials(ctx, db, newSecretBox(cfg.SessionSecret), userScope.ID)
+		rec, err := getUserScopeAWSStaticCredentials(ctx, db, newSecretBox(cfg.SessionSecret), userScope.ID)
 		if err != nil {
 			log.Printf("aws static get: %v", err)
 			return errs.B().Code(errs.Unavailable).Msg("aws static credentials unavailable").Err()
@@ -1048,7 +1048,7 @@ func populateAzureAuthEnv(ctx context.Context, cfg Config, db *sql.DB, userScope
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	rec, err := getWorkspaceAzureCredentials(ctx, db, newSecretBox(cfg.SessionSecret), userScope.ID)
+	rec, err := getUserScopeAzureCredentials(ctx, db, newSecretBox(cfg.SessionSecret), userScope.ID)
 	if err != nil {
 		log.Printf("azure creds get: %v", err)
 		return errs.B().Code(errs.Unavailable).Msg("azure credentials unavailable").Err()
@@ -1071,7 +1071,7 @@ func populateGCPAuthEnv(ctx context.Context, cfg Config, db *sql.DB, userScope U
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	rec, err := getWorkspaceGCPCredentials(ctx, db, newSecretBox(cfg.SessionSecret), userScope.ID)
+	rec, err := getUserScopeGCPCredentials(ctx, db, newSecretBox(cfg.SessionSecret), userScope.ID)
 	if err != nil {
 		log.Printf("gcp creds get: %v", err)
 		return errs.B().Code(errs.Unavailable).Msg("gcp credentials unavailable").Err()

@@ -89,7 +89,7 @@ func artifactAttrs(ctx context.Context, userScopeID, key string) (*objects.Objec
 	return attrs, nil
 }
 
-func readWorkspaceArtifact(ctx context.Context, cfg Config, userScopeID, key string, maxBytes int) ([]byte, error) {
+func readUserScopeArtifact(ctx context.Context, cfg Config, userScopeID, key string, maxBytes int) ([]byte, error) {
 	if c, err := objectStoreClientFor(cfg); err == nil && c != nil {
 		objectKey := artifactObjectName(userScopeID, key)
 		data, err := c.GetObject(ctx, artifactsBucketName, objectKey)
@@ -127,7 +127,7 @@ func readWorkspaceArtifact(ctx context.Context, cfg Config, userScopeID, key str
 	return data, nil
 }
 
-func deleteWorkspaceArtifacts(ctx context.Context, cfg Config, userScopeID string) error {
+func deleteUserScopeArtifacts(ctx context.Context, cfg Config, userScopeID string) error {
 	if c, err := objectStoreClientFor(cfg); err == nil && c != nil {
 		return c.DeletePrefix(ctx, artifactsBucketName, artifactBasePrefix(userScopeID))
 	} else if err != nil {

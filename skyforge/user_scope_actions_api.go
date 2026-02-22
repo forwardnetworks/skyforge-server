@@ -39,7 +39,7 @@ func (s *Service) SyncUserScope(ctx context.Context, id string) (*userScopeSyncR
 			return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist sync").Err()
 		}
 		if s.db != nil {
-			_ = notifyWorkspacesUpdatePG(ctx, s.db, "*")
+			_ = notifyUserScopesUpdatePG(ctx, s.db, "*")
 			_ = notifyDashboardUpdatePG(ctx, s.db)
 		}
 	}
@@ -110,7 +110,7 @@ func (s *Service) UpdateUserScopeMembers(ctx context.Context, id string, req *Us
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist members").Err()
 	}
 	if s.db != nil {
-		_ = notifyWorkspacesUpdatePG(ctx, s.db, "*")
+		_ = notifyUserScopesUpdatePG(ctx, s.db, "*")
 		_ = notifyDashboardUpdatePG(ctx, s.db)
 	}
 	{
@@ -203,7 +203,7 @@ func (s *Service) UpdateUserScopeNetlab(ctx context.Context, id string, req *Use
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist netlab server").Err()
 	}
 	if s.db != nil {
-		_ = notifyWorkspacesUpdatePG(ctx, s.db, "*")
+		_ = notifyUserScopesUpdatePG(ctx, s.db, "*")
 		_ = notifyDashboardUpdatePG(ctx, s.db)
 	}
 	{
@@ -317,7 +317,7 @@ func (s *Service) GetUserScopeAWSStatic(ctx context.Context, id string) (*UserSc
 	box := newSecretBox(s.cfg.SessionSecret)
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	rec, err := getWorkspaceAWSStaticCredentials(ctx, s.db, box, pc.userScope.ID)
+	rec, err := getUserScopeAWSStaticCredentials(ctx, s.db, box, pc.userScope.ID)
 	if err != nil {
 		log.Printf("aws static get: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load aws static credentials").Err()
@@ -362,7 +362,7 @@ func (s *Service) PutUserScopeAWSStatic(ctx context.Context, id string, req *Use
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	if err := putWorkspaceAWSStaticCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), pc.userScope.ID, req.AccessKeyID, req.SecretAccessKey, req.SessionToken); err != nil {
+	if err := putUserScopeAWSStaticCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), pc.userScope.ID, req.AccessKeyID, req.SecretAccessKey, req.SessionToken); err != nil {
 		log.Printf("aws static put: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to store aws static credentials").Err()
 	}
@@ -395,7 +395,7 @@ func (s *Service) DeleteUserScopeAWSStatic(ctx context.Context, id string) (*Use
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	if err := deleteWorkspaceAWSStaticCredentials(ctx, s.db, pc.userScope.ID); err != nil {
+	if err := deleteUserScopeAWSStaticCredentials(ctx, s.db, pc.userScope.ID); err != nil {
 		log.Printf("aws static delete: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to delete aws static credentials").Err()
 	}
@@ -448,7 +448,7 @@ func (s *Service) GetUserScopeAzureCredentials(ctx context.Context, id string) (
 	box := newSecretBox(s.cfg.SessionSecret)
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	rec, err := getWorkspaceAzureCredentials(ctx, s.db, box, pc.userScope.ID)
+	rec, err := getUserScopeAzureCredentials(ctx, s.db, box, pc.userScope.ID)
 	if err != nil {
 		log.Printf("azure get: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load azure credentials").Err()
@@ -503,7 +503,7 @@ func (s *Service) PutUserScopeAzureCredentials(ctx context.Context, id string, r
 		ClientSecret:   req.ClientSecret,
 		SubscriptionID: req.SubscriptionID,
 	}
-	if err := putWorkspaceAzureCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), pc.userScope.ID, cred); err != nil {
+	if err := putUserScopeAzureCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), pc.userScope.ID, cred); err != nil {
 		log.Printf("azure put: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to store azure credentials").Err()
 	}
@@ -536,7 +536,7 @@ func (s *Service) DeleteUserScopeAzureCredentials(ctx context.Context, id string
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	if err := deleteWorkspaceAzureCredentials(ctx, s.db, pc.userScope.ID); err != nil {
+	if err := deleteUserScopeAzureCredentials(ctx, s.db, pc.userScope.ID); err != nil {
 		log.Printf("azure delete: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to delete azure credentials").Err()
 	}
@@ -553,7 +553,7 @@ type UserScopeGCPCredentialGetResponse struct {
 	Configured          bool   `json:"configured"`
 	ClientEmail         string `json:"clientEmail,omitempty"`
 	UserScopeID         string `json:"userId,omitempty"`
-	SelectedWorkspaceID string `json:"selectedWorkspaceId,omitempty"`
+	SelectedUserScopeID string `json:"selectedUserScopeId,omitempty"`
 	UpdatedAt           string `json:"updatedAt,omitempty"`
 }
 
@@ -587,7 +587,7 @@ func (s *Service) GetUserScopeGCPCredentials(ctx context.Context, id string) (*U
 	box := newSecretBox(s.cfg.SessionSecret)
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	rec, err := getWorkspaceGCPCredentials(ctx, s.db, box, pc.userScope.ID)
+	rec, err := getUserScopeGCPCredentials(ctx, s.db, box, pc.userScope.ID)
 	if err != nil {
 		log.Printf("gcp get: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load gcp credentials").Err()
@@ -610,7 +610,7 @@ func (s *Service) GetUserScopeGCPCredentials(ctx context.Context, id string) (*U
 		Configured:          rec != nil && rec.ServiceAccountJSON != "",
 		ClientEmail:         clientEmail,
 		UserScopeID:         providerProjectID,
-		SelectedWorkspaceID: selectedProjectID,
+		SelectedUserScopeID: selectedProjectID,
 		UpdatedAt:           updatedAt,
 	}, nil
 }
@@ -638,7 +638,7 @@ func (s *Service) PutUserScopeGCPCredentials(ctx context.Context, id string, req
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	if err := putWorkspaceGCPCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), pc.userScope.ID, req.ServiceAccountJSON, req.UserScopeID); err != nil {
+	if err := putUserScopeGCPCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), pc.userScope.ID, req.ServiceAccountJSON, req.UserScopeID); err != nil {
 		log.Printf("gcp put: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to store gcp credentials").Err()
 	}
@@ -671,7 +671,7 @@ func (s *Service) DeleteUserScopeGCPCredentials(ctx context.Context, id string) 
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	if err := deleteWorkspaceGCPCredentials(ctx, s.db, pc.userScope.ID); err != nil {
+	if err := deleteUserScopeGCPCredentials(ctx, s.db, pc.userScope.ID); err != nil {
 		log.Printf("gcp delete: %v", err)
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to delete gcp credentials").Err()
 	}

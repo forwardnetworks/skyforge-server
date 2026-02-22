@@ -617,7 +617,7 @@ func writeAuditEvent(ctx context.Context, db *sql.DB, actor string, actorIsAdmin
 	}
 }
 
-func getWorkspaceAWSStaticCredentials(ctx context.Context, db *sql.DB, box *secretBox, userScopeID string) (*awsStaticCredentials, error) {
+func getUserScopeAWSStaticCredentials(ctx context.Context, db *sql.DB, box *secretBox, userScopeID string) (*awsStaticCredentials, error) {
 	if db == nil || box == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
@@ -658,7 +658,7 @@ FROM sf_user_scope_aws_static_credentials WHERE user_id=$1`, userScopeID).Scan(&
 	return rec, nil
 }
 
-func putWorkspaceAWSStaticCredentials(ctx context.Context, db *sql.DB, box *secretBox, userScopeID string, accessKeyID string, secretAccessKey string, sessionToken string) error {
+func putUserScopeAWSStaticCredentials(ctx context.Context, db *sql.DB, box *secretBox, userScopeID string, accessKeyID string, secretAccessKey string, sessionToken string) error {
 	if db == nil || box == nil {
 		return fmt.Errorf("db is not configured")
 	}
@@ -694,7 +694,7 @@ ON CONFLICT (user_id) DO UPDATE SET
 	return err
 }
 
-func deleteWorkspaceAWSStaticCredentials(ctx context.Context, db *sql.DB, userScopeID string) error {
+func deleteUserScopeAWSStaticCredentials(ctx context.Context, db *sql.DB, userScopeID string) error {
 	if db == nil {
 		return fmt.Errorf("db is not configured")
 	}
@@ -722,7 +722,7 @@ type forwardCredentials struct {
 	UpdatedAt      time.Time
 }
 
-func getWorkspaceForwardCredentials(ctx context.Context, db *sql.DB, box *secretBox, userScopeID string) (*forwardCredentials, error) {
+func getUserScopeForwardCredentials(ctx context.Context, db *sql.DB, box *secretBox, userScopeID string) (*forwardCredentials, error) {
 	if db == nil || box == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
@@ -824,7 +824,7 @@ FROM sf_user_scope_forward_credentials WHERE user_id=$1`, userScopeID).Scan(
 	return rec, nil
 }
 
-func putWorkspaceForwardCredentials(ctx context.Context, db *sql.DB, box *secretBox, userScopeID string, rec forwardCredentials) error {
+func putUserScopeForwardCredentials(ctx context.Context, db *sql.DB, box *secretBox, userScopeID string, rec forwardCredentials) error {
 	if db == nil || box == nil {
 		return fmt.Errorf("db is not configured")
 	}
@@ -918,7 +918,7 @@ ON CONFLICT (user_id) DO UPDATE SET
 	return err
 }
 
-func deleteWorkspaceForwardCredentials(ctx context.Context, db *sql.DB, userScopeID string) error {
+func deleteUserScopeForwardCredentials(ctx context.Context, db *sql.DB, userScopeID string) error {
 	if db == nil {
 		return fmt.Errorf("db is not configured")
 	}
@@ -930,7 +930,7 @@ func deleteWorkspaceForwardCredentials(ctx context.Context, db *sql.DB, userScop
 	return err
 }
 
-func getWorkspaceAzureCredentials(ctx context.Context, db *sql.DB, box *secretBox, userScopeID string) (*azureServicePrincipal, error) {
+func getUserScopeAzureCredentials(ctx context.Context, db *sql.DB, box *secretBox, userScopeID string) (*azureServicePrincipal, error) {
 	if db == nil || box == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
@@ -978,7 +978,7 @@ FROM sf_user_scope_azure_credentials WHERE user_id=$1`, userScopeID).Scan(&tenan
 	return rec, nil
 }
 
-func putWorkspaceAzureCredentials(ctx context.Context, db *sql.DB, box *secretBox, userScopeID string, cred azureServicePrincipal) error {
+func putUserScopeAzureCredentials(ctx context.Context, db *sql.DB, box *secretBox, userScopeID string, cred azureServicePrincipal) error {
 	if db == nil || box == nil {
 		return fmt.Errorf("db is not configured")
 	}
@@ -1024,7 +1024,7 @@ ON CONFLICT (user_id) DO UPDATE SET
 	return err
 }
 
-func deleteWorkspaceAzureCredentials(ctx context.Context, db *sql.DB, userScopeID string) error {
+func deleteUserScopeAzureCredentials(ctx context.Context, db *sql.DB, userScopeID string) error {
 	if db == nil {
 		return fmt.Errorf("db is not configured")
 	}
@@ -1036,7 +1036,7 @@ func deleteWorkspaceAzureCredentials(ctx context.Context, db *sql.DB, userScopeI
 	return err
 }
 
-func getWorkspaceGCPCredentials(ctx context.Context, db *sql.DB, box *secretBox, userScopeID string) (*gcpServiceAccount, error) {
+func getUserScopeGCPCredentials(ctx context.Context, db *sql.DB, box *secretBox, userScopeID string) (*gcpServiceAccount, error) {
 	if db == nil || box == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
@@ -1066,7 +1066,7 @@ FROM sf_user_scope_gcp_credentials WHERE user_id=$1`, userScopeID).Scan(&raw, &p
 	return rec, nil
 }
 
-func putWorkspaceGCPCredentials(ctx context.Context, db *sql.DB, box *secretBox, userScopeID string, jsonBlob string, projectOverride string) error {
+func putUserScopeGCPCredentials(ctx context.Context, db *sql.DB, box *secretBox, userScopeID string, jsonBlob string, projectOverride string) error {
 	if db == nil || box == nil {
 		return fmt.Errorf("db is not configured")
 	}
@@ -1093,7 +1093,7 @@ ON CONFLICT (user_id) DO UPDATE SET
 	return err
 }
 
-func deleteWorkspaceGCPCredentials(ctx context.Context, db *sql.DB, userScopeID string) error {
+func deleteUserScopeGCPCredentials(ctx context.Context, db *sql.DB, userScopeID string) error {
 	if db == nil {
 		return fmt.Errorf("db is not configured")
 	}
@@ -2302,17 +2302,17 @@ func syncUserScopes(ctx context.Context, cfg Config, store userScopesStore, db *
 		return nil, err
 	}
 	reports := make([]userScopeSyncReport, 0, len(userScopes))
-	changedWorkspaces := make([]UserScope, 0, 4)
+	changedUserScopes := make([]UserScope, 0, 4)
 	for i := range userScopes {
 		userScopeCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		report := syncUserScopeResources(userScopeCtx, cfg, &userScopes[i])
 		cancel()
 		if report.Updated {
-			changedWorkspaces = append(changedWorkspaces, userScopes[i])
+			changedUserScopes = append(changedUserScopes, userScopes[i])
 		}
 		reports = append(reports, report)
 	}
-	for _, ws := range changedWorkspaces {
+	for _, ws := range changedUserScopes {
 		if err := store.upsert(ws); err != nil {
 			return reports, err
 		}
@@ -2382,11 +2382,11 @@ func initService() (*Service, error) {
 		return nil, fmt.Errorf("postgres ping failed: %w", err)
 	}
 
-	pgWorkspaces := newPGUserScopesStore(db)
+	pgUserScopes := newPGUserScopesStore(db)
 	pgUsers := newPGUsersStore(db)
 	pgAWS := newPGAWSStore(db, box)
 
-	userScopeStore = pgWorkspaces
+	userScopeStore = pgUserScopes
 	awsStore = pgAWS
 	userStore = pgUsers
 

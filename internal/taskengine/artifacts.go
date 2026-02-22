@@ -14,7 +14,7 @@ import (
 // The MinIO bootstrap creates `skyforge-files` and enables access.
 const skyforgeArtifactsBucket = "skyforge-files"
 
-func artifactObjectNameForWorkspace(userScopeID, key string) string {
+func artifactObjectNameForUserScope(userScopeID, key string) string {
 	userScopeID = strings.TrimSpace(userScopeID)
 	key = strings.TrimPrefix(strings.TrimSpace(key), "/")
 	if userScopeID == "" {
@@ -28,7 +28,7 @@ func putUserScopeArtifact(ctx context.Context, cfg skyforgecore.Config, userScop
 	if key == "" {
 		return "", fmt.Errorf("artifact key is required")
 	}
-	obj := artifactObjectNameForWorkspace(userScopeID, key)
+	obj := artifactObjectNameForUserScope(userScopeID, key)
 	client, err := objectStoreClientFor(cfg)
 	if err != nil {
 		return "", err
@@ -39,7 +39,7 @@ func putUserScopeArtifact(ctx context.Context, cfg skyforgecore.Config, userScop
 	return key, nil
 }
 
-func readWorkspaceArtifact(ctx context.Context, cfg skyforgecore.Config, userScopeID, key string, maxBytes int) ([]byte, error) {
+func readUserScopeArtifact(ctx context.Context, cfg skyforgecore.Config, userScopeID, key string, maxBytes int) ([]byte, error) {
 	if maxBytes <= 0 || maxBytes > 10<<20 {
 		maxBytes = 2 << 20
 	}
@@ -47,7 +47,7 @@ func readWorkspaceArtifact(ctx context.Context, cfg skyforgecore.Config, userSco
 	if key == "" {
 		return nil, fmt.Errorf("artifact key is required")
 	}
-	obj := artifactObjectNameForWorkspace(userScopeID, key)
+	obj := artifactObjectNameForUserScope(userScopeID, key)
 	client, err := objectStoreClientFor(cfg)
 	if err != nil {
 		return nil, err

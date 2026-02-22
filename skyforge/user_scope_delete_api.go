@@ -110,7 +110,7 @@ func (s *Service) DeleteUserScope(ctx context.Context, id string, params *UserSc
 			if err := deleteTerraformStatePrefix(ctx, s.cfg, "terraform-state", statePrefix); err != nil {
 				log.Printf("object storage delete state prefix %s: %v", statePrefix, err)
 			}
-			if err := deleteWorkspaceArtifacts(ctx, s.cfg, pc.userScope.ID); err != nil {
+			if err := deleteUserScopeArtifacts(ctx, s.cfg, pc.userScope.ID); err != nil {
 				log.Printf("delete user-scope artifacts %s: %v", pc.userScope.ID, err)
 			}
 		}
@@ -121,7 +121,7 @@ func (s *Service) DeleteUserScope(ctx context.Context, id string, params *UserSc
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to persist user-scope deletion").Err()
 	}
 	if s.db != nil {
-		_ = notifyWorkspacesUpdatePG(ctx, s.db, "*")
+		_ = notifyUserScopesUpdatePG(ctx, s.db, "*")
 		_ = notifyDashboardUpdatePG(ctx, s.db)
 	}
 	return &UserScopeDeleteResponse{

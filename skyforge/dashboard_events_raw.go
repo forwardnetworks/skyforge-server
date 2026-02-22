@@ -70,7 +70,7 @@ ORDER BY updated_at DESC`, userScopeID)
 		var (
 			rec                 UserScopeDeployment
 			raw                 json.RawMessage
-			lastTaskWorkspaceID sql.NullInt64
+			lastTaskUserScopeID sql.NullInt64
 			lastTaskID          sql.NullInt64
 			lastStatus          sql.NullString
 			lastStarted         sql.NullTime
@@ -86,7 +86,7 @@ ORDER BY updated_at DESC`, userScopeID)
 			&rec.CreatedBy,
 			&createdAt,
 			&updatedAt,
-			&lastTaskWorkspaceID,
+			&lastTaskUserScopeID,
 			&lastTaskID,
 			&lastStatus,
 			&lastStarted,
@@ -119,9 +119,9 @@ ORDER BY updated_at DESC`, userScopeID)
 		} else {
 			rec.Config = JSONMap{}
 		}
-		if lastTaskWorkspaceID.Valid {
-			v := int(lastTaskWorkspaceID.Int64)
-			rec.LastTaskWorkspaceID = &v
+		if lastTaskUserScopeID.Valid {
+			v := int(lastTaskUserScopeID.Int64)
+			rec.LastTaskUserScopeID = &v
 		}
 		if lastTaskID.Valid {
 			v := int(lastTaskID.Int64)

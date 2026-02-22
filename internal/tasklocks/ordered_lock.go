@@ -102,7 +102,7 @@ func AcquireOrderedTaskLock(ctx context.Context, db *sql.DB, task *taskstore.Tas
 			continue
 		}
 
-		oldestQueuedID, err := taskstore.GetOldestQueuedWorkspaceTaskID(ctx, db, userScopeID)
+		oldestQueuedID, err := taskstore.GetOldestQueuedUserScopeTaskID(ctx, db, userScopeID)
 		if err != nil {
 			_ = pglocks.AdvisoryUnlock(context.Background(), db, lockKey)
 			rlog.Error("user-scope queue check error", "err", err)

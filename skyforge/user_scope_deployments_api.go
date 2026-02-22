@@ -36,7 +36,7 @@ type UserScopeDeployment struct {
 	CreatedBy           string  `json:"createdBy"`
 	CreatedAt           string  `json:"createdAt"`
 	UpdatedAt           string  `json:"updatedAt"`
-	LastTaskWorkspaceID *int    `json:"lastTaskWorkspaceId,omitempty"`
+	LastTaskUserScopeID *int    `json:"lastTaskUserScopeId,omitempty"`
 	LastTaskID          *int    `json:"lastTaskId,omitempty"`
 	LastStatus          *string `json:"lastStatus,omitempty"`
 	LastStartedAt       *string `json:"lastStartedAt,omitempty"`
@@ -187,7 +187,7 @@ ORDER BY updated_at DESC`, pc.userScope.ID)
 		var (
 			rec                 UserScopeDeployment
 			raw                 json.RawMessage
-			lastTaskWorkspaceID sql.NullInt64
+			lastTaskUserScopeID sql.NullInt64
 			lastTaskID          sql.NullInt64
 			lastStatus          sql.NullString
 			lastStarted         sql.NullTime
@@ -203,7 +203,7 @@ ORDER BY updated_at DESC`, pc.userScope.ID)
 			&rec.CreatedBy,
 			&createdAt,
 			&updatedAt,
-			&lastTaskWorkspaceID,
+			&lastTaskUserScopeID,
 			&lastTaskID,
 			&lastStatus,
 			&lastStarted,
@@ -239,9 +239,9 @@ ORDER BY updated_at DESC`, pc.userScope.ID)
 		} else {
 			rec.Config = JSONMap{}
 		}
-		if lastTaskWorkspaceID.Valid {
-			v := int(lastTaskWorkspaceID.Int64)
-			rec.LastTaskWorkspaceID = &v
+		if lastTaskUserScopeID.Valid {
+			v := int(lastTaskUserScopeID.Int64)
+			rec.LastTaskUserScopeID = &v
 		}
 		if lastTaskID.Valid {
 			v := int(lastTaskID.Int64)
@@ -603,7 +603,7 @@ func (s *Service) CreateUserScopeDeployment(ctx context.Context, id string, req 
 		}
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to create deployment").Err()
 	}
-	dep, err := s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
+	dep, err := s.getUserScopeDeployment(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -629,7 +629,7 @@ func (s *Service) CreateUserScopeDeployment(ctx context.Context, id string, req 
 		if _, err := s.RunUserScopeDeploymentAction(ctx, id, deploymentID, &UserScopeDeploymentOpRequest{Action: "create"}); err != nil {
 			log.Printf("netlab create on deployment create: %v", err)
 		}
-		return s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
+		return s.getUserScopeDeployment(ctx, pc.userScope.ID, deploymentID)
 	}
 	return dep, nil
 }
@@ -677,7 +677,7 @@ func (s *Service) UpdateUserScopeDeployment(ctx context.Context, id, deploymentI
 	}
 	fields = append(fields, "updated_at=now()")
 	if len(fields) == 1 {
-		return s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
+		return s.getUserScopeDeployment(ctx, pc.userScope.ID, deploymentID)
 	}
 
 	args = append(args, pc.userScope.ID, deploymentID)
@@ -695,7 +695,7 @@ func (s *Service) UpdateUserScopeDeployment(ctx context.Context, id, deploymentI
 	if rows, _ := res.RowsAffected(); rows == 0 {
 		return nil, errs.B().Code(errs.NotFound).Msg("deployment not found").Err()
 	}
-	return s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
+	return s.getUserScopeDeployment(ctx, pc.userScope.ID, deploymentID)
 }
 
 // DeleteUserScopeDeployment removes a deployment definition from Skyforge.
@@ -716,7 +716,7 @@ func (s *Service) DeleteUserScopeDeployment(ctx context.Context, id, deploymentI
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	existing, err := s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
+	existing, err := s.getUserScopeDeployment(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -847,7 +847,7 @@ func (s *Service) RunUserScopeDeploymentAction(ctx context.Context, id, deployme
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid deployment action (use create, start, stop, destroy, export)").Err()
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
+	dep, err := s.getUserScopeDeployment(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -1299,7 +1299,7 @@ func (s *Service) GetUserScopeDeploymentInfo(ctx context.Context, id, deployment
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	dep, err := s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
+	dep, err := s.getUserScopeDeployment(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -1327,7 +1327,7 @@ func (s *Service) GetUserScopeDeploymentInfo(ctx context.Context, id, deployment
 	}
 	if forwardNetworkID := getString(forwardNetworkIDKey); forwardNetworkID != "" {
 		resp.ForwardID = forwardNetworkID
-		if forwardCfg, err := s.forwardConfigForWorkspace(ctx, pc.userScope.ID); err == nil && forwardCfg != nil {
+		if forwardCfg, err := s.forwardConfigForUserScope(ctx, pc.userScope.ID); err == nil && forwardCfg != nil {
 			baseURL := strings.TrimSpace(forwardCfg.BaseURL)
 			if baseURL == "" {
 				baseURL = defaultForwardBaseURL
@@ -1595,7 +1595,7 @@ func (s *Service) NetlabConnect(ctx context.Context, id, deploymentID string, re
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
+	dep, err := s.getUserScopeDeployment(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -1699,7 +1699,7 @@ func (s *Service) GetUserScopeDeploymentNetlabGraph(ctx context.Context, id, dep
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	dep, err := s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
+	dep, err := s.getUserScopeDeployment(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -1869,7 +1869,7 @@ func (s *Service) StopUserScopeDeployment(ctx context.Context, id, deploymentID 
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	dep, err := s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
+	dep, err := s.getUserScopeDeployment(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -1911,7 +1911,7 @@ func (s *Service) runDeployment(ctx context.Context, id, deploymentID string, re
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	dep, err := s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
+	dep, err := s.getUserScopeDeployment(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -2199,7 +2199,7 @@ func (s *Service) touchDeploymentFromRun(ctx context.Context, userScopeID, deplo
 	if s == nil || s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	taskWorkspaceID := 0
+	taskUserScopeID := 0
 	taskID := 0
 	status := ""
 	if run != nil {
@@ -2225,11 +2225,11 @@ func (s *Service) touchDeploymentFromRun(ctx context.Context, userScopeID, deplo
   last_status=$4,
   last_started_at=now(),
   updated_at=now()
-WHERE user_id=$5 AND id=$6`, cfgBytes, nullIfZeroInt(taskWorkspaceID), nullIfZeroInt(taskID), nullIfEmpty(status), userScopeID, deploymentID)
+WHERE user_id=$5 AND id=$6`, cfgBytes, nullIfZeroInt(taskUserScopeID), nullIfZeroInt(taskID), nullIfEmpty(status), userScopeID, deploymentID)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to update deployment").Err()
 	}
-	return s.getWorkspaceDeployment(ctx, userScopeID, deploymentID)
+	return s.getUserScopeDeployment(ctx, userScopeID, deploymentID)
 }
 
 func (s *Service) updateDeploymentStatus(ctx context.Context, userScopeID, deploymentID string, status string, finishedAt *time.Time) error {
@@ -2250,7 +2250,7 @@ func (s *Service) getLatestDeploymentByType(ctx context.Context, userScopeID, de
 		}
 		return nil, err
 	}
-	return s.getWorkspaceDeployment(ctx, userScopeID, deploymentID)
+	return s.getUserScopeDeployment(ctx, userScopeID, deploymentID)
 }
 
 func nullIfZeroInt(v int) any {
@@ -2260,7 +2260,7 @@ func nullIfZeroInt(v int) any {
 	return v
 }
 
-func (s *Service) getWorkspaceDeployment(ctx context.Context, userScopeID, deploymentID string) (*UserScopeDeployment, error) {
+func (s *Service) getUserScopeDeployment(ctx context.Context, userScopeID, deploymentID string) (*UserScopeDeployment, error) {
 	if s == nil || s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
@@ -2270,7 +2270,7 @@ func (s *Service) getWorkspaceDeployment(ctx context.Context, userScopeID, deplo
 	var (
 		rec                 UserScopeDeployment
 		raw                 json.RawMessage
-		lastTaskWorkspaceID sql.NullInt64
+		lastTaskUserScopeID sql.NullInt64
 		lastTaskID          sql.NullInt64
 		lastStatus          sql.NullString
 		lastStarted         sql.NullTime
@@ -2289,7 +2289,7 @@ WHERE user_id=$1 AND id=$2`, userScopeID, deploymentID).Scan(
 		&rec.CreatedBy,
 		&createdAt,
 		&updatedAt,
-		&lastTaskWorkspaceID,
+		&lastTaskUserScopeID,
 		&lastTaskID,
 		&lastStatus,
 		&lastStarted,
@@ -2329,9 +2329,9 @@ WHERE user_id=$1 AND id=$2`, userScopeID, deploymentID).Scan(
 	if rec.Config == nil {
 		rec.Config = JSONMap{}
 	}
-	if lastTaskWorkspaceID.Valid {
-		v := int(lastTaskWorkspaceID.Int64)
-		rec.LastTaskWorkspaceID = &v
+	if lastTaskUserScopeID.Valid {
+		v := int(lastTaskUserScopeID.Int64)
+		rec.LastTaskUserScopeID = &v
 	}
 	if lastTaskID.Valid {
 		v := int(lastTaskID.Int64)

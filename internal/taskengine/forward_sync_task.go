@@ -104,7 +104,7 @@ func (e *Engine) runForwardSyncTask(ctx context.Context, pc *userContext, deploy
 
 	ctxRead, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	raw, err := readWorkspaceArtifact(ctxRead, e.cfg, pc.userScope.ID, topoKey, 2<<20)
+	raw, err := readUserScopeArtifact(ctxRead, e.cfg, pc.userScope.ID, topoKey, 2<<20)
 	if err != nil || len(raw) == 0 {
 		return fmt.Errorf("failed to read topology artifact")
 	}

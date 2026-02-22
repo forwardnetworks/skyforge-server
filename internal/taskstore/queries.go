@@ -101,7 +101,7 @@ LIMIT 1`, userScopeID, deploymentID).Scan(&id)
 	return id, nil
 }
 
-func GetOldestQueuedWorkspaceTaskID(ctx context.Context, db *sql.DB, userScopeID string) (int, error) {
+func GetOldestQueuedUserScopeTaskID(ctx context.Context, db *sql.DB, userScopeID string) (int, error) {
 	if db == nil {
 		return 0, errDBUnavailable
 	}

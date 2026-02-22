@@ -58,7 +58,7 @@ func loadUserScopesSnapshot(ctx context.Context, svc *Service, claims *SessionCl
 				syncGiteaCollaboratorsForUserScope(svc.cfg, w)
 			}
 			if svc.db != nil {
-				_ = notifyWorkspacesUpdatePG(ctx, svc.db, "*")
+				_ = notifyUserScopesUpdatePG(ctx, svc.db, "*")
 				_ = notifyDashboardUpdatePG(ctx, svc.db)
 			}
 		}

@@ -87,7 +87,7 @@ func (s *Service) SetUserScopeDeploymentLinkImpairment(ctx context.Context, id, 
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("impairment pct fields must be <= 100").Err()
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
+	dep, err := s.getUserScopeDeployment(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}

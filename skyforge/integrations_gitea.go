@@ -444,7 +444,7 @@ func syncGiteaRepoFromBlueprintWithSource(sourceCfg, targetCfg Config, targetOwn
 	return syncGiteaDirectoryWithSource(sourceCfg, targetCfg, owner, repo, targetOwner, targetRepo, "", blueprintBranch, targetBranch, claims)
 }
 
-func syncBlueprintCatalogIntoWorkspaceRepo(sourceCfg, targetCfg Config, targetOwner, targetRepo, blueprint, targetBranch string, claims *SessionClaims) error {
+func syncBlueprintCatalogIntoUserScopeRepo(sourceCfg, targetCfg Config, targetOwner, targetRepo, blueprint, targetBranch string, claims *SessionClaims) error {
 	sourceOwner, sourceRepo, ok := parseGiteaBlueprintSlug(blueprint)
 	if !ok {
 		return fmt.Errorf("unsupported blueprint repo format")
