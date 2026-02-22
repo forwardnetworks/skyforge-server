@@ -8,13 +8,13 @@ These are vendor/protocol adapters (HTTP/SSH/SDK). Domain orchestration should c
 
 - `encore.app/integrations/gitea`
   - Purpose: repo provisioning, blueprint migration, directory listing, file create/update, collaborator management.
-  - Used by: `encore.app/skyforge` workspace sync logic.
+  - Used by: `encore.app/skyforge` user scope sync logic.
 - `encore.app/integrations/sshutil`
   - Purpose: shared SSH dial + command execution (used by Netlab and other SSH-backed features).
   - Used by: `encore.app/skyforge` Netlab provider.
 - `encore.app/integrations/objectstore`
   - Purpose: S3-compatible object store operations using MinIO SDK (currently Terraform-state housekeeping such as prefix deletion).
-  - Used by: `encore.app/skyforge` workspace delete/cleanup logic.
+  - Used by: `encore.app/skyforge` user scope delete/cleanup logic.
 
 Planned candidates (not fully extracted yet):
 - `integrations/eve` (EVE-NG API/SSH)

@@ -26,7 +26,7 @@ type NetlabRunsResponse struct {
 	Runs   []NetlabRun `json:"runs"`
 }
 
-// GetNetlabRuns returns recent Netlab runs for a workspace.
+// GetNetlabRuns returns recent Netlab runs for a user scope.
 //
 //encore:api auth method=GET path=/api/netlab/runs
 func (s *Service) GetNetlabRuns(ctx context.Context, params *RunnerRunsParams) (*NetlabRunsResponse, error) {
@@ -39,14 +39,14 @@ func (s *Service) GetNetlabRuns(ctx context.Context, params *RunnerRunsParams) (
 	if err != nil {
 		return nil, err
 	}
-	workspace, err := s.resolveWorkspaceForUser(ctx, user, userID)
+	scopeUser, err := s.resolveUserScopeForUser(ctx, user, userID)
 	if err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	tasks, err := listTasks(ctx, s.db, workspace.ID, limit)
+	tasks, err := listTasks(ctx, s.db, scopeUser.ID, limit)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to query runs").Err()
 	}
@@ -66,7 +66,7 @@ func (s *Service) GetNetlabRuns(ctx context.Context, params *RunnerRunsParams) (
 		}
 		labs, artifacts := parseSkyforgeMarkers(logRows)
 		runInfo := taskToRunInfo(task)
-		runInfo["userId"] = workspace.ID
+		runInfo["userId"] = scopeUser.ID
 		taskJSON, err := toJSONMap(runInfo)
 		if err != nil {
 			return nil, errs.B().Code(errs.Internal).Msg("failed to encode task").Err()
@@ -81,7 +81,7 @@ func (s *Service) GetNetlabRuns(ctx context.Context, params *RunnerRunsParams) (
 
 	_ = ctx
 	return &NetlabRunsResponse{
-		UserID: workspace.ID,
+		UserID: scopeUser.ID,
 		User:   user.Username,
 		Runs:   runs,
 	}, nil

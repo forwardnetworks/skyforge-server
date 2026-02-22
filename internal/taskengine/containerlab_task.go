@@ -27,8 +27,8 @@ type containerlabTaskSpec struct {
 
 type containerlabRunSpec struct {
 	TaskID       int
-	WorkspaceCtx *userContext
-	WorkspaceID  string
+	UserScopeCtx *userContext
+	UserScopeID  string
 	DeploymentID string
 	APIURL       string
 	Token        string
@@ -48,7 +48,7 @@ func (e *Engine) dispatchContainerlabTask(ctx context.Context, task *taskstore.T
 	if err := decodeTaskSpec(task, &specIn); err != nil {
 		return err
 	}
-	ws, err := e.loadWorkspaceByKey(ctx, task.WorkspaceID)
+	ws, err := e.loadUserScopeByKey(ctx, task.UserScopeID)
 	if err != nil {
 		return err
 	}
@@ -57,7 +57,7 @@ func (e *Engine) dispatchContainerlabTask(ctx context.Context, task *taskstore.T
 		username = ws.primaryOwner()
 	}
 	pc := &userContext{
-		workspace: *ws,
+		userScope: *ws,
 		claims: SessionClaims{
 			Username: username,
 		},
@@ -71,9 +71,9 @@ func (e *Engine) dispatchContainerlabTask(ctx context.Context, task *taskstore.T
 	if apiURL == "" || token == "" {
 		serverRef := strings.TrimSpace(specIn.NetlabServer)
 		if serverRef == "" {
-			serverRef = strings.TrimSpace(pc.workspace.NetlabServer)
+			serverRef = strings.TrimSpace(pc.userScope.NetlabServer)
 		}
-		server, err := e.resolveWorkspaceNetlabServer(ctx, pc.workspace.ID, serverRef)
+		server, err := e.resolveUserScopeNetlabServer(ctx, pc.userScope.ID, serverRef)
 		if err != nil {
 			return err
 		}
@@ -91,8 +91,8 @@ func (e *Engine) dispatchContainerlabTask(ctx context.Context, task *taskstore.T
 
 	runSpec := containerlabRunSpec{
 		TaskID:       task.ID,
-		WorkspaceCtx: pc,
-		WorkspaceID:  strings.TrimSpace(task.WorkspaceID),
+		UserScopeCtx: pc,
+		UserScopeID:  strings.TrimSpace(task.UserScopeID),
 		DeploymentID: func() string {
 			if task.DeploymentID.Valid {
 				return strings.TrimSpace(task.DeploymentID.String)
@@ -150,18 +150,18 @@ func (e *Engine) runContainerlabTask(ctx context.Context, spec containerlabRunSp
 		if len(body) > 0 {
 			log.Infof("%s", string(body))
 		}
-		if labName != "" && spec.TaskID > 0 && strings.TrimSpace(spec.WorkspaceID) != "" {
+		if labName != "" && spec.TaskID > 0 && strings.TrimSpace(spec.UserScopeID) != "" {
 			graph, err := e.captureContainerlabTopologyArtifact(ctx, spec, labName)
 			if err != nil {
 				log.Infof("Containerlab topology capture skipped: %v", err)
-			} else if graph != nil && spec.WorkspaceCtx != nil && strings.TrimSpace(spec.DeploymentID) != "" {
-				dep, depErr := e.loadDeployment(ctx, spec.WorkspaceID, strings.TrimSpace(spec.DeploymentID))
+			} else if graph != nil && spec.UserScopeCtx != nil && strings.TrimSpace(spec.DeploymentID) != "" {
+				dep, depErr := e.loadDeployment(ctx, spec.UserScopeID, strings.TrimSpace(spec.DeploymentID))
 				if depErr != nil {
 					log.Infof("Forward sync skipped: failed to load deployment: %v", depErr)
 				} else if dep == nil {
 					log.Infof("Forward sync skipped: deployment not found")
 				} else {
-					_, _ = e.syncForwardTopologyGraphDevices(ctx, spec.TaskID, spec.WorkspaceCtx, dep, graph, forwardSyncOptions{
+					_, _ = e.syncForwardTopologyGraphDevices(ctx, spec.TaskID, spec.UserScopeCtx, dep, graph, forwardSyncOptions{
 						StartConnectivity: true,
 						StartCollection:   true,
 					})
@@ -196,7 +196,7 @@ func (e *Engine) runContainerlabTask(ctx context.Context, spec containerlabRunSp
 }
 
 func (e *Engine) captureContainerlabTopologyArtifact(ctx context.Context, spec containerlabRunSpec, labName string) (*TopologyGraph, error) {
-	if e == nil || spec.TaskID <= 0 || strings.TrimSpace(spec.WorkspaceID) == "" {
+	if e == nil || spec.TaskID <= 0 || strings.TrimSpace(spec.UserScopeID) == "" {
 		return nil, fmt.Errorf("invalid task spec")
 	}
 	labName = strings.TrimSpace(labName)
@@ -222,7 +222,7 @@ func (e *Engine) captureContainerlabTopologyArtifact(ctx context.Context, spec c
 	key := fmt.Sprintf("topology/containerlab/%s.json", sanitizeArtifactKeySegment(labName))
 	ctxPut, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	putKey, err := putWorkspaceArtifact(ctxPut, e.cfg, spec.WorkspaceID, key, graphBytes, "application/json")
+	putKey, err := putUserScopeArtifact(ctxPut, e.cfg, spec.UserScopeID, key, graphBytes, "application/json")
 	if err != nil {
 		return nil, err
 	}

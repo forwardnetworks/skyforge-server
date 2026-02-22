@@ -10,9 +10,9 @@ import (
 	"encore.dev/beta/errs"
 )
 
-func requireWorkspaceEditor(pc *userContext) error {
+func requireUserScopeEditor(pc *userContext) error {
 	if pc == nil {
-		return errs.B().Code(errs.Unavailable).Msg("workspace unavailable").Err()
+		return errs.B().Code(errs.Unavailable).Msg("user scope unavailable").Err()
 	}
 	switch pc.access {
 	case "admin", "owner", "editor":
@@ -24,9 +24,9 @@ func requireWorkspaceEditor(pc *userContext) error {
 	}
 }
 
-func requireWorkspaceOwnerRole(pc *userContext) error {
+func requireUserScopeOwnerRole(pc *userContext) error {
 	if pc == nil {
-		return errs.B().Code(errs.Unavailable).Msg("workspace unavailable").Err()
+		return errs.B().Code(errs.Unavailable).Msg("user scope unavailable").Err()
 	}
 	switch pc.access {
 	case "admin", "owner":
@@ -37,7 +37,6 @@ func requireWorkspaceOwnerRole(pc *userContext) error {
 }
 
 // CreateWorkspacePolicyReportRecertCampaign creates a recertification campaign for a given Forward network/snapshot/pack.
-//
 func (s *Service) CreateWorkspacePolicyReportRecertCampaign(ctx context.Context, id string, req *PolicyReportCreateRecertCampaignRequest) (*PolicyReportRecertCampaignWithCounts, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -47,7 +46,7 @@ func (s *Service) CreateWorkspacePolicyReportRecertCampaign(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceEditor(pc); err != nil {
+	if err := requireUserScopeEditor(pc); err != nil {
 		return nil, err
 	}
 	if s.db == nil {
@@ -74,23 +73,22 @@ func (s *Service) CreateWorkspacePolicyReportRecertCampaign(ctx context.Context,
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("unknown packId").Err()
 	}
 
-	c, err := createPolicyReportRecertCampaign(ctx, s.db, pc.workspace.ID, pc.claims.Username, req)
+	c, err := createPolicyReportRecertCampaign(ctx, s.db, pc.userScope.ID, pc.claims.Username, req)
 	if err != nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 	}
-	policyReportAudit(ctx, s.db, pc.workspace.ID, pc.claims.Username, "policy_reports.recert_campaign.create", map[string]any{
-		"campaignId":  c.ID,
-		"packId":      c.PackID,
-		"networkId":   c.ForwardNetwork,
-		"snapshotId":  c.SnapshotID,
-		"name":        c.Name,
-		"userId": pc.workspace.ID,
+	policyReportAudit(ctx, s.db, pc.userScope.ID, pc.claims.Username, "policy_reports.recert_campaign.create", map[string]any{
+		"campaignId": c.ID,
+		"packId":     c.PackID,
+		"networkId":  c.ForwardNetwork,
+		"snapshotId": c.SnapshotID,
+		"name":       c.Name,
+		"userId":     pc.userScope.ID,
 	})
 	return &PolicyReportRecertCampaignWithCounts{Campaign: *c, Counts: PolicyReportRecertCampaignCounts{}}, nil
 }
 
 // ListWorkspacePolicyReportRecertCampaigns lists recertification campaigns.
-//
 func (s *Service) ListWorkspacePolicyReportRecertCampaigns(ctx context.Context, id string, req *PolicyReportListRecertCampaignsRequest) (*PolicyReportListRecertCampaignsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -103,7 +101,7 @@ func (s *Service) ListWorkspacePolicyReportRecertCampaigns(ctx context.Context, 
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("db not configured").Err()
 	}
-	campaigns, err := listPolicyReportRecertCampaigns(ctx, s.db, pc.workspace.ID, req)
+	campaigns, err := listPolicyReportRecertCampaigns(ctx, s.db, pc.userScope.ID, req)
 	if err != nil {
 		if isMissingDBRelation(err) {
 			return &PolicyReportListRecertCampaignsResponse{Campaigns: []PolicyReportRecertCampaignWithCounts{}}, nil
@@ -114,7 +112,6 @@ func (s *Service) ListWorkspacePolicyReportRecertCampaigns(ctx context.Context, 
 }
 
 // GetWorkspacePolicyReportRecertCampaign gets one campaign plus assignment counts.
-//
 func (s *Service) GetWorkspacePolicyReportRecertCampaign(ctx context.Context, id string, campaignId string) (*PolicyReportRecertCampaignWithCounts, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -127,7 +124,7 @@ func (s *Service) GetWorkspacePolicyReportRecertCampaign(ctx context.Context, id
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("db not configured").Err()
 	}
-	out, err := getPolicyReportRecertCampaign(ctx, s.db, pc.workspace.ID, campaignId)
+	out, err := getPolicyReportRecertCampaign(ctx, s.db, pc.userScope.ID, campaignId)
 	if err != nil {
 		return nil, errs.B().Code(errs.NotFound).Msg("campaign not found").Err()
 	}
@@ -135,7 +132,6 @@ func (s *Service) GetWorkspacePolicyReportRecertCampaign(ctx context.Context, id
 }
 
 // GenerateWorkspacePolicyReportRecertAssignments runs the campaign pack and stores resulting findings as assignments.
-//
 func (s *Service) GenerateWorkspacePolicyReportRecertAssignments(ctx context.Context, id string, campaignId string, req *PolicyReportGenerateRecertAssignmentsRequest) (*PolicyReportGenerateRecertAssignmentsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -145,14 +141,14 @@ func (s *Service) GenerateWorkspacePolicyReportRecertAssignments(ctx context.Con
 	if err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceEditor(pc); err != nil {
+	if err := requireUserScopeEditor(pc); err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("db not configured").Err()
 	}
 
-	c, err := getPolicyReportRecertCampaign(ctx, s.db, pc.workspace.ID, campaignId)
+	c, err := getPolicyReportRecertCampaign(ctx, s.db, pc.userScope.ID, campaignId)
 	if err != nil || c == nil {
 		return nil, errs.B().Code(errs.NotFound).Msg("campaign not found").Err()
 	}
@@ -194,7 +190,7 @@ func (s *Service) GenerateWorkspacePolicyReportRecertAssignments(ctx context.Con
 		maxTotal = 5000
 	}
 
-	fwdClient, err := s.policyReportsForwardClient(ctx, pc.workspace.ID, pc.claims.Username, strings.TrimSpace(campaign.ForwardNetwork))
+	fwdClient, err := s.policyReportsForwardClient(ctx, pc.userScope.ID, pc.claims.Username, strings.TrimSpace(campaign.ForwardNetwork))
 	if err != nil {
 		return nil, err
 	}
@@ -270,11 +266,11 @@ func (s *Service) GenerateWorkspacePolicyReportRecertAssignments(ctx context.Con
 		}
 	}
 
-	created, err := replacePolicyReportRecertAssignments(ctx, s.db, pc.workspace.ID, campaign.ID, assignee, assignments)
+	created, err := replacePolicyReportRecertAssignments(ctx, s.db, pc.userScope.ID, campaign.ID, assignee, assignments)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to store assignments").Err()
 	}
-	policyReportAudit(ctx, s.db, pc.workspace.ID, pc.claims.Username, "policy_reports.recert_campaign.generate", map[string]any{
+	policyReportAudit(ctx, s.db, pc.userScope.ID, pc.claims.Username, "policy_reports.recert_campaign.generate", map[string]any{
 		"campaignId": campaign.ID,
 		"packId":     campaign.PackID,
 		"created":    created,
@@ -285,7 +281,6 @@ func (s *Service) GenerateWorkspacePolicyReportRecertAssignments(ctx context.Con
 }
 
 // ListWorkspacePolicyReportRecertAssignments lists assignments.
-//
 func (s *Service) ListWorkspacePolicyReportRecertAssignments(ctx context.Context, id string, req *PolicyReportListRecertAssignmentsRequest) (*PolicyReportListRecertAssignmentsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -298,7 +293,7 @@ func (s *Service) ListWorkspacePolicyReportRecertAssignments(ctx context.Context
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("db not configured").Err()
 	}
-	out, err := listPolicyReportRecertAssignments(ctx, s.db, pc.workspace.ID, req)
+	out, err := listPolicyReportRecertAssignments(ctx, s.db, pc.userScope.ID, req)
 	if err != nil {
 		if isMissingDBRelation(err) {
 			return &PolicyReportListRecertAssignmentsResponse{Assignments: []PolicyReportRecertAssignment{}}, nil
@@ -309,7 +304,6 @@ func (s *Service) ListWorkspacePolicyReportRecertAssignments(ctx context.Context
 }
 
 // AttestWorkspacePolicyReportRecertAssignment marks an assignment as attested.
-//
 func (s *Service) AttestWorkspacePolicyReportRecertAssignment(ctx context.Context, id string, assignmentId string, req *PolicyReportAttestAssignmentRequest) (*PolicyReportDecisionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -319,7 +313,7 @@ func (s *Service) AttestWorkspacePolicyReportRecertAssignment(ctx context.Contex
 	if err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceEditor(pc); err != nil {
+	if err := requireUserScopeEditor(pc); err != nil {
 		return nil, err
 	}
 	if s.db == nil {
@@ -329,17 +323,16 @@ func (s *Service) AttestWorkspacePolicyReportRecertAssignment(ctx context.Contex
 	if req != nil {
 		just = req.Justification
 	}
-	if err := updatePolicyReportAssignmentStatus(ctx, s.db, pc.workspace.ID, assignmentId, "ATTESTED", just); err != nil {
+	if err := updatePolicyReportAssignmentStatus(ctx, s.db, pc.userScope.ID, assignmentId, "ATTESTED", just); err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to update assignment").Err()
 	}
-	policyReportAudit(ctx, s.db, pc.workspace.ID, pc.claims.Username, "policy_reports.assignment.attest", map[string]any{
+	policyReportAudit(ctx, s.db, pc.userScope.ID, pc.claims.Username, "policy_reports.assignment.attest", map[string]any{
 		"assignmentId": assignmentId,
 	})
 	return &PolicyReportDecisionResponse{Ok: true}, nil
 }
 
 // WaiveWorkspacePolicyReportRecertAssignment marks an assignment as waived.
-//
 func (s *Service) WaiveWorkspacePolicyReportRecertAssignment(ctx context.Context, id string, assignmentId string, req *PolicyReportAttestAssignmentRequest) (*PolicyReportDecisionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -349,7 +342,7 @@ func (s *Service) WaiveWorkspacePolicyReportRecertAssignment(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceEditor(pc); err != nil {
+	if err := requireUserScopeEditor(pc); err != nil {
 		return nil, err
 	}
 	if s.db == nil {
@@ -359,17 +352,16 @@ func (s *Service) WaiveWorkspacePolicyReportRecertAssignment(ctx context.Context
 	if req != nil {
 		just = req.Justification
 	}
-	if err := updatePolicyReportAssignmentStatus(ctx, s.db, pc.workspace.ID, assignmentId, "WAIVED", just); err != nil {
+	if err := updatePolicyReportAssignmentStatus(ctx, s.db, pc.userScope.ID, assignmentId, "WAIVED", just); err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to update assignment").Err()
 	}
-	policyReportAudit(ctx, s.db, pc.workspace.ID, pc.claims.Username, "policy_reports.assignment.waive", map[string]any{
+	policyReportAudit(ctx, s.db, pc.userScope.ID, pc.claims.Username, "policy_reports.assignment.waive", map[string]any{
 		"assignmentId": assignmentId,
 	})
 	return &PolicyReportDecisionResponse{Ok: true}, nil
 }
 
 // CreateWorkspacePolicyReportException proposes an exception for a finding.
-//
 func (s *Service) CreateWorkspacePolicyReportException(ctx context.Context, id string, req *PolicyReportCreateExceptionRequest) (*PolicyReportException, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -379,7 +371,7 @@ func (s *Service) CreateWorkspacePolicyReportException(ctx context.Context, id s
 	if err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceEditor(pc); err != nil {
+	if err := requireUserScopeEditor(pc); err != nil {
 		return nil, err
 	}
 	if s.db == nil {
@@ -388,11 +380,11 @@ func (s *Service) CreateWorkspacePolicyReportException(ctx context.Context, id s
 	if req == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("request required").Err()
 	}
-	out, err := createPolicyReportException(ctx, s.db, pc.workspace.ID, pc.claims.Username, req)
+	out, err := createPolicyReportException(ctx, s.db, pc.userScope.ID, pc.claims.Username, req)
 	if err != nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 	}
-	policyReportAudit(ctx, s.db, pc.workspace.ID, pc.claims.Username, "policy_reports.exception.propose", map[string]any{
+	policyReportAudit(ctx, s.db, pc.userScope.ID, pc.claims.Username, "policy_reports.exception.propose", map[string]any{
 		"exceptionId": out.ID,
 		"findingId":   out.FindingID,
 		"checkId":     out.CheckID,
@@ -402,7 +394,6 @@ func (s *Service) CreateWorkspacePolicyReportException(ctx context.Context, id s
 }
 
 // ListWorkspacePolicyReportExceptions lists exceptions.
-//
 func (s *Service) ListWorkspacePolicyReportExceptions(ctx context.Context, id string, req *PolicyReportListExceptionsRequest) (*PolicyReportListExceptionsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -415,7 +406,7 @@ func (s *Service) ListWorkspacePolicyReportExceptions(ctx context.Context, id st
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("db not configured").Err()
 	}
-	out, err := listPolicyReportExceptions(ctx, s.db, pc.workspace.ID, req)
+	out, err := listPolicyReportExceptions(ctx, s.db, pc.userScope.ID, req)
 	if err != nil {
 		if isMissingDBRelation(err) {
 			return &PolicyReportListExceptionsResponse{Exceptions: []PolicyReportException{}}, nil
@@ -426,7 +417,6 @@ func (s *Service) ListWorkspacePolicyReportExceptions(ctx context.Context, id st
 }
 
 // ApproveWorkspacePolicyReportException approves an exception (owner/admin only).
-//
 func (s *Service) ApproveWorkspacePolicyReportException(ctx context.Context, id string, exceptionId string) (*PolicyReportDecisionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -436,23 +426,22 @@ func (s *Service) ApproveWorkspacePolicyReportException(ctx context.Context, id 
 	if err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceOwnerRole(pc); err != nil {
+	if err := requireUserScopeOwnerRole(pc); err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("db not configured").Err()
 	}
-	if err := updatePolicyReportExceptionStatus(ctx, s.db, pc.workspace.ID, exceptionId, pc.claims.Username, "APPROVED"); err != nil {
+	if err := updatePolicyReportExceptionStatus(ctx, s.db, pc.userScope.ID, exceptionId, pc.claims.Username, "APPROVED"); err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to update exception").Err()
 	}
-	policyReportAudit(ctx, s.db, pc.workspace.ID, pc.claims.Username, "policy_reports.exception.approve", map[string]any{
+	policyReportAudit(ctx, s.db, pc.userScope.ID, pc.claims.Username, "policy_reports.exception.approve", map[string]any{
 		"exceptionId": exceptionId,
 	})
 	return &PolicyReportDecisionResponse{Ok: true}, nil
 }
 
 // RejectWorkspacePolicyReportException rejects an exception (owner/admin only).
-//
 func (s *Service) RejectWorkspacePolicyReportException(ctx context.Context, id string, exceptionId string) (*PolicyReportDecisionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -462,16 +451,16 @@ func (s *Service) RejectWorkspacePolicyReportException(ctx context.Context, id s
 	if err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceOwnerRole(pc); err != nil {
+	if err := requireUserScopeOwnerRole(pc); err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("db not configured").Err()
 	}
-	if err := updatePolicyReportExceptionStatus(ctx, s.db, pc.workspace.ID, exceptionId, pc.claims.Username, "REJECTED"); err != nil {
+	if err := updatePolicyReportExceptionStatus(ctx, s.db, pc.userScope.ID, exceptionId, pc.claims.Username, "REJECTED"); err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to update exception").Err()
 	}
-	policyReportAudit(ctx, s.db, pc.workspace.ID, pc.claims.Username, "policy_reports.exception.reject", map[string]any{
+	policyReportAudit(ctx, s.db, pc.userScope.ID, pc.claims.Username, "policy_reports.exception.reject", map[string]any{
 		"exceptionId": exceptionId,
 	})
 	return &PolicyReportDecisionResponse{Ok: true}, nil

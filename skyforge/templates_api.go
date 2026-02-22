@@ -18,7 +18,7 @@ type TemplatesResponse struct {
 	Templates []TemplateSummary `json:"templates"`
 }
 
-// GetTemplates returns available templates for a workspace.
+// GetTemplates returns available templates for a user scope.
 //
 //encore:api public method=GET path=/api/templates
 func (s *Service) GetTemplates(ctx context.Context, params *TemplatesParams) (*TemplatesResponse, error) {
@@ -44,12 +44,12 @@ func (s *Service) GetTemplates(ctx context.Context, params *TemplatesParams) (*T
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("user_id is required").Err()
 	}
 
-	workspaces, err := s.workspaceStore.load()
+	userScopes, err := s.userScopeStore.load()
 	if err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load workspaces").Err()
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load userScopes").Err()
 	}
-	if w := findWorkspaceByKey(workspaces, userID); w != nil {
-		if workspaceAccessLevel(s.cfg, *w, claims.Username) == "none" {
+	if w := findUserScopeByKey(userScopes, userID); w != nil {
+		if userScopeAccessLevel(s.cfg, *w, claims.Username) == "none" {
 			return nil, errs.B().Code(errs.PermissionDenied).Msg("forbidden").Err()
 		}
 	} else {

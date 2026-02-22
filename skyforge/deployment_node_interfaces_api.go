@@ -54,7 +54,7 @@ func (s *Service) GetWorkspaceDeploymentNodeInterfaces(ctx context.Context, id, 
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("node is required").Err()
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+	dep, err := s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func (s *Service) GetWorkspaceDeploymentNodeInterfaces(ctx context.Context, id, 
 	k8sNamespace = strings.TrimSpace(k8sNamespace)
 	topologyName = strings.TrimSpace(topologyName)
 	if k8sNamespace == "" {
-		k8sNamespace = clabernetesWorkspaceNamespace(pc.workspace.Slug)
+		k8sNamespace = clabernetesUserScopeNamespace(pc.userScope.Slug)
 	}
 	if topologyName == "" {
 		labName, _ := cfgAny["labName"].(string)

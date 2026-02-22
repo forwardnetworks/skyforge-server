@@ -1,7 +1,7 @@
 package skyforgecore
 
 // This file defines stability contracts used across services and the UI.
-// Treat these constants as API/DB compatibility boundaries.
+// Treat these constants as API/DB contract boundaries.
 
 const (
 	HeaderAPIVersion = "X-Skyforge-API-Version"
@@ -13,18 +13,18 @@ const (
 
 const (
 	TaskTypeUserBootstrap      = "user-bootstrap"
-	TaskTypeWorkspaceBootstrap = "workspace-bootstrap"
+	TaskTypeUserScopeBootstrap = "user-scope-bootstrap"
 
-	TaskTypeNetlabRun      = "netlab-run"
-	TaskTypeNetlabC9sRun   = "netlab-c9s-run"
-	TaskTypeNetlabValidate = "netlab-validate"
-	TaskTypeContainerlab   = "containerlab-run"
-	TaskTypeClabernetes    = "clabernetes-run"
-	TaskTypeForwardInit    = "forward-init"
-	TaskTypeForwardSync    = "forward-sync"
-	TaskTypeCapacityRollup = "capacity-rollup"
+	TaskTypeNetlabRun                    = "netlab-run"
+	TaskTypeNetlabC9sRun                 = "netlab-c9s-run"
+	TaskTypeNetlabValidate               = "netlab-validate"
+	TaskTypeContainerlab                 = "containerlab-run"
+	TaskTypeClabernetes                  = "clabernetes-run"
+	TaskTypeForwardInit                  = "forward-init"
+	TaskTypeForwardSync                  = "forward-sync"
+	TaskTypeCapacityRollup               = "capacity-rollup"
 	TaskTypeCapacityRollupForwardNetwork = "capacity-rollup-forward-network"
-	TaskTypeTerraformPref  = "terraform-"
+	TaskTypeTerraformPref                = "terraform-"
 )
 
 const (

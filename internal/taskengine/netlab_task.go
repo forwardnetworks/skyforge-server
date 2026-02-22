@@ -17,8 +17,8 @@ type netlabTaskSpec struct {
 	Server        string            `json:"server,omitempty"`
 	Deployment    string            `json:"deployment,omitempty"`
 	DeploymentID  string            `json:"deploymentId,omitempty"`
-	WorkspaceRoot string            `json:"workspaceRoot,omitempty"`
-	WorkspaceDir  string            `json:"workspaceDir,omitempty"`
+	UserScopeRoot string            `json:"userScopeRoot,omitempty"`
+	UserScopeDir  string            `json:"userScopeDir,omitempty"`
 	Cleanup       bool              `json:"cleanup,omitempty"`
 	TopologyPath  string            `json:"topologyPath,omitempty"`
 	TopologyURL   string            `json:"topologyUrl,omitempty"`
@@ -27,15 +27,15 @@ type netlabTaskSpec struct {
 
 type netlabRunSpec struct {
 	TaskID        int
-	WorkspaceCtx  *userContext
-	WorkspaceSlug string
+	UserScopeCtx  *userContext
+	UserScopeSlug string
 	Username      string
 	Environment   map[string]string
 	Action        string
 	Deployment    string
 	DeploymentID  string
-	WorkspaceRoot string
-	WorkspaceDir  string
+	UserScopeRoot string
+	UserScopeDir  string
 	Cleanup       bool
 	Server        NetlabServerConfig
 	TopologyPath  string
@@ -50,7 +50,7 @@ func (e *Engine) dispatchNetlabTask(ctx context.Context, task *taskstore.TaskRec
 	if err := decodeTaskSpec(task, &specIn); err != nil {
 		return err
 	}
-	ws, err := e.loadWorkspaceByKey(ctx, task.WorkspaceID)
+	ws, err := e.loadUserScopeByKey(ctx, task.UserScopeID)
 	if err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func (e *Engine) dispatchNetlabTask(ctx context.Context, task *taskstore.TaskRec
 		username = ws.primaryOwner()
 	}
 	pc := &userContext{
-		workspace: *ws,
+		userScope: *ws,
 		claims: SessionClaims{
 			Username: username,
 		},
@@ -67,24 +67,24 @@ func (e *Engine) dispatchNetlabTask(ctx context.Context, task *taskstore.TaskRec
 
 	serverRef := strings.TrimSpace(specIn.Server)
 	if serverRef == "" {
-		serverRef = strings.TrimSpace(pc.workspace.NetlabServer)
+		serverRef = strings.TrimSpace(pc.userScope.NetlabServer)
 	}
-	server, err := e.resolveWorkspaceNetlabServer(ctx, pc.workspace.ID, serverRef)
+	server, err := e.resolveUserScopeNetlabServer(ctx, pc.userScope.ID, serverRef)
 	if err != nil {
 		return err
 	}
 
 	runSpec := netlabRunSpec{
 		TaskID:        task.ID,
-		WorkspaceCtx:  pc,
-		WorkspaceSlug: strings.TrimSpace(pc.workspace.Slug),
+		UserScopeCtx:  pc,
+		UserScopeSlug: strings.TrimSpace(pc.userScope.Slug),
 		Username:      username,
 		Environment:   specIn.Environment,
 		Action:        strings.TrimSpace(specIn.Action),
 		Deployment:    strings.TrimSpace(specIn.Deployment),
 		DeploymentID:  strings.TrimSpace(specIn.DeploymentID),
-		WorkspaceRoot: strings.TrimSpace(specIn.WorkspaceRoot),
-		WorkspaceDir:  strings.TrimSpace(specIn.WorkspaceDir),
+		UserScopeRoot: strings.TrimSpace(specIn.UserScopeRoot),
+		UserScopeDir:  strings.TrimSpace(specIn.UserScopeDir),
 		Cleanup:       specIn.Cleanup,
 		Server:        *server,
 		TopologyPath:  strings.TrimSpace(specIn.TopologyPath),
@@ -104,8 +104,8 @@ func (e *Engine) runNetlabTask(ctx context.Context, spec netlabRunSpec, log Logg
 	if log == nil {
 		log = noopLogger{}
 	}
-	if spec.WorkspaceCtx == nil {
-		return fmt.Errorf("workspace context unavailable")
+	if spec.UserScopeCtx == nil {
+		return fmt.Errorf("user context unavailable")
 	}
 
 	apiURL := netlabAPIURL(spec.Server)
@@ -120,8 +120,8 @@ func (e *Engine) runNetlabTask(ctx context.Context, spec netlabRunSpec, log Logg
 
 	payload := map[string]any{
 		"action":        strings.TrimSpace(spec.Action),
-		"workdir":       strings.TrimSpace(spec.WorkspaceDir),
-		"workspaceRoot": strings.TrimSpace(spec.WorkspaceRoot),
+		"workdir":       strings.TrimSpace(spec.UserScopeDir),
+		"userScopeRoot": strings.TrimSpace(spec.UserScopeRoot),
 	}
 	if strings.TrimSpace(spec.TopologyPath) != "" {
 		payload["topologyPath"] = strings.TrimSpace(spec.TopologyPath)
@@ -207,7 +207,7 @@ func (e *Engine) runNetlabTask(ctx context.Context, spec netlabRunSpec, log Logg
 				return fmt.Errorf("netlab job %s", state)
 			}
 			// Best-effort artifact capture for later inspection.
-			if spec.TaskID > 0 && spec.WorkspaceCtx != nil && strings.TrimSpace(spec.DeploymentID) != "" {
+			if spec.TaskID > 0 && spec.UserScopeCtx != nil && strings.TrimSpace(spec.DeploymentID) != "" {
 				_ = e.maybeUploadNetlabArtifacts(ctx, spec, apiURL, job.ID, insecure, auth, log)
 			}
 			// Best-effort Forward sync after successful runs (implemented separately).
@@ -225,10 +225,10 @@ func (e *Engine) maybeUploadNetlabArtifacts(ctx context.Context, spec netlabRunS
 	if e == nil || strings.TrimSpace(apiURL) == "" || strings.TrimSpace(jobID) == "" {
 		return nil
 	}
-	if spec.WorkspaceCtx == nil {
+	if spec.UserScopeCtx == nil {
 		return nil
 	}
-	wsID := strings.TrimSpace(spec.WorkspaceCtx.workspace.ID)
+	wsID := strings.TrimSpace(spec.UserScopeCtx.userScope.ID)
 	depID := strings.TrimSpace(spec.DeploymentID)
 	if wsID == "" || depID == "" {
 		return nil
@@ -258,7 +258,7 @@ func (e *Engine) maybeUploadNetlabArtifacts(ctx context.Context, spec netlabRunS
 		}
 		key := fmt.Sprintf("netlab/%s/%s", depID, it.keySuffix)
 		ctxPut, cancel := context.WithTimeout(ctx, 10*time.Second)
-		putKey, err := putWorkspaceArtifact(ctxPut, e.cfg, wsID, key, data, it.contentType)
+		putKey, err := putUserScopeArtifact(ctxPut, e.cfg, wsID, key, data, it.contentType)
 		cancel()
 		if err != nil {
 			continue

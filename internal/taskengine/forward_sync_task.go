@@ -26,7 +26,7 @@ func (e *Engine) dispatchForwardSyncTask(ctx context.Context, task *taskstore.Ta
 	var specIn forwardSyncTaskSpec
 	_ = decodeTaskSpec(task, &specIn)
 
-	ws, err := e.loadWorkspaceByKey(ctx, task.WorkspaceID)
+	ws, err := e.loadUserScopeByKey(ctx, task.UserScopeID)
 	if err != nil {
 		return err
 	}
@@ -35,7 +35,7 @@ func (e *Engine) dispatchForwardSyncTask(ctx context.Context, task *taskstore.Ta
 		username = ws.primaryOwner()
 	}
 	pc := &userContext{
-		workspace: *ws,
+		userScope: *ws,
 		claims: SessionClaims{
 			Username: username,
 		},
@@ -59,14 +59,14 @@ func (e *Engine) runForwardSyncTask(ctx context.Context, pc *userContext, deploy
 		return fmt.Errorf("engine unavailable")
 	}
 	if pc == nil {
-		return fmt.Errorf("workspace context unavailable")
+		return fmt.Errorf("user context unavailable")
 	}
 	deploymentID = strings.TrimSpace(deploymentID)
 	if deploymentID == "" {
 		return fmt.Errorf("deployment id is required")
 	}
 
-	dep, err := e.loadDeployment(ctx, pc.workspace.ID, deploymentID)
+	dep, err := e.loadDeployment(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return err
 	}
@@ -79,7 +79,7 @@ func (e *Engine) runForwardSyncTask(ctx context.Context, pc *userContext, deploy
 	var topoKey string
 	for _, t := range taskTypes {
 		ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
-		latest, err := taskstore.GetLatestDeploymentTask(ctxReq, e.db, pc.workspace.ID, dep.ID, t)
+		latest, err := taskstore.GetLatestDeploymentTask(ctxReq, e.db, pc.userScope.ID, dep.ID, t)
 		cancel()
 		if err != nil || latest == nil {
 			continue
@@ -104,7 +104,7 @@ func (e *Engine) runForwardSyncTask(ctx context.Context, pc *userContext, deploy
 
 	ctxRead, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	raw, err := readWorkspaceArtifact(ctxRead, e.cfg, pc.workspace.ID, topoKey, 2<<20)
+	raw, err := readWorkspaceArtifact(ctxRead, e.cfg, pc.userScope.ID, topoKey, 2<<20)
 	if err != nil || len(raw) == 0 {
 		return fmt.Errorf("failed to read topology artifact")
 	}

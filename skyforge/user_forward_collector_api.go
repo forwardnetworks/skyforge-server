@@ -299,7 +299,6 @@ func defaultCollectorNameForUser(username string) string {
 }
 
 // GetUserForwardCollector returns the authenticated user's Forward collector settings.
-//
 func (s *Service) GetUserForwardCollector(ctx context.Context) (*UserForwardCollectorResponse, error) {
 	if !s.cfg.Features.ForwardEnabled {
 		return nil, errs.B().Code(errs.NotFound).Msg("Forward integration is disabled").Err()
@@ -419,7 +418,6 @@ func (s *Service) GetUserForwardCollector(ctx context.Context) (*UserForwardColl
 }
 
 // PutUserForwardCollector stores Forward credentials and ensures a per-user collector exists.
-//
 func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwardCollectorRequest) (*UserForwardCollectorResponse, error) {
 	if !s.cfg.Features.ForwardEnabled {
 		return nil, errs.B().Code(errs.NotFound).Msg("Forward integration is disabled").Err()
@@ -514,7 +512,7 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 		collector, err := forwardCreateCollector(ctx, client, name)
 		if err != nil {
 			log.Printf("forward create collector (%s): %v", name, err)
-			// Handle common race/compat case: collector already exists but the list
+			// Handle common race case: collector already exists but the list
 			// response didn't include it (or returned an unexpected shape).
 			if strings.Contains(strings.ToLower(err.Error()), "already exists") {
 				if err := forwardDeleteCollector(ctx, client, name); err != nil {
@@ -581,7 +579,6 @@ func (s *Service) PutUserForwardCollector(ctx context.Context, req *PutUserForwa
 // ResetUserForwardCollector rotates the user's Forward collector by creating a new one and storing its authorization key.
 //
 // NOTE: This does not delete any existing collector in Forward; it only updates the Skyforge profile.
-//
 func (s *Service) ResetUserForwardCollector(ctx context.Context) (*UserForwardCollectorResponse, error) {
 	if !s.cfg.Features.ForwardEnabled {
 		return nil, errs.B().Code(errs.NotFound).Msg("Forward integration is disabled").Err()
@@ -700,7 +697,6 @@ type RestartUserCollectorResponse struct {
 
 // RestartUserCollector triggers a rolling restart of the user's in-cluster collector Deployment.
 // This is used to pull down a newer image when using `:latest`.
-//
 func (s *Service) RestartUserCollector(ctx context.Context) (*RestartUserCollectorResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -718,7 +714,6 @@ func (s *Service) RestartUserCollector(ctx context.Context) (*RestartUserCollect
 }
 
 // GetUserCollectorRuntime returns the in-cluster runtime status for the user's collector.
-//
 func (s *Service) GetUserCollectorRuntime(ctx context.Context) (*UserCollectorRuntimeResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -734,7 +729,6 @@ func (s *Service) GetUserCollectorRuntime(ctx context.Context) (*UserCollectorRu
 }
 
 // GetUserCollectorLogs returns recent log lines from the user's in-cluster collector pod.
-//
 func (s *Service) GetUserCollectorLogs(ctx context.Context, params *UserCollectorLogsParams) (*UserCollectorLogsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -777,7 +771,6 @@ func (s *Service) GetUserCollectorLogs(ctx context.Context, params *UserCollecto
 }
 
 // ClearUserForwardCollector deletes the stored user Forward collector settings.
-//
 func (s *Service) ClearUserForwardCollector(ctx context.Context) (*UserForwardCollectorResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {

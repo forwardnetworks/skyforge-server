@@ -390,7 +390,7 @@ LIMIT 1`, username).Scan(
 	}, nil
 }
 
-func (e *Engine) updateDeploymentConfig(ctx context.Context, workspaceID, deploymentID string, cfgAny map[string]any) error {
+func (e *Engine) updateDeploymentConfig(ctx context.Context, userScopeID, deploymentID string, cfgAny map[string]any) error {
 	if e == nil || e.db == nil {
 		return fmt.Errorf("database unavailable")
 	}
@@ -404,11 +404,11 @@ func (e *Engine) updateDeploymentConfig(ctx context.Context, workspaceID, deploy
 	_, err = e.db.ExecContext(ctxReq, `UPDATE sf_deployments SET
   config=$1,
   updated_at=now()
-WHERE user_id=$2 AND id=$3`, cfgBytes, workspaceID, deploymentID)
+WHERE user_id=$2 AND id=$3`, cfgBytes, userScopeID, deploymentID)
 	return err
 }
 
-func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *userContext, dep *WorkspaceDeployment) (map[string]any, error) {
+func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *userContext, dep *UserScopeDeployment) (map[string]any, error) {
 	cfgAny, _ := fromJSONMap(dep.Config)
 	if cfgAny == nil {
 		cfgAny = map[string]any{}
@@ -521,14 +521,14 @@ func (e *Engine) ensureForwardNetworkForDeployment(ctx context.Context, pc *user
 	}
 
 	if changed {
-		if err := e.updateDeploymentConfig(ctx, pc.workspace.ID, dep.ID, cfgAny); err != nil {
+		if err := e.updateDeploymentConfig(ctx, pc.userScope.ID, dep.ID, cfgAny); err != nil {
 			return cfgAny, err
 		}
 	}
 	return cfgAny, nil
 }
 
-func (e *Engine) startForwardCollectionForDeployment(ctx context.Context, taskID int, pc *userContext, dep *WorkspaceDeployment) error {
+func (e *Engine) startForwardCollectionForDeployment(ctx context.Context, taskID int, pc *userContext, dep *UserScopeDeployment) error {
 	if e == nil || pc == nil || dep == nil {
 		return nil
 	}
@@ -564,7 +564,7 @@ func (e *Engine) startForwardCollectionForDeployment(ctx context.Context, taskID
 	return nil
 }
 
-func (e *Engine) startForwardConnectivityTestsForDeployment(ctx context.Context, taskID int, pc *userContext, dep *WorkspaceDeployment, graph *TopologyGraph) error {
+func (e *Engine) startForwardConnectivityTestsForDeployment(ctx context.Context, taskID int, pc *userContext, dep *UserScopeDeployment, graph *TopologyGraph) error {
 	if e == nil || pc == nil || dep == nil || graph == nil {
 		return nil
 	}
@@ -668,7 +668,7 @@ func sanitizeCredentialComponent(raw string) string {
 	return out
 }
 
-func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *userContext, dep *WorkspaceDeployment, logText string) (int, error) {
+func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *userContext, dep *UserScopeDeployment, logText string) (int, error) {
 	cfgAny, _ := fromJSONMap(dep.Config)
 	if cfgAny == nil {
 		cfgAny = map[string]any{}
@@ -795,8 +795,8 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *u
 	topologyName := ""
 	nodeNameMapping := map[string]string{}
 	if inCluster && pc != nil {
-		k8sNamespace = clabernetesWorkspaceNamespace(pc.workspace.Slug)
-		topologyName = clabernetesTopologyName(containerlabLabName(pc.workspace.Slug, dep.Name))
+		k8sNamespace = clabernetesUserScopeNamespace(pc.userScope.Slug)
+		topologyName = clabernetesTopologyName(containerlabLabName(pc.userScope.Slug, dep.Name))
 
 		// Build the same deterministic node-name mapping used for containerlab YAML sanitation.
 		// This ensures Forward device names can preserve original case while hosts reference the
@@ -1014,7 +1014,7 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *u
 	if changed {
 		cfgAny[forwardCliCredentialMap] = credentialIDsByDevice
 		cfgAny[forwardCliCredentialFPMap] = credentialFPsByDevice
-		if err := e.updateDeploymentConfig(ctx, pc.workspace.ID, dep.ID, cfgAny); err != nil {
+		if err := e.updateDeploymentConfig(ctx, pc.userScope.ID, dep.ID, cfgAny); err != nil {
 			return 0, err
 		}
 	}
@@ -1087,7 +1087,7 @@ type forwardSyncOptions struct {
 	StartCollection bool
 }
 
-func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int, pc *userContext, dep *WorkspaceDeployment, graph *TopologyGraph, opts forwardSyncOptions) (int, error) {
+func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int, pc *userContext, dep *UserScopeDeployment, graph *TopologyGraph, opts forwardSyncOptions) (int, error) {
 	if e == nil || pc == nil || dep == nil || graph == nil {
 		return 0, nil
 	}
@@ -1361,7 +1361,7 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 	if changed {
 		cfgAny[forwardCliCredentialMap] = credentialIDsByKind
 		cfgAny[forwardCliCredentialFPMap] = credentialFPsByKind
-		if err := e.updateDeploymentConfig(ctx, pc.workspace.ID, dep.ID, cfgAny); err != nil {
+		if err := e.updateDeploymentConfig(ctx, pc.userScope.ID, dep.ID, cfgAny); err != nil {
 			return 0, err
 		}
 	}
@@ -1393,14 +1393,14 @@ func (e *Engine) maybeSyncForwardNetlabAfterRun(ctx context.Context, spec netlab
 	if log == nil {
 		log = noopLogger{}
 	}
-	if spec.WorkspaceCtx == nil {
-		return fmt.Errorf("workspace context unavailable")
+	if spec.UserScopeCtx == nil {
+		return fmt.Errorf("user context unavailable")
 	}
 	if strings.TrimSpace(spec.DeploymentID) == "" {
 		return fmt.Errorf("deployment id unavailable")
 	}
 
-	dep, err := e.loadDeployment(ctx, spec.WorkspaceCtx.workspace.ID, strings.TrimSpace(spec.DeploymentID))
+	dep, err := e.loadDeployment(ctx, spec.UserScopeCtx.userScope.ID, strings.TrimSpace(spec.DeploymentID))
 	if err != nil {
 		return err
 	}
@@ -1417,7 +1417,7 @@ func (e *Engine) maybeSyncForwardNetlabAfterRun(ctx context.Context, spec netlab
 	}
 	payload := map[string]any{
 		"action":  "status",
-		"workdir": strings.TrimSpace(spec.WorkspaceDir),
+		"workdir": strings.TrimSpace(spec.UserScopeDir),
 	}
 	if strings.TrimSpace(spec.TopologyPath) != "" {
 		payload["topologyPath"] = strings.TrimSpace(spec.TopologyPath)
@@ -1466,7 +1466,7 @@ func (e *Engine) maybeSyncForwardNetlabAfterRun(ctx context.Context, spec netlab
 		return fmt.Errorf("netlab status output unavailable")
 	}
 
-	_, err = e.syncForwardNetlabDevices(ctx, spec.TaskID, spec.WorkspaceCtx, dep, statusLog)
+	_, err = e.syncForwardNetlabDevices(ctx, spec.TaskID, spec.UserScopeCtx, dep, statusLog)
 	if err != nil {
 		log.Infof("forward netlab sync skipped: %v", err)
 		return err

@@ -94,7 +94,7 @@ func sanitizeContainerlabYAMLForClabernetes(containerlabYAML string) (string, ma
 		return containerlabYAML, nil, nil
 	}
 
-	// NOTE: This function also performs Skyforge-specific compatibility tweaks for running
+	// NOTE: This function also performs Skyforge-specific runtime tweaks for running
 	// containerlab nodes as Kubernetes pods (clabernetes). These should apply even when no
 	// node name rewriting is needed.
 	//

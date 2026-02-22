@@ -68,7 +68,7 @@ const defaultServiceNowForwardBaseURL = "https://fwd.app/api"
 
 // GetUserServiceNowConfig returns the current user's ServiceNow demo integration settings.
 //
-//encore:api auth method=GET path=/api/user/integrations/servicenow
+//encore:api auth method=GET path=/api/me/integrations/servicenow
 func (s *Service) GetUserServiceNowConfig(ctx context.Context) (*UserServiceNowConfigResponse, error) {
 	if !s.cfg.Features.ForwardEnabled {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward Networks integrations are disabled").Err()
@@ -100,7 +100,7 @@ func (s *Service) GetUserServiceNowConfig(ctx context.Context) (*UserServiceNowC
 
 // GetUserServiceNowPDIStatus checks whether the user's ServiceNow PDI is awake (or likely sleeping).
 //
-//encore:api auth method=GET path=/api/user/integrations/servicenow/pdiStatus
+//encore:api auth method=GET path=/api/me/integrations/servicenow/pdiStatus
 func (s *Service) GetUserServiceNowPDIStatus(ctx context.Context) (*ServiceNowPDIStatusResponse, error) {
 	if !s.cfg.Features.ForwardEnabled {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward Networks integrations are disabled").Err()
@@ -134,7 +134,7 @@ func (s *Service) GetUserServiceNowPDIStatus(ctx context.Context) (*ServiceNowPD
 
 // GetUserServiceNowSchemaStatus checks whether the ServiceNow demo schema is installed.
 //
-//encore:api auth method=GET path=/api/user/integrations/servicenow/schemaStatus
+//encore:api auth method=GET path=/api/me/integrations/servicenow/schemaStatus
 func (s *Service) GetUserServiceNowSchemaStatus(ctx context.Context) (*ServiceNowSchemaStatusResponse, error) {
 	if !s.cfg.Features.ForwardEnabled {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward Networks integrations are disabled").Err()
@@ -195,7 +195,7 @@ func (s *Service) GetUserServiceNowSchemaStatus(ctx context.Context) (*ServiceNo
 
 // WakeServiceNowPDI attempts to wake the user's ServiceNow PDI and waits briefly for it to become responsive.
 //
-//encore:api auth method=POST path=/api/user/integrations/servicenow/wake
+//encore:api auth method=POST path=/api/me/integrations/servicenow/wake
 func (s *Service) WakeServiceNowPDI(ctx context.Context) (*WakeServiceNowPDIResponse, error) {
 	if !s.cfg.Features.ForwardEnabled {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward Networks integrations are disabled").Err()
@@ -258,7 +258,7 @@ func (s *Service) WakeServiceNowPDI(ctx context.Context) (*WakeServiceNowPDIResp
 
 // PutUserServiceNowConfig stores the current user's ServiceNow demo integration settings.
 //
-//encore:api auth method=PUT path=/api/user/integrations/servicenow
+//encore:api auth method=PUT path=/api/me/integrations/servicenow
 func (s *Service) PutUserServiceNowConfig(ctx context.Context, req *PutUserServiceNowConfigRequest) (*UserServiceNowConfigResponse, error) {
 	if !s.cfg.Features.ForwardEnabled {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward Networks integrations are disabled").Err()
@@ -353,7 +353,7 @@ type ConfigureForwardServiceNowTicketingResponse struct {
 //
 // This does not configure ServiceNow CMDB integration (that is per-network and handled elsewhere).
 //
-//encore:api auth method=POST path=/api/user/integrations/servicenow/configureForwardTicketing
+//encore:api auth method=POST path=/api/me/integrations/servicenow/configureForwardTicketing
 func (s *Service) ConfigureForwardServiceNowTicketing(ctx context.Context) (*ConfigureForwardServiceNowTicketingResponse, error) {
 	if !s.cfg.Features.ForwardEnabled {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward Networks integrations are disabled").Err()
@@ -395,7 +395,7 @@ func (s *Service) ConfigureForwardServiceNowTicketing(ctx context.Context) (*Con
 
 // InstallUserServiceNowDemo installs/configures the ServiceNow Connectivity Ticket demo into the user's ServiceNow instance.
 //
-//encore:api auth method=POST path=/api/user/integrations/servicenow/install
+//encore:api auth method=POST path=/api/me/integrations/servicenow/install
 func (s *Service) InstallUserServiceNowDemo(ctx context.Context) (*InstallUserServiceNowDemoResponse, error) {
 	if !s.cfg.Features.ForwardEnabled {
 		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward Networks integrations are disabled").Err()

@@ -9,7 +9,6 @@ import (
 )
 
 // CreateWorkspacePolicyReportForwardNetwork stores a Forward network id for Policy Reports.
-//
 func (s *Service) CreateWorkspacePolicyReportForwardNetwork(ctx context.Context, id string, req *PolicyReportCreateForwardNetworkRequest) (*PolicyReportForwardNetwork, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -19,7 +18,7 @@ func (s *Service) CreateWorkspacePolicyReportForwardNetwork(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceEditor(pc); err != nil {
+	if err := requireUserScopeEditor(pc); err != nil {
 		return nil, err
 	}
 	if s.db == nil {
@@ -28,20 +27,19 @@ func (s *Service) CreateWorkspacePolicyReportForwardNetwork(ctx context.Context,
 	if req == nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("request required").Err()
 	}
-	out, err := createPolicyReportForwardNetwork(ctx, s.db, pc.workspace.ID, pc.claims.Username, req)
+	out, err := createPolicyReportForwardNetwork(ctx, s.db, pc.userScope.ID, pc.claims.Username, req)
 	if err != nil {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg(err.Error()).Err()
 	}
-	policyReportAudit(ctx, s.db, pc.workspace.ID, pc.claims.Username, "policy_reports.forward_network.create", map[string]any{
-		"id":              out.ID,
+	policyReportAudit(ctx, s.db, pc.userScope.ID, pc.claims.Username, "policy_reports.forward_network.create", map[string]any{
+		"id":               out.ID,
 		"forwardNetworkId": out.ForwardNetwork,
-		"name":            out.Name,
+		"name":             out.Name,
 	})
 	return out, nil
 }
 
 // ListWorkspacePolicyReportForwardNetworks lists saved Forward networks for Policy Reports.
-//
 func (s *Service) ListWorkspacePolicyReportForwardNetworks(ctx context.Context, id string) (*PolicyReportListForwardNetworksResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -54,7 +52,7 @@ func (s *Service) ListWorkspacePolicyReportForwardNetworks(ctx context.Context, 
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("db not configured").Err()
 	}
-	out, err := listPolicyReportForwardNetworks(ctx, s.db, pc.workspace.ID)
+	out, err := listPolicyReportForwardNetworks(ctx, s.db, pc.userScope.ID)
 	if err != nil {
 		if isMissingDBRelation(err) {
 			return &PolicyReportListForwardNetworksResponse{Networks: []PolicyReportForwardNetwork{}}, nil
@@ -65,7 +63,6 @@ func (s *Service) ListWorkspacePolicyReportForwardNetworks(ctx context.Context, 
 }
 
 // DeleteWorkspacePolicyReportForwardNetwork deletes a saved Forward network (by uuid id or by forwardNetworkId).
-//
 func (s *Service) DeleteWorkspacePolicyReportForwardNetwork(ctx context.Context, id string, networkRef string) (*PolicyReportDecisionResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -75,13 +72,13 @@ func (s *Service) DeleteWorkspacePolicyReportForwardNetwork(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	if err := requireWorkspaceEditor(pc); err != nil {
+	if err := requireUserScopeEditor(pc); err != nil {
 		return nil, err
 	}
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("db not configured").Err()
 	}
-	if err := deletePolicyReportForwardNetwork(ctx, s.db, pc.workspace.ID, networkRef); err != nil {
+	if err := deletePolicyReportForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef); err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return nil, errs.B().Code(errs.Unavailable).Msg("request canceled").Err()
 		}
@@ -90,7 +87,7 @@ func (s *Service) DeleteWorkspacePolicyReportForwardNetwork(ctx context.Context,
 		}
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to delete network").Err()
 	}
-	policyReportAudit(ctx, s.db, pc.workspace.ID, pc.claims.Username, "policy_reports.forward_network.delete", map[string]any{
+	policyReportAudit(ctx, s.db, pc.userScope.ID, pc.claims.Username, "policy_reports.forward_network.delete", map[string]any{
 		"networkRef": networkRef,
 	})
 	return &PolicyReportDecisionResponse{Ok: true}, nil

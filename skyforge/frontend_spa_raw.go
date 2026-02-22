@@ -58,7 +58,7 @@ func (s *Service) serveFrontendIndex(w http.ResponseWriter, req *http.Request) {
 	if ok := serveFrontendFile(w, req, "/index.html"); ok {
 		return
 	}
-	http.Error(w, "frontend not built (run `cd portal-tanstack && pnpm build`)", http.StatusServiceUnavailable)
+	http.Error(w, "frontend not built (run `cd components/portal && pnpm build`)", http.StatusServiceUnavailable)
 }
 
 func (s *Service) serveFrontendSPA(w http.ResponseWriter, req *http.Request) {
@@ -98,7 +98,7 @@ func (s *Service) FrontendAssets(w http.ResponseWriter, req *http.Request) {
 	s.serveFrontendSPA(w, req)
 }
 
-// FrontendFavicon serves the SPA favicon (and compatibility icon paths).
+// FrontendFavicon serves the SPA favicon (including alternate icon paths).
 //
 //encore:api public raw method=GET path=/favicon.svg
 func (s *Service) FrontendFavicon(w http.ResponseWriter, req *http.Request) {

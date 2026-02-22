@@ -43,7 +43,7 @@ type netlabC9sManifest struct {
 			Key           string `json:"key"`
 		} `json:"chunks"`
 	} `json:"netlabOutput,omitempty"`
-	// Backward/forward compatibility: some generator versions used snake_case for netlab output metadata.
+	// Some generator versions used snake_case for netlab output metadata.
 	NetlabOutputSnake *struct {
 		Type     string `json:"type"`
 		Encoding string `json:"encoding"`
@@ -372,7 +372,7 @@ func validateNoLegacyIOSVMTopology(topologyYAML []byte) error {
 	if len(nodes) == 0 {
 		return nil
 	}
-	legacyKinds := map[string]bool{
+	disallowedIOSVMKinds := map[string]bool{
 		"iosv":           true,
 		"iosvl2":         true,
 		"iosxe":          true,
@@ -385,7 +385,7 @@ func validateNoLegacyIOSVMTopology(topologyYAML []byte) error {
 		"cisco_c8000v":   true,
 		"cisco_csr1000v": true,
 	}
-	legacyImageFragments := []string{
+	disallowedIOSVMImageFragments := []string{
 		"/cisco_vios",
 		"/cisco_viosl2",
 		"/vr-csr",
@@ -400,12 +400,12 @@ func validateNoLegacyIOSVMTopology(topologyYAML []byte) error {
 		}
 		kind := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", node["kind"])))
 		image := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", node["image"])))
-		if legacyKinds[kind] {
-			return fmt.Errorf("legacy Cisco IOS VM kind %q is not supported in native mode (node=%s); use iol/ioll2", kind, strings.TrimSpace(nodeName))
+		if disallowedIOSVMKinds[kind] {
+			return fmt.Errorf("Cisco IOS VM kind %q is not supported in native mode (node=%s); use iol/ioll2", kind, strings.TrimSpace(nodeName))
 		}
-		for _, frag := range legacyImageFragments {
+		for _, frag := range disallowedIOSVMImageFragments {
 			if strings.Contains(image, frag) {
-				return fmt.Errorf("legacy Cisco IOS VM image %q is not supported in native mode (node=%s); use cisco_iol/cisco_iol_l2", image, strings.TrimSpace(nodeName))
+				return fmt.Errorf("Cisco IOS VM image %q is not supported in native mode (node=%s); use cisco_iol/cisco_iol_l2", image, strings.TrimSpace(nodeName))
 			}
 		}
 	}
@@ -414,7 +414,7 @@ func validateNoLegacyIOSVMTopology(topologyYAML []byte) error {
 
 const defaultNetlabC9sGeneratorImage = "ghcr.io/forwardnetworks/skyforge-netlab-generator:20260127-b8947318"
 
-// runNetlabC9sTaskK8sGenerator runs a netlab generator job inside the workspace namespace,
+// runNetlabC9sTaskK8sGenerator runs a netlab generator job inside the user-scope namespace,
 // waits for it to complete, then reads the generated manifest/configmaps.
 //
 // Contract:
@@ -443,8 +443,8 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 	if pullPolicy == "" {
 		pullPolicy = "IfNotPresent"
 	}
-	if spec.WorkspaceCtx == nil {
-		return nil, nil, nil, fmt.Errorf("workspace context unavailable")
+	if spec.UserScopeCtx == nil {
+		return nil, nil, nil, fmt.Errorf("user context unavailable")
 	}
 	if strings.TrimSpace(spec.Template) == "" {
 		return nil, nil, nil, fmt.Errorf("netlab template is required")
@@ -452,7 +452,7 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 
 	ns := strings.TrimSpace(spec.K8sNamespace)
 	if ns == "" {
-		ns = clabernetesWorkspaceNamespace(spec.WorkspaceCtx.workspace.Slug)
+		ns = clabernetesUserScopeNamespace(spec.UserScopeCtx.userScope.Slug)
 	}
 	topologyName := strings.TrimSpace(spec.TopologyName)
 	if topologyName == "" {
@@ -461,7 +461,7 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 
 	// Build the flattened topology bundle (tar.gz base64). This is copied into the generator pod
 	// via a ConfigMap.
-	bundleB64, err := e.buildNetlabTopologyBundleB64(ctx, spec.WorkspaceCtx, spec.TemplateSource, spec.TemplateRepo, spec.TemplatesDir, spec.Template)
+	bundleB64, err := e.buildNetlabTopologyBundleB64(ctx, spec.UserScopeCtx, spec.TemplateSource, spec.TemplateRepo, spec.TemplatesDir, spec.Template)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -476,7 +476,7 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 	if _, err := base64.StdEncoding.DecodeString(bundleB64); err != nil {
 		return nil, nil, nil, fmt.Errorf("invalid netlab topology bundle encoding: %w", err)
 	}
-	// Hard-cut legacy Cisco IOS VM device types. Templates must use IOL variants.
+	// Hard-cut Cisco IOS VM device types. Templates must use IOL variants.
 	validatedBundle, validateErr := patchNetlabBundleB64(bundleB64, func(b []byte) ([]byte, error) {
 		if err := validateNoLegacyIOSVMTopology(b); err != nil {
 			return nil, err
@@ -488,8 +488,8 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 	}
 	bundleB64 = validatedBundle
 
-	if spec.WorkspaceCtx != nil && strings.TrimSpace(spec.DeploymentID) != "" {
-		dep, depErr := e.loadDeployment(ctx, strings.TrimSpace(spec.WorkspaceCtx.workspace.ID), strings.TrimSpace(spec.DeploymentID))
+	if spec.UserScopeCtx != nil && strings.TrimSpace(spec.DeploymentID) != "" {
+		dep, depErr := e.loadDeployment(ctx, strings.TrimSpace(spec.UserScopeCtx.userScope.ID), strings.TrimSpace(spec.DeploymentID))
 		if depErr == nil && dep != nil {
 			cfgAny, _ := fromJSONMap(dep.Config)
 			enabled := false
@@ -506,7 +506,7 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 				}
 			}
 			if enabled && e.cfg.Forward.SNMPPlaceholderEnabled {
-				profile := snmpV3ProfileForUsername(strings.TrimSpace(spec.WorkspaceCtx.claims.Username))
+				profile := snmpV3ProfileForUsername(strings.TrimSpace(spec.UserScopeCtx.claims.Username))
 				patched, patchErr := patchNetlabBundleB64(bundleB64, func(b []byte) ([]byte, error) {
 					return patchNetlabTopologyYAMLForSnmp(b, profile)
 				}, snmpTemplateFilesForBundle(profile))
@@ -521,8 +521,8 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 	if err := kubeEnsureNamespace(ctx, ns); err != nil {
 		return nil, nil, nil, err
 	}
-	// The generator runs in the workspace namespace and pulls its image from GHCR.
-	// Ensure the image pull secret exists in the workspace namespace before creating the Job.
+	// The generator runs in the user-scope namespace and pulls its image from GHCR.
+	// Ensure the image pull secret exists in the user-scope namespace before creating the Job.
 	if err := kubeEnsureNamespaceImagePullSecret(ctx, ns, strings.TrimSpace(e.cfg.ImagePullSecretName), strings.TrimSpace(e.cfg.ImagePullSecretNamespace)); err != nil {
 		return nil, nil, nil, err
 	}
@@ -541,7 +541,7 @@ func (e *Engine) runNetlabC9sTaskK8sGenerator(ctx context.Context, spec netlabC9
 		_, _ = kubeDeleteConfigMap(context.Background(), ns, bundleCM)
 	}()
 
-	// Ensure the generator SA has permissions to create/patch ConfigMaps in the workspace namespace.
+	// Ensure the generator SA has permissions to create/patch ConfigMaps in the user-scope namespace.
 	const saName = "skyforge-netlab-generator"
 	const roleName = "skyforge-netlab-generator"
 	const rbName = "skyforge-netlab-generator"

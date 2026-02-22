@@ -39,7 +39,7 @@ func (s *Service) redirectToReauth(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
-// YaadeSSO performs a one-time login against Yaade using the shared admin account
+// YaadeSSO performs a one-time login against Yaade using the shared admin user
 // and redirects to the API testing UI.
 //
 //encore:api auth raw method=GET path=/api/yaade/sso
@@ -132,9 +132,22 @@ func (s *Service) YaadeSSO(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/api-testing/", http.StatusFound)
 }
 
-// GiteaPublicSSO logs into Gitea with a read-only public account.
+// GiteaPublicSSO logs into Gitea with a read-only public user.
 //
 //encore:api public raw method=GET path=/api/gitea/public
 func (s *Service) GiteaPublicSSO(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/git/", http.StatusFound)
+	base := normalizeGiteaBaseURL(ssoBaseURLOrDefault(s.cfg.GiteaBaseURL, ""))
+	if base == "" {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+	target := base
+	next := strings.TrimSpace(r.URL.Query().Get("next"))
+	if next != "" {
+		if !strings.HasPrefix(next, "/") {
+			next = "/" + next
+		}
+		target = target + next
+	}
+	http.Redirect(w, r, target, http.StatusFound)
 }

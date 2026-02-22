@@ -29,7 +29,7 @@ type PutUserSettingsRequest struct {
 
 // GetUserSettings returns the current user's saved defaults used to pre-fill forms (deployments, etc).
 //
-//encore:api auth method=GET path=/api/user/settings
+//encore:api auth method=GET path=/api/me/settings
 func (s *Service) GetUserSettings(ctx context.Context) (*UserSettingsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -67,7 +67,7 @@ func (s *Service) GetUserSettings(ctx context.Context) (*UserSettingsResponse, e
 
 // PutUserSettings upserts the current user's saved defaults used to pre-fill forms (deployments, etc).
 //
-//encore:api auth method=PUT path=/api/user/settings
+//encore:api auth method=PUT path=/api/me/settings
 func (s *Service) PutUserSettings(ctx context.Context, req *PutUserSettingsRequest) (*UserSettingsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {

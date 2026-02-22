@@ -26,20 +26,20 @@ func artifactsBucket() artifactsBucketPerms {
 
 const artifactsBucketName = "skyforge-files"
 
-func artifactBasePrefix(workspaceID string) string {
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
+func artifactBasePrefix(userScopeID string) string {
+	userScopeID = strings.TrimSpace(userScopeID)
+	if userScopeID == "" {
 		return "artifacts/"
 	}
-	return fmt.Sprintf("artifacts/%s/", workspaceID)
+	return fmt.Sprintf("artifacts/%s/", userScopeID)
 }
 
-func listArtifactEntries(ctx context.Context, cfg Config, workspaceID, prefix string, limit int) ([]storageObjectSummary, error) {
+func listArtifactEntries(ctx context.Context, cfg Config, userScopeID, prefix string, limit int) ([]storageObjectSummary, error) {
 	// Prefer explicit MinIO listing (path-style) over Encore objects SDK.
 	// Encore's S3 driver uses virtual-host addressing which doesn't work in-cluster
 	// without wildcard DNS for bucket subdomains.
 	if c, err := objectStoreClientFor(cfg); err == nil && c != nil {
-		basePrefix := artifactBasePrefix(workspaceID)
+		basePrefix := artifactBasePrefix(userScopeID)
 		fullPrefix := basePrefix + strings.TrimPrefix(prefix, "/")
 		items, err := c.ListObjects(ctx, artifactsBucketName, fullPrefix, limit)
 		if err != nil {
@@ -58,7 +58,7 @@ func listArtifactEntries(ctx context.Context, cfg Config, workspaceID, prefix st
 	if limit <= 0 || limit > 500 {
 		limit = 200
 	}
-	basePrefix := artifactBasePrefix(workspaceID)
+	basePrefix := artifactBasePrefix(userScopeID)
 	fullPrefix := basePrefix + strings.TrimPrefix(prefix, "/")
 	query := &objects.Query{
 		Prefix: fullPrefix,
@@ -79,8 +79,8 @@ func listArtifactEntries(ctx context.Context, cfg Config, workspaceID, prefix st
 	return items, nil
 }
 
-func artifactAttrs(ctx context.Context, workspaceID, key string) (*objects.ObjectAttrs, error) {
-	objectName := artifactObjectName(workspaceID, key)
+func artifactAttrs(ctx context.Context, userScopeID, key string) (*objects.ObjectAttrs, error) {
+	objectName := artifactObjectName(userScopeID, key)
 	bucket := artifactsBucket()
 	attrs, err := bucket.Attrs(ctx, objectName)
 	if err != nil {
@@ -89,9 +89,9 @@ func artifactAttrs(ctx context.Context, workspaceID, key string) (*objects.Objec
 	return attrs, nil
 }
 
-func readWorkspaceArtifact(ctx context.Context, cfg Config, workspaceID, key string, maxBytes int) ([]byte, error) {
+func readWorkspaceArtifact(ctx context.Context, cfg Config, userScopeID, key string, maxBytes int) ([]byte, error) {
 	if c, err := objectStoreClientFor(cfg); err == nil && c != nil {
-		objectKey := artifactObjectName(workspaceID, key)
+		objectKey := artifactObjectName(userScopeID, key)
 		data, err := c.GetObject(ctx, artifactsBucketName, objectKey)
 		if err != nil {
 			return nil, err
@@ -110,7 +110,7 @@ func readWorkspaceArtifact(ctx context.Context, cfg Config, workspaceID, key str
 	if maxBytes <= 0 || maxBytes > 10<<20 {
 		maxBytes = 2 << 20
 	}
-	objectName := artifactObjectName(workspaceID, key)
+	objectName := artifactObjectName(userScopeID, key)
 	bucket := artifactsBucket()
 	r := bucket.Download(ctx, objectName)
 	if r == nil {
@@ -127,14 +127,14 @@ func readWorkspaceArtifact(ctx context.Context, cfg Config, workspaceID, key str
 	return data, nil
 }
 
-func deleteWorkspaceArtifacts(ctx context.Context, cfg Config, workspaceID string) error {
+func deleteWorkspaceArtifacts(ctx context.Context, cfg Config, userScopeID string) error {
 	if c, err := objectStoreClientFor(cfg); err == nil && c != nil {
-		return c.DeletePrefix(ctx, artifactsBucketName, artifactBasePrefix(workspaceID))
+		return c.DeletePrefix(ctx, artifactsBucketName, artifactBasePrefix(userScopeID))
 	} else if err != nil {
 		log.Printf("object store client unavailable (falling back to encore objects): %v", err)
 	}
 
-	prefix := artifactBasePrefix(workspaceID)
+	prefix := artifactBasePrefix(userScopeID)
 	query := &objects.Query{Prefix: prefix}
 	bucket := artifactsBucket()
 	for entry, err := range bucket.List(ctx, query) {

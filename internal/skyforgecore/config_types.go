@@ -44,7 +44,7 @@ type Config struct {
 	LDAP                      LDAPConfig
 	LDAPLookupBindDN          string
 	LDAPLookupBindPassword    string
-	Workspaces                WorkspacesConfig
+	UserScopes                UserScopesConfig
 	TerraformBinaryPath       string
 	TerraformVersion          string
 	TerraformURL              string
@@ -156,7 +156,7 @@ type NetlabServerConfig struct {
 	ContainerlabSkipTLSVerify bool   `json:"containerlabSkipTlsVerify,omitempty"`
 }
 
-type WorkspacesConfig struct {
+type UserScopesConfig struct {
 	DataDir                string
 	GiteaAPIURL            string
 	GiteaUsername          string
@@ -169,9 +169,9 @@ type WorkspacesConfig struct {
 	ObjectStorageSecretKey string
 }
 
-// SkyforgeWorkspace is the user-facing workspace object stored in Postgres and
+// UserScope is the user-facing scope object stored in Postgres and
 // returned by the API.
-type SkyforgeWorkspace struct {
+type UserScope struct {
 	ID                         string                 `json:"id"`
 	Slug                       string                 `json:"slug"`
 	Name                       string                 `json:"name"`

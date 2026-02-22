@@ -19,7 +19,7 @@ type ListForwardCollectorsResponse struct {
 	Collectors []ForwardCollectorSummary `json:"collectors"`
 }
 
-// ListForwardCollectors lists collectors visible to the authenticated user's Forward account.
+// ListForwardCollectors lists collectors visible to the authenticated user's Forward org.
 //
 //encore:api auth method=GET path=/api/forward/collectors
 func (s *Service) ListForwardCollectors(ctx context.Context) (*ListForwardCollectorsResponse, error) {

@@ -10,7 +10,6 @@ import (
 //
 // This endpoint is intentionally stubbed for now. Earlier iterations depended on
 // fast-changing NQE output shapes and would become brittle quickly.
-//
 func (s *Service) SimulateWorkspacePolicyReportChangePlanning(ctx context.Context, id string, req *PolicyReportChangePlanningRequest) (*PolicyReportChangePlanningResponse, error) {
 	_ = s
 	_ = ctx

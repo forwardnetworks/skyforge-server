@@ -7,7 +7,7 @@ import (
 
 type PolicyReportRecertCampaign struct {
 	ID             string     `json:"id"`
-	WorkspaceID    string     `json:"userId"`
+	UserScopeID    string     `json:"userId"`
 	Name           string     `json:"name"`
 	Description    string     `json:"description,omitempty"`
 	ForwardNetwork string     `json:"forwardNetworkId"`
@@ -35,7 +35,7 @@ type PolicyReportRecertCampaignWithCounts struct {
 type PolicyReportRecertAssignment struct {
 	ID              string          `json:"id"`
 	CampaignID      string          `json:"campaignId"`
-	WorkspaceID     string          `json:"userId"`
+	UserScopeID     string          `json:"userId"`
 	FindingID       string          `json:"findingId"`
 	CheckID         string          `json:"checkId"`
 	Assignee        string          `json:"assigneeUsername,omitempty"`
@@ -54,24 +54,24 @@ type PolicyReportRecertAssignment struct {
 }
 
 type PolicyReportException struct {
-	ID            string     `json:"id"`
-	WorkspaceID   string     `json:"userId"`
-	ForwardNetwork string    `json:"forwardNetworkId"`
-	FindingID     string     `json:"findingId"`
-	CheckID       string     `json:"checkId"`
-	Status        string     `json:"status"`
-	Justification string     `json:"justification"`
-	TicketURL     string     `json:"ticketUrl,omitempty"`
-	ExpiresAt     *time.Time `json:"expiresAt,omitempty"`
-	CreatedBy     string     `json:"createdBy"`
-	ApprovedBy    string     `json:"approvedBy,omitempty"`
-	CreatedAt     time.Time  `json:"createdAt"`
-	UpdatedAt     time.Time  `json:"updatedAt"`
+	ID             string     `json:"id"`
+	UserScopeID    string     `json:"userId"`
+	ForwardNetwork string     `json:"forwardNetworkId"`
+	FindingID      string     `json:"findingId"`
+	CheckID        string     `json:"checkId"`
+	Status         string     `json:"status"`
+	Justification  string     `json:"justification"`
+	TicketURL      string     `json:"ticketUrl,omitempty"`
+	ExpiresAt      *time.Time `json:"expiresAt,omitempty"`
+	CreatedBy      string     `json:"createdBy"`
+	ApprovedBy     string     `json:"approvedBy,omitempty"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	UpdatedAt      time.Time  `json:"updatedAt"`
 }
 
 type PolicyReportAuditEvent struct {
 	ID          int64           `json:"id"`
-	WorkspaceID string          `json:"userId"`
+	UserScopeID string          `json:"userId"`
 	Actor       string          `json:"actorUsername"`
 	Action      string          `json:"action"`
 	Details     json.RawMessage `json:"details"`
@@ -125,17 +125,17 @@ type PolicyReportAttestAssignmentRequest struct {
 
 type PolicyReportCreateExceptionRequest struct {
 	ForwardNetwork string `json:"forwardNetworkId"`
-	FindingID     string `json:"findingId"`
-	CheckID       string `json:"checkId"`
-	Justification string `json:"justification"`
-	TicketURL     string `json:"ticketUrl,omitempty"`
-	ExpiresAt     string `json:"expiresAt,omitempty"` // RFC3339
+	FindingID      string `json:"findingId"`
+	CheckID        string `json:"checkId"`
+	Justification  string `json:"justification"`
+	TicketURL      string `json:"ticketUrl,omitempty"`
+	ExpiresAt      string `json:"expiresAt,omitempty"` // RFC3339
 }
 
 type PolicyReportListExceptionsRequest struct {
 	ForwardNetwork string `query:"forwardNetworkId" encore:"optional"`
-	Status string `query:"status" encore:"optional"`
-	Limit  int    `query:"limit" encore:"optional"`
+	Status         string `query:"status" encore:"optional"`
+	Limit          int    `query:"limit" encore:"optional"`
 }
 
 type PolicyReportListExceptionsResponse struct {

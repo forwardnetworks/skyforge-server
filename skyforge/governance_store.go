@@ -22,7 +22,7 @@ func loadGovernanceSummary(ctx context.Context, db *sql.DB) (*GovernanceSummary,
 			return &GovernanceSummary{
 				ResourceCount:     0,
 				ActiveResources:   0,
-				WorkspacesTracked: 0,
+				UserScopesTracked: 0,
 				CostLast30Days:    0,
 				CostCurrency:      "USD",
 				LastCostPeriodEnd: "",
@@ -35,9 +35,9 @@ func loadGovernanceSummary(ctx context.Context, db *sql.DB) (*GovernanceSummary,
 		activeCount = 0
 	}
 
-	var workspaceCount int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT user_id) FROM sf_resources WHERE user_id IS NOT NULL`).Scan(&workspaceCount); err != nil {
-		workspaceCount = 0
+	var userScopeCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT user_id) FROM sf_resources WHERE user_id IS NOT NULL`).Scan(&userScopeCount); err != nil {
+		userScopeCount = 0
 	}
 
 	var totalCost float64
@@ -60,7 +60,7 @@ SELECT provider,
 			return &GovernanceSummary{
 				ResourceCount:     resourceCount,
 				ActiveResources:   activeCount,
-				WorkspacesTracked: workspaceCount,
+				UserScopesTracked: userScopeCount,
 				CostLast30Days:    totalCost,
 				CostCurrency:      "USD",
 				LastCostPeriodEnd: "",
@@ -92,7 +92,7 @@ SELECT provider,
 	return &GovernanceSummary{
 		ResourceCount:     resourceCount,
 		ActiveResources:   activeCount,
-		WorkspacesTracked: workspaceCount,
+		UserScopesTracked: userScopeCount,
 		CostLast30Days:    totalCost,
 		CostCurrency:      currency,
 		LastCostPeriodEnd: period,
@@ -113,7 +113,7 @@ func listGovernanceResources(ctx context.Context, db *sql.DB, params *Governance
 SELECT r.id, r.user_id, p.name, r.provider, r.resource_id, r.resource_type, r.name, r.region,
        r.account_id, r.owner_username, r.status, r.tags, r.metadata, r.first_seen, r.last_seen, r.updated_at
   FROM sf_resources r
-  LEFT JOIN sf_workspaces p ON p.id = r.user_id
+  LEFT JOIN sf_user_scopes p ON p.id = r.user_id
  WHERE 1=1`
 
 	var args []any
@@ -128,7 +128,7 @@ SELECT r.id, r.user_id, p.name, r.provider, r.resource_id, r.resource_type, r.na
 		argIndex++
 	}
 
-	addFilter("r.user_id", params.WorkspaceID)
+	addFilter("r.user_id", params.UserScopeID)
 	addFilter("r.provider", params.Provider)
 	addFilter("r.status", params.Status)
 	addFilter("r.owner_username", strings.ToLower(strings.TrimSpace(params.Owner)))
@@ -159,8 +159,8 @@ SELECT r.id, r.user_id, p.name, r.provider, r.resource_id, r.resource_type, r.na
 		var tags, metadata []byte
 		if err := rows.Scan(
 			&record.ID,
-			&record.WorkspaceID,
-			&record.WorkspaceName,
+			&record.UserScopeID,
+			&record.UserScopeName,
 			&record.Provider,
 			&record.ResourceID,
 			&record.ResourceType,
@@ -199,13 +199,13 @@ func listGovernanceCosts(ctx context.Context, db *sql.DB, params *GovernanceCost
 SELECT c.id, c.user_id, p.name, c.resource_id, c.provider, c.period_start, c.period_end,
        c.cost_amount::double precision, c.cost_currency, c.source, c.metadata, c.created_at
   FROM sf_cost_snapshots c
-  LEFT JOIN sf_workspaces p ON p.id = c.user_id
+  LEFT JOIN sf_user_scopes p ON p.id = c.user_id
  WHERE 1=1`
 	var args []any
 	argIndex := 1
-	if strings.TrimSpace(params.WorkspaceID) != "" {
+	if strings.TrimSpace(params.UserScopeID) != "" {
 		query += fmt.Sprintf(" AND c.user_id = $%d", argIndex)
-		args = append(args, strings.TrimSpace(params.WorkspaceID))
+		args = append(args, strings.TrimSpace(params.UserScopeID))
 		argIndex++
 	}
 	if strings.TrimSpace(params.Provider) != "" {
@@ -229,15 +229,15 @@ SELECT c.id, c.user_id, p.name, c.resource_id, c.provider, c.period_start, c.per
 	for rows.Next() {
 		var record GovernanceCostSnapshot
 		var resourceID sql.NullString
-		var workspaceID sql.NullString
-		var workspaceName sql.NullString
+		var userScopeID sql.NullString
+		var userScopeName sql.NullString
 		var metadata []byte
 		var periodStart time.Time
 		var periodEnd time.Time
 		if err := rows.Scan(
 			&record.ID,
-			&workspaceID,
-			&workspaceName,
+			&userScopeID,
+			&userScopeName,
 			&resourceID,
 			&record.Provider,
 			&periodStart,
@@ -250,11 +250,11 @@ SELECT c.id, c.user_id, p.name, c.resource_id, c.provider, c.period_start, c.per
 		); err != nil {
 			return nil, err
 		}
-		if workspaceID.Valid {
-			record.WorkspaceID = workspaceID.String
+		if userScopeID.Valid {
+			record.UserScopeID = userScopeID.String
 		}
-		if workspaceName.Valid {
-			record.WorkspaceName = workspaceName.String
+		if userScopeName.Valid {
+			record.UserScopeName = userScopeName.String
 		}
 		if resourceID.Valid {
 			record.ResourceID = resourceID.String
@@ -280,13 +280,13 @@ func listGovernanceUsage(ctx context.Context, db *sql.DB, params *GovernanceUsag
 SELECT u.id, u.user_id, p.name, u.provider, u.scope_type, u.scope_id, u.metric,
        u.value::double precision, u.unit, u.metadata, u.collected_at
   FROM sf_usage_snapshots u
-  LEFT JOIN sf_workspaces p ON p.id = u.user_id
+  LEFT JOIN sf_user_scopes p ON p.id = u.user_id
  WHERE 1=1`
 	var args []any
 	argIndex := 1
-	if strings.TrimSpace(params.WorkspaceID) != "" {
+	if strings.TrimSpace(params.UserScopeID) != "" {
 		query += fmt.Sprintf(" AND u.user_id = $%d", argIndex)
-		args = append(args, strings.TrimSpace(params.WorkspaceID))
+		args = append(args, strings.TrimSpace(params.UserScopeID))
 		argIndex++
 	}
 	if strings.TrimSpace(params.Provider) != "" {
@@ -314,15 +314,15 @@ SELECT u.id, u.user_id, p.name, u.provider, u.scope_type, u.scope_id, u.metric,
 	var usage []GovernanceUsageSnapshot
 	for rows.Next() {
 		var record GovernanceUsageSnapshot
-		var workspaceID sql.NullString
-		var workspaceName sql.NullString
+		var userScopeID sql.NullString
+		var userScopeName sql.NullString
 		var scopeID sql.NullString
 		var unit sql.NullString
 		var metadata []byte
 		if err := rows.Scan(
 			&record.ID,
-			&workspaceID,
-			&workspaceName,
+			&userScopeID,
+			&userScopeName,
 			&record.Provider,
 			&record.ScopeType,
 			&scopeID,
@@ -334,11 +334,11 @@ SELECT u.id, u.user_id, p.name, u.provider, u.scope_type, u.scope_id, u.metric,
 		); err != nil {
 			return nil, err
 		}
-		if workspaceID.Valid {
-			record.WorkspaceID = workspaceID.String
+		if userScopeID.Valid {
+			record.UserScopeID = userScopeID.String
 		}
-		if workspaceName.Valid {
-			record.WorkspaceName = workspaceName.String
+		if userScopeName.Valid {
+			record.UserScopeName = userScopeName.String
 		}
 		if scopeID.Valid {
 			record.ScopeID = scopeID.String
@@ -369,7 +369,7 @@ func upsertGovernanceResource(ctx context.Context, db *sql.DB, input GovernanceR
 
 	tagsJSON, _ := json.Marshal(input.Tags)
 	metadataJSON, _ := json.Marshal(input.Metadata)
-	workspaceID := strings.TrimSpace(input.WorkspaceID)
+	userScopeID := strings.TrimSpace(input.UserScopeID)
 	owner := strings.ToLower(strings.TrimSpace(input.Owner))
 	status := strings.TrimSpace(input.Status)
 	if status == "" {
@@ -403,7 +403,7 @@ RETURNING id, user_id, name, region, account_id, owner_username, status, tags, m
 		provider,
 		resourceID,
 		resourceType,
-		workspaceID,
+		userScopeID,
 		strings.TrimSpace(input.Name),
 		strings.TrimSpace(input.Region),
 		strings.TrimSpace(input.AccountID),
@@ -421,7 +421,7 @@ RETURNING id, user_id, name, region, account_id, owner_username, status, tags, m
 	record.ResourceID = resourceID
 	record.ResourceType = resourceType
 	record.AccountID = strings.TrimSpace(input.AccountID)
-	record.WorkspaceID = workspaceID
+	record.UserScopeID = userScopeID
 	record.Name = strings.TrimSpace(input.Name)
 	record.Region = strings.TrimSpace(input.Region)
 	record.Owner = owner
@@ -432,7 +432,7 @@ RETURNING id, user_id, name, region, account_id, owner_username, status, tags, m
 	var tagsOut, metaOut []byte
 	if err := row.Scan(
 		&record.ID,
-		&record.WorkspaceID,
+		&record.UserScopeID,
 		&record.Name,
 		&record.Region,
 		&record.AccountID,
@@ -457,12 +457,12 @@ RETURNING id, user_id, name, region, account_id, owner_username, status, tags, m
 	if eventType == "" {
 		eventType = "observed"
 	}
-	_ = insertGovernanceResourceEvent(ctx, db, record.ID, record.WorkspaceID, eventType, input.Metadata, user)
+	_ = insertGovernanceResourceEvent(ctx, db, record.ID, record.UserScopeID, eventType, input.Metadata, user)
 
 	return record, nil
 }
 
-func insertGovernanceResourceEvent(ctx context.Context, db *sql.DB, resourceID string, workspaceID string, eventType string, metadata map[string]string, user *AuthUser) error {
+func insertGovernanceResourceEvent(ctx context.Context, db *sql.DB, resourceID string, userScopeID string, eventType string, metadata map[string]string, user *AuthUser) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	eventID := uuid.New().String()
@@ -474,12 +474,12 @@ func insertGovernanceResourceEvent(ctx context.Context, db *sql.DB, resourceID s
 		actor = user.Username
 		actorIsAdmin = user.IsAdmin
 	}
-	writeAuditEvent(ctx, db, actor, actorIsAdmin, impersonated, "governance.resource."+eventType, workspaceID, string(detailsJSON))
+	writeAuditEvent(ctx, db, actor, actorIsAdmin, impersonated, "governance.resource."+eventType, userScopeID, string(detailsJSON))
 	_, err := db.ExecContext(ctx, `
 INSERT INTO sf_resource_events (
   id, resource_id, event_type, actor_username, actor_is_admin, impersonated_username, user_id, details
 ) VALUES ($1,$2,$3,NULLIF($4,''),$5,NULLIF($6,''),NULLIF($7,''),$8)`,
-		eventID, resourceID, eventType, actor, actorIsAdmin, impersonated, workspaceID, string(detailsJSON),
+		eventID, resourceID, eventType, actor, actorIsAdmin, impersonated, userScopeID, string(detailsJSON),
 	)
 	return err
 }
@@ -502,7 +502,7 @@ func insertGovernanceCost(ctx context.Context, db *sql.DB, input GovernanceCostI
 		currency = "USD"
 	}
 	metadataJSON, _ := json.Marshal(input.Metadata)
-	workspaceID := strings.TrimSpace(input.WorkspaceID)
+	userScopeID := strings.TrimSpace(input.UserScopeID)
 	resourceID := strings.TrimSpace(input.ResourceID)
 	if resourceID != "" {
 		if _, err := uuid.Parse(resourceID); err != nil {
@@ -516,7 +516,7 @@ func insertGovernanceCost(ctx context.Context, db *sql.DB, input GovernanceCostI
 	id := uuid.New().String()
 	var record GovernanceCostSnapshot
 	record.ID = id
-	record.WorkspaceID = workspaceID
+	record.UserScopeID = userScopeID
 	record.ResourceID = resourceID
 	record.Provider = provider
 	record.PeriodStart = periodStart.Format("2006-01-02")
@@ -532,7 +532,7 @@ INSERT INTO sf_cost_snapshots (
   id, resource_id, user_id, provider, period_start, period_end,
   cost_amount, cost_currency, source, metadata
 ) VALUES ($1,NULLIF($2,''),NULLIF($3,''),$4,$5,$6,$7,$8,NULLIF($9,''),$10)`,
-		id, resourceID, workspaceID, provider, periodStart, periodEnd, input.Amount, currency, record.Source, string(metadataJSON),
+		id, resourceID, userScopeID, provider, periodStart, periodEnd, input.Amount, currency, record.Source, string(metadataJSON),
 	)
 	return record, err
 }
@@ -543,7 +543,7 @@ func insertGovernanceUsage(ctx context.Context, db *sql.DB, input GovernanceUsag
 		return GovernanceUsageSnapshot{}, fmt.Errorf("missing usage fields")
 	}
 	metadataJSON, _ := json.Marshal(input.Metadata)
-	workspaceID := strings.TrimSpace(input.WorkspaceID)
+	userScopeID := strings.TrimSpace(input.UserScopeID)
 	scopeID := strings.TrimSpace(input.ScopeID)
 
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -552,7 +552,7 @@ func insertGovernanceUsage(ctx context.Context, db *sql.DB, input GovernanceUsag
 	id := uuid.New().String()
 	var record GovernanceUsageSnapshot
 	record.ID = id
-	record.WorkspaceID = workspaceID
+	record.UserScopeID = userScopeID
 	record.Provider = provider
 	record.ScopeType = strings.TrimSpace(input.ScopeType)
 	record.ScopeID = scopeID
@@ -566,7 +566,7 @@ func insertGovernanceUsage(ctx context.Context, db *sql.DB, input GovernanceUsag
 INSERT INTO sf_usage_snapshots (
   id, user_id, provider, scope_type, scope_id, metric, value, unit, metadata
 ) VALUES ($1,NULLIF($2,''),$3,$4,NULLIF($5,''),$6,$7,NULLIF($8,''),$9)`,
-		id, workspaceID, provider, record.ScopeType, scopeID, record.Metric, input.Value, record.Unit, string(metadataJSON),
+		id, userScopeID, provider, record.ScopeType, scopeID, record.Metric, input.Value, record.Unit, string(metadataJSON),
 	)
 	return record, err
 }

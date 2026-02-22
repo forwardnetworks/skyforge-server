@@ -32,7 +32,7 @@ import (
 )
 
 const (
-	lockWorkspaceSync        int64 = 74004
+	lockUserSync             int64 = 74004
 	lockCloudCredentialCheck int64 = 74005
 
 	pgNotifyNotificationsChannel = "skyforge_notification_updates"
@@ -44,9 +44,9 @@ func Run(ctx context.Context, cfg skyforgecore.Config, db *sql.DB, kind string) 
 		return nil
 	}
 	switch kind {
-	case "workspace_sync":
-		return withAdvisoryLock(ctx, db, lockWorkspaceSync, func(ctx context.Context) error {
-			return runWorkspaceSync(ctx, cfg, db)
+	case "user_sync":
+		return withAdvisoryLock(ctx, db, lockUserSync, func(ctx context.Context) error {
+			return runUserSync(ctx, cfg, db)
 		})
 	case "cloud_credential_checks":
 		return withAdvisoryLock(ctx, db, lockCloudCredentialCheck, func(ctx context.Context) error {
@@ -79,7 +79,7 @@ func withAdvisoryLock(ctx context.Context, db *sql.DB, key int64, fn func(contex
 	return fn(ctx)
 }
 
-type workspaceRecord struct {
+type userScopeRecord struct {
 	ID              string
 	Slug            string
 	Name            string
@@ -99,25 +99,25 @@ type workspaceRecord struct {
 	AWSRegion     string
 }
 
-func runWorkspaceSync(ctx context.Context, cfg skyforgecore.Config, db *sql.DB) error {
-	workspaces, err := loadWorkspacesForMaintenance(ctx, db)
+func runUserSync(ctx context.Context, cfg skyforgecore.Config, db *sql.DB) error {
+	userScopes, err := loadUserScopesForMaintenance(ctx, db)
 	if err != nil {
 		return err
 	}
 	client := gitea.New(gitea.Config{
-		APIURL:       strings.TrimSpace(cfg.Workspaces.GiteaAPIURL),
-		Username:     strings.TrimSpace(cfg.Workspaces.GiteaUsername),
-		Password:     strings.TrimSpace(cfg.Workspaces.GiteaPassword),
-		RepoPrivate:  cfg.Workspaces.GiteaRepoPrivate,
-		DefaultEmail: strings.TrimSpace(cfg.Workspaces.GiteaUsername) + "@example.invalid",
+		APIURL:       strings.TrimSpace(cfg.UserScopes.GiteaAPIURL),
+		Username:     strings.TrimSpace(cfg.UserScopes.GiteaUsername),
+		Password:     strings.TrimSpace(cfg.UserScopes.GiteaPassword),
+		RepoPrivate:  cfg.UserScopes.GiteaRepoPrivate,
+		DefaultEmail: strings.TrimSpace(cfg.UserScopes.GiteaUsername) + "@example.invalid",
 	})
 
-	for _, ws := range workspaces {
+	for _, ws := range userScopes {
 		updated := false
 
 		desiredOwner := strings.TrimSpace(ws.GiteaOwner)
 		if desiredOwner == "" {
-			desiredOwner = strings.TrimSpace(cfg.Workspaces.GiteaUsername)
+			desiredOwner = strings.TrimSpace(cfg.UserScopes.GiteaUsername)
 		}
 		desiredRepo := strings.TrimSpace(ws.GiteaRepo)
 		if desiredRepo == "" {
@@ -148,10 +148,10 @@ func runWorkspaceSync(ctx context.Context, cfg skyforgecore.Config, db *sql.DB) 
 		}
 
 		if updated {
-			if err := updateWorkspaceMaintenanceFields(ctx, db, ws); err != nil {
+			if err := updateUserScopeMaintenanceFields(ctx, db, ws); err != nil {
 				return err
 			}
-			writeAuditEvent(ctx, db, "system", true, "", "workspace.sync", ws.ID, "updated=true")
+			writeAuditEvent(ctx, db, "system", true, "", "user.sync", ws.ID, "updated=true")
 		}
 	}
 
@@ -175,8 +175,8 @@ func runCloudCredentialChecks(ctx context.Context, cfg skyforgecore.Config, db *
 			if !rec.RefreshTokenExpiresAt.IsZero() && now.After(rec.RefreshTokenExpiresAt) {
 				if shouldNotifyCloudCredential(ctx, db, "aws-sso:"+username, false) {
 					_, _ = createNotification(ctx, db, username, "AWS SSO session expired",
-						"Your AWS SSO session expired. Re-authenticate in Workspaces → New Workspace → AWS.",
-						"warning", "cloud-credentials", "/workspaces/new", "high")
+						"Your AWS SSO session expired. Re-authenticate in My Settings → Cloud Credentials → AWS.",
+						"warning", "cloud-credentials", "/userScopes/new", "high")
 				}
 			} else {
 				shouldNotifyCloudCredential(ctx, db, "aws-sso:"+username, true)
@@ -184,26 +184,26 @@ func runCloudCredentialChecks(ctx context.Context, cfg skyforgecore.Config, db *
 		}
 	}
 
-	workspaces, err := loadWorkspacesForMaintenance(ctx, db)
+	userScopes, err := loadUserScopesForMaintenance(ctx, db)
 	if err != nil {
 		return nil
 	}
 	box := secretbox.New(cfg.SessionSecret)
-	for _, ws := range workspaces {
-		recipients := workspaceNotificationRecipients(ws)
+	for _, ws := range userScopes {
+		recipients := userScopeNotificationRecipients(ws)
 		if len(recipients) == 0 {
 			continue
 		}
 
 		if strings.EqualFold(strings.TrimSpace(ws.AWSAuthMethod), "static") {
-			creds, err := getWorkspaceAWSStaticCredentials(ctx, db, box, ws.ID)
+			creds, err := getUserScopeAWSStaticCredentials(ctx, db, box, ws.ID)
 			key := "aws-static:" + ws.ID
 			if err != nil || creds == nil || creds.AccessKeyID == "" || creds.SecretAccessKey == "" {
 				if shouldNotifyCloudCredential(ctx, db, key, false) {
 					for _, username := range recipients {
 						_, _ = createNotification(ctx, db, username, "AWS static credentials missing",
-							fmt.Sprintf("Workspace %s is missing AWS static credentials. Update them in Workspace Settings.", ws.Name),
-							"warning", "cloud-credentials", fmt.Sprintf("/workspaces/%s/settings", ws.ID), "high")
+							fmt.Sprintf("User scope %s is missing AWS static credentials. Update them in My Settings.", ws.Name),
+							"warning", "cloud-credentials", fmt.Sprintf("/userScopes/%s/settings", ws.ID), "high")
 					}
 				}
 			} else {
@@ -214,8 +214,8 @@ func runCloudCredentialChecks(ctx context.Context, cfg skyforgecore.Config, db *
 					if shouldNotifyCloudCredential(ctx, db, key, false) {
 						for _, username := range recipients {
 							_, _ = createNotification(ctx, db, username, "AWS static credentials invalid",
-								fmt.Sprintf("Workspace %s failed AWS static validation. Re-enter credentials in Workspace Settings.", ws.Name),
-								"warning", "cloud-credentials", fmt.Sprintf("/workspaces/%s/settings", ws.ID), "high")
+								fmt.Sprintf("User scope %s failed AWS static validation. Re-enter credentials in My Settings.", ws.Name),
+								"warning", "cloud-credentials", fmt.Sprintf("/userScopes/%s/settings", ws.ID), "high")
 						}
 					}
 				} else {
@@ -224,15 +224,15 @@ func runCloudCredentialChecks(ctx context.Context, cfg skyforgecore.Config, db *
 			}
 		}
 
-		azureCreds, err := getWorkspaceAzureCredentials(ctx, db, box, ws.ID)
+		azureCreds, err := getUserScopeAzureCredentials(ctx, db, box, ws.ID)
 		if azureCreds != nil {
 			key := "azure:" + ws.ID
 			if err != nil || azureCreds.ClientID == "" || azureCreds.ClientSecret == "" {
 				if shouldNotifyCloudCredential(ctx, db, key, false) {
 					for _, username := range recipients {
 						_, _ = createNotification(ctx, db, username, "Azure credentials missing",
-							fmt.Sprintf("Workspace %s is missing Azure credentials. Re-enter them in Workspace Settings.", ws.Name),
-							"warning", "cloud-credentials", fmt.Sprintf("/workspaces/%s/settings", ws.ID), "high")
+							fmt.Sprintf("User scope %s is missing Azure credentials. Re-enter them in My Settings.", ws.Name),
+							"warning", "cloud-credentials", fmt.Sprintf("/userScopes/%s/settings", ws.ID), "high")
 					}
 				}
 			} else {
@@ -243,8 +243,8 @@ func runCloudCredentialChecks(ctx context.Context, cfg skyforgecore.Config, db *
 					if shouldNotifyCloudCredential(ctx, db, key, false) {
 						for _, username := range recipients {
 							_, _ = createNotification(ctx, db, username, "Azure credentials invalid",
-								fmt.Sprintf("Workspace %s failed Azure validation. Re-enter credentials in Workspace Settings.", ws.Name),
-								"warning", "cloud-credentials", fmt.Sprintf("/workspaces/%s/settings", ws.ID), "high")
+								fmt.Sprintf("User scope %s failed Azure validation. Re-enter credentials in My Settings.", ws.Name),
+								"warning", "cloud-credentials", fmt.Sprintf("/userScopes/%s/settings", ws.ID), "high")
 						}
 					}
 				} else {
@@ -253,15 +253,15 @@ func runCloudCredentialChecks(ctx context.Context, cfg skyforgecore.Config, db *
 			}
 		}
 
-		gcpCreds, err := getWorkspaceGCPCredentials(ctx, db, box, ws.ID)
+		gcpCreds, err := getUserScopeGCPCredentials(ctx, db, box, ws.ID)
 		if gcpCreds != nil {
 			key := "gcp:" + ws.ID
 			if err != nil || gcpCreds.ServiceAccountJSON == "" {
 				if shouldNotifyCloudCredential(ctx, db, key, false) {
 					for _, username := range recipients {
 						_, _ = createNotification(ctx, db, username, "GCP credentials missing",
-							fmt.Sprintf("Workspace %s is missing GCP credentials. Re-enter them in Workspace Settings.", ws.Name),
-							"warning", "cloud-credentials", fmt.Sprintf("/workspaces/%s/settings", ws.ID), "high")
+							fmt.Sprintf("User scope %s is missing GCP credentials. Re-enter them in My Settings.", ws.Name),
+							"warning", "cloud-credentials", fmt.Sprintf("/userScopes/%s/settings", ws.ID), "high")
 					}
 				}
 			} else {
@@ -270,8 +270,8 @@ func runCloudCredentialChecks(ctx context.Context, cfg skyforgecore.Config, db *
 					if shouldNotifyCloudCredential(ctx, db, key, false) {
 						for _, username := range recipients {
 							_, _ = createNotification(ctx, db, username, "GCP credentials invalid",
-								fmt.Sprintf("Workspace %s has invalid GCP credentials. Re-upload JSON in Workspace Settings.", ws.Name),
-								"warning", "cloud-credentials", fmt.Sprintf("/workspaces/%s/settings", ws.ID), "high")
+								fmt.Sprintf("User scope %s has invalid GCP credentials. Re-upload JSON in My Settings.", ws.Name),
+								"warning", "cloud-credentials", fmt.Sprintf("/userScopes/%s/settings", ws.ID), "high")
 						}
 					}
 				} else {
@@ -282,8 +282,8 @@ func runCloudCredentialChecks(ctx context.Context, cfg skyforgecore.Config, db *
 						if shouldNotifyCloudCredential(ctx, db, key, false) {
 							for _, username := range recipients {
 								_, _ = createNotification(ctx, db, username, "GCP credentials invalid",
-									fmt.Sprintf("Workspace %s failed GCP validation. Re-upload JSON in Workspace Settings.", ws.Name),
-									"warning", "cloud-credentials", fmt.Sprintf("/workspaces/%s/settings", ws.ID), "high")
+									fmt.Sprintf("User scope %s failed GCP validation. Re-upload JSON in My Settings.", ws.Name),
+									"warning", "cloud-credentials", fmt.Sprintf("/userScopes/%s/settings", ws.ID), "high")
 							}
 						}
 					} else {
@@ -296,13 +296,13 @@ func runCloudCredentialChecks(ctx context.Context, cfg skyforgecore.Config, db *
 	return nil
 }
 
-func updateWorkspaceMaintenanceFields(ctx context.Context, db *sql.DB, ws workspaceRecord) error {
+func updateUserScopeMaintenanceFields(ctx context.Context, db *sql.DB, ws userScopeRecord) error {
 	if db == nil {
 		return nil
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	_, err := db.ExecContext(ctxReq, `UPDATE sf_workspaces SET
+	_, err := db.ExecContext(ctxReq, `UPDATE sf_user_scopes SET
   gitea_owner=$2,
   gitea_repo=$3,
   artifacts_bucket=$4,
@@ -318,7 +318,7 @@ WHERE id=$1`,
 	return err
 }
 
-func workspaceNotificationRecipients(ws workspaceRecord) []string {
+func userScopeNotificationRecipients(ws userScopeRecord) []string {
 	recipients := map[string]struct{}{}
 	add := func(u string) {
 		u = strings.ToLower(strings.TrimSpace(u))
@@ -357,7 +357,7 @@ func isValidUsername(username string) bool {
 	return true
 }
 
-func syncGiteaCollaborators(client *gitea.Client, cfg skyforgecore.Config, ws workspaceRecord) {
+func syncGiteaCollaborators(client *gitea.Client, cfg skyforgecore.Config, ws userScopeRecord) {
 	if client == nil {
 		return
 	}
@@ -373,7 +373,7 @@ func syncGiteaCollaborators(client *gitea.Client, cfg skyforgecore.Config, ws wo
 		if !isValidUsername(user) {
 			return
 		}
-		if strings.EqualFold(user, cfg.Workspaces.GiteaUsername) {
+		if strings.EqualFold(user, cfg.UserScopes.GiteaUsername) {
 			return
 		}
 		if existing, ok := desired[user]; ok {
@@ -417,7 +417,7 @@ func syncGiteaCollaborators(client *gitea.Client, cfg skyforgecore.Config, ws wo
 	}
 	for _, user := range current {
 		u := strings.ToLower(strings.TrimSpace(user))
-		if u == "" || strings.EqualFold(u, cfg.Workspaces.GiteaUsername) {
+		if u == "" || strings.EqualFold(u, cfg.UserScopes.GiteaUsername) {
 			continue
 		}
 		if _, ok := desired[u]; ok {
@@ -435,14 +435,14 @@ func ensureAuditActor(ctx context.Context, db *sql.DB, username string) {
 	_, _ = db.ExecContext(ctx, `INSERT INTO sf_users (username, created_at) VALUES ($1, now()) ON CONFLICT (username) DO NOTHING`, username)
 }
 
-func writeAuditEvent(ctx context.Context, db *sql.DB, actor string, actorIsAdmin bool, impersonated string, action string, workspaceID string, details string) {
+func writeAuditEvent(ctx context.Context, db *sql.DB, actor string, actorIsAdmin bool, impersonated string, action string, userScopeID string, details string) {
 	if db == nil {
 		return
 	}
 	actor = strings.ToLower(strings.TrimSpace(actor))
 	impersonated = strings.ToLower(strings.TrimSpace(impersonated))
 	action = strings.TrimSpace(action)
-	workspaceID = strings.TrimSpace(workspaceID)
+	userScopeID = strings.TrimSpace(userScopeID)
 	details = strings.TrimSpace(details)
 	if actor == "" || action == "" {
 		return
@@ -457,7 +457,7 @@ func writeAuditEvent(ctx context.Context, db *sql.DB, actor string, actorIsAdmin
 	_, _ = db.ExecContext(ctx, `INSERT INTO sf_audit_log (
   actor_username, actor_is_admin, impersonated_username, action, user_id, details
 ) VALUES ($1,$2,NULLIF($3,''),$4,NULLIF($5,''),NULLIF($6,''))`,
-		actor, actorIsAdmin, impersonated, action, workspaceID, details,
+		actor, actorIsAdmin, impersonated, action, userScopeID, details,
 	)
 }
 
@@ -580,21 +580,21 @@ func loadAwsSSOTokens(ctx context.Context, db *sql.DB) (map[string]awsSSOTokenRe
 	return out, rows.Err()
 }
 
-func loadWorkspacesForMaintenance(ctx context.Context, db *sql.DB) ([]workspaceRecord, error) {
+func loadUserScopesForMaintenance(ctx context.Context, db *sql.DB) ([]userScopeRecord, error) {
 	if db == nil {
 		return nil, nil
 	}
 	rows, err := db.QueryContext(ctx, `SELECT id, slug, name, created_by, is_public, default_branch, artifacts_bucket, gitea_owner, gitea_repo, aws_auth_method, aws_region
-FROM sf_workspaces ORDER BY created_at DESC`)
+FROM sf_user_scopes ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	out := []workspaceRecord{}
-	wsByID := map[string]*workspaceRecord{}
+	out := []userScopeRecord{}
+	wsByID := map[string]*userScopeRecord{}
 	for rows.Next() {
-		var rec workspaceRecord
+		var rec userScopeRecord
 		var defaultBranch sql.NullString
 		var artifactsBucket sql.NullString
 		var giteaOwner, giteaRepo sql.NullString
@@ -615,7 +615,7 @@ FROM sf_workspaces ORDER BY created_at DESC`)
 		return nil, err
 	}
 
-	memberRows, err := db.QueryContext(ctx, `SELECT user_id, username, role FROM sf_workspace_members ORDER BY user_id, username`)
+	memberRows, err := db.QueryContext(ctx, `SELECT user_id, username, role FROM sf_user_scope_members ORDER BY user_id, username`)
 	if err != nil {
 		return nil, err
 	}
@@ -650,17 +650,17 @@ type awsStaticCredentials struct {
 	SessionToken    string
 }
 
-func getWorkspaceAWSStaticCredentials(ctx context.Context, db *sql.DB, box *secretbox.Box, workspaceID string) (*awsStaticCredentials, error) {
+func getUserScopeAWSStaticCredentials(ctx context.Context, db *sql.DB, box *secretbox.Box, userScopeID string) (*awsStaticCredentials, error) {
 	if db == nil || box == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace id is required")
+	userScopeID = strings.TrimSpace(userScopeID)
+	if userScopeID == "" {
+		return nil, fmt.Errorf("user id is required")
 	}
 	var akid, sak, st sql.NullString
 	err := db.QueryRowContext(ctx, `SELECT access_key_id, secret_access_key, session_token
-FROM sf_workspace_aws_static_credentials WHERE user_id=$1`, workspaceID).Scan(&akid, &sak, &st)
+FROM sf_user_scope_aws_static_credentials WHERE user_id=$1`, userScopeID).Scan(&akid, &sak, &st)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -714,17 +714,17 @@ type azureServicePrincipal struct {
 	SubscriptionID string
 }
 
-func getWorkspaceAzureCredentials(ctx context.Context, db *sql.DB, box *secretbox.Box, workspaceID string) (*azureServicePrincipal, error) {
+func getUserScopeAzureCredentials(ctx context.Context, db *sql.DB, box *secretbox.Box, userScopeID string) (*azureServicePrincipal, error) {
 	if db == nil || box == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace id is required")
+	userScopeID = strings.TrimSpace(userScopeID)
+	if userScopeID == "" {
+		return nil, fmt.Errorf("user id is required")
 	}
 	var tenantID, clientID, clientSecret, subscriptionID sql.NullString
 	err := db.QueryRowContext(ctx, `SELECT tenant_id, client_id, client_secret, subscription_id
-FROM sf_workspace_azure_credentials WHERE user_id=$1`, workspaceID).Scan(&tenantID, &clientID, &clientSecret, &subscriptionID)
+FROM sf_user_scope_azure_credentials WHERE user_id=$1`, userScopeID).Scan(&tenantID, &clientID, &clientSecret, &subscriptionID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -747,16 +747,16 @@ type gcpServiceAccount struct {
 	ServiceAccountJSON string
 }
 
-func getWorkspaceGCPCredentials(ctx context.Context, db *sql.DB, box *secretbox.Box, workspaceID string) (*gcpServiceAccount, error) {
+func getUserScopeGCPCredentials(ctx context.Context, db *sql.DB, box *secretbox.Box, userScopeID string) (*gcpServiceAccount, error) {
 	if db == nil || box == nil {
 		return nil, fmt.Errorf("db is not configured")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace id is required")
+	userScopeID = strings.TrimSpace(userScopeID)
+	if userScopeID == "" {
+		return nil, fmt.Errorf("user id is required")
 	}
 	var jsonBlob sql.NullString
-	err := db.QueryRowContext(ctx, `SELECT service_account_json FROM sf_workspace_gcp_credentials WHERE user_id=$1`, workspaceID).Scan(&jsonBlob)
+	err := db.QueryRowContext(ctx, `SELECT service_account_json FROM sf_user_scope_gcp_credentials WHERE user_id=$1`, userScopeID).Scan(&jsonBlob)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -782,7 +782,7 @@ type gcpServiceAccountPayload struct {
 func parseGCPServiceAccountJSON(raw string) (*gcpServiceAccountPayload, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return nil, fmt.Errorf("service account json is empty")
+		return nil, fmt.Errorf("service identity json is empty")
 	}
 	var payload gcpServiceAccountPayload
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
@@ -793,7 +793,7 @@ func parseGCPServiceAccountJSON(raw string) (*gcpServiceAccountPayload, error) {
 	payload.ProjectID = strings.TrimSpace(payload.ProjectID)
 	payload.TokenURI = strings.TrimSpace(payload.TokenURI)
 	if payload.ClientEmail == "" || payload.PrivateKey == "" {
-		return nil, fmt.Errorf("service account json missing required fields")
+		return nil, fmt.Errorf("service identity json missing required fields")
 	}
 	return &payload, nil
 }

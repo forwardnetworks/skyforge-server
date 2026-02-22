@@ -14,14 +14,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type WorkspaceEveLabsRequest struct {
+type UserScopeEveLabsRequest struct {
 	Server    string `query:"server" encore:"optional"`
 	Path      string `query:"path" encore:"optional"`
 	Recursive bool   `query:"recursive" encore:"optional"`
 }
 
-type WorkspaceEveLabsResponse struct {
-	WorkspaceID string          `json:"userId"`
+type UserScopeEveLabsResponse struct {
+	UserScopeID string          `json:"userId"`
 	Server      string          `json:"server"`
 	Labs        []EveLabSummary `json:"labs"`
 	Folders     []EveFolderInfo `json:"folders,omitempty"`
@@ -43,10 +43,10 @@ type EveFolderInfo struct {
 	MTime string `json:"mtime,omitempty"`
 }
 
-// ListWorkspaceEveLabs returns EVE-NG labs for import.
+// ListUserScopeEveLabs returns EVE-NG labs for import.
 //
 //encore:api auth method=GET path=/api/users/:id/eve/labs
-func (s *Service) ListWorkspaceEveLabs(ctx context.Context, id string, req *WorkspaceEveLabsRequest) (*WorkspaceEveLabsResponse, error) {
+func (s *Service) ListUserScopeEveLabs(ctx context.Context, id string, req *UserScopeEveLabsRequest) (*UserScopeEveLabsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -63,7 +63,7 @@ func (s *Service) ListWorkspaceEveLabs(ctx context.Context, id string, req *Work
 		serverRef = strings.TrimSpace(req.Server)
 	}
 	if serverRef == "" {
-		serverRef = strings.TrimSpace(pc.workspace.EveServer)
+		serverRef = strings.TrimSpace(pc.userScope.EveServer)
 	}
 	server, err := s.resolveEveServerConfig(ctx, pc, serverRef)
 	if err != nil {
@@ -88,13 +88,13 @@ func (s *Service) ListWorkspaceEveLabs(ctx context.Context, id string, req *Work
 		sort.Slice(labs, func(i, j int) bool {
 			return labs[i].Path < labs[j].Path
 		})
-		return &WorkspaceEveLabsResponse{WorkspaceID: pc.workspace.ID, Server: serverRef, Labs: labs}, nil
+		return &UserScopeEveLabsResponse{UserScopeID: pc.userScope.ID, Server: serverRef, Labs: labs}, nil
 	}
 	listing, err := client.ListFolder(ctx, listPath)
 	if err != nil {
 		return nil, err
 	}
-	resp := &WorkspaceEveLabsResponse{WorkspaceID: pc.workspace.ID, Server: serverRef}
+	resp := &UserScopeEveLabsResponse{UserScopeID: pc.userScope.ID, Server: serverRef}
 	for _, lab := range listing.Labs {
 		labPath := strings.TrimPrefix(strings.TrimSpace(lab.Path), "/")
 		resp.Labs = append(resp.Labs, EveLabSummary{
@@ -120,16 +120,16 @@ func (s *Service) ListWorkspaceEveLabs(ctx context.Context, id string, req *Work
 	return resp, nil
 }
 
-type WorkspaceEveImportRequest struct {
+type UserScopeEveImportRequest struct {
 	Server         string `json:"server,omitempty"`
 	LabPath        string `json:"labPath"`
 	DeploymentName string `json:"deploymentName,omitempty"`
 }
 
-// ImportWorkspaceEveLab registers an existing EVE-NG lab as a deployment.
+// ImportUserScopeEveLab registers an existing EVE-NG lab as a deployment.
 //
 //encore:api auth method=POST path=/api/users/:id/eve/import
-func (s *Service) ImportWorkspaceEveLab(ctx context.Context, id string, req *WorkspaceEveImportRequest) (*WorkspaceDeployment, error) {
+func (s *Service) ImportUserScopeEveLab(ctx context.Context, id string, req *UserScopeEveImportRequest) (*UserScopeDeployment, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -150,7 +150,7 @@ func (s *Service) ImportWorkspaceEveLab(ctx context.Context, id string, req *Wor
 	}
 	serverRef := strings.TrimSpace(req.Server)
 	if serverRef == "" {
-		serverRef = strings.TrimSpace(pc.workspace.EveServer)
+		serverRef = strings.TrimSpace(pc.userScope.EveServer)
 	}
 	server, err := s.resolveEveServerConfig(ctx, pc, serverRef)
 	if err != nil {
@@ -184,14 +184,14 @@ func (s *Service) ImportWorkspaceEveLab(ctx context.Context, id string, req *Wor
 	if err != nil {
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode deployment config").Err()
 	}
-	return s.CreateWorkspaceDeployment(ctx, id, &WorkspaceDeploymentCreateRequest{
+	return s.CreateUserScopeDeployment(ctx, id, &UserScopeDeploymentCreateRequest{
 		Name:   name,
 		Type:   "eve_ng",
 		Config: cfg,
 	})
 }
 
-type WorkspaceEveConvertRequest struct {
+type UserScopeEveConvertRequest struct {
 	Server             string `json:"server,omitempty"`
 	LabPath            string `json:"labPath"`
 	OutputDir          string `json:"outputDir,omitempty"`
@@ -200,17 +200,17 @@ type WorkspaceEveConvertRequest struct {
 	ContainerlabServer string `json:"containerlabServer,omitempty"`
 }
 
-type WorkspaceEveConvertResponse struct {
-	WorkspaceID string               `json:"userId"`
+type UserScopeEveConvertResponse struct {
+	UserScopeID string               `json:"userId"`
 	Path        string               `json:"path"`
-	Deployment  *WorkspaceDeployment `json:"deployment,omitempty"`
+	Deployment  *UserScopeDeployment `json:"deployment,omitempty"`
 	Warnings    []string             `json:"warnings,omitempty"`
 }
 
-// ConvertWorkspaceEveLab exports an EVE-NG lab into a Containerlab template.
+// ConvertUserScopeEveLab exports an EVE-NG lab into a Containerlab template.
 //
 //encore:api auth method=POST path=/api/users/:id/eve/convert
-func (s *Service) ConvertWorkspaceEveLab(ctx context.Context, id string, req *WorkspaceEveConvertRequest) (*WorkspaceEveConvertResponse, error) {
+func (s *Service) ConvertUserScopeEveLab(ctx context.Context, id string, req *UserScopeEveConvertRequest) (*UserScopeEveConvertResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -231,7 +231,7 @@ func (s *Service) ConvertWorkspaceEveLab(ctx context.Context, id string, req *Wo
 	}
 	serverRef := strings.TrimSpace(req.Server)
 	if serverRef == "" {
-		serverRef = strings.TrimSpace(pc.workspace.EveServer)
+		serverRef = strings.TrimSpace(pc.userScope.EveServer)
 	}
 	server, err := s.resolveEveServerConfig(ctx, pc, serverRef)
 	if err != nil {
@@ -298,12 +298,12 @@ func (s *Service) ConvertWorkspaceEveLab(ctx context.Context, id string, req *Wo
 		return nil, errs.B().Code(errs.Internal).Msg("failed to encode containerlab yaml").Err()
 	}
 
-	if err := ensureGiteaFile(s.cfg, pc.workspace.GiteaOwner, pc.workspace.GiteaRepo, fullPath, string(payload), fmt.Sprintf("import eve-ng %s", labName), pc.workspace.DefaultBranch, pc.claims); err != nil {
+	if err := ensureGiteaFile(s.cfg, pc.userScope.GiteaOwner, pc.userScope.GiteaRepo, fullPath, string(payload), fmt.Sprintf("import eve-ng %s", labName), pc.userScope.DefaultBranch, pc.claims); err != nil {
 		return nil, errs.B().Code(errs.Internal).Msg("failed to write containerlab template").Err()
 	}
 
-	resp := &WorkspaceEveConvertResponse{
-		WorkspaceID: pc.workspace.ID,
+	resp := &UserScopeEveConvertResponse{
+		UserScopeID: pc.userScope.ID,
 		Path:        fullPath,
 		Warnings:    warnings,
 	}
@@ -319,14 +319,14 @@ func (s *Service) ConvertWorkspaceEveLab(ctx context.Context, id string, req *Wo
 		}
 		depCfg, err := toJSONMap(map[string]any{
 			"netlabServer":   containerlabServer,
-			"templateSource": "workspace",
+			"templateSource": "user",
 			"templatesDir":   outputDir,
 			"template":       outputFile,
 		})
 		if err != nil {
 			return nil, errs.B().Code(errs.Internal).Msg("failed to encode deployment config").Err()
 		}
-		dep, err := s.CreateWorkspaceDeployment(ctx, id, &WorkspaceDeploymentCreateRequest{
+		dep, err := s.CreateUserScopeDeployment(ctx, id, &UserScopeDeploymentCreateRequest{
 			Name:   depName,
 			Type:   "containerlab",
 			Config: depCfg,

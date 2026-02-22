@@ -250,13 +250,13 @@ func stripANSICodes(value string) string {
 	return b.String()
 }
 
-func (s *Service) forwardConfigForWorkspace(ctx context.Context, workspaceID string) (*forwardCredentials, error) {
+func (s *Service) forwardConfigForWorkspace(ctx context.Context, userScopeID string) (*forwardCredentials, error) {
 	if s.db == nil {
 		return nil, fmt.Errorf("database unavailable")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	rec, err := getWorkspaceForwardCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), workspaceID)
+	rec, err := getWorkspaceForwardCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), userScopeID)
 	if err != nil {
 		return nil, err
 	}
@@ -385,7 +385,7 @@ WHERE username=$1 AND id=$2`, username, collectorConfigID).Scan(
 	}, nil
 }
 
-func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *userContext, dep *WorkspaceDeployment) (map[string]any, error) {
+func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *userContext, dep *UserScopeDeployment) (map[string]any, error) {
 	cfgAny, _ := fromJSONMap(dep.Config)
 	if cfgAny == nil {
 		cfgAny = map[string]any{}
@@ -465,7 +465,7 @@ func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *use
 	deviceUsername := strings.TrimSpace(forwardCfg.DeviceUsername)
 	devicePassword := strings.TrimSpace(forwardCfg.DevicePassword)
 	// For Netlab deployments, we prefer per-device credentials (created during sync based on the
-	// discovered device types) over a single default credential. Keep the legacy default credential
+	// discovered device types) over a single default credential. Keep the prior default credential
 	// behavior for other deployment types.
 	if cliCredentialID == "" && deviceUsername != "" && devicePassword != "" && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(dep.Type)), "netlab") {
 		cred, err := forwardCreateCliCredentialNamed(ctx, client, networkID, credentialName, deviceUsername, devicePassword)
@@ -530,7 +530,7 @@ func (s *Service) ensureForwardNetworkForDeployment(ctx context.Context, pc *use
 	}
 
 	if changed {
-		if err := s.updateDeploymentConfig(ctx, pc.workspace.ID, dep.ID, cfgAny); err != nil {
+		if err := s.updateDeploymentConfig(ctx, pc.userScope.ID, dep.ID, cfgAny); err != nil {
 			return cfgAny, err
 		}
 	}
@@ -596,7 +596,7 @@ func isForwardJumpServerMissing(err error) bool {
 	return strings.Contains(msg, "jump server") && strings.Contains(msg, "not found")
 }
 
-func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *userContext, dep *WorkspaceDeployment, logText string) (int, error) {
+func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *userContext, dep *UserScopeDeployment, logText string) (int, error) {
 	cfgAny, _ := fromJSONMap(dep.Config)
 	if cfgAny == nil {
 		cfgAny = map[string]any{}
@@ -608,7 +608,7 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *
 
 	forwardCfg, err := s.forwardConfigForUser(ctx, pc.claims.Username)
 	if err != nil || forwardCfg == nil {
-		// Workspace isn't configured for Forward; treat as a best-effort no-op.
+		// User scope isn't configured for Forward; treat as a best-effort no-op.
 		if s != nil && s.db != nil && taskID > 0 {
 			_ = appendTaskEvent(context.Background(), s.db, taskID, "forward.devices.upload.skipped", map[string]any{
 				"source": "netlab",
@@ -740,7 +740,7 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *
 		if cliCredentialID == "" && !ok && defaultCliCredentialID == "" {
 			return 0, fmt.Errorf("netlab device %q (raw=%q image=%q) has no credential mapping", deviceKey, row.Device, row.Image)
 		}
-		// Prefer per-device credentials over the legacy default credential.
+		// Prefer per-device credentials over the default credential.
 		if cliCredentialID == "" && strings.TrimSpace(cred.Username) != "" && strings.TrimSpace(cred.Password) != "" {
 			created, err := forwardCreateCliCredentialNamed(ctx, client, networkID, credentialNameForDevice(deviceKey), cred.Username, cred.Password)
 			if err != nil {
@@ -903,7 +903,7 @@ func (s *Service) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *
 	}
 	if changed {
 		cfgAny[forwardCliCredentialMap] = credentialIDsByDevice
-		if err := s.updateDeploymentConfig(ctx, pc.workspace.ID, dep.ID, cfgAny); err != nil {
+		if err := s.updateDeploymentConfig(ctx, pc.userScope.ID, dep.ID, cfgAny); err != nil {
 			return 0, err
 		}
 	}
@@ -938,7 +938,7 @@ func applyForwardOverrides(base *forwardCredentials, override *forwardCredential
 	return base
 }
 
-func (s *Service) updateDeploymentConfig(ctx context.Context, workspaceID, deploymentID string, cfgAny map[string]any) error {
+func (s *Service) updateDeploymentConfig(ctx context.Context, userScopeID, deploymentID string, cfgAny map[string]any) error {
 	if s.db == nil {
 		return fmt.Errorf("database unavailable")
 	}
@@ -952,6 +952,6 @@ func (s *Service) updateDeploymentConfig(ctx context.Context, workspaceID, deplo
 	_, err = s.db.ExecContext(ctx, `UPDATE sf_deployments SET
   config=$1,
   updated_at=now()
-WHERE user_id=$2 AND id=$3`, cfgBytes, workspaceID, deploymentID)
+WHERE user_id=$2 AND id=$3`, cfgBytes, userScopeID, deploymentID)
 	return err
 }

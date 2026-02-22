@@ -165,7 +165,7 @@ type CloudGCPValidateRequest struct {
 	ServiceAccountJSON string `json:"serviceAccountJson"`
 }
 
-// ValidateGCPServiceAccount verifies GCP service account JSON by minting a token.
+// ValidateGCPServiceAccount verifies GCP service identity JSON by minting a token.
 //
 //encore:api auth method=POST path=/api/cloud/gcp/validate
 func (s *Service) ValidateGCPServiceAccount(ctx context.Context, req *CloudGCPValidateRequest) (*CloudValidateStatusResponse, error) {
@@ -178,7 +178,7 @@ func (s *Service) ValidateGCPServiceAccount(ctx context.Context, req *CloudGCPVa
 	}
 	payload, err := parseGCPServiceAccountJSON(req.ServiceAccountJSON)
 	if err != nil {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid service account json").Err()
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid service identity json").Err()
 	}
 	assertion, err := buildGCPJWTAssertion(payload)
 	if err != nil {
@@ -220,7 +220,7 @@ type CloudGCPProjectsResponse struct {
 	Projects []GCPProject `json:"projects"`
 }
 
-// ListGCPProjects returns accessible projects for the provided service account.
+// ListGCPProjects returns accessible projects for the provided service identity.
 //
 //encore:api auth method=POST path=/api/cloud/gcp/projects
 func (s *Service) ListGCPProjects(ctx context.Context, req *CloudGCPValidateRequest) (*CloudGCPProjectsResponse, error) {
@@ -233,7 +233,7 @@ func (s *Service) ListGCPProjects(ctx context.Context, req *CloudGCPValidateRequ
 	}
 	payload, err := parseGCPServiceAccountJSON(req.ServiceAccountJSON)
 	if err != nil {
-		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid service account json").Err()
+		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid service identity json").Err()
 	}
 	token, err := fetchGCPAccessToken(ctx, payload)
 	if err != nil {
@@ -243,12 +243,12 @@ func (s *Service) ListGCPProjects(ctx context.Context, req *CloudGCPValidateRequ
 	defer cancel()
 	reqHTTP, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://cloudresourcemanager.googleapis.com/v1/projects", nil)
 	if err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("gcp project list failed").Err()
+		return nil, errs.B().Code(errs.Unavailable).Msg("gcp resource list failed").Err()
 	}
 	reqHTTP.Header.Set("Authorization", "Bearer "+token)
 	resp, err := http.DefaultClient.Do(reqHTTP)
 	if err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("gcp project list failed").Err()
+		return nil, errs.B().Code(errs.Unavailable).Msg("gcp resource list failed").Err()
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -260,13 +260,13 @@ func (s *Service) ListGCPProjects(ctx context.Context, req *CloudGCPValidateRequ
 			}
 			return nil, errs.B().Code(errs.Unauthenticated).Msg("gcp credentials rejected").Err()
 		}
-		return nil, errs.B().Code(errs.Unavailable).Msg("gcp project list failed").Err()
+		return nil, errs.B().Code(errs.Unavailable).Msg("gcp resource list failed").Err()
 	}
 	var payloadResp struct {
 		Projects []GCPProject `json:"projects"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payloadResp); err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("gcp project list failed").Err()
+		return nil, errs.B().Code(errs.Unavailable).Msg("gcp resource list failed").Err()
 	}
 	return &CloudGCPProjectsResponse{Projects: payloadResp.Projects}, nil
 }

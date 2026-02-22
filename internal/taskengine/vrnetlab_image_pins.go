@@ -3,7 +3,7 @@ package taskengine
 import "strings"
 
 // vrnetlabPinnedImages provides a last-resort rewrite map for vrnetlab images that
-// are known to have multiple tags in circulation, where the unpinned/legacy tag is
+// are known to have multiple tags in circulation, where the unpinned tag is
 // likely to break Skyforge connectivity checks (most commonly, SSH readiness).
 //
 // NOTE: This is intentionally small and only covers images we *must* pin for

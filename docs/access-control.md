@@ -8,20 +8,20 @@ This document captures the Skyforge access-control conventions for Skyforge’s 
 - The portal may send `X-Current-Role` for UI role switching; it must not use Bearer tokens for Skyforge.
 - Server code should use `requireAuthUser()` and derive `SessionClaims` from the authenticated user.
 
-## Workspace-scoped endpoints
+## User-scope Endpoints
 
-Skyforge uses a single workspace identity:
+Skyforge uses a single user scope identity:
 
-1) **Skyforge workspace key** (string): slug/ID used in routes like `/api/users/:id/...`
+1) **Skyforge user scope key** (string): slug/ID used in routes like `/api/users/:id/...`
 
-### A) Skyforge workspace key endpoints (preferred)
+### A) Skyforge user scope key endpoints (preferred)
 
-If an endpoint is routed by Skyforge workspace key (slug/ID), use:
+If an endpoint is routed by Skyforge user scope key (slug/ID), use:
 - `s.userContextForUser(user, workspaceKey)`
 
 This enforces:
 - authentication required
-- workspace exists
+- user scope exists
 - membership/role access is not `"none"`
 
 ## Impersonation

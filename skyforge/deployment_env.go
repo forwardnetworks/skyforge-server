@@ -17,7 +17,7 @@ import (
 
 var envKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-func (s *Service) mergeDeploymentEnvironment(ctx context.Context, workspaceID, username string, cfgAny map[string]any) (map[string]string, error) {
+func (s *Service) mergeDeploymentEnvironment(ctx context.Context, userScopeID, username string, cfgAny map[string]any) (map[string]string, error) {
 	if s.db == nil {
 		return map[string]string{}, nil
 	}
@@ -29,7 +29,7 @@ func (s *Service) mergeDeploymentEnvironment(ctx context.Context, workspaceID, u
 		if scope == "user" {
 			groupEnv, err = loadUserVariableGroupsByID(ctx, s.db, username, groupIDs)
 		} else {
-			groupEnv, err = loadWorkspaceVariableGroupsByID(ctx, s.db, workspaceID, groupIDs)
+			groupEnv, err = loadWorkspaceVariableGroupsByID(ctx, s.db, userScopeID, groupIDs)
 		}
 		if err != nil {
 			return nil, err
@@ -55,7 +55,7 @@ func parseEnvGroupScope(raw any) string {
 			return "user"
 		}
 	}
-	return "workspace"
+	return "user"
 }
 
 func parseEnvGroupIDs(raw any) []int {
@@ -128,18 +128,18 @@ func normalizeEnvOverrideKey(key string) string {
 	return key
 }
 
-func loadWorkspaceVariableGroupsByID(ctx context.Context, db *sql.DB, workspaceID string, groupIDs []int) (map[string]string, error) {
+func loadWorkspaceVariableGroupsByID(ctx context.Context, db *sql.DB, userScopeID string, groupIDs []int) (map[string]string, error) {
 	if len(groupIDs) == 0 {
 		return map[string]string{}, nil
 	}
 	placeholders := make([]string, 0, len(groupIDs))
 	args := make([]any, 0, len(groupIDs)+1)
-	args = append(args, workspaceID)
+	args = append(args, userScopeID)
 	for i, id := range groupIDs {
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i+2))
 		args = append(args, id)
 	}
-	query := fmt.Sprintf(`SELECT id, variables FROM sf_workspace_variable_groups WHERE user_id=$1 AND id IN (%s)`, strings.Join(placeholders, ","))
+	query := fmt.Sprintf(`SELECT id, variables FROM sf_user_scope_variable_groups WHERE user_id=$1 AND id IN (%s)`, strings.Join(placeholders, ","))
 
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()

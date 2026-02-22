@@ -23,7 +23,7 @@ type UpdateUserGitCredentialsRequest struct {
 
 // GetUserGitCredentials returns the current user's deploy key (public) and HTTPS token status.
 //
-//encore:api auth method=GET path=/api/user/git-credentials
+//encore:api auth method=GET path=/api/me/git-credentials
 func (s *Service) GetUserGitCredentials(ctx context.Context) (*UserGitCredentialsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -47,7 +47,7 @@ func (s *Service) GetUserGitCredentials(ctx context.Context) (*UserGitCredential
 
 // UpdateUserGitCredentials sets (or clears) the user's HTTPS git token.
 //
-//encore:api auth method=PUT path=/api/user/git-credentials
+//encore:api auth method=PUT path=/api/me/git-credentials
 func (s *Service) UpdateUserGitCredentials(ctx context.Context, req *UpdateUserGitCredentialsRequest) (*UserGitCredentialsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -84,7 +84,7 @@ func (s *Service) UpdateUserGitCredentials(ctx context.Context, req *UpdateUserG
 
 // RotateUserGitDeployKey rotates the user's SSH deploy key.
 //
-//encore:api auth method=POST path=/api/user/git-credentials/rotate
+//encore:api auth method=POST path=/api/me/git-credentials/rotate
 func (s *Service) RotateUserGitDeployKey(ctx context.Context) (*UserGitCredentialsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {

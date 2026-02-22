@@ -24,14 +24,14 @@ type userBootstrapTaskSpec struct {
 }
 
 func ensureLabCatalogRepos(cfg skyforgecore.Config) error {
-	owner := strings.TrimSpace(cfg.Workspaces.GiteaUsername)
+	owner := strings.TrimSpace(cfg.UserScopes.GiteaUsername)
 	if owner == "" {
 		return fmt.Errorf("gitea username not configured")
 	}
-	if err := ensureGiteaRepo(cfg, owner, netlabCatalogRepo, cfg.Workspaces.GiteaRepoPrivate); err != nil {
+	if err := ensureGiteaRepo(cfg, owner, netlabCatalogRepo, cfg.UserScopes.GiteaRepoPrivate); err != nil {
 		return err
 	}
-	if err := ensureGiteaRepo(cfg, owner, cloudCatalogRepo, cfg.Workspaces.GiteaRepoPrivate); err != nil {
+	if err := ensureGiteaRepo(cfg, owner, cloudCatalogRepo, cfg.UserScopes.GiteaRepoPrivate); err != nil {
 		return err
 	}
 	return nil
@@ -90,14 +90,14 @@ func (e *Engine) dispatchWorkspaceBootstrapTask(ctx context.Context, task *tasks
 	if log == nil {
 		log = noopLogger{}
 	}
-	ws, err := e.loadWorkspaceByKey(ctx, task.WorkspaceID)
+	ws, err := e.loadUserScopeByKey(ctx, task.UserScopeID)
 	if err != nil {
 		return err
 	}
 	owner := strings.TrimSpace(ws.GiteaOwner)
 	repo := strings.TrimSpace(ws.GiteaRepo)
 	if owner == "" || repo == "" {
-		return fmt.Errorf("gitea owner/repo not configured for workspace")
+		return fmt.Errorf("gitea owner/repo not configured for user scope")
 	}
 
 	branch := strings.TrimSpace(ws.DefaultBranch)
@@ -109,7 +109,7 @@ func (e *Engine) dispatchWorkspaceBootstrapTask(ctx context.Context, task *tasks
 	if stateKey == "" {
 		stateKey = fmt.Sprintf("tf-%s/primary.tfstate", strings.TrimSpace(ws.Slug))
 	}
-	storageEndpoint := strings.TrimSpace(e.cfg.Workspaces.ObjectStorageEndpoint)
+	storageEndpoint := strings.TrimSpace(e.cfg.UserScopes.ObjectStorageEndpoint)
 	if storageEndpoint == "" {
 		storageEndpoint = "minio:9000"
 	}
@@ -145,7 +145,7 @@ func (e *Engine) dispatchWorkspaceBootstrapTask(ctx context.Context, task *tasks
         msg: "Replace playbook.yml with your Ansible automation."
 `
 
-	if err := taskdispatch.WithTaskStep(ctx, e.db, task.ID, "workspace.seed_repo", func() error {
+	if err := taskdispatch.WithTaskStep(ctx, e.db, task.ID, "user_scope.seed_repo", func() error {
 		if err := ensureGiteaFile(e.cfg, owner, repo, "backend.tf", backendTF, "chore: configure terraform backend", branch, nil); err != nil {
 			return err
 		}
@@ -164,7 +164,7 @@ func (e *Engine) dispatchWorkspaceBootstrapTask(ctx context.Context, task *tasks
 	if blueprint == "" {
 		blueprint = defaultBlueprintCatalog
 	}
-	if err := taskdispatch.WithTaskStep(ctx, e.db, task.ID, "workspace.sync_blueprints", func() error {
+	if err := taskdispatch.WithTaskStep(ctx, e.db, task.ID, "user_scope.sync_blueprints", func() error {
 		if err := ensureBlueprintCatalogRepo(e.cfg, blueprint); err != nil {
 			return err
 		}
@@ -185,6 +185,6 @@ func (e *Engine) dispatchWorkspaceBootstrapTask(ctx context.Context, task *tasks
 		return err
 	}
 
-	log.Infof("Workspace bootstrap completed for %s/%s", owner, repo)
+	log.Infof("User-scope bootstrap completed for %s/%s", owner, repo)
 	return nil
 }

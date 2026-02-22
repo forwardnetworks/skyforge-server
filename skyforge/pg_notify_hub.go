@@ -23,7 +23,7 @@ const (
 	pgNotifyWebhooksChannel      = "skyforge_webhook_updates"
 	pgNotifySyslogChannel        = "skyforge_syslog_updates"
 	pgNotifySnmpChannel          = "skyforge_snmp_updates"
-	pgNotifyWorkspacesChannel    = "skyforge_workspaces_updates"
+	pgNotifyUserScopesChannel    = "skyforge_user_scopes_updates"
 	pgNotifyDeploymentEventsChan = "skyforge_deployment_events"
 )
 
@@ -194,7 +194,7 @@ func (h *pgNotifyHub) listenOnPGX(ctx context.Context, conn *pgx.Conn) error {
 	if _, err := conn.Exec(ctx, "LISTEN "+pgNotifySnmpChannel); err != nil {
 		return err
 	}
-	if _, err := conn.Exec(ctx, "LISTEN "+pgNotifyWorkspacesChannel); err != nil {
+	if _, err := conn.Exec(ctx, "LISTEN "+pgNotifyUserScopesChannel); err != nil {
 		return err
 	}
 	if _, err := conn.Exec(ctx, "LISTEN "+pgNotifyDeploymentEventsChan); err != nil {
@@ -287,19 +287,19 @@ func notifyWorkspacesUpdatePG(ctx context.Context, db *sql.DB, payload string) e
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
-	_, err := db.ExecContext(ctxReq, "SELECT pg_notify($1, $2)", pgNotifyWorkspacesChannel, payload)
+	_, err := db.ExecContext(ctxReq, "SELECT pg_notify($1, $2)", pgNotifyUserScopesChannel, payload)
 	return err
 }
 
-func notifyDeploymentEventPG(ctx context.Context, db *sql.DB, workspaceID, deploymentID string) error {
-	workspaceID = strings.TrimSpace(workspaceID)
+func notifyDeploymentEventPG(ctx context.Context, db *sql.DB, userScopeID, deploymentID string) error {
+	userScopeID = strings.TrimSpace(userScopeID)
 	deploymentID = strings.TrimSpace(deploymentID)
-	if db == nil || workspaceID == "" || deploymentID == "" {
+	if db == nil || userScopeID == "" || deploymentID == "" {
 		return nil
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
-	payload := workspaceID + ":" + deploymentID
+	payload := userScopeID + ":" + deploymentID
 	_, err := db.ExecContext(ctxReq, "SELECT pg_notify($1, $2)", pgNotifyDeploymentEventsChan, payload)
 	return err
 }
@@ -461,7 +461,7 @@ func waitForWorkspacesUpdateSignal(ctx context.Context, db *sql.DB, username str
 			if !ok {
 				return false
 			}
-			if n.Channel != pgNotifyWorkspacesChannel {
+			if n.Channel != pgNotifyUserScopesChannel {
 				continue
 			}
 			payload := strings.ToLower(strings.TrimSpace(n.Payload))
@@ -472,13 +472,13 @@ func waitForWorkspacesUpdateSignal(ctx context.Context, db *sql.DB, username str
 	}
 }
 
-func waitForDeploymentEventSignal(ctx context.Context, db *sql.DB, workspaceID, deploymentID string) bool {
-	workspaceID = strings.TrimSpace(workspaceID)
+func waitForDeploymentEventSignal(ctx context.Context, db *sql.DB, userScopeID, deploymentID string) bool {
+	userScopeID = strings.TrimSpace(userScopeID)
 	deploymentID = strings.TrimSpace(deploymentID)
-	if workspaceID == "" || deploymentID == "" {
+	if userScopeID == "" || deploymentID == "" {
 		return false
 	}
-	payloadWant := workspaceID + ":" + deploymentID
+	payloadWant := userScopeID + ":" + deploymentID
 	hub := ensurePGNotifyHub(db)
 	ch := hub.subscribe(ctx)
 	for {

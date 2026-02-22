@@ -105,7 +105,7 @@ func injectNetlabC9sVrnetlabStartupConfig(
 			continue
 		}
 		if isVrnetlabIOSFamily(kind, image) {
-			// Native hard-cut: do not mutate legacy image tags here.
+			// Native hard-cut: do not mutate old image tags here.
 			// Only ensure startup-config is not injected for IOS-family vrnetlab nodes.
 			if _, ok := cfg["startup-config"]; ok {
 				delete(cfg, "startup-config")

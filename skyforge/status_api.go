@@ -26,7 +26,7 @@ type StatusSummaryResponse struct {
 	Down      int                   `json:"down"`
 	Checks    []StatusCheckResponse `json:"checks,omitempty"`
 
-	WorkspacesTotal   int `json:"workspacesTotal,omitempty"`
+	UserScopesTotal   int `json:"userScopesTotal,omitempty"`
 	DeploymentsTotal  int `json:"deploymentsTotal,omitempty"`
 	DeploymentsActive int `json:"deploymentsActive,omitempty"`
 }
@@ -41,12 +41,12 @@ func tcpDialCheck(ctx context.Context, addr string, timeout time.Duration) error
 	return nil
 }
 
-func countWorkspaces(ctx context.Context, db *sql.DB) (int, error) {
+func countUserScopes(ctx context.Context, db *sql.DB) (int, error) {
 	if db == nil {
 		return 0, nil
 	}
 	var count int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sf_workspaces`).Scan(&count); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sf_user_scopes`).Scan(&count); err != nil {
 		return 0, err
 	}
 	return count, nil
@@ -93,7 +93,7 @@ SELECT
 
 // StatusSummary returns a public, safe platform status summary.
 //
-// This is designed for an unauthenticated landing page and must not leak user/workspace identifiers.
+// This is designed for an unauthenticated landing page and must not leak user/user-scope identifiers.
 //
 //encore:api public method=GET path=/status/summary
 func (s *Service) StatusSummary(ctx context.Context) (*StatusSummaryResponse, error) {
@@ -239,8 +239,8 @@ func (s *Service) StatusSummary(ctx context.Context) (*StatusSummaryResponse, er
 		resp.Status = "degraded"
 	}
 
-	if total, err := countWorkspaces(ctx, s.db); err == nil {
-		resp.WorkspacesTotal = total
+	if total, err := countUserScopes(ctx, s.db); err == nil {
+		resp.UserScopesTotal = total
 	}
 	if total, active, err := countDeployments(ctx, s.db); err == nil {
 		resp.DeploymentsTotal = total

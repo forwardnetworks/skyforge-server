@@ -37,7 +37,7 @@ func (e *Engine) DispatchTask(ctx context.Context, task *taskstore.TaskRecord, l
 	switch {
 	case typ == skyforgecore.TaskTypeUserBootstrap:
 		return true, e.dispatchUserBootstrapTask(ctx, task, taskLogAdapter(log))
-	case typ == skyforgecore.TaskTypeWorkspaceBootstrap:
+	case typ == skyforgecore.TaskTypeUserScopeBootstrap:
 		return true, e.dispatchWorkspaceBootstrapTask(ctx, task, taskLogAdapter(log))
 	case typ == skyforgecore.TaskTypeNetlabRun:
 		return true, e.dispatchNetlabTask(ctx, task, log)

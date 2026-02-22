@@ -198,4 +198,3 @@ func sshPasswordAuthReady(ctx context.Context, host, username, password string) 
 	_, _, _, err = ssh.NewClientConn(conn, addr, cfg)
 	return err == nil
 }
-

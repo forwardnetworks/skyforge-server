@@ -25,16 +25,16 @@ type containerlabDeployRequest struct {
 	TopologySource  string         `json:"topologySourceUrl,omitempty"`
 }
 
-func containerlabLabName(workspaceSlug, deploymentName string) string {
-	workspaceSlug = strings.TrimSpace(workspaceSlug)
+func containerlabLabName(userScopeSlug, deploymentName string) string {
+	userScopeSlug = strings.TrimSpace(userScopeSlug)
 	deploymentName = strings.TrimSpace(deploymentName)
-	if workspaceSlug == "" {
+	if userScopeSlug == "" {
 		return deploymentName
 	}
 	if deploymentName == "" {
-		return workspaceSlug
+		return userScopeSlug
 	}
-	return fmt.Sprintf("%s-%s", workspaceSlug, deploymentName)
+	return fmt.Sprintf("%s-%s", userScopeSlug, deploymentName)
 }
 
 func containerlabTokenForUser(cfg skyforgecore.Config, username string) (string, error) {

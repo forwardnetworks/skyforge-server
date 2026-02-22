@@ -17,8 +17,8 @@ func objectStoreClientFor(cfg Config) (*objectstore.Client, error) {
 	objectStoreMu.Lock()
 	defer objectStoreMu.Unlock()
 
-	key := cfg.Workspaces.ObjectStorageEndpoint + "|" + cfg.Workspaces.ObjectStorageAccessKey + "|" + cfg.Workspaces.ObjectStorageSecretKey
-	if cfg.Workspaces.ObjectStorageUseSSL {
+	key := cfg.UserScopes.ObjectStorageEndpoint + "|" + cfg.UserScopes.ObjectStorageAccessKey + "|" + cfg.UserScopes.ObjectStorageSecretKey
+	if cfg.UserScopes.ObjectStorageUseSSL {
 		key += "|ssl"
 	} else {
 		key += "|plain"
@@ -27,10 +27,10 @@ func objectStoreClientFor(cfg Config) (*objectstore.Client, error) {
 		return objectStoreClient, nil
 	}
 	client, err := objectstore.New(objectstore.Config{
-		Endpoint:  cfg.Workspaces.ObjectStorageEndpoint,
-		UseSSL:    cfg.Workspaces.ObjectStorageUseSSL,
-		AccessKey: cfg.Workspaces.ObjectStorageAccessKey,
-		SecretKey: cfg.Workspaces.ObjectStorageSecretKey,
+		Endpoint:  cfg.UserScopes.ObjectStorageEndpoint,
+		UseSSL:    cfg.UserScopes.ObjectStorageUseSSL,
+		AccessKey: cfg.UserScopes.ObjectStorageAccessKey,
+		SecretKey: cfg.UserScopes.ObjectStorageSecretKey,
 	})
 	if err != nil {
 		return nil, err

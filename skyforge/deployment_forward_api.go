@@ -17,7 +17,7 @@ type DeploymentForwardConfigRequest struct {
 }
 
 type DeploymentForwardConfigResponse struct {
-	WorkspaceID        string `json:"userId"`
+	UserScopeID        string `json:"userId"`
 	DeploymentID       string `json:"deploymentId"`
 	Enabled            bool   `json:"enabled"`
 	CollectorConfigID  string `json:"collectorConfigId,omitempty"`
@@ -48,7 +48,7 @@ func (s *Service) UpdateWorkspaceDeploymentForwardConfig(ctx context.Context, id
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid payload").Err()
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+	dep, err := s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +64,7 @@ func (s *Service) UpdateWorkspaceDeploymentForwardConfig(ctx context.Context, id
 		delete(cfgAny, "forwardCollectorUsername")
 	} else if collectorConfigID != "" {
 		cfgAny["forwardCollectorId"] = collectorConfigID
-		// Keep backwards compat but do not require/force a specific Forward-side collector username here;
+		// Do not require/force a specific Forward-side collector username here;
 		// taskengine uses forwardCollectorId to select the user-managed collector config.
 		delete(cfgAny, "forwardCollectorUsername")
 	} else if collectorUsername != "" {
@@ -83,12 +83,12 @@ func (s *Service) UpdateWorkspaceDeploymentForwardConfig(ctx context.Context, id
 
 	ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	if _, err := s.db.ExecContext(ctxReq, `UPDATE sf_deployments SET config=$1, updated_at=now() WHERE user_id=$2 AND id=$3`, cfgBytes, pc.workspace.ID, dep.ID); err != nil {
+	if _, err := s.db.ExecContext(ctxReq, `UPDATE sf_deployments SET config=$1, updated_at=now() WHERE user_id=$2 AND id=$3`, cfgBytes, pc.userScope.ID, dep.ID); err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to update deployment").Err()
 	}
 
 	resp := &DeploymentForwardConfigResponse{
-		WorkspaceID:       pc.workspace.ID,
+		UserScopeID:       pc.userScope.ID,
 		DeploymentID:      dep.ID,
 		Enabled:           req.Enabled,
 		CollectorConfigID: collectorConfigID,
@@ -101,7 +101,7 @@ func (s *Service) UpdateWorkspaceDeploymentForwardConfig(ctx context.Context, id
 }
 
 type DeploymentForwardSyncResponse struct {
-	WorkspaceID  string  `json:"userId"`
+	UserScopeID  string  `json:"userId"`
 	DeploymentID string  `json:"deploymentId"`
 	Run          JSONMap `json:"run"`
 }
@@ -125,7 +125,7 @@ func (s *Service) SyncWorkspaceDeploymentForward(ctx context.Context, id, deploy
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+	dep, err := s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +144,7 @@ func (s *Service) SyncWorkspaceDeploymentForward(ctx context.Context, id, deploy
 	}
 	meta, _ := toJSONMap(metaAny)
 	msg := fmt.Sprintf("Skyforge Forward sync (%s)", pc.claims.Username)
-	task, err := createTaskAllowActive(ctx, s.db, pc.workspace.ID, &dep.ID, "forward-sync", msg, pc.claims.Username, meta)
+	task, err := createTaskAllowActive(ctx, s.db, pc.userScope.ID, &dep.ID, "forward-sync", msg, pc.claims.Username, meta)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to enqueue forward sync").Err()
 	}
@@ -156,7 +156,7 @@ func (s *Service) SyncWorkspaceDeploymentForward(ctx context.Context, id, deploy
 		}
 	}
 	return &DeploymentForwardSyncResponse{
-		WorkspaceID:  pc.workspace.ID,
+		UserScopeID:  pc.userScope.ID,
 		DeploymentID: dep.ID,
 		Run:          runJSON,
 	}, nil

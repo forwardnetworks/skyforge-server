@@ -11,7 +11,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-type WorkspaceDeploymentNodeDescribeResponse struct {
+type UserScopeDeploymentNodeDescribeResponse struct {
 	Namespace string `json:"namespace,omitempty"`
 	PodName   string `json:"podName,omitempty"`
 	NodeName  string `json:"nodeName,omitempty"`
@@ -22,10 +22,10 @@ type WorkspaceDeploymentNodeDescribeResponse struct {
 	QoS     string `json:"qosClass,omitempty"`
 	Message string `json:"message,omitempty"`
 
-	Containers []WorkspacePodContainer `json:"containers,omitempty"`
+	Containers []UserScopePodContainer `json:"containers,omitempty"`
 }
 
-type WorkspacePodContainer struct {
+type UserScopePodContainer struct {
 	Name         string `json:"name,omitempty"`
 	Image        string `json:"image,omitempty"`
 	Ready        bool   `json:"ready,omitempty"`
@@ -38,7 +38,7 @@ type WorkspacePodContainer struct {
 // GetWorkspaceDeploymentNodeDescribe returns a lightweight summary of the clabernetes node pod.
 //
 //encore:api auth method=GET path=/api/users/:id/deployments/:deploymentID/nodes/:node/describe
-func (s *Service) GetWorkspaceDeploymentNodeDescribe(ctx context.Context, id, deploymentID, node string) (*WorkspaceDeploymentNodeDescribeResponse, error) {
+func (s *Service) GetWorkspaceDeploymentNodeDescribe(ctx context.Context, id, deploymentID, node string) (*UserScopeDeploymentNodeDescribeResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -56,7 +56,7 @@ func (s *Service) GetWorkspaceDeploymentNodeDescribe(ctx context.Context, id, de
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("node is required").Err()
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+	dep, err := s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func (s *Service) GetWorkspaceDeploymentNodeDescribe(ctx context.Context, id, de
 	k8sNamespace = strings.TrimSpace(k8sNamespace)
 	topologyName = strings.TrimSpace(topologyName)
 	if k8sNamespace == "" {
-		k8sNamespace = clabernetesWorkspaceNamespace(pc.workspace.Slug)
+		k8sNamespace = clabernetesUserScopeNamespace(pc.userScope.Slug)
 	}
 	if topologyName == "" {
 		labName, _ := cfgAny["labName"].(string)
@@ -104,7 +104,7 @@ func (s *Service) GetWorkspaceDeploymentNodeDescribe(ctx context.Context, id, de
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load pod").Err()
 	}
 
-	resp := &WorkspaceDeploymentNodeDescribeResponse{
+	resp := &UserScopeDeploymentNodeDescribeResponse{
 		Namespace: k8sNamespace,
 		PodName:   podName,
 		NodeName:  strings.TrimSpace(pod.Spec.NodeName),
@@ -128,7 +128,7 @@ func (s *Service) GetWorkspaceDeploymentNodeDescribe(ctx context.Context, id, de
 		if name == "" {
 			continue
 		}
-		out := WorkspacePodContainer{
+		out := UserScopePodContainer{
 			Name:  name,
 			Image: strings.TrimSpace(c.Image),
 		}

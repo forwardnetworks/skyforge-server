@@ -19,7 +19,7 @@ type DeploymentInventoryNode struct {
 
 type DeploymentInventoryResponse struct {
 	GeneratedAt  string                    `json:"generatedAt"`
-	WorkspaceID  string                    `json:"userId"`
+	UserScopeID  string                    `json:"userId"`
 	DeploymentID string                    `json:"deploymentId"`
 	Format       string                    `json:"format"`
 	Nodes        []DeploymentInventoryNode `json:"nodes,omitempty"`
@@ -46,7 +46,7 @@ func (s *Service) GetWorkspaceDeploymentInventory(ctx context.Context, id, deplo
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+	dep, err := s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,7 @@ func (s *Service) GetWorkspaceDeploymentInventory(ctx context.Context, id, deplo
 
 	resp := &DeploymentInventoryResponse{
 		GeneratedAt:  time.Now().UTC().Format(time.RFC3339),
-		WorkspaceID:  pc.workspace.ID,
+		UserScopeID:  pc.userScope.ID,
 		DeploymentID: deploymentID,
 		Format:       format,
 	}

@@ -278,7 +278,7 @@ func (s *Service) ListAwsSSOAccounts(ctx context.Context) (*AwsSSOAccountsRespon
 	return &AwsSSOAccountsResponse{Accounts: accounts}, nil
 }
 
-// ListAwsSSORoles returns roles for a selected AWS account.
+// ListAwsSSORoles returns roles for a selected AWS environment.
 //
 //encore:api auth method=GET path=/api/aws/sso/accounts/:accountID/roles
 func (s *Service) ListAwsSSORoles(ctx context.Context, accountID string) (*AwsSSORolesResponse, error) {

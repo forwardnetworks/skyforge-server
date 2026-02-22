@@ -21,7 +21,7 @@ type UserAWSStaticCredentialsPutRequest struct {
 
 // GetUserAWSStaticCredentials returns the current user's AWS static credential status.
 //
-//encore:api auth method=GET path=/api/user/cloud/aws-static
+//encore:api auth method=GET path=/api/me/cloud/aws-static
 func (s *Service) GetUserAWSStaticCredentials(ctx context.Context) (*UserAWSStaticCredentialsGetResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -55,7 +55,7 @@ func (s *Service) GetUserAWSStaticCredentials(ctx context.Context) (*UserAWSStat
 
 // PutUserAWSStaticCredentials saves AWS static credentials for the current user.
 //
-//encore:api auth method=PUT path=/api/user/cloud/aws-static
+//encore:api auth method=PUT path=/api/me/cloud/aws-static
 func (s *Service) PutUserAWSStaticCredentials(ctx context.Context, req *UserAWSStaticCredentialsPutRequest) (*UserAWSStaticCredentialsGetResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -77,7 +77,7 @@ func (s *Service) PutUserAWSStaticCredentials(ctx context.Context, req *UserAWSS
 
 // DeleteUserAWSStaticCredentials deletes AWS static credentials for the current user.
 //
-//encore:api auth method=DELETE path=/api/user/cloud/aws-static
+//encore:api auth method=DELETE path=/api/me/cloud/aws-static
 func (s *Service) DeleteUserAWSStaticCredentials(ctx context.Context) error {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -112,7 +112,7 @@ type UserAWSSSOCredentialsPutRequest struct {
 
 // GetUserAWSSSOCredentials returns the current user's AWS SSO configuration (non-token).
 //
-//encore:api auth method=GET path=/api/user/cloud/aws-sso
+//encore:api auth method=GET path=/api/me/cloud/aws-sso
 func (s *Service) GetUserAWSSSOCredentials(ctx context.Context) (*UserAWSSSOCredentialsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -146,7 +146,7 @@ func (s *Service) GetUserAWSSSOCredentials(ctx context.Context) (*UserAWSSSOCred
 
 // PutUserAWSSSOCredentials saves AWS SSO configuration (non-token) for the current user.
 //
-//encore:api auth method=PUT path=/api/user/cloud/aws-sso
+//encore:api auth method=PUT path=/api/me/cloud/aws-sso
 func (s *Service) PutUserAWSSSOCredentials(ctx context.Context, req *UserAWSSSOCredentialsPutRequest) (*UserAWSSSOCredentialsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -174,7 +174,7 @@ func (s *Service) PutUserAWSSSOCredentials(ctx context.Context, req *UserAWSSSOC
 
 // DeleteUserAWSSSOCredentials deletes AWS SSO configuration for the current user.
 //
-//encore:api auth method=DELETE path=/api/user/cloud/aws-sso
+//encore:api auth method=DELETE path=/api/me/cloud/aws-sso
 func (s *Service) DeleteUserAWSSSOCredentials(ctx context.Context) error {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -209,7 +209,7 @@ type UserAzureCredentialsPutRequest struct {
 
 // GetUserAzureCredentials returns the current user's Azure credential status.
 //
-//encore:api auth method=GET path=/api/user/cloud/azure
+//encore:api auth method=GET path=/api/me/cloud/azure
 func (s *Service) GetUserAzureCredentials(ctx context.Context) (*UserAzureCredentialsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -243,7 +243,7 @@ func (s *Service) GetUserAzureCredentials(ctx context.Context) (*UserAzureCreden
 
 // PutUserAzureCredentials saves Azure credentials for the current user.
 //
-//encore:api auth method=PUT path=/api/user/cloud/azure
+//encore:api auth method=PUT path=/api/me/cloud/azure
 func (s *Service) PutUserAzureCredentials(ctx context.Context, req *UserAzureCredentialsPutRequest) (*UserAzureCredentialsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -271,7 +271,7 @@ func (s *Service) PutUserAzureCredentials(ctx context.Context, req *UserAzureCre
 
 // DeleteUserAzureCredentials deletes Azure credentials for the current user.
 //
-//encore:api auth method=DELETE path=/api/user/cloud/azure
+//encore:api auth method=DELETE path=/api/me/cloud/azure
 func (s *Service) DeleteUserAzureCredentials(ctx context.Context) error {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -301,7 +301,7 @@ type UserGCPCredentialsPutRequest struct {
 
 // GetUserGCPCredentials returns the current user's GCP credential status.
 //
-//encore:api auth method=GET path=/api/user/cloud/gcp
+//encore:api auth method=GET path=/api/me/cloud/gcp
 func (s *Service) GetUserGCPCredentials(ctx context.Context) (*UserGCPCredentialsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -329,7 +329,7 @@ func (s *Service) GetUserGCPCredentials(ctx context.Context) (*UserGCPCredential
 
 // PutUserGCPCredentials saves GCP credentials for the current user.
 //
-//encore:api auth method=PUT path=/api/user/cloud/gcp
+//encore:api auth method=PUT path=/api/me/cloud/gcp
 func (s *Service) PutUserGCPCredentials(ctx context.Context, req *UserGCPCredentialsPutRequest) (*UserGCPCredentialsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -351,7 +351,7 @@ func (s *Service) PutUserGCPCredentials(ctx context.Context, req *UserGCPCredent
 
 // DeleteUserGCPCredentials deletes GCP credentials for the current user.
 //
-//encore:api auth method=DELETE path=/api/user/cloud/gcp
+//encore:api auth method=DELETE path=/api/me/cloud/gcp
 func (s *Service) DeleteUserGCPCredentials(ctx context.Context) error {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -384,7 +384,7 @@ type UserIBMCredentialsPutRequest struct {
 
 // GetUserIBMCredentials returns the current user's IBM Cloud credential status.
 //
-//encore:api auth method=GET path=/api/user/cloud/ibm
+//encore:api auth method=GET path=/api/me/cloud/ibm
 func (s *Service) GetUserIBMCredentials(ctx context.Context) (*UserIBMCredentialsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -417,7 +417,7 @@ func (s *Service) GetUserIBMCredentials(ctx context.Context) (*UserIBMCredential
 
 // PutUserIBMCredentials saves IBM Cloud credentials for the current user.
 //
-//encore:api auth method=PUT path=/api/user/cloud/ibm
+//encore:api auth method=PUT path=/api/me/cloud/ibm
 func (s *Service) PutUserIBMCredentials(ctx context.Context, req *UserIBMCredentialsPutRequest) (*UserIBMCredentialsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -444,7 +444,7 @@ func (s *Service) PutUserIBMCredentials(ctx context.Context, req *UserIBMCredent
 
 // DeleteUserIBMCredentials deletes IBM Cloud credentials for the current user.
 //
-//encore:api auth method=DELETE path=/api/user/cloud/ibm
+//encore:api auth method=DELETE path=/api/me/cloud/ibm
 func (s *Service) DeleteUserIBMCredentials(ctx context.Context) error {
 	user, err := requireAuthUser()
 	if err != nil {

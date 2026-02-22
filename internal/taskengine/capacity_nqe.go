@@ -118,16 +118,16 @@ type capacityInventoryEnrichment struct {
 	IfaceVrfsByKey map[string][]string            // key: deviceName:interfaceName (vrf names)
 }
 
-func (e *Engine) refreshCapacityInventoryCache(ctx context.Context, db *sql.DB, client *forwardClient, workspaceID string, deploymentID *string, networkID string, log Logger) (*capacityInventoryEnrichment, error) {
+func (e *Engine) refreshCapacityInventoryCache(ctx context.Context, db *sql.DB, client *forwardClient, userScopeID string, deploymentID *string, networkID string, log Logger) (*capacityInventoryEnrichment, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db unavailable")
 	}
 	if client == nil {
 		return nil, fmt.Errorf("Forward client unavailable")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userScopeID = strings.TrimSpace(userScopeID)
 	networkID = strings.TrimSpace(networkID)
-	if workspaceID == "" || networkID == "" {
+	if userScopeID == "" || networkID == "" {
 		return nil, fmt.Errorf("invalid identifiers")
 	}
 	if deploymentID != nil {
@@ -173,7 +173,7 @@ func (e *Engine) refreshCapacityInventoryCache(ctx context.Context, db *sql.DB, 
 
 		// Store a stable "latest" cache entry (snapshot_id = '') so we don't accumulate rows every run.
 		cachePayload, _ := json.Marshal(resp)
-		if err := upsertCapacityNQECache(ctx, db, workspaceID, deploymentID, networkID, qid, "", cachePayload); err != nil {
+		if err := upsertCapacityNQECache(ctx, db, userScopeID, deploymentID, networkID, qid, "", cachePayload); err != nil {
 			if log != nil {
 				log.Errorf("capacity nqe cache upsert failed (query=%s): %v", qid, err)
 			}
@@ -248,15 +248,15 @@ func (e *Engine) refreshCapacityInventoryCache(ctx context.Context, db *sql.DB, 
 	return enrich, nil
 }
 
-func upsertCapacityNQECache(ctx context.Context, db *sql.DB, workspaceID string, deploymentID *string, networkID, queryID, snapshotID string, payload []byte) error {
+func upsertCapacityNQECache(ctx context.Context, db *sql.DB, userScopeID string, deploymentID *string, networkID, queryID, snapshotID string, payload []byte) error {
 	if db == nil {
 		return fmt.Errorf("db unavailable")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userScopeID = strings.TrimSpace(userScopeID)
 	networkID = strings.TrimSpace(networkID)
 	queryID = strings.TrimSpace(queryID)
 	snapshotID = strings.TrimSpace(snapshotID)
-	if workspaceID == "" || networkID == "" || queryID == "" {
+	if userScopeID == "" || networkID == "" || queryID == "" {
 		return fmt.Errorf("invalid cache key")
 	}
 	if payload == nil {
@@ -280,7 +280,7 @@ DO UPDATE SET
   forward_network_id = EXCLUDED.forward_network_id,
   payload = EXCLUDED.payload,
   created_at = now()`,
-			workspaceID, depVal, networkID, queryID, snapshotID, payload,
+			userScopeID, depVal, networkID, queryID, snapshotID, payload,
 		)
 		return err
 	}
@@ -293,7 +293,7 @@ ON CONFLICT (user_id, forward_network_id, query_id, snapshot_id) WHERE deploymen
 DO UPDATE SET
   payload = EXCLUDED.payload,
   created_at = now()`,
-		workspaceID, networkID, queryID, snapshotID, payload,
+		userScopeID, networkID, queryID, snapshotID, payload,
 	)
 	return err
 }

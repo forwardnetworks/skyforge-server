@@ -28,7 +28,7 @@ type UserVariableGroupUpsertRequest struct {
 
 // ListUserVariableGroups lists variable groups for the current user.
 //
-//encore:api auth method=GET path=/api/user/variable-groups
+//encore:api auth method=GET path=/api/me/variable-groups
 func (s *Service) ListUserVariableGroups(ctx context.Context) (*UserVariableGroupListResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -73,7 +73,7 @@ func (s *Service) ListUserVariableGroups(ctx context.Context) (*UserVariableGrou
 
 // CreateUserVariableGroup creates a variable group for the current user.
 //
-//encore:api auth method=POST path=/api/user/variable-groups
+//encore:api auth method=POST path=/api/me/variable-groups
 func (s *Service) CreateUserVariableGroup(ctx context.Context, req *UserVariableGroupUpsertRequest) (*UserVariableGroup, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -110,7 +110,7 @@ RETURNING id`, user.Username, strings.TrimSpace(req.Name), payload).Scan(&groupI
 
 // UpdateUserVariableGroup updates a variable group for the current user.
 //
-//encore:api auth method=PUT path=/api/user/variable-groups/:groupID
+//encore:api auth method=PUT path=/api/me/variable-groups/:groupID
 func (s *Service) UpdateUserVariableGroup(ctx context.Context, groupID int, req *UserVariableGroupUpsertRequest) (*UserVariableGroup, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -144,7 +144,7 @@ func (s *Service) UpdateUserVariableGroup(ctx context.Context, groupID int, req 
 
 // DeleteUserVariableGroup deletes a variable group for the current user.
 //
-//encore:api auth method=DELETE path=/api/user/variable-groups/:groupID
+//encore:api auth method=DELETE path=/api/me/variable-groups/:groupID
 func (s *Service) DeleteUserVariableGroup(ctx context.Context, groupID int) (*UserVariableGroupListResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {

@@ -52,4 +52,3 @@ func kubeGetServiceClusterIP(ctx context.Context, ns, name string) (ip string, f
 	}
 	return ip, true, nil
 }
-

@@ -81,13 +81,13 @@ func init() {
 				})
 				return err
 			},
-			UpdateDeploymentStatus: func(ctx context.Context, workspaceID string, deploymentID string, status string, finishedAt time.Time) error {
-				return taskstore.UpdateDeploymentStatus(ctx, stdlib, workspaceID, deploymentID, status, &finishedAt)
+			UpdateDeploymentStatus: func(ctx context.Context, userScopeID string, deploymentID string, status string, finishedAt time.Time) error {
+				return taskstore.UpdateDeploymentStatus(ctx, stdlib, userScopeID, deploymentID, status, &finishedAt)
 			},
-			EnqueueNextDeploymentTask: func(ctx context.Context, nextTaskID int, workspaceID string, deploymentID string) {
-				key := strings.TrimSpace(workspaceID)
+			EnqueueNextDeploymentTask: func(ctx context.Context, nextTaskID int, userScopeID string, deploymentID string) {
+				key := strings.TrimSpace(userScopeID)
 				if strings.TrimSpace(deploymentID) != "" {
-					key = fmt.Sprintf("%s:%s", strings.TrimSpace(workspaceID), strings.TrimSpace(deploymentID))
+					key = fmt.Sprintf("%s:%s", strings.TrimSpace(userScopeID), strings.TrimSpace(deploymentID))
 				}
 				ev := &taskqueue.TaskEnqueuedEvent{TaskID: nextTaskID, Key: key}
 				priority := 0

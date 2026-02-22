@@ -203,11 +203,6 @@ func (s *Service) Login(ctx context.Context, req *LoginRequest) (*LoginResponse,
 	return resp, nil
 }
 
-//encore:api public method=POST path=/auth/login
-func (s *Service) AuthLogin(ctx context.Context, req *LoginRequest) (*LoginResponse, error) {
-	return s.Login(ctx, req)
-}
-
 //encore:api public method=POST path=/api/logout
 func (s *Service) Logout(ctx context.Context) (*LogoutResponse, error) {
 	if s.db != nil {
@@ -243,16 +238,6 @@ func (s *Service) Reauth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/status?signin=1&next="+url.QueryEscape(next), http.StatusFound)
-}
-
-//encore:api public method=POST path=/auth/logout
-func (s *Service) AuthLogout(ctx context.Context) (*LogoutResponse, error) {
-	return s.Logout(ctx)
-}
-
-//encore:api auth method=POST path=/auth/logout-all
-func (s *Service) AuthLogoutAll(ctx context.Context) (*LogoutResponse, error) {
-	return s.Logout(ctx)
 }
 
 //encore:api public method=GET path=/api/session
@@ -360,7 +345,7 @@ type forwardAuthSessionPayload struct {
 	Status string `json:"status,omitempty"`
 }
 
-// SessionForwardAuth is a Skyforge SSO gate compatible endpoint used by Traefik forwardAuth.
+// SessionForwardAuth is a Skyforge SSO gate endpoint used by Traefik forwardAuth.
 //
 //encore:api public raw method=GET path=/api/session/forwardauth
 func (s *Service) SessionForwardAuth(w http.ResponseWriter, req *http.Request) {
@@ -466,7 +451,7 @@ func (s *Service) sessionForwardAuthEnvoy(w http.ResponseWriter, req *http.Reque
 	_ = json.NewEncoder(w).Encode(&forwardAuthSessionPayload{Status: "ok"})
 }
 
-// SessionForwardAuthHead is a Skyforge SSO gate compatible endpoint used by Traefik forwardAuth (HEAD).
+// SessionForwardAuthHead is a Skyforge SSO gate endpoint used by Traefik forwardAuth (HEAD).
 //
 //encore:api public raw method=HEAD path=/api/session/forwardauth
 func (s *Service) SessionForwardAuthHead(w http.ResponseWriter, req *http.Request) {

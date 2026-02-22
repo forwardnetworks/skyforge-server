@@ -56,7 +56,7 @@ func loadEncoreConfigOverrideFromEnv() (EncoreConfig, bool) {
 		return cfg, true
 	}
 
-	// Helm stores the JSON as base64url without padding (Encore's legacy format).
+	// Helm stores the JSON as base64url without padding (Encore's prior format).
 	// Accept both padded and unpadded.
 	enc := raw
 	if m := len(enc) % 4; m != 0 {
@@ -250,34 +250,34 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		cloudCredentialChecks = time.Duration(enc.CloudCheckIntervalMinutes) * time.Minute
 	}
 
-	workspacesCfg := skyforgecore.WorkspacesConfig{
-		DataDir:                strings.TrimSpace(enc.Workspaces.DataDir),
-		GiteaAPIURL:            strings.TrimRight(strings.TrimSpace(enc.Workspaces.GiteaAPIURL), "/"),
-		GiteaUsername:          strings.TrimSpace(enc.Workspaces.GiteaUsername),
+	userScopesCfg := skyforgecore.UserScopesConfig{
+		DataDir:                strings.TrimSpace(enc.UserScopes.DataDir),
+		GiteaAPIURL:            strings.TrimRight(strings.TrimSpace(enc.UserScopes.GiteaAPIURL), "/"),
+		GiteaUsername:          strings.TrimSpace(enc.UserScopes.GiteaUsername),
 		GiteaPassword:          strings.TrimSpace(sec.GiteaPassword),
-		GiteaRepoPrivate:       enc.Workspaces.GiteaRepoPrivate,
-		DeleteMode:             strings.TrimSpace(enc.Workspaces.DeleteMode),
+		GiteaRepoPrivate:       enc.UserScopes.GiteaRepoPrivate,
+		DeleteMode:             strings.TrimSpace(enc.UserScopes.DeleteMode),
 		ObjectStorageEndpoint:  strings.TrimRight(strings.TrimSpace(enc.ObjectStorage.Endpoint), "/"),
 		ObjectStorageUseSSL:    enc.ObjectStorage.UseSSL,
 		ObjectStorageAccessKey: strings.TrimSpace(sec.ObjectStorageAccessKey),
 		ObjectStorageSecretKey: strings.TrimSpace(sec.ObjectStorageSecretKey),
 	}
-	if strings.TrimSpace(workspacesCfg.DataDir) == "" {
-		workspacesCfg.DataDir = "/var/lib/skyforge"
+	if strings.TrimSpace(userScopesCfg.DataDir) == "" {
+		userScopesCfg.DataDir = "/var/lib/skyforge"
 	}
-	if strings.TrimSpace(workspacesCfg.GiteaAPIURL) == "" {
+	if strings.TrimSpace(userScopesCfg.GiteaAPIURL) == "" {
 		if giteaBaseURL != "" {
-			workspacesCfg.GiteaAPIURL = giteaBaseURL + "/api/v1"
+			userScopesCfg.GiteaAPIURL = giteaBaseURL + "/api/v1"
 		}
 	}
-	if strings.TrimSpace(workspacesCfg.GiteaUsername) == "" {
-		workspacesCfg.GiteaUsername = "skyforge"
+	if strings.TrimSpace(userScopesCfg.GiteaUsername) == "" {
+		userScopesCfg.GiteaUsername = "skyforge"
 	}
-	if strings.TrimSpace(workspacesCfg.DeleteMode) == "" {
-		workspacesCfg.DeleteMode = "live"
+	if strings.TrimSpace(userScopesCfg.DeleteMode) == "" {
+		userScopesCfg.DeleteMode = "live"
 	}
-	if strings.TrimSpace(workspacesCfg.ObjectStorageEndpoint) == "" {
-		workspacesCfg.ObjectStorageEndpoint = "minio:9000"
+	if strings.TrimSpace(userScopesCfg.ObjectStorageEndpoint) == "" {
+		userScopesCfg.ObjectStorageEndpoint = "minio:9000"
 	}
 
 	terraformBinaryPath := strings.TrimSpace(enc.Terraform.BinaryPath)
@@ -347,7 +347,7 @@ func LoadConfig(enc EncoreConfig, sec skyforgecore.Secrets) skyforgecore.Config 
 		LDAP:                      ldapCfg,
 		LDAPLookupBindDN:          ldapLookupBindDN,
 		LDAPLookupBindPassword:    ldapLookupBindPassword,
-		Workspaces:                workspacesCfg,
+		UserScopes:                userScopesCfg,
 		TerraformBinaryPath:       terraformBinaryPath,
 		TerraformVersion:          terraformVersion,
 		TerraformURL:              terraformURL,
@@ -389,32 +389,32 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		StateRoot:  strings.TrimSpace(enc.Netlab.StateRoot),
 	}
 
-	workspacesCfg := skyforgecore.WorkspacesConfig{
-		DataDir:                strings.TrimSpace(enc.Workspaces.DataDir),
-		GiteaAPIURL:            strings.TrimRight(strings.TrimSpace(enc.Workspaces.GiteaAPIURL), "/"),
-		GiteaUsername:          strings.TrimSpace(enc.Workspaces.GiteaUsername),
+	userScopesCfg := skyforgecore.UserScopesConfig{
+		DataDir:                strings.TrimSpace(enc.UserScopes.DataDir),
+		GiteaAPIURL:            strings.TrimRight(strings.TrimSpace(enc.UserScopes.GiteaAPIURL), "/"),
+		GiteaUsername:          strings.TrimSpace(enc.UserScopes.GiteaUsername),
 		GiteaPassword:          strings.TrimSpace(sec.GiteaPassword),
-		GiteaRepoPrivate:       enc.Workspaces.GiteaRepoPrivate,
-		DeleteMode:             strings.TrimSpace(enc.Workspaces.DeleteMode),
+		GiteaRepoPrivate:       enc.UserScopes.GiteaRepoPrivate,
+		DeleteMode:             strings.TrimSpace(enc.UserScopes.DeleteMode),
 		ObjectStorageEndpoint:  strings.TrimRight(strings.TrimSpace(enc.ObjectStorage.Endpoint), "/"),
 		ObjectStorageUseSSL:    enc.ObjectStorage.UseSSL,
 		ObjectStorageAccessKey: strings.TrimSpace(sec.ObjectStorageAccessKey),
 		ObjectStorageSecretKey: strings.TrimSpace(sec.ObjectStorageSecretKey),
 	}
-	if strings.TrimSpace(workspacesCfg.DataDir) == "" {
-		workspacesCfg.DataDir = "/var/lib/skyforge"
+	if strings.TrimSpace(userScopesCfg.DataDir) == "" {
+		userScopesCfg.DataDir = "/var/lib/skyforge"
 	}
-	if strings.TrimSpace(workspacesCfg.GiteaAPIURL) == "" {
-		workspacesCfg.GiteaAPIURL = ""
+	if strings.TrimSpace(userScopesCfg.GiteaAPIURL) == "" {
+		userScopesCfg.GiteaAPIURL = ""
 	}
-	if strings.TrimSpace(workspacesCfg.GiteaUsername) == "" {
-		workspacesCfg.GiteaUsername = "skyforge"
+	if strings.TrimSpace(userScopesCfg.GiteaUsername) == "" {
+		userScopesCfg.GiteaUsername = "skyforge"
 	}
-	if strings.TrimSpace(workspacesCfg.DeleteMode) == "" {
-		workspacesCfg.DeleteMode = "live"
+	if strings.TrimSpace(userScopesCfg.DeleteMode) == "" {
+		userScopesCfg.DeleteMode = "live"
 	}
-	if strings.TrimSpace(workspacesCfg.ObjectStorageEndpoint) == "" {
-		workspacesCfg.ObjectStorageEndpoint = "minio:9000"
+	if strings.TrimSpace(userScopesCfg.ObjectStorageEndpoint) == "" {
+		userScopesCfg.ObjectStorageEndpoint = "minio:9000"
 	}
 
 	terraformBinaryPath := strings.TrimSpace(enc.Terraform.BinaryPath)
@@ -480,7 +480,7 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		TaskWorkerEnabled:                        enc.TaskWorkerEnabled,
 		SessionSecret:                            sec.SessionSecret,
 		Netlab:                                   netlabCfg,
-		Workspaces:                               workspacesCfg,
+		UserScopes:                               userScopesCfg,
 		TerraformBinaryPath:                      terraformBinaryPath,
 		TerraformVersion:                         terraformVersion,
 		TerraformURL:                             terraformURL,
@@ -500,6 +500,6 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		Forward: skyforgecore.ForwardConfig{
 			SNMPPlaceholderEnabled: enc.Forward.SNMPPlaceholderEnabled,
 		},
-		Features:  featuresCfg,
+		Features: featuresCfg,
 	}
 }

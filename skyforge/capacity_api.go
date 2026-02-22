@@ -16,11 +16,11 @@ type CapacityPerfProxyResponse struct {
 	Body json.RawMessage `json:"body"`
 }
 
-func (s *Service) requireDeploymentForwardNetwork(ctx context.Context, workspaceID, deploymentID string) (dep *WorkspaceDeployment, cfgAny map[string]any, forwardNetworkID string, err error) {
+func (s *Service) requireDeploymentForwardNetwork(ctx context.Context, userScopeID, deploymentID string) (dep *UserScopeDeployment, cfgAny map[string]any, forwardNetworkID string, err error) {
 	if s == nil || s.db == nil {
 		return nil, nil, "", errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	dep, err = s.getWorkspaceDeployment(ctx, workspaceID, deploymentID)
+	dep, err = s.getWorkspaceDeployment(ctx, userScopeID, deploymentID)
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -88,12 +88,12 @@ func (s *Service) GetWorkspaceDeploymentCapacitySummary(ctx context.Context, id,
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	_, _, forwardNetworkID, err := s.requireDeploymentForwardNetwork(ctx, pc.workspace.ID, deploymentID)
+	_, _, forwardNetworkID, err := s.requireDeploymentForwardNetwork(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
 
-	periodEnd, rows, err := loadLatestCapacityRollups(ctx, s.db, pc.workspace.ID, deploymentID)
+	periodEnd, rows, err := loadLatestCapacityRollups(ctx, s.db, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load capacity rollups").Err()
 	}
@@ -104,7 +104,7 @@ func (s *Service) GetWorkspaceDeploymentCapacitySummary(ctx context.Context, id,
 		stale = time.Since(periodEnd) > 2*time.Hour
 	}
 	return &DeploymentCapacitySummaryResponse{
-		WorkspaceID:  pc.workspace.ID,
+		UserScopeID:  pc.userScope.ID,
 		DeploymentID: deploymentID,
 		ForwardID:    forwardNetworkID,
 		AsOf:         asOf,
@@ -142,7 +142,7 @@ func (s *Service) RefreshWorkspaceDeploymentCapacityRollups(ctx context.Context,
 		deploymentID = strings.TrimSpace(req.DeploymentID)
 	}
 
-	_, cfgAny, _, err := s.requireDeploymentForwardNetwork(ctx, pc.workspace.ID, deploymentID)
+	_, cfgAny, _, err := s.requireDeploymentForwardNetwork(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +155,7 @@ func (s *Service) RefreshWorkspaceDeploymentCapacityRollups(ctx context.Context,
 	metaAny := map[string]any{"deploymentId": deploymentID}
 	meta, _ := toJSONMap(metaAny)
 	msg := fmt.Sprintf("Capacity rollup (%s)", pc.claims.Username)
-	task, err := createTaskAllowActive(ctx, s.db, pc.workspace.ID, &deploymentID, "capacity-rollup", msg, pc.claims.Username, meta)
+	task, err := createTaskAllowActive(ctx, s.db, pc.userScope.ID, &deploymentID, "capacity-rollup", msg, pc.claims.Username, meta)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to enqueue rollup").Err()
 	}
@@ -168,7 +168,7 @@ func (s *Service) RefreshWorkspaceDeploymentCapacityRollups(ctx context.Context,
 		}
 	}
 	return &DeploymentCapacityRefreshResponse{
-		WorkspaceID:  pc.workspace.ID,
+		UserScopeID:  pc.userScope.ID,
 		DeploymentID: deploymentID,
 		Run:          runJSON,
 	}, nil
@@ -199,7 +199,7 @@ func (s *Service) GetWorkspaceDeploymentCapacityInterfaceMetrics(ctx context.Con
 		return nil, err
 	}
 
-	_, cfgAny, forwardNetworkID, err := s.requireDeploymentForwardNetwork(ctx, pc.workspace.ID, deploymentID)
+	_, cfgAny, forwardNetworkID, err := s.requireDeploymentForwardNetwork(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +274,7 @@ func (s *Service) PostWorkspaceDeploymentCapacityInterfaceMetricsHistory(ctx con
 		return nil, err
 	}
 
-	_, cfgAny, forwardNetworkID, err := s.requireDeploymentForwardNetwork(ctx, pc.workspace.ID, deploymentID)
+	_, cfgAny, forwardNetworkID, err := s.requireDeploymentForwardNetwork(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -333,7 +333,7 @@ func (s *Service) GetWorkspaceDeploymentCapacityDeviceMetrics(ctx context.Contex
 		return nil, err
 	}
 
-	_, cfgAny, forwardNetworkID, err := s.requireDeploymentForwardNetwork(ctx, pc.workspace.ID, deploymentID)
+	_, cfgAny, forwardNetworkID, err := s.requireDeploymentForwardNetwork(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -396,7 +396,7 @@ func (s *Service) PostWorkspaceDeploymentCapacityDeviceMetricsHistory(ctx contex
 		return nil, err
 	}
 
-	_, cfgAny, forwardNetworkID, err := s.requireDeploymentForwardNetwork(ctx, pc.workspace.ID, deploymentID)
+	_, cfgAny, forwardNetworkID, err := s.requireDeploymentForwardNetwork(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -454,7 +454,7 @@ func (s *Service) GetWorkspaceDeploymentCapacityUnhealthyDevices(ctx context.Con
 		return nil, err
 	}
 
-	_, cfgAny, forwardNetworkID, err := s.requireDeploymentForwardNetwork(ctx, pc.workspace.ID, deploymentID)
+	_, cfgAny, forwardNetworkID, err := s.requireDeploymentForwardNetwork(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -503,7 +503,7 @@ func (s *Service) GetWorkspaceDeploymentCapacityUnhealthyInterfaces(ctx context.
 		return nil, err
 	}
 
-	_, cfgAny, forwardNetworkID, err := s.requireDeploymentForwardNetwork(ctx, pc.workspace.ID, deploymentID)
+	_, cfgAny, forwardNetworkID, err := s.requireDeploymentForwardNetwork(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -539,7 +539,7 @@ func (s *Service) GetWorkspaceDeploymentCapacityUnhealthyInterfaces(ctx context.
 
 // ---- rollup storage ----
 
-func loadLatestCapacityRollups(ctx context.Context, db *sql.DB, workspaceID, deploymentID string) (time.Time, []CapacityRollupRow, error) {
+func loadLatestCapacityRollups(ctx context.Context, db *sql.DB, userScopeID, deploymentID string) (time.Time, []CapacityRollupRow, error) {
 	if db == nil {
 		return time.Time{}, nil, fmt.Errorf("db unavailable")
 	}
@@ -548,7 +548,7 @@ func loadLatestCapacityRollups(ctx context.Context, db *sql.DB, workspaceID, dep
 	var periodEnd time.Time
 	err := db.QueryRowContext(ctxReq, `SELECT COALESCE(MAX(period_end), 'epoch'::timestamptz)
 FROM sf_capacity_rollups
-WHERE user_id=$1 AND deployment_id=$2`, workspaceID, deploymentID).Scan(&periodEnd)
+WHERE user_id=$1 AND deployment_id=$2`, userScopeID, deploymentID).Scan(&periodEnd)
 	if err != nil {
 		return time.Time{}, nil, err
 	}
@@ -559,7 +559,7 @@ WHERE user_id=$1 AND deployment_id=$2`, workspaceID, deploymentID).Scan(&periodE
   period_end, samples, avg, p95, p99, max, slope_per_day, forecast_crossing_ts, threshold, details, created_at
 FROM sf_capacity_rollups
 WHERE user_id=$1 AND deployment_id=$2 AND period_end=$3
-ORDER BY metric, window_label, object_type, object_id`, workspaceID, deploymentID, periodEnd)
+ORDER BY metric, window_label, object_type, object_id`, userScopeID, deploymentID, periodEnd)
 	if err != nil {
 		return time.Time{}, nil, err
 	}
@@ -582,7 +582,7 @@ ORDER BY metric, window_label, object_type, object_id`, workspaceID, deploymentI
 			continue
 		}
 		row := CapacityRollupRow{
-			WorkspaceID:      workspaceID,
+			UserScopeID:      userScopeID,
 			DeploymentID:     deploymentID,
 			ForwardNetworkID: strings.TrimSpace(forwardID),
 			ObjectType:       strings.TrimSpace(objectType),

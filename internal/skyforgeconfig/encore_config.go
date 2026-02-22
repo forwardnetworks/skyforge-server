@@ -70,7 +70,7 @@ type UIDefaultsConfig struct {
 	ThemeDefault     string
 }
 
-type WorkspacesDefaultsConfig struct {
+type UserScopesDefaultsConfig struct {
 	DataDir          string
 	GiteaAPIURL      string
 	GiteaUsername    string
@@ -163,7 +163,7 @@ type EncoreConfig struct {
 	LDAP             LDAPDefaultsConfig
 	DNS              DNSDefaultsConfig
 	Containerlab     ContainerlabDefaultsConfig
-	Workspaces       WorkspacesDefaultsConfig
+	UserScopes       UserScopesDefaultsConfig
 	ObjectStorage    ObjectStorageDefaultsConfig
 	Terraform        TerraformDefaultsConfig
 	Forward          ForwardDefaultsConfig
@@ -177,7 +177,7 @@ type WorkerConfig struct {
 	TaskWorkerEnabled bool
 
 	Netlab           NetlabDefaultsConfig
-	Workspaces       WorkspacesDefaultsConfig
+	UserScopes       UserScopesDefaultsConfig
 	ObjectStorage    ObjectStorageDefaultsConfig
 	Terraform        TerraformDefaultsConfig
 	Forward          ForwardDefaultsConfig

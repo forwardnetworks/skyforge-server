@@ -255,7 +255,7 @@ func (s *Service) ReconcileRunningTasks(ctx context.Context, req *ReconcileRunni
 		}
 
 		errMsg := "task appears stuck (no recent activity); marked failed by admin reconciler"
-		rlog.Warn("admin reconcile running task", "task_id", item.TaskID, "workspace", item.WorkspaceID, "deployment", item.DeploymentID)
+		rlog.Warn("admin reconcile running task", "task_id", item.TaskID, "user_scope", item.UserScopeID, "deployment", item.DeploymentID)
 
 		if err := taskstore.FinishTask(ctx, s.db, item.TaskID, "failed", errMsg); err != nil {
 			finishErrors++

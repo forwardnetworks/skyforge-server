@@ -307,18 +307,18 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	workspaceKey := strings.TrimSpace(req.PathValue("id"))
+	userScopeKey := strings.TrimSpace(req.PathValue("id"))
 	deploymentID := strings.TrimSpace(req.PathValue("deploymentID"))
-	if workspaceKey == "" || deploymentID == "" {
+	if userScopeKey == "" || deploymentID == "" {
 		// Best-effort path param extraction (PathValue is only populated when the
 		// underlying mux supports it).
 		parts := strings.Split(strings.Trim(req.URL.Path, "/"), "/")
-		// expected: api/workspaces/<id>/deployments/<deploymentID>/terminal/ws
+		// expected: api/users/<id>/deployments/<deploymentID>/terminal/ws
 		for i := 0; i+1 < len(parts); i++ {
 			switch parts[i] {
-			case "workspaces":
-				if workspaceKey == "" {
-					workspaceKey = strings.TrimSpace(parts[i+1])
+			case "users":
+				if userScopeKey == "" {
+					userScopeKey = strings.TrimSpace(parts[i+1])
 				}
 			case "deployments":
 				if deploymentID == "" {
@@ -327,17 +327,17 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 			}
 		}
 	}
-	if workspaceKey == "" || deploymentID == "" {
+	if userScopeKey == "" || deploymentID == "" {
 		http.Error(w, "invalid path params", http.StatusBadRequest)
 		return
 	}
 
-	_, _, ws, err := s.loadWorkspaceByKey(workspaceKey)
+	_, _, ws, err := s.loadUserScopeByKey(userScopeKey)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	if workspaceAccessLevelForClaims(s.cfg, ws, claims) == "none" {
+	if userScopeAccessLevelForClaims(s.cfg, ws, claims) == "none" {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -379,7 +379,7 @@ func (s *Service) TerminalExecWS(w http.ResponseWriter, req *http.Request) {
 	k8sNamespace = strings.TrimSpace(k8sNamespace)
 	topologyName = strings.TrimSpace(topologyName)
 	if k8sNamespace == "" {
-		k8sNamespace = clabernetesWorkspaceNamespace(ws.Slug)
+		k8sNamespace = clabernetesUserScopeNamespace(ws.Slug)
 	}
 	if topologyName == "" {
 		// When config is absent, fall back to labName-derived topology name.

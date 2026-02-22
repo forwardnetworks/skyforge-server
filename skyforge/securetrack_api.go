@@ -22,16 +22,16 @@ type SecureTrackCheckResponse struct {
 	Content string                   `json:"content"`
 }
 
-func (s *Service) secureTrackForwardClient(ctx context.Context, workspaceID string) (*forwardClient, error) {
+func (s *Service) secureTrackForwardClient(ctx context.Context, userScopeID string) (*forwardClient, error) {
 	if s == nil || s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("server unavailable").Err()
 	}
-	rec, err := getWorkspaceForwardCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), workspaceID)
+	rec, err := getWorkspaceForwardCredentials(ctx, s.db, newSecretBox(s.cfg.SessionSecret), userScopeID)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load Forward credentials").Err()
 	}
 	if rec == nil {
-		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward is not configured for this workspace").Err()
+		return nil, errs.B().Code(errs.FailedPrecondition).Msg("Forward is not configured for this user scope").Err()
 	}
 	client, err := newForwardClient(*rec)
 	if err != nil {
@@ -189,7 +189,7 @@ func (s *Service) GetWorkspaceSecureTrackSnapshots(ctx context.Context, id strin
 		maxResults = 50
 	}
 
-	client, err := s.secureTrackForwardClient(ctx, pc.workspace.ID)
+	client, err := s.secureTrackForwardClient(ctx, pc.userScope.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -231,7 +231,7 @@ func (s *Service) RunWorkspaceSecureTrackNQE(ctx context.Context, id string, req
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("query is required").Err()
 	}
 
-	client, err := s.secureTrackForwardClient(ctx, pc.workspace.ID)
+	client, err := s.secureTrackForwardClient(ctx, pc.userScope.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -300,7 +300,7 @@ func (s *Service) RunWorkspaceSecureTrackCheck(ctx context.Context, id string, r
 		params[k] = v
 	}
 
-	client, err := s.secureTrackForwardClient(ctx, pc.workspace.ID)
+	client, err := s.secureTrackForwardClient(ctx, pc.userScope.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -372,7 +372,7 @@ func (s *Service) RunWorkspaceSecureTrackPack(ctx context.Context, id string, re
 	}
 
 	// Reuse one Forward client for the whole pack.
-	fwdClient, err := s.secureTrackForwardClient(ctx, pc.workspace.ID)
+	fwdClient, err := s.secureTrackForwardClient(ctx, pc.userScope.ID)
 	if err != nil {
 		return nil, err
 	}

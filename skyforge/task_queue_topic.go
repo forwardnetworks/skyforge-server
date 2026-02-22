@@ -26,10 +26,10 @@ func (s *Service) enqueueTask(ctx context.Context, task *TaskRecord) {
 	if task.DeploymentID.Valid {
 		deploymentID = strings.TrimSpace(task.DeploymentID.String)
 	}
-	s.enqueueTaskID(ctx, task.ID, task.WorkspaceID, deploymentID, task.Priority)
+	s.enqueueTaskID(ctx, task.ID, task.UserScopeID, deploymentID, task.Priority)
 }
 
-func (s *Service) enqueueTaskID(ctx context.Context, taskID int, workspaceID string, deploymentID string, priority int) {
+func (s *Service) enqueueTaskID(ctx context.Context, taskID int, userScopeID string, deploymentID string, priority int) {
 	if s == nil || taskID <= 0 {
 		return
 	}
@@ -39,9 +39,9 @@ func (s *Service) enqueueTaskID(ctx context.Context, taskID int, workspaceID str
 			priority = int(p.Int64)
 		}
 	}
-	key := strings.TrimSpace(workspaceID)
+	key := strings.TrimSpace(userScopeID)
 	if strings.TrimSpace(deploymentID) != "" {
-		key = fmt.Sprintf("%s:%s", strings.TrimSpace(workspaceID), strings.TrimSpace(deploymentID))
+		key = fmt.Sprintf("%s:%s", strings.TrimSpace(userScopeID), strings.TrimSpace(deploymentID))
 	}
 	if priority < taskPriorityInteractive {
 		if _, err := taskQueueBackgroundTopic.Publish(ctx, &taskqueue.TaskEnqueuedEvent{TaskID: taskID, Key: key}); err != nil {

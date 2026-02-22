@@ -22,7 +22,7 @@ func New(secret string) *Box {
 	keys := make([][32]byte, 0, 2)
 	keys = append(keys, sha256.Sum256([]byte(secret)))
 
-	// Backward-compat / recovery path:
+	// Recovery path:
 	// If SKYFORGE_SESSION_SECRET was accidentally deployed as an empty string, some
 	// values may have been encrypted using sha256(""). Allow decrypting those values
 	// so the system can recover without permanently breaking stored credentials.

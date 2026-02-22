@@ -25,7 +25,7 @@ type UserNetlabServersResponse struct {
 
 // ListUserNetlabServers returns the current user's configured Netlab API endpoints.
 //
-//encore:api auth method=GET path=/api/user/netlab/servers
+//encore:api auth method=GET path=/api/me/netlab/servers
 func (s *Service) ListUserNetlabServers(ctx context.Context) (*UserNetlabServersResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -52,7 +52,7 @@ func (s *Service) ListUserNetlabServers(ctx context.Context) (*UserNetlabServers
 
 // UpsertUserNetlabServer creates or updates a user-scoped Netlab API endpoint.
 //
-//encore:api auth method=PUT path=/api/user/netlab/servers
+//encore:api auth method=PUT path=/api/me/netlab/servers
 func (s *Service) UpsertUserNetlabServer(ctx context.Context, payload *UserNetlabServerConfig) (*UserNetlabServerConfig, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -103,7 +103,7 @@ func (s *Service) UpsertUserNetlabServer(ctx context.Context, payload *UserNetla
 
 // DeleteUserNetlabServer deletes a user-scoped Netlab server.
 //
-//encore:api auth method=DELETE path=/api/user/netlab/servers/:serverID
+//encore:api auth method=DELETE path=/api/me/netlab/servers/:serverID
 func (s *Service) DeleteUserNetlabServer(ctx context.Context, serverID string) error {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -136,7 +136,7 @@ type UserEveServersResponse struct {
 
 // ListUserEveServers returns the current user's configured EVE-NG API endpoints.
 //
-//encore:api auth method=GET path=/api/user/eve/servers
+//encore:api auth method=GET path=/api/me/eve/servers
 func (s *Service) ListUserEveServers(ctx context.Context) (*UserEveServersResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -167,7 +167,7 @@ func (s *Service) ListUserEveServers(ctx context.Context) (*UserEveServersRespon
 
 // UpsertUserEveServer creates or updates a user-scoped EVE-NG server.
 //
-//encore:api auth method=PUT path=/api/user/eve/servers
+//encore:api auth method=PUT path=/api/me/eve/servers
 func (s *Service) UpsertUserEveServer(ctx context.Context, payload *UserEveServerConfig) (*UserEveServerConfig, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -234,7 +234,7 @@ func (s *Service) UpsertUserEveServer(ctx context.Context, payload *UserEveServe
 
 // DeleteUserEveServer deletes a user-scoped EVE server.
 //
-//encore:api auth method=DELETE path=/api/user/eve/servers/:serverID
+//encore:api auth method=DELETE path=/api/me/eve/servers/:serverID
 func (s *Service) DeleteUserEveServer(ctx context.Context, serverID string) error {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -263,7 +263,7 @@ type UserContainerlabServersResponse struct {
 
 // ListUserContainerlabServers returns the current user's configured Containerlab BYOL endpoints.
 //
-//encore:api auth method=GET path=/api/user/containerlab/servers
+//encore:api auth method=GET path=/api/me/containerlab/servers
 func (s *Service) ListUserContainerlabServers(ctx context.Context) (*UserContainerlabServersResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -290,7 +290,7 @@ func (s *Service) ListUserContainerlabServers(ctx context.Context) (*UserContain
 
 // UpsertUserContainerlabServer creates or updates a user-scoped Containerlab endpoint.
 //
-//encore:api auth method=PUT path=/api/user/containerlab/servers
+//encore:api auth method=PUT path=/api/me/containerlab/servers
 func (s *Service) UpsertUserContainerlabServer(ctx context.Context, payload *UserContainerlabServerConfig) (*UserContainerlabServerConfig, error) {
 	user, err := requireAuthUser()
 	if err != nil {
@@ -341,7 +341,7 @@ func (s *Service) UpsertUserContainerlabServer(ctx context.Context, payload *Use
 
 // DeleteUserContainerlabServer deletes a user-scoped Containerlab server.
 //
-//encore:api auth method=DELETE path=/api/user/containerlab/servers/:serverID
+//encore:api auth method=DELETE path=/api/me/containerlab/servers/:serverID
 func (s *Service) DeleteUserContainerlabServer(ctx context.Context, serverID string) error {
 	user, err := requireAuthUser()
 	if err != nil {

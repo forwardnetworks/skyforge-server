@@ -59,7 +59,7 @@ func kubeEnsureNamespaceImagePullSecret(ctx context.Context, ns string, secretNa
 	if err := kubeEnsureServiceAccountImagePullSecret(ctx, ns, "default", secretName); err != nil {
 		return err
 	}
-	// clabernetes creates/uses this service account for launcher pods.
+	// clabernetes creates/uses this service identity for launcher pods.
 	if err := kubeEnsureServiceAccountImagePullSecret(ctx, ns, "clabernetes-launcher-service-account", secretName); err != nil {
 		return err
 	}
@@ -213,7 +213,7 @@ func kubeEnsureServiceAccountImagePullSecret(ctx context.Context, ns, saName, se
 	saName = strings.TrimSpace(saName)
 	secretName = strings.TrimSpace(secretName)
 	if ns == "" || saName == "" || secretName == "" {
-		return fmt.Errorf("namespace, service account name, and secret name are required")
+		return fmt.Errorf("namespace, service identity name, and secret name are required")
 	}
 
 	client, err := kubeHTTPClient()

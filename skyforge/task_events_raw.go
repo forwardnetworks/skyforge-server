@@ -50,12 +50,12 @@ func (s *Service) TaskLifecycleEvents(w http.ResponseWriter, req *http.Request) 
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	_, _, workspace, err := s.loadWorkspaceByKey(task.WorkspaceID)
+	_, _, scopeUser, err := s.loadUserScopeByKey(task.UserScopeID)
 	if err != nil {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	if workspaceAccessLevelForClaims(s.cfg, workspace, claims) == "none" {
+	if userScopeAccessLevelForClaims(s.cfg, scopeUser, claims) == "none" {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}

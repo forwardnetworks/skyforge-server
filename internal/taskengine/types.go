@@ -46,7 +46,7 @@ type ExternalTemplateRepo struct {
 	DefaultBranch string `json:"defaultBranch,omitempty"`
 }
 
-type Workspace struct {
+type UserScope struct {
 	ID                         string
 	Slug                       string
 	Name                       string
@@ -63,7 +63,7 @@ type Workspace struct {
 	AWSRegion                  string
 }
 
-func (w Workspace) primaryOwner() string {
+func (w UserScope) primaryOwner() string {
 	if strings.TrimSpace(w.CreatedBy) != "" {
 		return strings.TrimSpace(w.CreatedBy)
 	}
@@ -71,7 +71,7 @@ func (w Workspace) primaryOwner() string {
 }
 
 type userContext struct {
-	workspace Workspace
+	userScope UserScope
 	claims    SessionClaims
 }
 
@@ -84,7 +84,7 @@ type SessionClaims struct {
 
 type netlabServerRecord struct {
 	ID          string
-	WorkspaceID string
+	UserScopeID string
 	Name        string
 	APIURL      string
 	APIInsecure bool
@@ -119,9 +119,9 @@ func normalizeNetlabServer(s NetlabServerConfig, fallback NetlabConfig) NetlabSe
 	return s
 }
 
-type WorkspaceDeployment struct {
+type UserScopeDeployment struct {
 	ID          string
-	WorkspaceID string
+	UserScopeID string
 	Name        string
 	Type        string
 	Config      JSONMap
@@ -144,5 +144,5 @@ func nullIfEmpty(value string) any {
 	return value
 }
 
-// sqlNullString helper used when scanning workspace rows.
+// sqlNullString helper used when scanning user-scope rows.
 type sqlNullString = sql.NullString

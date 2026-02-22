@@ -140,14 +140,14 @@ func CronReconcileRunningTasks(ctx context.Context) error {
 		}
 
 		errMsg := "task appears stuck (no recent activity); marked failed by reconciler"
-		rlog.Warn("reconcile running task", "task_id", item.TaskID, "workspace", item.WorkspaceID, "deployment", item.DeploymentID)
+		rlog.Warn("reconcile running task", "task_id", item.TaskID, "user_scope", item.UserScopeID, "deployment", item.DeploymentID)
 
 		if err := taskstore.FinishTask(ctx, stdlib, item.TaskID, "failed", errMsg); err != nil {
 			rlog.Error("reconcile running task finish failed", "task_id", item.TaskID, "err", err)
 			continue
 		}
 		if strings.TrimSpace(item.DeploymentID) != "" {
-			if err := taskreconcile.UpdateDeploymentStatus(ctx, stdlib, item.WorkspaceID, item.DeploymentID, "failed", time.Now()); err != nil {
+			if err := taskreconcile.UpdateDeploymentStatus(ctx, stdlib, item.UserScopeID, item.DeploymentID, "failed", time.Now()); err != nil {
 				rlog.Error("reconcile running task deployment status failed", "task_id", item.TaskID, "err", err)
 			}
 		}

@@ -88,7 +88,7 @@ Containerlab: {
 	SkipTLSVerify: false
 }
 
-Workspaces: {
+UserScopes: {
 	DataDir: "/var/lib/skyforge"
 	GiteaAPIURL: ""
 	GiteaUsername: "skyforge"
@@ -143,7 +143,7 @@ Features: {
 Kubernetes: {
 	// ImagePullSecretName is the name of a docker registry secret that allows
 	// pulling images (e.g. from GHCR). When set, Skyforge can mirror it into
-	// per-workspace namespaces used by clabernetes/netlab-c9s.
+	// per-user-scope namespaces used by clabernetes/netlab-c9s.
 	ImagePullSecretName: "ghcr-pull"
 	// ImagePullSecretNamespace is the namespace where ImagePullSecretName exists.
 	ImagePullSecretNamespace: "skyforge"

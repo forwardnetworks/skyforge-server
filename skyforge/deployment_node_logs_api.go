@@ -10,12 +10,12 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-type WorkspaceDeploymentNodeLogsParams struct {
+type UserScopeDeploymentNodeLogsParams struct {
 	Tail      int    `query:"tail" encore:"optional"`
 	Container string `query:"container" encore:"optional"`
 }
 
-type WorkspaceDeploymentNodeLogsResponse struct {
+type UserScopeDeploymentNodeLogsResponse struct {
 	Namespace string `json:"namespace,omitempty"`
 	PodName   string `json:"podName,omitempty"`
 	Container string `json:"container,omitempty"`
@@ -31,8 +31,8 @@ type WorkspaceDeploymentNodeLogsResponse struct {
 func (s *Service) GetWorkspaceDeploymentNodeLogs(
 	ctx context.Context,
 	id, deploymentID, node string,
-	params *WorkspaceDeploymentNodeLogsParams,
-) (*WorkspaceDeploymentNodeLogsResponse, error) {
+	params *UserScopeDeploymentNodeLogsParams,
+) (*UserScopeDeploymentNodeLogsResponse, error) {
 	user, err := requireAuthUser()
 	if err != nil {
 		return nil, err
@@ -64,7 +64,7 @@ func (s *Service) GetWorkspaceDeploymentNodeLogs(
 		container = strings.TrimSpace(params.Container)
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+	dep, err := s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +79,7 @@ func (s *Service) GetWorkspaceDeploymentNodeLogs(
 	k8sNamespace = strings.TrimSpace(k8sNamespace)
 	topologyName = strings.TrimSpace(topologyName)
 	if k8sNamespace == "" {
-		k8sNamespace = clabernetesWorkspaceNamespace(pc.workspace.Slug)
+		k8sNamespace = clabernetesUserScopeNamespace(pc.userScope.Slug)
 	}
 	if topologyName == "" {
 		labName, _ := cfgAny["labName"].(string)
@@ -141,7 +141,7 @@ func (s *Service) GetWorkspaceDeploymentNodeLogs(
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load node logs").Err()
 	}
 
-	return &WorkspaceDeploymentNodeLogsResponse{
+	return &UserScopeDeploymentNodeLogsResponse{
 		Namespace: k8sNamespace,
 		PodName:   podName,
 		Container: container,

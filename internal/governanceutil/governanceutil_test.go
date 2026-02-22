@@ -70,7 +70,7 @@ func TestCollectInventoryCountsWithRequest_Pagination(t *testing.T) {
 					}{
 						{Metadata: struct {
 							Name string `json:"name"`
-						}{Name: "ws-workspace-a"}},
+						}{Name: "ws-user-scope-a"}},
 						{Metadata: struct {
 							Name string `json:"name"`
 						}{Name: "skyforge"}},
@@ -95,7 +95,7 @@ func TestCollectInventoryCountsWithRequest_Pagination(t *testing.T) {
 				}{
 					{Metadata: struct {
 						Name string `json:"name"`
-					}{Name: "ws-workspace-b"}},
+					}{Name: "ws-user-scope-b"}},
 				},
 			}
 			resp.Metadata.Continue = ""
@@ -123,12 +123,12 @@ func TestCollectInventoryCountsWithRequest_Pagination(t *testing.T) {
 					}{
 						{Metadata: struct {
 							Namespace string `json:"namespace"`
-						}{Namespace: "ws-workspace-a"}, Status: struct {
+						}{Namespace: "ws-user-scope-a"}, Status: struct {
 							Phase string `json:"phase"`
 						}{Phase: "Running"}},
 						{Metadata: struct {
 							Namespace string `json:"namespace"`
-						}{Namespace: "ws-workspace-a"}, Status: struct {
+						}{Namespace: "ws-user-scope-a"}, Status: struct {
 							Phase string `json:"phase"`
 						}{Phase: "Pending"}},
 						{Metadata: struct {
@@ -165,7 +165,7 @@ func TestCollectInventoryCountsWithRequest_Pagination(t *testing.T) {
 				}{
 					{Metadata: struct {
 						Namespace string `json:"namespace"`
-					}{Namespace: "ws-workspace-b"}, Status: struct {
+					}{Namespace: "ws-user-scope-b"}, Status: struct {
 						Phase string `json:"phase"`
 					}{Phase: "Pending"}},
 				},

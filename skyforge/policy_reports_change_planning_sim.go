@@ -235,4 +235,3 @@ func simulateChangeDecision(op string, rule PolicyReportProposedRule, flow Polic
 		return d, r, i, "no-op"
 	}
 }
-

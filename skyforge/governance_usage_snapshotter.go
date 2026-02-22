@@ -113,7 +113,7 @@ func snapshotClusterLoadUsage(ctx context.Context, db *sql.DB) error {
 			Metric:      "node.cpu_active.p95",
 			Value:       governanceutil.Percentile(cpuVals, 0.95),
 			Unit:        "percent",
-			WorkspaceID: "",
+			UserScopeID: "",
 		})
 	}
 	if len(memVals) > 0 {
@@ -123,7 +123,7 @@ func snapshotClusterLoadUsage(ctx context.Context, db *sql.DB) error {
 			Metric:      "node.mem_used.p95",
 			Value:       governanceutil.Percentile(memVals, 0.95),
 			Unit:        "percent",
-			WorkspaceID: "",
+			UserScopeID: "",
 		})
 	}
 	if len(diskVals) > 0 {
@@ -133,7 +133,7 @@ func snapshotClusterLoadUsage(ctx context.Context, db *sql.DB) error {
 			Metric:      "node.disk_used.p95",
 			Value:       governanceutil.Percentile(diskVals, 0.95),
 			Unit:        "percent",
-			WorkspaceID: "",
+			UserScopeID: "",
 		})
 	}
 
@@ -143,7 +143,7 @@ func snapshotClusterLoadUsage(ctx context.Context, db *sql.DB) error {
 		Metric:      "node.count",
 		Value:       float64(len(uniqueKeys(latest))),
 		Unit:        "count",
-		WorkspaceID: "",
+		UserScopeID: "",
 	})
 
 	return nil

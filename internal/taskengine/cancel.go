@@ -39,7 +39,7 @@ func (e *Engine) cancelNetlabTask(ctx context.Context, task *taskstore.TaskRecor
 		return
 	}
 
-	ws, err := e.loadWorkspaceByKey(ctx, task.WorkspaceID)
+	ws, err := e.loadUserScopeByKey(ctx, task.UserScopeID)
 	if err != nil || ws == nil {
 		return
 	}
@@ -48,7 +48,7 @@ func (e *Engine) cancelNetlabTask(ctx context.Context, task *taskstore.TaskRecor
 		username = ws.primaryOwner()
 	}
 	pc := &userContext{
-		workspace: *ws,
+		userScope: *ws,
 		claims: SessionClaims{
 			Username: username,
 		},
@@ -68,9 +68,9 @@ func (e *Engine) cancelNetlabTask(ctx context.Context, task *taskstore.TaskRecor
 		}
 	}
 	if serverRef == "" {
-		serverRef = strings.TrimSpace(pc.workspace.NetlabServer)
+		serverRef = strings.TrimSpace(pc.userScope.NetlabServer)
 	}
-	server, err := e.resolveWorkspaceNetlabServer(ctx, pc.workspace.ID, serverRef)
+	server, err := e.resolveUserScopeNetlabServer(ctx, pc.userScope.ID, serverRef)
 	if err != nil || server == nil {
 		return
 	}

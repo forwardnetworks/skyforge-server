@@ -27,7 +27,7 @@ func giteaRawFileURL(cfg Config, owner, repo, branch, filePath string) string {
 }
 
 func giteaInternalBaseURL(cfg Config) string {
-	apiURL := strings.TrimRight(strings.TrimSpace(cfg.Workspaces.GiteaAPIURL), "/")
+	apiURL := strings.TrimRight(strings.TrimSpace(cfg.UserScopes.GiteaAPIURL), "/")
 	base := ""
 	if apiURL != "" {
 		lower := strings.ToLower(apiURL)

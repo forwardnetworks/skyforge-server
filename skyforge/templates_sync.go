@@ -152,7 +152,7 @@ func normalizeNetlabTemplateSelectionWithSource(source, templatesDir, templateFi
 }
 
 func normalizeNetlabTemplateSelection(templatesDir, templateFile string) (string, string, string, string) {
-	return normalizeNetlabTemplateSelectionWithSource("workspace", templatesDir, templateFile)
+	return normalizeNetlabTemplateSelectionWithSource("user", templatesDir, templateFile)
 }
 
 func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *userContext, server *NetlabServerConfig, templateSource, templateRepo, templatesDir, templateFile, workdir, owner string) (string, error) {
@@ -194,7 +194,7 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *userContext, s
 	if _, err := runSSHCommand(client, fmt.Sprintf("install -d -m 0755 %q", destRoot), 10*time.Second); err != nil {
 		return "", err
 	}
-	// Remove the legacy nested sync directory to avoid confusing mixes of old + new layouts.
+	// Remove the nested sync directory to avoid confusing mixes of old + new layouts.
 	_, _ = runSSHCommand(client, fmt.Sprintf("rm -rf %q >/dev/null 2>&1 || true", path.Join(destRoot, "netlab")), 30*time.Second)
 
 	templatePath := strings.TrimPrefix(path.Join(templatesDir, templateFile), "/")
@@ -293,9 +293,9 @@ func (s *Service) syncNetlabTopologyFile(ctx context.Context, pc *userContext, s
 		// Fast path: download the repo archive once and extract only the needed subtree.
 		// This avoids a large number of per-file API calls + SSH round-trips which can add 30-60s.
 		{
-			apiURL := strings.TrimRight(strings.TrimSpace(s.cfg.Workspaces.GiteaAPIURL), "/")
-			user := strings.TrimSpace(s.cfg.Workspaces.GiteaUsername)
-			pass := strings.TrimSpace(s.cfg.Workspaces.GiteaPassword)
+			apiURL := strings.TrimRight(strings.TrimSpace(s.cfg.UserScopes.GiteaAPIURL), "/")
+			user := strings.TrimSpace(s.cfg.UserScopes.GiteaUsername)
+			pass := strings.TrimSpace(s.cfg.UserScopes.GiteaPassword)
 			if apiURL != "" && user != "" && pass != "" && ref.Owner != "" && ref.Repo != "" && ref.Branch != "" {
 				archiveURL := fmt.Sprintf(
 					"%s/repos/%s/%s/archive/%s.tar.gz",
@@ -382,7 +382,7 @@ func (s *Service) buildNetlabTopologyBundleB64(ctx context.Context, pc *userCont
 		return "", fmt.Errorf("service unavailable")
 	}
 	if pc == nil {
-		return "", fmt.Errorf("workspace context unavailable")
+		return "", fmt.Errorf("user context unavailable")
 	}
 	templatesDir, templateFile, rootPath, _ := normalizeNetlabTemplateSelectionWithSource(templateSource, templatesDir, templateFile)
 	if templateFile == "" {
@@ -499,16 +499,16 @@ func (s *Service) buildNetlabTopologyBundleB64(ctx context.Context, pc *userCont
 }
 
 func resolveTemplateRepoForProject(cfg Config, pc *userContext, policy GovernancePolicy, source string, customRepo string) (templateRepoRef, error) {
-	owner := pc.workspace.GiteaOwner
-	repo := pc.workspace.GiteaRepo
-	branch := strings.TrimSpace(pc.workspace.DefaultBranch)
+	owner := pc.userScope.GiteaOwner
+	repo := pc.userScope.GiteaRepo
+	branch := strings.TrimSpace(pc.userScope.DefaultBranch)
 	isAdmin := isAdminUser(cfg, pc.claims.Username)
 
 	switch strings.ToLower(strings.TrimSpace(source)) {
-	case "", "workspace":
+	case "", "user":
 		// default
 	case "blueprints", "blueprint":
-		ref := strings.TrimSpace(pc.workspace.Blueprint)
+		ref := strings.TrimSpace(pc.userScope.Blueprint)
 		if ref == "" {
 			ref = "skyforge/blueprints"
 		}
@@ -549,7 +549,7 @@ func resolveTemplateRepoForProject(cfg Config, pc *userContext, policy Governanc
 		if err != nil {
 			return templateRepoRef{}, err
 		}
-		if !isAdmin && customOwner != pc.workspace.GiteaOwner && customOwner != "skyforge" {
+		if !isAdmin && customOwner != pc.userScope.GiteaOwner && customOwner != "skyforge" {
 			return templateRepoRef{}, fmt.Errorf("custom repo not allowed")
 		}
 		owner, repo = customOwner, customName

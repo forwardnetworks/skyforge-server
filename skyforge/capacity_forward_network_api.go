@@ -15,22 +15,22 @@ import (
 )
 
 type ForwardNetworkCapacitySummaryResponse struct {
-	WorkspaceID      string            `json:"userId"`
-	NetworkRef       string            `json:"networkRef"`
-	ForwardNetworkID string            `json:"forwardNetworkId"`
-	AsOf             string            `json:"asOf,omitempty"`
+	UserScopeID      string              `json:"userId"`
+	NetworkRef       string              `json:"networkRef"`
+	ForwardNetworkID string              `json:"forwardNetworkId"`
+	AsOf             string              `json:"asOf,omitempty"`
 	Rollups          []CapacityRollupRow `json:"rollups"`
-	Stale            bool              `json:"stale"`
+	Stale            bool                `json:"stale"`
 }
 
 type ForwardNetworkCapacityRefreshResponse struct {
-	WorkspaceID string `json:"userId"`
-	NetworkRef  string `json:"networkRef"`
+	UserScopeID string  `json:"userId"`
+	NetworkRef  string  `json:"networkRef"`
 	Run         JSONMap `json:"run"`
 }
 
 type ForwardNetworkCapacityInventoryResponse struct {
-	WorkspaceID      string `json:"userId"`
+	UserScopeID      string `json:"userId"`
 	NetworkRef       string `json:"networkRef"`
 	ForwardNetworkID string `json:"forwardNetworkId"`
 	AsOf             string `json:"asOf,omitempty"`
@@ -45,7 +45,7 @@ type ForwardNetworkCapacityInventoryResponse struct {
 }
 
 type ForwardNetworkCapacityGrowthResponse struct {
-	WorkspaceID      string              `json:"userId"`
+	UserScopeID      string              `json:"userId"`
 	NetworkRef       string              `json:"networkRef"`
 	ForwardNetworkID string              `json:"forwardNetworkId"`
 	Metric           string              `json:"metric"`
@@ -58,18 +58,18 @@ type ForwardNetworkCapacityGrowthResponse struct {
 }
 
 type resolveForwardNetworkRow struct {
-	ID               string
-	ForwardNetworkID string
+	ID                string
+	ForwardNetworkID  string
 	CollectorConfigID string
 }
 
-func resolveWorkspaceForwardNetwork(ctx context.Context, db *sql.DB, workspaceID, networkRef string) (*resolveForwardNetworkRow, error) {
+func resolveWorkspaceForwardNetwork(ctx context.Context, db *sql.DB, userScopeID, networkRef string) (*resolveForwardNetworkRow, error) {
 	if db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userScopeID = strings.TrimSpace(userScopeID)
 	networkRef = strings.TrimSpace(networkRef)
-	if workspaceID == "" || networkRef == "" {
+	if userScopeID == "" || networkRef == "" {
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("invalid identifiers").Err()
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -80,7 +80,7 @@ func resolveWorkspaceForwardNetwork(ctx context.Context, db *sql.DB, workspaceID
 SELECT id::text, forward_network_id, COALESCE(collector_config_id,'')
   FROM sf_policy_report_forward_networks
  WHERE user_id=$1 AND (id::text=$2 OR forward_network_id=$2)
- LIMIT 1`, workspaceID, networkRef).Scan(&id, &forwardID, &collectorConfigID)
+ LIMIT 1`, userScopeID, networkRef).Scan(&id, &forwardID, &collectorConfigID)
 	if err != nil {
 		if err == sql.ErrNoRows || isMissingDBRelation(err) {
 			return nil, errs.B().Code(errs.NotFound).Msg("forward network not found").Err()
@@ -148,12 +148,12 @@ func (s *Service) GetWorkspaceForwardNetworkCapacitySummary(ctx context.Context,
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, networkRef)
+	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
 	if err != nil {
 		return nil, err
 	}
 
-	periodEnd, rows, err := loadLatestCapacityRollupsForForwardNetwork(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID)
+	periodEnd, rows, err := loadLatestCapacityRollupsForForwardNetwork(ctx, s.db, pc.userScope.ID, net.ForwardNetworkID)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load capacity rollups").Err()
 	}
@@ -164,7 +164,7 @@ func (s *Service) GetWorkspaceForwardNetworkCapacitySummary(ctx context.Context,
 		stale = time.Since(periodEnd) > 2*time.Hour
 	}
 	return &ForwardNetworkCapacitySummaryResponse{
-		WorkspaceID:      pc.workspace.ID,
+		UserScopeID:      pc.userScope.ID,
 		NetworkRef:       net.ID,
 		ForwardNetworkID: net.ForwardNetworkID,
 		AsOf:             asOf,
@@ -192,7 +192,7 @@ func (s *Service) RefreshWorkspaceForwardNetworkCapacityRollups(ctx context.Cont
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, networkRef)
+	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +208,7 @@ func (s *Service) RefreshWorkspaceForwardNetworkCapacityRollups(ctx context.Cont
 	}
 	meta, _ := toJSONMap(metaAny)
 	msg := fmt.Sprintf("Capacity rollup (%s)", pc.claims.Username)
-	task, err := createTaskAllowActive(ctx, s.db, pc.workspace.ID, nil, "capacity-rollup-forward-network", msg, pc.claims.Username, meta)
+	task, err := createTaskAllowActive(ctx, s.db, pc.userScope.ID, nil, "capacity-rollup-forward-network", msg, pc.claims.Username, meta)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to enqueue rollup").Err()
 	}
@@ -221,7 +221,7 @@ func (s *Service) RefreshWorkspaceForwardNetworkCapacityRollups(ctx context.Cont
 		}
 	}
 	return &ForwardNetworkCapacityRefreshResponse{
-		WorkspaceID: pc.workspace.ID,
+		UserScopeID: pc.userScope.ID,
 		NetworkRef:  net.ID,
 		Run:         runJSON,
 	}, nil
@@ -245,18 +245,18 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityInventory(ctx context.Contex
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
 
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, networkRef)
+	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
 	if err != nil {
 		return nil, err
 	}
 
-	asOf, snapshotID, devices, ifaces, ifaceVrfs, hwTcam, routes, bgp, err := loadLatestCapacityInventoryForForwardNetwork(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID)
+	asOf, snapshotID, devices, ifaces, ifaceVrfs, hwTcam, routes, bgp, err := loadLatestCapacityInventoryForForwardNetwork(ctx, s.db, pc.userScope.ID, net.ForwardNetworkID)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to load capacity inventory").Err()
 	}
 
 	out := &ForwardNetworkCapacityInventoryResponse{
-		WorkspaceID:      pc.workspace.ID,
+		UserScopeID:      pc.userScope.ID,
 		NetworkRef:       net.ID,
 		ForwardNetworkID: net.ForwardNetworkID,
 		Devices:          devices,
@@ -290,7 +290,7 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityGrowth(ctx context.Context, 
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, networkRef)
+	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +312,7 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityGrowth(ctx context.Context, 
 		limit = 50
 	}
 
-	asOf, compareAsOf, rows, err := loadCapacityGrowthForForwardNetwork(ctx, s.db, pc.workspace.ID, net.ForwardNetworkID, metric, window, objectType, time.Duration(compareHours)*time.Hour)
+	asOf, compareAsOf, rows, err := loadCapacityGrowthForForwardNetwork(ctx, s.db, pc.userScope.ID, net.ForwardNetworkID, metric, window, objectType, time.Duration(compareHours)*time.Hour)
 	if err != nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("failed to compute growth").Err()
 	}
@@ -320,7 +320,7 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityGrowth(ctx context.Context, 
 		rows = rows[:limit]
 	}
 	resp := &ForwardNetworkCapacityGrowthResponse{
-		WorkspaceID:      pc.workspace.ID,
+		UserScopeID:      pc.userScope.ID,
 		NetworkRef:       net.ID,
 		ForwardNetworkID: net.ForwardNetworkID,
 		Metric:           metric,
@@ -355,7 +355,7 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityInterfaceMetrics(ctx context
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, networkRef)
+	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -413,7 +413,7 @@ func (s *Service) PostWorkspaceForwardNetworkCapacityInterfaceMetricsHistory(ctx
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, networkRef)
+	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -465,7 +465,7 @@ func (s *Service) PostWorkspaceForwardNetworkCapacityDeviceMetricsHistory(ctx co
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, networkRef)
+	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -517,7 +517,7 @@ func (s *Service) GetWorkspaceForwardNetworkCapacityUnhealthyDevices(ctx context
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, networkRef)
+	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -560,7 +560,7 @@ func (s *Service) PostWorkspaceForwardNetworkCapacityUnhealthyInterfaces(ctx con
 	if s.db == nil {
 		return nil, errs.B().Code(errs.Unavailable).Msg("database unavailable").Err()
 	}
-	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.workspace.ID, networkRef)
+	net, err := resolveWorkspaceForwardNetwork(ctx, s.db, pc.userScope.ID, networkRef)
 	if err != nil {
 		return nil, err
 	}
@@ -594,13 +594,13 @@ func (s *Service) PostWorkspaceForwardNetworkCapacityUnhealthyInterfaces(ctx con
 
 // ---- storage helpers (forward network scope) ----
 
-func loadLatestCapacityRollupsForForwardNetwork(ctx context.Context, db *sql.DB, workspaceID, forwardNetworkID string) (time.Time, []CapacityRollupRow, error) {
+func loadLatestCapacityRollupsForForwardNetwork(ctx context.Context, db *sql.DB, userScopeID, forwardNetworkID string) (time.Time, []CapacityRollupRow, error) {
 	if db == nil {
 		return time.Time{}, nil, fmt.Errorf("db unavailable")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userScopeID = strings.TrimSpace(userScopeID)
 	forwardNetworkID = strings.TrimSpace(forwardNetworkID)
-	if workspaceID == "" || forwardNetworkID == "" {
+	if userScopeID == "" || forwardNetworkID == "" {
 		return time.Time{}, nil, fmt.Errorf("invalid identifiers")
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -608,7 +608,7 @@ func loadLatestCapacityRollupsForForwardNetwork(ctx context.Context, db *sql.DB,
 	var periodEnd time.Time
 	err := db.QueryRowContext(ctxReq, `SELECT COALESCE(MAX(period_end), 'epoch'::timestamptz)
 FROM sf_capacity_rollups
-WHERE user_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL`, workspaceID, forwardNetworkID).Scan(&periodEnd)
+WHERE user_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL`, userScopeID, forwardNetworkID).Scan(&periodEnd)
 	if err != nil {
 		return time.Time{}, nil, err
 	}
@@ -619,7 +619,7 @@ WHERE user_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL`, workspace
   period_end, samples, avg, p95, p99, max, slope_per_day, forecast_crossing_ts, threshold, details, created_at
 FROM sf_capacity_rollups
 WHERE user_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL AND period_end=$3
-ORDER BY metric, window_label, object_type, object_id`, workspaceID, forwardNetworkID, periodEnd)
+ORDER BY metric, window_label, object_type, object_id`, userScopeID, forwardNetworkID, periodEnd)
 	if err != nil {
 		return time.Time{}, nil, err
 	}
@@ -642,7 +642,7 @@ ORDER BY metric, window_label, object_type, object_id`, workspaceID, forwardNetw
 			continue
 		}
 		row := CapacityRollupRow{
-			WorkspaceID:      workspaceID,
+			UserScopeID:      userScopeID,
 			ForwardNetworkID: strings.TrimSpace(forwardID),
 			ObjectType:       strings.TrimSpace(objectType),
 			ObjectID:         strings.TrimSpace(objectID),
@@ -690,13 +690,13 @@ ORDER BY metric, window_label, object_type, object_id`, workspaceID, forwardNetw
 	return periodEnd, out, nil
 }
 
-func loadLatestCapacityInventoryForForwardNetwork(ctx context.Context, db *sql.DB, workspaceID, forwardNetworkID string) (asOf time.Time, snapshotID string, devices []CapacityDeviceInventoryRow, ifaces []CapacityInterfaceInventoryRow, ifaceVrfs []CapacityInterfaceVrfRow, hwTcam []CapacityHardwareTcamRow, routes []CapacityRouteScaleRow, bgp []CapacityBgpNeighborRow, err error) {
+func loadLatestCapacityInventoryForForwardNetwork(ctx context.Context, db *sql.DB, userScopeID, forwardNetworkID string) (asOf time.Time, snapshotID string, devices []CapacityDeviceInventoryRow, ifaces []CapacityInterfaceInventoryRow, ifaceVrfs []CapacityInterfaceVrfRow, hwTcam []CapacityHardwareTcamRow, routes []CapacityRouteScaleRow, bgp []CapacityBgpNeighborRow, err error) {
 	if db == nil {
 		return time.Time{}, "", nil, nil, nil, nil, nil, nil, fmt.Errorf("db unavailable")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userScopeID = strings.TrimSpace(userScopeID)
 	forwardNetworkID = strings.TrimSpace(forwardNetworkID)
-	if workspaceID == "" || forwardNetworkID == "" {
+	if userScopeID == "" || forwardNetworkID == "" {
 		return time.Time{}, "", nil, nil, nil, nil, nil, nil, fmt.Errorf("invalid identifiers")
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -705,7 +705,7 @@ func loadLatestCapacityInventoryForForwardNetwork(ctx context.Context, db *sql.D
 	rows, err := db.QueryContext(ctxReq, `SELECT DISTINCT ON (query_id) query_id, payload, created_at
 FROM sf_capacity_nqe_cache
 WHERE user_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL AND snapshot_id=''
-ORDER BY query_id, created_at DESC`, workspaceID, forwardNetworkID)
+ORDER BY query_id, created_at DESC`, userScopeID, forwardNetworkID)
 	if err != nil {
 		return time.Time{}, "", nil, nil, nil, nil, nil, nil, err
 	}
@@ -761,16 +761,16 @@ ORDER BY query_id, created_at DESC`, workspaceID, forwardNetworkID)
 	return asOf, snapshotID, devices, ifaces, ifaceVrfs, hwTcam, routes, bgp, nil
 }
 
-func loadCapacityGrowthForForwardNetwork(ctx context.Context, db *sql.DB, workspaceID, forwardNetworkID, metric, window, objectType string, compareDur time.Duration) (asOf time.Time, compareAsOf time.Time, out []CapacityGrowthRow, err error) {
+func loadCapacityGrowthForForwardNetwork(ctx context.Context, db *sql.DB, userScopeID, forwardNetworkID, metric, window, objectType string, compareDur time.Duration) (asOf time.Time, compareAsOf time.Time, out []CapacityGrowthRow, err error) {
 	if db == nil {
 		return time.Time{}, time.Time{}, nil, fmt.Errorf("db unavailable")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
+	userScopeID = strings.TrimSpace(userScopeID)
 	forwardNetworkID = strings.TrimSpace(forwardNetworkID)
 	metric = strings.TrimSpace(metric)
 	window = strings.TrimSpace(window)
 	objectType = strings.TrimSpace(objectType)
-	if workspaceID == "" || forwardNetworkID == "" || metric == "" || window == "" {
+	if userScopeID == "" || forwardNetworkID == "" || metric == "" || window == "" {
 		return time.Time{}, time.Time{}, nil, fmt.Errorf("invalid identifiers")
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -779,7 +779,7 @@ func loadCapacityGrowthForForwardNetwork(ctx context.Context, db *sql.DB, worksp
 	if err := db.QueryRowContext(ctxReq, `SELECT COALESCE(MAX(period_end), 'epoch'::timestamptz)
 FROM sf_capacity_rollups
 WHERE user_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL AND metric=$3 AND window_label=$4`,
-		workspaceID, forwardNetworkID, metric, window).Scan(&asOf); err != nil {
+		userScopeID, forwardNetworkID, metric, window).Scan(&asOf); err != nil {
 		return time.Time{}, time.Time{}, nil, err
 	}
 	if asOf.IsZero() || asOf.Equal(time.Unix(0, 0).UTC()) {
@@ -790,7 +790,7 @@ WHERE user_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL AND metric=
 	if err := db.QueryRowContext(ctxReq, `SELECT COALESCE(MAX(period_end), 'epoch'::timestamptz)
 FROM sf_capacity_rollups
 WHERE user_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL AND metric=$3 AND window_label=$4 AND period_end <= $5`,
-		workspaceID, forwardNetworkID, metric, window, target).Scan(&compareAsOf); err != nil {
+		userScopeID, forwardNetworkID, metric, window, target).Scan(&compareAsOf); err != nil {
 		return asOf, time.Time{}, nil, err
 	}
 	if compareAsOf.IsZero() || compareAsOf.Equal(time.Unix(0, 0).UTC()) {
@@ -801,7 +801,7 @@ WHERE user_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL AND metric=
 		if ts.IsZero() {
 			return []CapacityRollupRow{}, nil
 		}
-		args := []any{workspaceID, forwardNetworkID, metric, window, ts}
+		args := []any{userScopeID, forwardNetworkID, metric, window, ts}
 		query := `SELECT forward_network_id, object_type, object_id, metric, window_label,
   period_end, samples, avg, p95, p99, max, slope_per_day, forecast_crossing_ts, threshold, details, created_at
 FROM sf_capacity_rollups
@@ -833,7 +833,7 @@ WHERE user_id=$1 AND forward_network_id=$2 AND deployment_id IS NULL AND metric=
 				continue
 			}
 			row := CapacityRollupRow{
-				WorkspaceID:      workspaceID,
+				UserScopeID:      userScopeID,
 				ForwardNetworkID: strings.TrimSpace(forwardID),
 				ObjectType:       strings.TrimSpace(ot),
 				ObjectID:         strings.TrimSpace(oid),

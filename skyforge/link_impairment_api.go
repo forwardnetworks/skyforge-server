@@ -87,7 +87,7 @@ func (s *Service) SetWorkspaceDeploymentLinkImpairment(ctx context.Context, id, 
 		return nil, errs.B().Code(errs.InvalidArgument).Msg("impairment pct fields must be <= 100").Err()
 	}
 
-	dep, err := s.getWorkspaceDeployment(ctx, pc.workspace.ID, deploymentID)
+	dep, err := s.getWorkspaceDeployment(ctx, pc.userScope.ID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +108,7 @@ func (s *Service) SetWorkspaceDeploymentLinkImpairment(ctx context.Context, id, 
 	k8sNamespace = strings.TrimSpace(k8sNamespace)
 	topologyName = strings.TrimSpace(topologyName)
 	if k8sNamespace == "" {
-		k8sNamespace = clabernetesWorkspaceNamespace(pc.workspace.Slug)
+		k8sNamespace = clabernetesUserScopeNamespace(pc.userScope.Slug)
 	}
 	if topologyName == "" {
 		labName, _ := cfgAny["labName"].(string)
@@ -182,7 +182,7 @@ func (s *Service) SetWorkspaceDeploymentLinkImpairment(ctx context.Context, id, 
 	results = append(results, apply(edge.Source, edge.SourceIf))
 	results = append(results, apply(edge.Target, edge.TargetIf))
 
-	rlog.Info("link impairment applied", "workspace", pc.workspace.ID, "deployment", dep.ID, "edge", edgeID, "action", action)
+	rlog.Info("link impairment applied", "userScope", pc.userScope.ID, "deployment", dep.ID, "edge", edgeID, "action", action)
 
 	if s.db != nil {
 		ev := map[string]any{
@@ -197,8 +197,8 @@ func (s *Service) SetWorkspaceDeploymentLinkImpairment(ctx context.Context, id, 
 			"rateKbps":   req.RateKbps,
 			"results":    results,
 		}
-		if err := insertDeploymentUIEvent(ctx, s.db, pc.workspace.ID, dep.ID, pc.claims.Username, "link.impair."+action, ev); err == nil {
-			_ = notifyDeploymentEventPG(ctx, s.db, pc.workspace.ID, dep.ID)
+		if err := insertDeploymentUIEvent(ctx, s.db, pc.userScope.ID, dep.ID, pc.claims.Username, "link.impair."+action, ev); err == nil {
+			_ = notifyDeploymentEventPG(ctx, s.db, pc.userScope.ID, dep.ID)
 		}
 	}
 

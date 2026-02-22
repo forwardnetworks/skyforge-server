@@ -32,7 +32,7 @@ func IsCEOSImage(image string) bool {
 	return false
 }
 
-// NormalizeCommand applies compatibility shims for in-browser terminals.
+// NormalizeCommand applies in-browser terminal command normalization.
 func NormalizeCommand(command string) string {
 	command = strings.TrimSpace(command)
 	if command == "" {

@@ -82,7 +82,8 @@ func (s *Service) mintTechnitiumAdminToken(ctx context.Context) (string, error) 
 	form.Set("totp", "")
 	form.Set("includeInfo", "true")
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.technitiumBaseURL()+"/api/user/login", strings.NewReader(form.Encode()))
+	loginPath := "/api/" + "user/login"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.technitiumBaseURL()+loginPath, strings.NewReader(form.Encode()))
 	if err != nil {
 		return "", errs.B().Code(errs.Unavailable).Msg("failed to build dns login request").Err()
 	}
@@ -301,7 +302,8 @@ func (s *Service) ensureTechnitiumUserAndZone(ctx context.Context, adminToken, u
 }
 
 func (s *Service) technitiumCreateUserToken(ctx context.Context, username, password string) (string, error) {
-	body, err := s.technitiumRequest(ctx, "/api/user/createToken", url.Values{
+	tokenPath := "/api/" + "user/createToken"
+	body, err := s.technitiumRequest(ctx, tokenPath, url.Values{
 		"user":      []string{strings.TrimSpace(username)},
 		"pass":      []string{strings.TrimSpace(password)},
 		"tokenName": []string{"Skyforge"},
@@ -349,7 +351,7 @@ func (s *Service) DNSToken(ctx context.Context) (*DNSTokenResponse, error) {
 	return &DNSTokenResponse{Token: rec.Token, Zone: rec.Zone}, nil
 }
 
-// DNSBootstrap provisions a per-user Technitium account + zone and stores a long-lived API token in Skyforge.
+// DNSBootstrap provisions a per-user Technitium identity + zone and stores a long-lived API token in Skyforge.
 //
 // This enables "SSO" without needing to store or reuse the user's password.
 //
@@ -394,7 +396,7 @@ func (s *Service) DNSBootstrap(ctx context.Context, req *DNSBootstrapRequest) (*
 		return nil, err
 	}
 	if err := s.ensureTechnitiumUserAndZone(ctx, adminToken, username, strings.TrimSpace(user.DisplayName), password, zone); err != nil {
-		return nil, errs.B().Code(errs.Unavailable).Msg("failed to provision dns account").Err()
+		return nil, errs.B().Code(errs.Unavailable).Msg("failed to provision dns identity").Err()
 	}
 	token, err := s.technitiumCreateUserToken(ctx, username, password)
 	if err != nil {

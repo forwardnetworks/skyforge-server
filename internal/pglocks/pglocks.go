@@ -8,14 +8,14 @@ import (
 	"fmt"
 )
 
-func DeploymentAdvisoryLockKey(workspaceID, deploymentID string) int64 {
-	sum := sha256.Sum256(fmt.Appendf(nil, "%s:%s", workspaceID, deploymentID))
+func DeploymentAdvisoryLockKey(userScopeID, deploymentID string) int64 {
+	sum := sha256.Sum256(fmt.Appendf(nil, "%s:%s", userScopeID, deploymentID))
 	u := binary.LittleEndian.Uint64(sum[:8])
 	return int64(u)
 }
 
-func WorkspaceAdvisoryLockKey(workspaceID string) int64 {
-	sum := sha256.Sum256(fmt.Appendf(nil, "%s:__workspace__", workspaceID))
+func UserScopeAdvisoryLockKey(userScopeID string) int64 {
+	sum := sha256.Sum256(fmt.Appendf(nil, "%s:__user_scope__", userScopeID))
 	u := binary.LittleEndian.Uint64(sum[:8])
 	return int64(u)
 }

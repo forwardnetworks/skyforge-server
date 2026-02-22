@@ -82,7 +82,7 @@ type clabernetesTaskSpec struct {
 
 type clabernetesRunSpec struct {
 	TaskID             int
-	WorkspaceID        string
+	UserScopeID        string
 	Action             string
 	Namespace          string
 	TopologyName       string
@@ -118,7 +118,7 @@ func (e *Engine) dispatchClabernetesTask(ctx context.Context, task *taskstore.Ta
 	}
 	runSpec := clabernetesRunSpec{
 		TaskID:             task.ID,
-		WorkspaceID:        strings.TrimSpace(task.WorkspaceID),
+		UserScopeID:        strings.TrimSpace(task.UserScopeID),
 		Action:             strings.TrimSpace(specIn.Action),
 		Namespace:          strings.TrimSpace(specIn.Namespace),
 		TopologyName:       strings.TrimSpace(specIn.TopologyName),
@@ -197,7 +197,7 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		}
 
 		// Ensure clabernetes launcher pods can pull private images (launcher/NOS) by wiring the
-		// namespace pull secret into the topology service account via spec.imagePull.pullSecrets.
+		// namespace pull secret into the topology service identity via spec.imagePull.pullSecrets.
 		secretName := strings.TrimSpace(e.cfg.ImagePullSecretName)
 		if secretName == "" {
 			secretName = "ghcr-pull"
@@ -365,7 +365,7 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 		if containerlabTopologyHasKind(spec.TopologyYAML, "ceos") {
 			// Historically, cEOS could be finicky in some native-mode setups. Skyforge does not
 			// support falling back to Docker-in-Docker; surface a clear error if this is hit so
-			// we can address native compatibility instead of silently switching runtimes.
+			// we can address native behavior instead of silently switching runtimes.
 			if envBool(spec.Environment, "SKYFORGE_CLABERNETES_DISABLE_NATIVE_FOR_CEOS", false) {
 				return fmt.Errorf("cEOS native mode is required; Docker-in-Docker is not supported")
 			}
@@ -514,7 +514,7 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 
 					// Validate we actually landed in clabernetes native mode. If this fails, the
 					// topology will be running Docker-in-Docker inside the launcher, which Skyforge
-					// never supports due to performance/compatibility concerns.
+					// never supports due to performance and behavior concerns.
 					log.Infof("Clabernetes native mode: validating (no Docker-in-Docker)")
 					if err := kubeAssertClabernetesNativeMode(ctx, ns, name); err != nil {
 						return err
@@ -669,8 +669,8 @@ func (e *Engine) storeClabernetesTopologyArtifact(ctx context.Context, spec clab
 	if e == nil || spec.TaskID <= 0 || graph == nil {
 		return fmt.Errorf("invalid task context")
 	}
-	if strings.TrimSpace(spec.WorkspaceID) == "" {
-		// Best-effort enhancement: storing topology graphs requires a workspace scope.
+	if strings.TrimSpace(spec.UserScopeID) == "" {
+		// Best-effort enhancement: storing topology graphs requires a user-scope scope.
 		// Skip silently rather than failing the overall run.
 		return nil
 	}
@@ -690,7 +690,7 @@ func (e *Engine) storeClabernetesTopologyArtifact(ctx context.Context, spec clab
 	key := fmt.Sprintf("topology/clabernetes/%s.json", sanitizeArtifactKeySegment(labName))
 	ctxPut, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	putKey, err := putWorkspaceArtifact(ctxPut, e.cfg, spec.WorkspaceID, key, graphBytes, "application/json")
+	putKey, err := putUserScopeArtifact(ctxPut, e.cfg, spec.UserScopeID, key, graphBytes, "application/json")
 	if err != nil {
 		if isObjectStoreNotConfigured(err) {
 			return nil

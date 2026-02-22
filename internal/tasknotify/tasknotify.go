@@ -15,7 +15,7 @@ const (
 	WebhooksChannel      = "skyforge_webhook_updates"
 	SyslogChannel        = "skyforge_syslog_updates"
 	SnmpChannel          = "skyforge_snmp_updates"
-	WorkspacesChannel    = "skyforge_workspaces_updates"
+	UserScopesChannel    = "skyforge_user_scopes_updates"
 	DeploymentEventsChan = "skyforge_deployment_events"
 )
 
@@ -83,7 +83,7 @@ func NotifySnmpUpdate(ctx context.Context, db *sql.DB, username string) error {
 	return err
 }
 
-func NotifyWorkspacesUpdate(ctx context.Context, db *sql.DB, payload string) error {
+func NotifyUserScopesUpdate(ctx context.Context, db *sql.DB, payload string) error {
 	payload = strings.ToLower(strings.TrimSpace(payload))
 	if payload == "" {
 		payload = "*"
@@ -93,19 +93,19 @@ func NotifyWorkspacesUpdate(ctx context.Context, db *sql.DB, payload string) err
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
-	_, err := db.ExecContext(ctxReq, "SELECT pg_notify($1, $2)", WorkspacesChannel, payload)
+	_, err := db.ExecContext(ctxReq, "SELECT pg_notify($1, $2)", UserScopesChannel, payload)
 	return err
 }
 
-func NotifyDeploymentEvent(ctx context.Context, db *sql.DB, workspaceID, deploymentID string) error {
-	workspaceID = strings.TrimSpace(workspaceID)
+func NotifyDeploymentEvent(ctx context.Context, db *sql.DB, userScopeID, deploymentID string) error {
+	userScopeID = strings.TrimSpace(userScopeID)
 	deploymentID = strings.TrimSpace(deploymentID)
-	if db == nil || workspaceID == "" || deploymentID == "" {
+	if db == nil || userScopeID == "" || deploymentID == "" {
 		return nil
 	}
 	ctxReq, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
-	payload := workspaceID + ":" + deploymentID
+	payload := userScopeID + ":" + deploymentID
 	_, err := db.ExecContext(ctxReq, "SELECT pg_notify($1, $2)", DeploymentEventsChan, payload)
 	return err
 }
