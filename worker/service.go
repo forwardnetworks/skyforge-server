@@ -3,12 +3,14 @@ package worker
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"encore.app/internal/jsonmap"
 	"encore.app/internal/skyforgeconfig"
 	"encore.app/internal/skyforgecore"
 	"encore.app/internal/taskengine"
@@ -100,6 +102,11 @@ func init() {
 				}
 				_, _ = taskqueue.InteractiveTopic.Publish(ctx, ev)
 			},
+			OnFinished: func(task *taskstore.TaskRecord, status string, startedAt time.Time) {
+				if err := enqueueForwardSyncAfterTopologySuccess(context.Background(), stdlib, task, status); err != nil {
+					rlog.Warn("forward sync auto-enqueue failed", "task_id", task.ID, "err", err)
+				}
+			},
 		}, rlogLogger{})
 	}
 
@@ -188,4 +195,134 @@ func getTaskPriority(ctx context.Context, db *sql.DB, taskID int) int {
 		return 0
 	}
 	return int(p.Int64)
+}
+
+func enqueueForwardSyncAfterTopologySuccess(ctx context.Context, db *sql.DB, task *taskstore.TaskRecord, status string) error {
+	if db == nil || task == nil {
+		return nil
+	}
+	if !strings.EqualFold(strings.TrimSpace(status), "success") {
+		return nil
+	}
+	if !topologyTaskType(strings.TrimSpace(task.TaskType)) {
+		return nil
+	}
+	if !task.DeploymentID.Valid || strings.TrimSpace(task.DeploymentID.String) == "" {
+		return nil
+	}
+	if !shouldAutoForwardSyncForAction(task.Metadata) {
+		return nil
+	}
+
+	userScopeID := strings.TrimSpace(task.UserScopeID)
+	deploymentID := strings.TrimSpace(task.DeploymentID.String)
+	if !deploymentForwardEnabled(ctx, db, userScopeID, deploymentID) {
+		return nil
+	}
+
+	meta, err := jsonmap.ToJSONMap(map[string]any{
+		"deploymentId":  deploymentID,
+		"dedupeKey":     fmt.Sprintf("forward-sync:%s:%s", userScopeID, deploymentID),
+		"priority":      taskstore.PriorityBackground,
+		"triggerTaskId": task.ID,
+	})
+	if err != nil {
+		return err
+	}
+	forwardTask, err := taskstore.CreateTaskAllowActive(
+		ctx,
+		db,
+		userScopeID,
+		&deploymentID,
+		"forward-sync",
+		fmt.Sprintf("Skyforge Forward sync (%s)", strings.TrimSpace(task.CreatedBy)),
+		strings.TrimSpace(task.CreatedBy),
+		meta,
+	)
+	if err != nil || forwardTask == nil {
+		return err
+	}
+	if !strings.EqualFold(strings.TrimSpace(forwardTask.Status), "queued") {
+		return nil
+	}
+	return publishTaskByPriority(ctx, db, forwardTask)
+}
+
+func topologyTaskType(taskType string) bool {
+	switch strings.ToLower(strings.TrimSpace(taskType)) {
+	case "netlab-c9s-run", "clabernetes-run", "containerlab-run", "netlab-run", "eve-ng-run":
+		return true
+	default:
+		return false
+	}
+}
+
+func shouldAutoForwardSyncForAction(meta taskstore.JSONMap) bool {
+	if meta == nil {
+		return true
+	}
+	metaMap, err := jsonmap.FromJSONMap(meta)
+	if err != nil {
+		return true
+	}
+	action := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", metaMap["action"])))
+	if action == "" {
+		if raw, ok := metaMap["spec"]; ok {
+			if m, ok := raw.(map[string]any); ok {
+				action = strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", m["action"])))
+			}
+		}
+	}
+	switch action {
+	case "", "deploy", "start", "up", "create", "apply", "run":
+		return true
+	default:
+		return false
+	}
+}
+
+func deploymentForwardEnabled(ctx context.Context, db *sql.DB, userScopeID, deploymentID string) bool {
+	if db == nil || userScopeID == "" || deploymentID == "" {
+		return false
+	}
+	ctxReq, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	var raw []byte
+	if err := db.QueryRowContext(ctxReq, `SELECT config FROM sf_deployments WHERE user_id=$1 AND id=$2`, userScopeID, deploymentID).Scan(&raw); err != nil {
+		return false
+	}
+	cfg := map[string]any{}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return false
+	}
+	switch v := cfg["forwardEnabled"].(type) {
+	case bool:
+		return v
+	case string:
+		s := strings.TrimSpace(v)
+		return strings.EqualFold(s, "true") || s == "1" || strings.EqualFold(s, "yes")
+	default:
+		return false
+	}
+}
+
+func publishTaskByPriority(ctx context.Context, db *sql.DB, task *taskstore.TaskRecord) error {
+	if task == nil || task.ID <= 0 {
+		return nil
+	}
+	key := strings.TrimSpace(task.UserScopeID)
+	if task.DeploymentID.Valid && strings.TrimSpace(task.DeploymentID.String) != "" {
+		key = fmt.Sprintf("%s:%s", strings.TrimSpace(task.UserScopeID), strings.TrimSpace(task.DeploymentID.String))
+	}
+	ev := &taskqueue.TaskEnqueuedEvent{TaskID: task.ID, Key: key}
+	priority := task.Priority
+	if priority == 0 {
+		priority = getTaskPriority(ctx, db, task.ID)
+	}
+	if priority < taskstore.PriorityInteractive {
+		_, err := taskqueue.BackgroundTopic.Publish(ctx, ev)
+		return err
+	}
+	_, err := taskqueue.InteractiveTopic.Publish(ctx, ev)
+	return err
 }

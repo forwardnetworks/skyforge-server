@@ -531,13 +531,9 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 							log.Infof("clabernetes topology capture failed: %v", err)
 						}
 
-						// Wait until NOS nodes are actually SSH-ready before marking the deploy step complete.
-						// This avoids "ready too fast" and prevents downstream systems (Forward sync, UI terminal)
-						// from racing long boot times.
-						sshReadySeconds := envInt(spec.Environment, "SKYFORGE_CLABERNETES_SSH_READY_SECONDS", 900)
-						if clabernetesGraphHasCumulusFamily(graph) {
-							sshReadySeconds = 0
-						}
+						// Optional deploy-local SSH readiness gate. Keep disabled by default so
+						// topology deployment is independent from higher-level integrations.
+						sshReadySeconds := envInt(spec.Environment, "SKYFORGE_DEPLOY_SSH_READY_SECONDS", 0)
 						if sshReadySeconds > 0 {
 							if err := waitForForwardSSHReady(ctx, spec.TaskID, e, graph, time.Duration(sshReadySeconds)*time.Second, log); err != nil {
 								return err
@@ -605,20 +601,6 @@ func (e *Engine) runClabernetesTask(ctx context.Context, spec clabernetesRunSpec
 	default:
 		return fmt.Errorf("unknown clabernetes action")
 	}
-}
-
-func clabernetesGraphHasCumulusFamily(graph *TopologyGraph) bool {
-	if graph == nil || len(graph.Nodes) == 0 {
-		return false
-	}
-	for _, n := range graph.Nodes {
-		kind := strings.ToLower(strings.TrimSpace(n.Kind))
-		switch kind {
-		case "cvx", "cumulus":
-			return true
-		}
-	}
-	return false
 }
 
 func (e *Engine) resolveClabernetesTopologyGraph(ctx context.Context, spec clabernetesRunSpec, topologyOwner string) (*TopologyGraph, error) {

@@ -412,7 +412,7 @@ func validateNoLegacyIOSVMTopology(topologyYAML []byte) error {
 	return nil
 }
 
-const defaultNetlabC9sGeneratorImage = "ghcr.io/forwardnetworks/skyforge-netlab-generator:20260127-b8947318"
+const defaultNetlabC9sGeneratorImage = "ghcr.io/forwardnetworks/skyforge-netlab-generator:20260206-netlaboutput"
 
 // runNetlabC9sTaskK8sGenerator runs a netlab generator job inside the user-scope namespace,
 // waits for it to complete, then reads the generated manifest/configmaps.

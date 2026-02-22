@@ -405,7 +405,7 @@ func LoadWorkerConfig(enc WorkerConfig, sec skyforgecore.Secrets) skyforgecore.C
 		userScopesCfg.DataDir = "/var/lib/skyforge"
 	}
 	if strings.TrimSpace(userScopesCfg.GiteaAPIURL) == "" {
-		userScopesCfg.GiteaAPIURL = ""
+		userScopesCfg.GiteaAPIURL = "http://gitea:3000/api/v1"
 	}
 	if strings.TrimSpace(userScopesCfg.GiteaUsername) == "" {
 		userScopesCfg.GiteaUsername = "skyforge"

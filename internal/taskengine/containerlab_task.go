@@ -151,21 +151,8 @@ func (e *Engine) runContainerlabTask(ctx context.Context, spec containerlabRunSp
 			log.Infof("%s", string(body))
 		}
 		if labName != "" && spec.TaskID > 0 && strings.TrimSpace(spec.UserScopeID) != "" {
-			graph, err := e.captureContainerlabTopologyArtifact(ctx, spec, labName)
-			if err != nil {
+			if _, err := e.captureContainerlabTopologyArtifact(ctx, spec, labName); err != nil {
 				log.Infof("Containerlab topology capture skipped: %v", err)
-			} else if graph != nil && spec.UserScopeCtx != nil && strings.TrimSpace(spec.DeploymentID) != "" {
-				dep, depErr := e.loadDeployment(ctx, spec.UserScopeID, strings.TrimSpace(spec.DeploymentID))
-				if depErr != nil {
-					log.Infof("Forward sync skipped: failed to load deployment: %v", depErr)
-				} else if dep == nil {
-					log.Infof("Forward sync skipped: deployment not found")
-				} else {
-					_, _ = e.syncForwardTopologyGraphDevices(ctx, spec.TaskID, spec.UserScopeCtx, dep, graph, forwardSyncOptions{
-						StartConnectivity: true,
-						StartCollection:   true,
-					})
-				}
 			}
 		}
 		return nil

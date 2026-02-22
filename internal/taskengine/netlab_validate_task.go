@@ -32,7 +32,7 @@ type netlabValidateRunSpec struct {
 	SetOverrides   []string
 }
 
-const defaultNetlabGeneratorImage = "ghcr.io/forwardnetworks/skyforge-netlab-generator:latest"
+const defaultNetlabGeneratorImage = "ghcr.io/forwardnetworks/skyforge-netlab-generator:20260206-netlaboutput"
 
 func (e *Engine) dispatchNetlabValidateTask(ctx context.Context, task *taskstore.TaskRecord, log Logger) error {
 	if task == nil {

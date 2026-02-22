@@ -347,7 +347,6 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 	// Capture a lightweight topology graph after deploy so the UI can render
 	// resolved management IPs without querying netlab output.
 	var graph *TopologyGraph
-	var dep *UserScopeDeployment
 
 	captureErr := error(nil)
 	graph, captureErr = e.captureC9sTopologyArtifact(ctx, spec, ns, topologyName, labName, topologyBytes, nodeNameMapping, log)
@@ -358,61 +357,11 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		}
 	}
 
-	if graph != nil {
-		depLoaded, depErr := e.loadDeployment(ctx, spec.UserScopeCtx.userScope.ID, strings.TrimSpace(spec.DeploymentID))
-		if depErr != nil {
-			if log != nil {
-				log.Infof("forward sync skipped: failed to load deployment: %v", depErr)
-			}
-		} else if depLoaded == nil {
-			if log != nil {
-				log.Infof("forward sync skipped: deployment not found")
-			}
-		} else {
-			dep = depLoaded
-		}
-	}
-
-	// Forward device import (best-effort) should happen as soon as management IPs are available
-	// so Forward can start its own reachability checks early.
-	if dep != nil && graph != nil {
-		earlyConnectivityEnabled := envBool(spec.Environment, "SKYFORGE_FORWARD_CONNECTIVITY_EARLY", true)
-		earlyConnectivitySeconds := envInt(spec.Environment, "SKYFORGE_FORWARD_CONNECTIVITY_EARLY_SECONDS", 300)
-		earlyConnectivityConcurrency := envInt(spec.Environment, "SKYFORGE_FORWARD_CONNECTIVITY_EARLY_CONCURRENCY", 12)
-		earlyConnectivityBatchSize := envInt(spec.Environment, "SKYFORGE_FORWARD_CONNECTIVITY_EARLY_BATCH", 10)
-
-		// 1) Import devices/endpoints into Forward as soon as management IPs are available.
-		// We intentionally do this before applying post-up config so Forward can start its
-		// own reachability checks early.
-		if _, err := e.syncForwardTopologyGraphDevices(ctx, spec.TaskID, spec.UserScopeCtx, dep, graph, forwardSyncOptions{
-			StartConnectivity: false,
-			StartCollection:   false,
-		}); err != nil {
-			if log != nil {
-				log.Infof("forward sync skipped: %v", err)
-			}
-		} else if log != nil {
-			log.Infof("forward sync: devices uploaded (collection deferred)")
-		}
-
-		// 2) Start Forward connectivity tests as soon as each node becomes SSH-ready (SSH banner).
-		// This runs concurrently with post-up config to reduce time-to-signal.
-		if earlyConnectivityEnabled && earlyConnectivitySeconds > 0 {
-			ctxEarly, cancel := context.WithTimeout(ctx, time.Duration(earlyConnectivitySeconds)*time.Second)
-			defer cancel()
-			go func() {
-				_ = startForwardConnectivityAsNodesSSHReady(ctxEarly, spec.TaskID, e, spec.UserScopeCtx, dep, graph, earlyConnectivityConcurrency, earlyConnectivityBatchSize, log)
-			}()
-		}
-
-	}
-
 	// Apply netlab-generated device configuration using netlab's own `netlab initial`
 	// workflow (Ansible playbooks + device-specific tasks). This avoids Skyforge-specific
 	// config concatenation logic and keeps netlab as the source of truth.
 	//
-	// We run it after early Forward topology upload so Forward can start reachability
-	// checks while configuration is being applied, but before starting Forward collection.
+	// We run this after topology bring-up so config push/auth checks happen on stable pods.
 	// Netlab initial can be explicitly enabled per-run via env. Additionally, we auto-enable it
 	// for vrnetlab IOS/Junos families where we intentionally skip startup-config injection
 	// to match the native netlab/containerlab + vrnetlab workflow.
@@ -432,7 +381,7 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 		// SSH logins, and starting netlab initial too early results in authentication errors
 		// (devices not fully booted yet).
 		if graph != nil {
-			sshReadySeconds := envInt(spec.Environment, "SKYFORGE_NETLAB_INITIAL_SSH_READY_SECONDS", envInt(spec.Environment, "SKYFORGE_FORWARD_SSH_READY_SECONDS", 900))
+			sshReadySeconds := envInt(spec.Environment, "SKYFORGE_NETLAB_INITIAL_SSH_READY_SECONDS", 900)
 			if sshReadySeconds > 0 {
 				if err := taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "netlab.c9s.ssh.ready", func() error {
 					return waitForForwardSSHReady(ctx, spec.TaskID, e, graph, time.Duration(sshReadySeconds)*time.Second, log)
@@ -474,63 +423,6 @@ func (e *Engine) runNetlabC9sTask(ctx context.Context, spec netlabC9sRunSpec, lo
 			// Best-effort: lab is still usable even if cfglets fail.
 			log.Infof("c9s post-up config failed (ignored): %v", err)
 		}
-	}
-
-	// Optional: start connectivity tests in a single batch after post-up config.
-	// Default is to start them earlier (per-node as SSH becomes ready).
-	postupConnectivity := envBool(spec.Environment, "SKYFORGE_FORWARD_CONNECTIVITY_POSTUP", false)
-	if dep != nil && graph != nil && postupConnectivity {
-		_ = taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "forward.connectivity.start", func() error {
-			delaySeconds := envInt(spec.Environment, "SKYFORGE_FORWARD_CONNECTIVITY_DELAY_SECONDS", 0)
-			if delaySeconds > 0 {
-				time.Sleep(time.Duration(delaySeconds) * time.Second)
-			}
-			if err := e.startForwardConnectivityTestsForDeployment(ctx, spec.TaskID, spec.UserScopeCtx, dep, graph); err != nil {
-				if log != nil {
-					log.Infof("forward sync skipped: %v", err)
-				}
-				return err
-			}
-			if log != nil {
-				log.Infof("forward sync: connectivity test started (post-up)")
-			}
-			return nil
-		})
-	}
-
-	// 5) Start collection after post-up config has been applied (best-effort).
-	// NOTE: "Topology ready" in Kubernetes is not the same thing as "SSH ready" for the NOS.
-	// Many vrnetlab/QEMU-based NOS images accept pod readiness quickly but refuse port 22 for
-	// minutes while still booting. Starting Forward collection too early results in noisy
-	// "device unreachable" signals and wastes time. We therefore gate collection on an SSH
-	// banner check (configurable timeout).
-	if dep != nil {
-		sshReadySeconds := envInt(spec.Environment, "SKYFORGE_FORWARD_SSH_READY_SECONDS", 900)
-		if sshReadySeconds > 0 && graph != nil {
-			_ = taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "forward.ssh.ready", func() error {
-				if err := waitForForwardSSHReady(ctx, spec.TaskID, e, graph, time.Duration(sshReadySeconds)*time.Second, log); err != nil {
-					// Keep the lab up even if collection is blocked; surface a clear error in the run.
-					if log != nil {
-						log.Infof("forward sync wait timed out: %v", err)
-					}
-					return err
-				}
-				return nil
-			})
-		}
-
-		_ = taskdispatch.WithTaskStep(ctx, e.db, spec.TaskID, "forward.collection.start", func() error {
-			if err := e.startForwardCollectionForDeployment(ctx, spec.TaskID, spec.UserScopeCtx, dep); err != nil {
-				if log != nil {
-					log.Infof("forward sync skipped: %v", err)
-				}
-				return err
-			}
-			if log != nil {
-				log.Infof("forward sync: collection started")
-			}
-			return nil
-		})
 	}
 
 	// Store a bundle of generated artifacts in object storage for browsing and debugging.

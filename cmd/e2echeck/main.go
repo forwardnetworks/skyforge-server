@@ -548,8 +548,6 @@ func generateMatrixFromCatalog(catalogPath string) (matrixFile, error) {
 	templateFilter := splitCSVEnv("SKYFORGE_E2E_TEMPLATES")
 	deployEnabled := getenvBool("SKYFORGE_E2E_DEPLOY", false)
 	deployDeviceFilter := splitCSVEnv("SKYFORGE_E2E_DEPLOY_DEVICES")
-	forwardSSHReadyOverride := strings.TrimSpace(os.Getenv("SKYFORGE_E2E_FORWARD_SSH_READY_SECONDS"))
-
 	deviceList := make([]string, 0, len(devices))
 	for d := range devices {
 		if deviceFilter != nil {
@@ -610,9 +608,6 @@ func generateMatrixFromCatalog(catalogPath string) (matrixFile, error) {
 				}
 				deployEnv := map[string]string{
 					"NETLAB_DEVICE": d,
-				}
-				if forwardSSHReadyOverride != "" {
-					deployEnv["SKYFORGE_FORWARD_SSH_READY_SECONDS"] = forwardSSHReadyOverride
 				}
 
 				deployName := fmt.Sprintf("netlab-deploy-%s-%s", d, tmpl.Name)
@@ -905,7 +900,7 @@ func waitForSSHProbeAPI(ctx context.Context, client *http.Client, baseURL, cooki
 
 func isSlowSSHDevice(device string) bool {
 	switch strings.ToLower(strings.TrimSpace(device)) {
-	case "nxos", "vmx", "vptx", "sros":
+	case "iosxr", "nxos", "vmx", "vptx", "sros":
 		return true
 	default:
 		return false
