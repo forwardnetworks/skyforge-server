@@ -115,7 +115,7 @@ func main() {
 	}
 	client := &http.Client{Timeout: timeout, Transport: tr}
 
-	healthURL := baseURL + "/api/skyforge/api/health"
+	healthURL := baseURL + "/api/health"
 	resp, body, err := doJSON(client, http.MethodGet, healthURL, nil, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "health request failed: %v\n", err)
@@ -127,7 +127,7 @@ func main() {
 	}
 	fmt.Printf("OK health: %s\n", healthURL)
 
-	loginURL := baseURL + "/api/skyforge/api/login"
+	loginURL := baseURL + "/api/login"
 	resp, body, err = doJSON(client, http.MethodPost, loginURL, loginRequest{Username: username, Password: password}, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "login request failed: %v\n", err)
@@ -145,7 +145,7 @@ func main() {
 	fmt.Printf("OK login: %s\n", username)
 
 	wsName := fmt.Sprintf("smoke-%s", time.Now().UTC().Format("20060102-150405"))
-	createURL := baseURL + "/api/skyforge/api/users"
+	createURL := baseURL + "/api/users"
 	resp, body, err = doJSON(client, http.MethodPost, createURL, userScopeCreateRequest{Name: wsName}, map[string]string{
 		"Cookie": setCookie,
 	})
@@ -168,7 +168,7 @@ func main() {
 	}
 	fmt.Printf("OK user-scope create: %s (%s)\n", ws.Name, ws.ID)
 
-	deleteURL := baseURL + "/api/skyforge/api/users/" + ws.ID + "?confirm=" + ws.Slug
+	deleteURL := baseURL + "/api/users/" + ws.ID + "?confirm=" + ws.Slug
 	resp, body, err = doJSON(client, http.MethodDelete, deleteURL, nil, map[string]string{
 		"Cookie": setCookie,
 	})
