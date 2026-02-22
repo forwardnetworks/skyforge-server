@@ -32,6 +32,40 @@ const (
 
 const defaultForwardBaseURL = "https://fwd.app"
 
+type forwardSnmpMode string
+
+const (
+	forwardSnmpModeAuto        forwardSnmpMode = "auto"
+	forwardSnmpModeExternal    forwardSnmpMode = "external"
+	forwardSnmpModeUnsupported forwardSnmpMode = "unsupported"
+)
+
+func forwardSnmpModeForDeviceKey(deviceKey string) forwardSnmpMode {
+	switch strings.ToLower(strings.TrimSpace(deviceKey)) {
+	case "eos", "ios", "iosxr":
+		return forwardSnmpModeAuto
+	case "cumulus":
+		return forwardSnmpModeExternal
+	default:
+		return forwardSnmpModeUnsupported
+	}
+}
+
+func mapKeysSortedSet(values map[string]struct{}) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	for v := range values {
+		v = strings.TrimSpace(v)
+		if v != "" {
+			out = append(out, v)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 type forwardCredentials struct {
 	BaseURL        string
 	SkipTLSVerify  bool
@@ -54,16 +88,12 @@ func (e *Engine) forwardDeviceTypes(ctx context.Context) map[string]string {
 		// Do not rely on Forward auto-detection here.
 		"ios": "cisco_ios_ssh",
 		// Some netlab outputs use IOS-XE-ish labels even when the device is IOL.
-		"ios_xe":   "cisco_ios_ssh",
-		"ios-xe":   "cisco_ios_ssh",
-		"iosv":     "cisco_ios_ssh",
-		"iosvl2":   "cisco_ios_ssh",
-		"csr":      "cisco_ios_xe_ssh",
-		"cat8000v": "cisco_ios_xe_ssh",
-		"asav":     "cisco_asa_ssh",
-		"fortios":  "fortinet_ssh",
-		"nxos":     "cisco_nxos_ssh",
-		"iosxr":    "cisco_ios_xr_ssh",
+		"ios_xe":  "cisco_ios_ssh",
+		"ios-xe":  "cisco_ios_ssh",
+		"asav":    "cisco_asa_ssh",
+		"fortios": "fortinet_ssh",
+		"nxos":    "cisco_nxos_ssh",
+		"iosxr":   "cisco_ios_xr_ssh",
 		// Juniper routers/switches (including vMX, vJunos-switch, vJunos-router).
 		"vjunos-switch": "juniper_junos_ssh",
 		"vjunos-router": "juniper_junos_ssh",
@@ -816,6 +846,10 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 	devices := []forwardClassicDevice{}
 	endpoints := []forwardEndpoint{}
 	seen := map[string]bool{}
+	snmpAutoKinds := map[string]struct{}{}
+	snmpExternalKinds := map[string]struct{}{}
+	snmpUnsupportedKinds := map[string]struct{}{}
+	snmpUnsupportedNodes := map[string]struct{}{}
 	changed := false
 	linuxProfileID := ""
 	rows := parseNetlabStatusOutput(logText)
@@ -986,17 +1020,30 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 				forwardType = "cisco_ios_ssh"
 			}
 		}
+		snmpMode := forwardSnmpModeForDeviceKey(deviceKey)
+		enableSnmpCollection := snmpMode == forwardSnmpModeAuto
+		deviceSnmpCredentialID := ""
+		switch snmpMode {
+		case forwardSnmpModeAuto:
+			deviceSnmpCredentialID = snmpCredentialID
+			snmpAutoKinds[deviceKey] = struct{}{}
+		case forwardSnmpModeExternal:
+			snmpExternalKinds[deviceKey] = struct{}{}
+		default:
+			snmpUnsupportedKinds[deviceKey] = struct{}{}
+			snmpUnsupportedNodes[name] = struct{}{}
+		}
 		devices = append(devices, forwardClassicDevice{
 			Name:                     name,
 			Type:                     forwardType,
 			Host:                     host,
 			CliCredentialID:          cliCredentialID,
-			SnmpCredentialID:         snmpCredentialID,
+			SnmpCredentialID:         deviceSnmpCredentialID,
 			JumpServerID:             jumpServerID,
 			CollectBgpAdvertisements: true,
 			BgpTableType:             "BOTH",
 			BgpPeerType:              "BOTH",
-			EnableSnmpCollection:     true,
+			EnableSnmpCollection:     enableSnmpCollection,
 		})
 	}
 
@@ -1042,6 +1089,17 @@ func (e *Engine) syncForwardNetlabDevices(ctx context.Context, taskID int, pc *w
 			"networkId":   networkID,
 			"deviceCount": len(devices),
 		})
+		if len(snmpExternalKinds) > 0 || len(snmpUnsupportedKinds) > 0 {
+			_ = taskstore.AppendTaskEvent(context.Background(), e.db, taskID, "forward.snmpv3.partial", map[string]any{
+				"source":            "netlab",
+				"networkId":         networkID,
+				"autoKinds":         mapKeysSortedSet(snmpAutoKinds),
+				"externalKinds":     mapKeysSortedSet(snmpExternalKinds),
+				"unsupportedKinds":  mapKeysSortedSet(snmpUnsupportedKinds),
+				"unsupportedNodes":  mapKeysSortedSet(snmpUnsupportedNodes),
+				"snmpCredentialSet": strings.TrimSpace(snmpCredentialID) != "",
+			})
+		}
 	}
 	return len(devices), nil
 }
@@ -1189,6 +1247,10 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 	endpoints := []forwardEndpoint{}
 	connectivityNames := []string{}
 	seen := map[string]bool{}
+	snmpAutoKinds := map[string]struct{}{}
+	snmpExternalKinds := map[string]struct{}{}
+	snmpUnsupportedKinds := map[string]struct{}{}
+	snmpUnsupportedNodes := map[string]struct{}{}
 	linuxEndpointProfileID := ""
 	for _, node := range graph.Nodes {
 		host := strings.TrimSpace(node.MgmtHost)
@@ -1304,18 +1366,31 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 		if deviceKey != "" {
 			forwardType = forwardTypes[deviceKey]
 		}
+		snmpMode := forwardSnmpModeForDeviceKey(deviceKey)
+		enableSnmpCollection := snmpMode == forwardSnmpModeAuto
+		deviceSnmpCredentialID := ""
+		switch snmpMode {
+		case forwardSnmpModeAuto:
+			deviceSnmpCredentialID = snmpCredentialID
+			snmpAutoKinds[deviceKey] = struct{}{}
+		case forwardSnmpModeExternal:
+			snmpExternalKinds[deviceKey] = struct{}{}
+		default:
+			snmpUnsupportedKinds[deviceKey] = struct{}{}
+			snmpUnsupportedNodes[name] = struct{}{}
+		}
 
 		devices = append(devices, forwardClassicDevice{
 			Name:                     name,
 			Type:                     forwardType,
 			Host:                     host,
 			CliCredentialID:          cliCredentialID,
-			SnmpCredentialID:         snmpCredentialID,
+			SnmpCredentialID:         deviceSnmpCredentialID,
 			JumpServerID:             jumpServerID,
 			CollectBgpAdvertisements: true,
 			BgpTableType:             "BOTH",
 			BgpPeerType:              "BOTH",
-			EnableSnmpCollection:     true,
+			EnableSnmpCollection:     enableSnmpCollection,
 		})
 		connectivityNames = append(connectivityNames, name)
 	}
@@ -1361,6 +1436,17 @@ func (e *Engine) syncForwardTopologyGraphDevices(ctx context.Context, taskID int
 			"networkId":   networkID,
 			"deviceCount": len(devices),
 		})
+		if len(snmpExternalKinds) > 0 || len(snmpUnsupportedKinds) > 0 {
+			_ = taskstore.AppendTaskEvent(context.Background(), e.db, taskID, "forward.snmpv3.partial", map[string]any{
+				"source":            "topology",
+				"networkId":         networkID,
+				"autoKinds":         mapKeysSortedSet(snmpAutoKinds),
+				"externalKinds":     mapKeysSortedSet(snmpExternalKinds),
+				"unsupportedKinds":  mapKeysSortedSet(snmpUnsupportedKinds),
+				"unsupportedNodes":  mapKeysSortedSet(snmpUnsupportedNodes),
+				"snmpCredentialSet": strings.TrimSpace(snmpCredentialID) != "",
+			})
+		}
 	}
 	return len(devices), nil
 }

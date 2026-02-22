@@ -46,16 +46,6 @@ configlets:
       snmp-server view sfv3 iso included
       snmp-server group sfgroup v3 priv read sfv3
       snmp-server user skyforge sfgroup v3 auth sha SfAuth-default priv aes 128 SfPriv-default
-    iosv: |
-      # legacy iosv disabled; use iol/ioll2
-    iosvl2: |
-      # legacy iosvl2 disabled; use iol/ioll2
-    iosxe: |
-      # legacy iosxe disabled; use iol/ioll2
-    csr: |
-      # legacy csr disabled; use iol/ioll2
-    cat8000v: |
-      # legacy cat8000v disabled; use iol/ioll2
     iosxr: |
       snmp-server view sfv3 iso included
       snmp-server group sfgroup v3 priv read sfv3
@@ -98,21 +88,6 @@ devices:
     clab:
       image: ghcr.io/forwardnetworks/vrnetlab/cisco_iol:L2-17.16.01a
 
-  # Cisco vIOS/vIOS-L2 via vrnetlab
-  # Netlab device types are `iosv` and `iosvl2` (do not introduce new device keys here).
-  iosv:
-    clab:
-      image: ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge1
-  iosvl2:
-    clab:
-      image: ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge1
-
-  # Cisco CSR1000v via vrnetlab
-  csr:
-    provider: clab
-    clab:
-      image: ghcr.io/forwardnetworks/vrnetlab/vr-csr:17.03.04
-
   # Cisco Nexus 9000v via vrnetlab
   nxos:
     provider: clab
@@ -124,12 +99,6 @@ devices:
     provider: clab
     clab:
       image: ghcr.io/forwardnetworks/vrnetlab/cisco_asav:9-16-4-57
-
-  # Cisco Catalyst 8000v via vrnetlab
-  cat8000v:
-    provider: clab
-    clab:
-      image: ghcr.io/forwardnetworks/vrnetlab/cisco_c8000v:17.16.01a
 
   # Juniper vJunos via vrnetlab
   vjunos-router:

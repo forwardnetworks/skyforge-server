@@ -23,26 +23,6 @@
       ]
     },
     {
-      "device": "cat8000v",
-      "image_prefix": "vrnetlab/cisco_c8000v",
-      "credentials": [
-        {
-          "username": "vrnetlab",
-          "password": "VR-netlab9"
-        }
-      ]
-    },
-    {
-      "device": "csr",
-      "image_prefix": "vrnetlab/vr-csr",
-      "credentials": [
-        {
-          "username": "vrnetlab",
-          "password": "VR-netlab9"
-        }
-      ]
-    },
-    {
       "device": "cumulus",
       "image_prefix": "networkop/cx",
       "credentials": [
@@ -104,27 +84,7 @@
     },
     {
       "device": "ios",
-      "image_prefix": "\u003cnil\u003e",
-      "credentials": [
-        {
-          "username": "admin",
-          "password": "admin"
-        }
-      ]
-    },
-    {
-      "device": "iosv",
-      "image_prefix": "vrnetlab/cisco_vios",
-      "credentials": [
-        {
-          "username": "admin",
-          "password": "admin"
-        }
-      ]
-    },
-    {
-      "device": "iosvl2",
-      "image_prefix": "vrnetlab/cisco_viosl2",
+      "image_prefix": "<nil>",
       "credentials": [
         {
           "username": "admin",
@@ -144,7 +104,7 @@
     },
     {
       "device": "junos",
-      "image_prefix": "\u003cnil\u003e",
+      "image_prefix": "<nil>",
       "credentials": [
         {
           "username": "vagrant",

@@ -671,10 +671,8 @@ func netlabInitialReadyTuning(deviceKey string) (retries int, delaySeconds int, 
 	case "eos":
 		// cEOS can take a few minutes before auth succeeds even though the SSH banner is present.
 		return 60, 5, true // 5m
-	case "iol", "iosv", "iosvl2":
+	case "iol":
 		return 90, 5, true // 7.5m
-	case "csr", "cat8000v":
-		return 120, 5, true // 10m
 	case "nxos":
 		return 180, 5, true // 15m
 	case "vmx", "vsrx", "vjunos-router", "vjunos-switch", "vptx":
@@ -1295,18 +1293,7 @@ func prepareC9sTopologyForDeploy(taskID int, topologyName, labName string, clabY
 					rewrittenVrnetlabNodes++
 				}
 
-				// Some vrnetlab images rely on runtime args that containerlab normally injects.
-				// In clabernetes we run images "as-is", so provide minimal kind-specific cmd
-				// overrides needed for native mode.
-				//
-				// CSR 1000v: without `--connection-mode tc`, vrnetlab does not create tap netdevs
-				// (`-netdev ... id=p01`) and QEMU crashes with "can't find value 'p01'".
-				imgLower := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["image"])))
-				kindLower := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", cfg["kind"])))
-				if (kindLower == "csr" || strings.Contains(imgLower, "/vrnetlab/vr-csr")) && cfg["cmd"] == nil {
-					cfg["cmd"] = "--connection-mode tc"
-					nodes[node] = cfg
-				}
+				// Legacy CSR/C8000v command overrides removed with native hard-cut.
 			}
 			topology["nodes"] = nodes
 		}

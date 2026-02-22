@@ -473,7 +473,7 @@ func allowedTemplatesForDevice(device string) map[string]struct{} {
 func deployTimeoutsForDevice(device string) (deployTimeout string, sshTimeout string) {
 	switch strings.TrimSpace(device) {
 	// QEMU-heavy / slow-boot devices.
-	case "vmx", "vptx", "cat8000v", "nxos", "sros":
+	case "vmx", "vptx", "nxos", "sros":
 		return "50m", "30m"
 	default:
 		return "25m", "12m"
@@ -486,7 +486,7 @@ func deployableInSkyforge(device string) bool {
 	// for in-cluster (clabernetes) netlab deployments.
 	//
 	// NOTE: Exclude vsrx (out of scope) even if the upstream netlab catalog includes it.
-	case "eos", "iol", "iosv", "iosvl2", "csr", "iosxr", "nxos", "cumulus", "sros", "asav", "fortios", "vmx", "vjunos-router", "vjunos-switch", "cat8000v", "arubacx", "dellos10", "vptx", "linux":
+	case "eos", "iol", "iosxr", "nxos", "cumulus", "sros", "asav", "fortios", "vmx", "vjunos-router", "vjunos-switch", "arubacx", "dellos10", "vptx", "linux":
 		return true
 	default:
 		return false
@@ -499,9 +499,6 @@ func onboardedNetlabDevices() []string {
 	return []string{
 		"eos",
 		"iol",
-		"iosv",
-		"iosvl2",
-		"csr",
 		"iosxr",
 		"nxos",
 		"cumulus",
@@ -511,7 +508,6 @@ func onboardedNetlabDevices() []string {
 		"vmx",
 		"vjunos-router",
 		"vjunos-switch",
-		"cat8000v",
 		"arubacx",
 		"dellos10",
 		"vptx",
@@ -909,7 +905,7 @@ func waitForSSHProbeAPI(ctx context.Context, client *http.Client, baseURL, cooki
 
 func isSlowSSHDevice(device string) bool {
 	switch strings.ToLower(strings.TrimSpace(device)) {
-	case "iosv", "iosvl2":
+	case "nxos", "vmx", "vptx", "sros":
 		return true
 	default:
 		return false
