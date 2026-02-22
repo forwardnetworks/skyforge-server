@@ -105,21 +105,8 @@ func injectNetlabC9sVrnetlabStartupConfig(
 			continue
 		}
 		if isVrnetlabIOSFamily(kind, image) {
-			// Prefer our "skyforge" vrnetlab builds for IOSv/IOSvL2. These are tuned to
-			// reliably enable SSH (keygen/bootstrap) in containerized/K8s environments.
-			// Keep the netlab-facing device kind the same; only rewrite the image tag.
-			//
-			// Note: We intentionally do not rewrite CSR/C8000v here.
-			if strings.Contains(image, "/cisco_vios:15.9.3") && !strings.Contains(image, "-skyforge") {
-				cfg["image"] = "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge8"
-				modified = true
-			}
-			if strings.Contains(image, "/cisco_viosl2:15.2") && !strings.Contains(image, "-skyforge") {
-				cfg["image"] = "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge8"
-				modified = true
-			}
-			// Ensure the generated topology does not reference a startup-config file we
-			// are not going to mount/inject.
+			// Native hard-cut: do not mutate legacy image tags here.
+			// Only ensure startup-config is not injected for IOS-family vrnetlab nodes.
 			if _, ok := cfg["startup-config"]; ok {
 				delete(cfg, "startup-config")
 				modified = true

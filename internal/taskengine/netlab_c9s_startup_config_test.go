@@ -36,10 +36,9 @@ func TestUpsertC9sMount_ReplacesByFilePath(t *testing.T) {
 	}
 }
 
-func TestInjectNetlabC9sVrnetlabStartupConfig_IOSFamily_SkipsStartupConfigAndRewritesIOSvImages(t *testing.T) {
+func TestInjectNetlabC9sVrnetlabStartupConfig_IOSFamily_SkipsStartupConfig(t *testing.T) {
 	// Covers the "IOS-family" fast path where we must:
 	// - remove any generated "startup-config" references (we don't mount them)
-	// - rewrite IOSv/IOSvL2 images to our tuned skyforge builds
 	// - not attempt any Kubernetes ConfigMap injection (overrideData stays empty)
 	in := []byte(`
 topology:
@@ -87,7 +86,7 @@ topology:
 	}
 
 	r1, _ := nodes["r1"].(map[string]any)
-	if got := r1["image"]; got != "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3-skyforge8" {
+	if got := r1["image"]; got != "ghcr.io/forwardnetworks/vrnetlab/cisco_vios:15.9.3" {
 		t.Fatalf("r1 image mismatch: %v", got)
 	}
 	if _, ok := r1["startup-config"]; ok {
@@ -95,7 +94,7 @@ topology:
 	}
 
 	r2, _ := nodes["r2"].(map[string]any)
-	if got := r2["image"]; got != "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2-skyforge8" {
+	if got := r2["image"]; got != "ghcr.io/forwardnetworks/vrnetlab/cisco_viosl2:15.2" {
 		t.Fatalf("r2 image mismatch: %v", got)
 	}
 	if _, ok := r2["startup-config"]; ok {
